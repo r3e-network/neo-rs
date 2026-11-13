@@ -7,8 +7,8 @@
 //! - Peer disconnection
 //! - Invalid handshakes
 
-use neo_smart_contract::error::CoreError;
 use neo_primitives::UInt256;
+use neo_smart_contract::error::CoreError;
 
 // ============================================================================
 // Connection Error Tests

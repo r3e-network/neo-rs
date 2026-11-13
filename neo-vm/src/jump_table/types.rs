@@ -44,18 +44,19 @@ fn convert(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
         )));
     }
 
-    // Pop the item from the stack
-    let item = context.pop()?;
-
-    if matches!(item, StackItem::Null) {
-        context.push(StackItem::Null)?;
-        return Ok(());
-    }
+    // Null remains Null for every target type in the reference VM. A same-type
+    // conversion likewise already has the required item on top of the stack.
+    let item = {
+        let mut stack = context.evaluation_stack_mut();
+        let item = stack.peek(0)?;
+        if matches!(item, StackItem::Null) || item.stack_item_type() == item_type {
+            return Ok(());
+        }
+        stack.pop()?
+    };
 
     // Convert the item to the specified type
-    let result = if item.stack_item_type() == item_type {
-        item
-    } else {
+    let result = {
         match (item, item_type) {
             // Keep primitive conversion rules centralized on StackItem; its
             // byte-target path delegates the exact safe subset to neo-vm-rs.
@@ -161,4 +162,90 @@ fn is_null(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
     context.push(StackItem::from_bool(result))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::script::Script;
+
+    fn engine_with_stack(items: Vec<StackItem>) -> ExecutionEngine {
+        let mut engine = ExecutionEngine::new(None);
+        engine
+            .load_script(Script::new_relaxed(vec![OpCode::RET.byte()]), -1, 0)
+            .expect("load test script");
+        let context = engine.current_context_mut().expect("current context");
+        for item in items {
+            context.push(item).expect("push test item");
+        }
+        engine
+    }
+
+    fn conversion(target: StackItemType) -> Instruction {
+        Instruction::new(OpCode::CONVERT, &[target.to_byte()])
+    }
+
+    fn converted(item: StackItem, target: StackItemType) -> VmResult<StackItem> {
+        let mut engine = engine_with_stack(vec![item]);
+        convert(&mut engine, &conversion(target))?;
+        engine.current_context_mut().expect("current context").pop()
+    }
+
+    #[test]
+    fn convert_same_type_preserves_buffer_and_array_identity() {
+        let buffer = StackItem::from_buffer(vec![1, 2, 3]);
+        let buffer_id = match &buffer {
+            StackItem::Buffer(value) => value.id(),
+            _ => unreachable!(),
+        };
+        let result = converted(buffer, StackItemType::Buffer).expect("buffer conversion");
+        assert_eq!(result.stack_item_type(), StackItemType::Buffer);
+        match result {
+            StackItem::Buffer(value) => assert_eq!(value.id(), buffer_id),
+            _ => unreachable!(),
+        }
+
+        let array = StackItem::from_array(vec![StackItem::from_i64(42)]);
+        let array_id = match &array {
+            StackItem::Array(value) => value.id(),
+            _ => unreachable!(),
+        };
+        let result = converted(array, StackItemType::Array).expect("array conversion");
+        assert_eq!(result.stack_item_type(), StackItemType::Array);
+        match result {
+            StackItem::Array(value) => assert_eq!(value.id(), array_id),
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn convert_null_remains_null_for_every_target_type() {
+        for target in [
+            StackItemType::Boolean,
+            StackItemType::Integer,
+            StackItemType::ByteString,
+            StackItemType::Buffer,
+            StackItemType::Array,
+            StackItemType::Struct,
+            StackItemType::Map,
+            StackItemType::Pointer,
+            StackItemType::InteropInterface,
+        ] {
+            assert_eq!(
+                converted(StackItem::Null, target).expect("Null conversion must succeed"),
+                StackItem::Null,
+                "Null conversion changed for {target:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn convert_real_conversion_and_empty_stack_errors_are_unchanged() {
+        let result = converted(StackItem::from_i64(42), StackItemType::ByteString)
+            .expect("integer conversion");
+        assert_eq!(result, StackItem::ByteString(vec![42]));
+
+        let mut engine = engine_with_stack(Vec::new());
+        assert!(convert(&mut engine, &conversion(StackItemType::Boolean)).is_err());
+    }
 }

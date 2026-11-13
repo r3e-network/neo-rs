@@ -48,7 +48,7 @@ impl ApplicationEngine {
         let param_count = method.parameters.len();
         self.load_contract_context(
             Arc::new(contract),
-            method,
+            &method,
             call_flags,
             param_count,
             previous_context,
@@ -57,7 +57,7 @@ impl ApplicationEngine {
         )?;
         Ok(())
     }
-    fn capture_fault_exception_from_vm(&mut self) {
+    pub(super) fn capture_fault_exception_from_vm(&mut self) {
         if self.fault_exception.is_some() {
             return;
         }
@@ -120,6 +120,13 @@ impl ApplicationEngine {
             }
             if self.vm_engine.engine().invocation_stack().len() <= target_depth {
                 return state;
+            }
+            if let Some(state) = self.try_execute_with_external_vm() {
+                if state == VMState::FAULT {
+                    self.capture_fault_exception_from_vm();
+                    return state;
+                }
+                continue;
             }
             if let Err(err) = self.vm_engine.engine_mut().execute_next() {
                 let message = err.to_string();

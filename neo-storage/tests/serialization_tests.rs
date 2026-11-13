@@ -58,7 +58,7 @@ fn serialize_deserialize_roundtrip_storage_item() {
 
 #[test]
 fn serialize_storage_item_with_constant_flag() {
-    let mut item = StorageItem::from_bytes(vec![0x99, 0x88]);
+    let item = StorageItem::from_bytes(vec![0x99, 0x88]);
     // Note: StorageItem doesn't have set_constant method
     // This test just verifies serialization works with the item
 
@@ -184,7 +184,7 @@ fn serialize_storage_item_default() {
     let deserialized: StorageItem = deserialize(&serialized).expect("default item");
 
     assert_eq!(deserialized.value_bytes().len(), 0);
-    assert_eq!(deserialized.is_constant(), false);
+    assert!(!deserialized.is_constant());
 }
 
 #[test]

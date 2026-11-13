@@ -1,0 +1,517 @@
+use super::helpers::{
+    create_test_validators, create_validators_with_keys, sign_commit, sign_payload,
+};
+use crate::messages::{
+    ChangeViewMessage, CommitMessage, ConsensusPayload, PrepareRequestMessage,
+    PrepareResponseMessage,
+};
+use crate::{ChangeViewReason, ConsensusMessageType};
+use crate::{ConsensusEvent, ConsensusService};
+use neo_primitives::UInt256;
+use tokio::sync::mpsc;
+
+#[tokio::test]
+async fn timer_tick_triggers_change_view_broadcast() {
+    let network = 0x4E454F;
+    let (tx, mut rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(1), keys[1].to_vec(), tx);
+
+    service
+        .start(0, 0, UInt256::zero(), 0)
+        .expect("consensus service should start");
+    service
+        .on_timer_tick(crate::context::BLOCK_TIME_MS * 2 + 1)
+        .expect("timer tick should succeed");
+
+    let mut change_view = None;
+    while let Ok(event) = rx.try_recv() {
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::ChangeView
+        {
+            change_view = Some(payload);
+            break;
+        }
+    }
+
+    let payload = change_view.expect("change view payload");
+    let msg = ChangeViewMessage::deserialize(
+        &payload.data,
+        payload.block_index,
+        payload.view_number,
+        payload.validator_index,
+    )
+    .expect("change view deserialize");
+    assert_eq!(msg.reason, ChangeViewReason::Timeout);
+    assert_eq!(
+        msg.new_view_number().expect("should have new view number"),
+        1
+    );
+}
+
+#[tokio::test]
+async fn view_change_rotates_primary_by_view() {
+    let network = 0x4E454F;
+    let (tx, _rx) = mpsc::channel(100);
+    let validators = create_test_validators(7);
+    let mut service = ConsensusService::new(network, validators, Some(0), vec![], tx);
+
+    service
+        .start(10, 0, UInt256::zero(), 0)
+        .expect("consensus service should start");
+    assert_eq!(service.context().primary_index(), 3);
+
+    service
+        .context
+        .reset_for_new_view(1, crate::context::BLOCK_TIME_MS * 2 + 1);
+    assert_eq!(service.context().primary_index(), 2);
+
+    service
+        .context
+        .reset_for_new_view(2, crate::context::BLOCK_TIME_MS * 2 + 2);
+    assert_eq!(service.context().primary_index(), 1);
+}
+
+#[tokio::test]
+async fn timeout_view_change_allows_new_prepare_request() {
+    let network = 0x4E454F;
+    let (tx, mut rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(1), keys[1].to_vec(), tx);
+
+    service
+        .start(0, 0, UInt256::zero(), 0)
+        .expect("consensus service should start");
+    while rx.try_recv().is_ok() {}
+
+    service
+        .on_timer_tick(crate::context::BLOCK_TIME_MS * 2 + 1)
+        .expect("timer tick should succeed");
+
+    let mut change_view = None;
+    while let Ok(event) = rx.try_recv() {
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::ChangeView
+        {
+            change_view = Some(payload);
+            break;
+        }
+    }
+
+    let change_view = change_view.expect("change view payload");
+    let change_view_msg = ChangeViewMessage::deserialize(
+        &change_view.data,
+        change_view.block_index,
+        change_view.view_number,
+        change_view.validator_index,
+    )
+    .expect("change view message");
+    let new_view = change_view_msg
+        .new_view_number()
+        .expect("should have new view number");
+
+    let validator_count = service.context.validator_count() as i64;
+    let new_primary =
+        (service.context.block_index as i64 - new_view as i64).rem_euclid(validator_count) as u8;
+    service.context.my_index = Some(new_primary);
+    service
+        .context
+        .reset_for_new_view(new_view, change_view_msg.timestamp);
+    let new_deadline = service.context().view_start_time + service.context().get_timeout();
+    service
+        .on_timer_tick(new_deadline + 1)
+        .expect("timer tick should succeed");
+    while rx.try_recv().is_ok() {}
+
+    let tx_hashes = vec![UInt256::from([0x33; 32])];
+    service
+        .on_transactions_received(tx_hashes.clone())
+        .expect("should process transactions");
+
+    let mut prepare_payload = None;
+    while let Ok(event) = rx.try_recv() {
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::PrepareRequest
+        {
+            prepare_payload = Some(payload);
+            break;
+        }
+    }
+
+    let prepare_payload = prepare_payload.expect("prepare request");
+    let prepare_msg = PrepareRequestMessage::deserialize_body(
+        &prepare_payload.data,
+        prepare_payload.block_index,
+        prepare_payload.view_number,
+        prepare_payload.validator_index,
+    )
+    .expect("prepare request msg");
+    assert_eq!(prepare_msg.view_number, new_view);
+    assert_eq!(prepare_msg.transaction_hashes, tx_hashes);
+}
+
+#[tokio::test]
+async fn view_change_allows_consensus_to_complete() {
+    let network = 0x4E454F;
+    let (tx, mut rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(3), keys[3].to_vec(), tx);
+
+    service
+        .start(0, 1_000, UInt256::zero(), 0)
+        .expect("consensus service should start");
+    while rx.try_recv().is_ok() {}
+
+    for validator_index in 0..=2 {
+        let msg = ChangeViewMessage::new(
+            0,
+            0,
+            validator_index,
+            2_000 + validator_index as u64,
+            ChangeViewReason::Timeout,
+        );
+        let mut payload = ConsensusPayload::new(
+            network,
+            0,
+            validator_index,
+            0,
+            ConsensusMessageType::ChangeView,
+            msg.serialize(),
+        );
+        sign_payload(&service, &mut payload, &keys[validator_index as usize]);
+        service
+            .process_message(payload)
+            .expect("should process message");
+    }
+
+    let mut requested = false;
+    while let Ok(event) = rx.try_recv() {
+        if let ConsensusEvent::RequestTransactions { block_index, .. } = event {
+            requested = block_index == 0;
+            break;
+        }
+    }
+
+    assert!(!requested);
+    assert_eq!(service.context().view_number, 1);
+    assert!(service.context().is_primary());
+    let new_deadline = service.context().view_start_time + service.context().get_timeout();
+    service
+        .on_timer_tick(new_deadline + 1)
+        .expect("timer tick should succeed");
+
+    let tx_hashes = vec![UInt256::from([0x44; 32])];
+    service
+        .on_transactions_received(tx_hashes.clone())
+        .expect("should process transactions");
+
+    let mut prepare_payload = None;
+    while let Ok(event) = rx.try_recv() {
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::PrepareRequest
+        {
+            prepare_payload = Some(payload);
+            break;
+        }
+    }
+
+    let prepare_payload = prepare_payload.expect("prepare request payload");
+    let prep_hash = service
+        .context()
+        .preparation_hash
+        .expect("preparation hash");
+
+    for validator_index in 0..=1 {
+        let response = PrepareResponseMessage::new(0, 1, validator_index, prep_hash);
+        let mut payload = ConsensusPayload::new(
+            network,
+            0,
+            validator_index,
+            1,
+            ConsensusMessageType::PrepareResponse,
+            response.serialize(),
+        );
+        sign_payload(&service, &mut payload, &keys[validator_index as usize]);
+        service
+            .process_message(payload)
+            .expect("should process message");
+    }
+
+    let mut commit_payload = None;
+    while let Ok(event) = rx.try_recv() {
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::Commit
+        {
+            commit_payload = Some(payload);
+            break;
+        }
+    }
+
+    let commit_payload = commit_payload.expect("commit payload");
+    assert_eq!(commit_payload.validator_index, 3);
+    assert_eq!(commit_payload.view_number, 1);
+    assert_eq!(commit_payload.block_index, prepare_payload.block_index);
+    let permit = commit_payload
+        .commit_persistence
+        .as_ref()
+        .expect("local Commit must carry a persistence permit");
+    assert!(permit.validate().is_ok());
+    assert!(permit.covers_commit(
+        commit_payload.block_index,
+        commit_payload.view_number,
+        commit_payload.validator_index,
+        &commit_payload.data,
+    ));
+
+    let block_hash = service.context().proposed_block_hash.expect("block hash");
+
+    for validator_index in 0..=1 {
+        let signature = sign_commit(network, &block_hash, &keys[validator_index as usize]);
+        let commit = CommitMessage::new(0, 1, validator_index, signature.clone());
+        let mut payload = ConsensusPayload::new(
+            network,
+            0,
+            validator_index,
+            1,
+            ConsensusMessageType::Commit,
+            commit.serialize(),
+        );
+        sign_payload(&service, &mut payload, &keys[validator_index as usize]);
+        service
+            .process_message(payload)
+            .expect("should process message");
+    }
+
+    let mut committed = None;
+    while let Ok(event) = rx.try_recv() {
+        if let ConsensusEvent::BlockCommitted { block_index, .. } = event {
+            committed = Some(block_index);
+            break;
+        }
+    }
+
+    assert_eq!(committed, Some(0));
+}
+
+#[tokio::test]
+async fn change_view_threshold_triggers_view_change() {
+    let network = 0x4E454F;
+    let (tx, mut rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+
+    service
+        .start(0, 1_000, UInt256::zero(), 0)
+        .expect("consensus service should start");
+
+    for validator_index in 1..=3 {
+        let msg = ChangeViewMessage::new(
+            0,
+            0,
+            validator_index,
+            1_000 + validator_index as u64,
+            ChangeViewReason::Timeout,
+        );
+        let mut payload = ConsensusPayload::new(
+            network,
+            0,
+            validator_index,
+            0,
+            ConsensusMessageType::ChangeView,
+            msg.serialize(),
+        );
+        sign_payload(&service, &mut payload, &keys[validator_index as usize]);
+        service
+            .process_message(payload)
+            .expect("should process message");
+    }
+
+    let mut view_changed = None;
+    while let Ok(event) = rx.try_recv() {
+        if let ConsensusEvent::ViewChanged {
+            old_view, new_view, ..
+        } = event
+        {
+            view_changed = Some((old_view, new_view));
+            break;
+        }
+    }
+
+    assert_eq!(view_changed, Some((0, 1)));
+    assert_eq!(service.context().view_number, 1);
+    // The remote ChangeView timestamps above are tiny test values. The local
+    // timer/view start must use the local wall clock instead.
+    assert!(service.context().view_start_time > 1_000_000_000);
+    assert_ne!(service.context().view_start_time, 1_001);
+    assert_eq!(
+        service.context().get_timeout(),
+        crate::context::BLOCK_TIME_MS * 4
+    );
+}
+
+#[tokio::test]
+async fn recovery_request_when_more_than_f_committed() {
+    let network = 0x4E454F;
+    let (tx, mut rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+
+    service
+        .start(0, 1_000, UInt256::zero(), 0)
+        .expect("consensus service should start");
+    while rx.try_recv().is_ok() {}
+
+    // Simulate 2 nodes committed (F=1 for 4 validators, so 2 > F)
+    let block_hash = UInt256::from([0x55; 32]);
+    service.context.proposed_block_hash = Some(block_hash);
+    for validator_index in 1..=2 {
+        let signature = sign_commit(network, &block_hash, &keys[validator_index as usize]);
+        let commit = CommitMessage::new(0, 0, validator_index, signature);
+        let mut payload = ConsensusPayload::new(
+            network,
+            0,
+            validator_index,
+            0,
+            ConsensusMessageType::Commit,
+            commit.serialize(),
+        );
+        sign_payload(&service, &mut payload, &keys[validator_index as usize]);
+        service
+            .process_message(payload)
+            .expect("should process message");
+    }
+
+    service
+        .request_change_view(ChangeViewReason::Timeout, 2_000)
+        .expect("should request change view");
+
+    let mut recovery_sent = false;
+    while let Ok(event) = rx.try_recv() {
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::RecoveryRequest
+        {
+            recovery_sent = true;
+            break;
+        }
+    }
+
+    assert!(recovery_sent);
+    // The timer starts from the local clock, never the caller's timestamp.
+    assert!(service.context().view_start_time > 1_000_000_000);
+    assert_ne!(service.context().view_start_time, 2_000);
+    assert_eq!(
+        service.context().get_timeout(),
+        crate::context::BLOCK_TIME_MS * 4
+    );
+}
+
+#[tokio::test]
+async fn stale_change_view_only_sends_one_recovery_response() {
+    let network = 0x4E454F;
+    let (tx, mut rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(2), keys[2].to_vec(), tx);
+
+    service
+        .start(0, 1_000, UInt256::zero(), 0)
+        .expect("consensus service should start");
+    service.context.reset_for_new_view(1, 2_000);
+    let message = ChangeViewMessage::new(0, 0, 1, 1_500, ChangeViewReason::Timeout);
+    let mut payload = ConsensusPayload::new(
+        network,
+        0,
+        1,
+        0,
+        ConsensusMessageType::ChangeView,
+        message.serialize(),
+    );
+    sign_payload(&service, &mut payload, &keys[1]);
+
+    service
+        .process_message(payload.clone())
+        .expect("should process message");
+    service
+        .process_message(payload)
+        .expect("should process message");
+
+    let recovery_count = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter(|event| matches!(event, ConsensusEvent::BroadcastMessage(payload) if payload.message_type == ConsensusMessageType::RecoveryMessage))
+        .count();
+    assert_eq!(recovery_count, 1);
+    assert!(service.context().change_views.is_empty());
+    assert!(service.context().last_change_view_timestamps.is_empty());
+    assert!(service.context().change_view_invocations.is_empty());
+}
+
+#[tokio::test]
+async fn no_view_change_after_commit_sent() {
+    let network = 0x4E454F;
+    let (tx, _rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+
+    service
+        .start(0, 1_000, UInt256::zero(), 0)
+        .expect("consensus service should start");
+
+    let block_hash = UInt256::from([0x66; 32]);
+    service.context.proposed_block_hash = Some(block_hash);
+    let signature = sign_commit(network, &block_hash, &keys[0]);
+    service.context.commits.insert(0, signature);
+
+    let msg = ChangeViewMessage::new(0, 0, 1, 2_000, ChangeViewReason::Timeout);
+    let mut payload = ConsensusPayload::new(
+        network,
+        0,
+        1,
+        0,
+        ConsensusMessageType::ChangeView,
+        msg.serialize(),
+    );
+    sign_payload(&service, &mut payload, &keys[1]);
+
+    service
+        .process_message(payload)
+        .expect("should process message");
+
+    assert_eq!(service.context.view_number, 0);
+    assert!(service.context.change_views.is_empty());
+}
+
+#[tokio::test]
+async fn m_minus_one_change_views_not_enough() {
+    let network = 0x4E454F;
+    let (tx, _rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+
+    service
+        .start(0, 1_000, UInt256::zero(), 0)
+        .expect("consensus service should start");
+
+    // M = 4 - 1 = 3, send only 2 ChangeView messages (M-1)
+    for validator_index in 1..=2 {
+        let msg = ChangeViewMessage::new(
+            0,
+            0,
+            validator_index,
+            1_000 + validator_index as u64,
+            ChangeViewReason::Timeout,
+        );
+        let mut payload = ConsensusPayload::new(
+            network,
+            0,
+            validator_index,
+            0,
+            ConsensusMessageType::ChangeView,
+            msg.serialize(),
+        );
+        sign_payload(&service, &mut payload, &keys[validator_index as usize]);
+        service
+            .process_message(payload)
+            .expect("should process message");
+    }
+
+    assert_eq!(service.context.view_number, 0);
+    assert_eq!(service.context.change_views.len(), 2);
+}

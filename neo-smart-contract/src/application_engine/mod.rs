@@ -80,7 +80,7 @@ use neo_protocol::Hardfork;
 use neo_protocol::block::Block;
 use neo_vm::evaluation_stack::EvaluationStack;
 use neo_vm::execution_context::ExecutionContext;
-use neo_vm::interop_service::InteropHost;
+use neo_vm::interop_service::{InteropHost, InteropService};
 use neo_vm::jump_table::JumpTable;
 use neo_vm::script::Script;
 // InteropInterface trait removed - StackValue::Interop(u64) is used instead
@@ -119,6 +119,7 @@ use neo_storage::persistence::DataCache;
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::Instruction;
+use neo_vm::InterpreterSemantics;
 use neo_vm::OpCode;
 use neo_vm::StackValue as VmStackValue;
 use neo_vm::SyscallProvider;
@@ -131,7 +132,35 @@ use num_traits::ToPrimitive;
 use parking_lot::Mutex;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+use std::time::Duration;
+
+/// Opt-in wall-clock observation for host syscalls. Implementations must not
+/// mutate execution state; nested calls are included in their caller's elapsed time.
+pub trait ApplicationEngineProfiler: Send + Sync {
+    fn record_syscall(&self, hash: u32, elapsed: Duration);
+
+    /// Counts executed opcodes without adding clock reads or allocation to the
+    /// instruction loop. The callback is only reached with a profiler attached.
+    fn record_opcode(&self, _opcode: u8) {}
+
+    /// Counts instructions actually executed by the fast interpreter rather
+    /// than merely contexts that were eligible for it.
+    fn record_external_instruction(&self) {}
+
+    /// Records one inclusive dynamic contract-call boundary. Implementations
+    /// receive the raw hash and borrow the method name so the production path
+    /// performs no formatting; this callback is only reached with a profiler.
+    fn record_contract_call(
+        &self,
+        _contract_hash: UInt160,
+        _method: &str,
+        _argument_count: usize,
+        _elapsed: Duration,
+    ) {
+    }
+}
+
 /// Maximum GAS (in datoshi) available to an engine created for testing/invoke (C# `TestModeGas`).
 pub const TEST_MODE_GAS: i64 = 20_000_000_000;
 /// Maximum length (in bytes) of an event name.
@@ -144,7 +173,7 @@ pub const MAX_NOTIFICATION_COUNT: usize = 512;
 pub const CHECK_SIG_PRICE: i64 = 1 << 15;
 /// Scaling factor between raw internal fee counters and datoshi GAS amounts.
 pub const FEE_FACTOR: i64 = 10000;
-type InteropHandler = fn(&mut ApplicationEngine, &mut ExecutionEngine) -> VmResult<()>;
+pub(crate) type InteropHandler = fn(&mut ApplicationEngine, &mut ExecutionEngine) -> VmResult<()>;
 type StdResult<T> = std::result::Result<T, String>;
 #[derive(Clone, Copy)]
 struct HostInteropHandler {
@@ -211,7 +240,7 @@ pub struct ApplicationEngine {
     storage_price: u32,
     call_flags: CallFlags,
     vm_engine: VmEngineHost,
-    interop_handlers: HashMap<u32, HostInteropHandler>,
+    interop_handlers: Arc<HashMap<u32, HostInteropHandler>>,
     snapshot_cache: Arc<DataCache>,
     original_snapshot_cache: Arc<DataCache>,
     notifications: Vec<NotifyEventArgs>,
@@ -226,6 +255,19 @@ pub struct ApplicationEngine {
     /// block can clone the native-contract map without copying NEF scripts and
     /// manifests. Mutations replace the `Arc` in that engine's map only.
     contracts: HashMap<UInt160, Arc<ContractState>>,
+    /// Serialized ContractManagement.getContract results for this transaction.
+    /// Bytes are immutable, so repeated calls never share mutable VM arrays.
+    contract_query_results: HashMap<UInt160, Option<Vec<u8>>>,
+    /// Faun native-fee decisions for this transaction, including negative results.
+    /// The outer key avoids allocating a method string on every cache hit.
+    native_fee_whitelist: HashMap<(UInt160, u32), HashMap<String, Option<i64>>>,
+    /// Once contract or policy state changes, this engine must not publish
+    /// speculative contract metadata or fee decisions into the block-wide cache.
+    native_fee_cache_dirty: bool,
+    /// Per-transaction parsed script templates. Cloning a template creates a new
+    /// Script identity while sharing its immutable bytes and instruction table.
+    /// The process-wide content cache populated on a miss lives in `contracts`.
+    parsed_contract_scripts: HashMap<UInt160, (std::sync::Weak<ContractState>, Script)>,
     storage_iterators: HashMap<u32, StorageIterator>,
     next_iterator_id: u32,
     current_script_hash: Option<UInt160>,
@@ -242,8 +284,10 @@ pub struct ApplicationEngine {
     fault_exception: Option<String>,
     states: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
     event_observer: Option<Arc<dyn EngineEventObserver>>,
+    profiler: Option<Arc<dyn ApplicationEngineProfiler>>,
 }
 mod contracts;
+mod direct_nep17;
 mod drop;
 pub mod execution_state;
 mod external_vm;

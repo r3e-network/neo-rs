@@ -54,27 +54,23 @@ use crate::events::PluginEvent;
 use crate::neo_system::NeoSystemContext;
 use crate::network::p2p::{
     local_node::RelayInventory,
-    payloads::{
-        InventoryType, Transaction,
-        extensible_payload::ExtensiblePayload,
-        header::Header,
-    },
+    payloads::{InventoryType, Transaction, extensible_payload::ExtensiblePayload},
 };
+use crate::state_service::{STATE_SERVICE_CATEGORY, StateRoot};
 use async_trait::async_trait;
 use dashmap::DashMap;
 use lru::LruCache;
-use neo_actors::{Actor, ActorContext, ActorResult, ActorRef, Props, ScheduleHandle};
-use neo_ledger::LedgerContext;
-use neo_storage::persistence::DataCache;
-use neo_storage::persistence::StoreCache;
-use neo_native_contracts::LedgerContract;
-use crate::state_service::{STATE_SERVICE_CATEGORY, StateRoot};
+use neo_actors::{Actor, ActorContext, ActorResult, Props, ScheduleHandle};
 use neo_io_crate::{MemoryReader, Serializable};
+use neo_ledger::LedgerContext;
+use neo_native_contracts::LedgerContract;
 use neo_primitives::{UInt160, UInt256};
-use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_protocol::execution::Block;
+use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_smart_contract::error::CoreError;
 use neo_smart_contract::error::CoreResult;
+use neo_storage::persistence::DataCache;
+use neo_storage::persistence::StoreCache;
 use std::any::Any;
 use std::collections::HashSet;
 use std::num::NonZeroUsize;
@@ -83,13 +79,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
-use neo_primitives::VerifyResult;
 use neo_ledger::blockchain::types::{
     ImportDisposition, UnverifiedBlocksList, classify_import_block,
 };
-
-#[cfg(test)]
-use neo_ledger::blockchain::types::should_schedule_reverify_idle;
+use neo_primitives::VerifyResult;
 
 /// System-attachment command accepted by the blockchain actor.
 ///
@@ -201,7 +194,9 @@ impl Blockchain {
     fn unverified_block_cost(block: &Block) -> usize {
         // Convert to payload block to get serialized size
         let payload_block = block.to_payload_block();
-        payload_block.size().saturating_add(UNVERIFIED_BLOCK_OVERHEAD)
+        payload_block
+            .size()
+            .saturating_add(UNVERIFIED_BLOCK_OVERHEAD)
     }
 
     /// Removes every unverified candidate at `index`, keeping the cache byte
@@ -300,7 +295,12 @@ impl Blockchain {
         // Convert to payload block for validation
         let payload_block = block.to_payload_block();
         let verified = if block.index() == header_height.saturating_add(1) {
-            neo_ledger::verify_block_with_cache(&payload_block, settings.as_ref(), &store_cache, &header_cache)
+            neo_ledger::verify_block_with_cache(
+                &payload_block,
+                settings.as_ref(),
+                &store_cache,
+                &header_cache,
+            )
         } else {
             neo_ledger::verify_block(&payload_block, settings.as_ref(), &store_cache)
         };

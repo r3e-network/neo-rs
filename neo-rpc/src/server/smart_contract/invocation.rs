@@ -3,16 +3,16 @@ use std::sync::Arc;
 
 use crate::server::rpc_helpers::expect_base64_param_with_decode_message;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_wallets::helper::Helper as WalletHelper;
-use neo_wallets::{Wallet, WalletAccount};
 use neo_native_contracts::native::GasToken;
 use neo_primitives::UInt160;
+use neo_protocol::get_sign_data_vec;
 use neo_protocol::payloads::Signer;
 use neo_protocol::payloads::transaction::Transaction;
 use neo_protocol::payloads::transaction_attribute::TransactionAttribute;
 use neo_protocol::witness::Witness;
-use neo_protocol::get_sign_data_vec;
 use neo_storage::persistence::StoreCache;
+use neo_wallets::helper::Helper as WalletHelper;
+use neo_wallets::{Wallet, WalletAccount};
 use num_bigint::BigInt;
 use rand::random;
 use serde_json::{Map, Number as JsonNumber, Value, json};
@@ -300,7 +300,8 @@ fn build_and_sign_transaction(
     }
 
     let mut tx_clone = tx.clone();
-    let pending = sign_transaction_with_wallet(&mut tx_clone, signers, &wallet, protocol_settings.network);
+    let pending =
+        sign_transaction_with_wallet(&mut tx_clone, signers, &wallet, protocol_settings.network);
     if pending.is_empty() {
         Ok(WalletInvocationOutcome::Signed(tx_clone.to_bytes()))
     } else {

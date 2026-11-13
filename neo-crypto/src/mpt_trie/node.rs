@@ -1,11 +1,13 @@
 use super::error::{MptError, MptResult};
 use super::node_type::NodeType;
+use super::profile::{MptProfile, MptProfileStage, MptProfileTimer};
 use crate::Crypto;
 use neo_io::serializable::helper::{get_var_size, get_var_size_bytes};
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::UINT256_SIZE;
 use neo_primitives::UInt256;
 use parking_lot::RwLock;
+use std::collections::HashSet;
 use std::mem;
 use std::sync::{Arc, LazyLock};
 use tracing::error;
@@ -334,6 +336,42 @@ impl Node {
         }
     }
 
+    /// Returns `(nodes, estimated_bytes)` for resolved nodes retained by this root.
+    ///
+    /// Hash-only and empty sentinels are excluded. Shared subtrees are counted
+    /// once; the estimate includes owned buffers but not allocator or lock overhead.
+    #[must_use]
+    pub fn resolved_retention_stats(&self) -> (usize, usize) {
+        let mut visited = HashSet::<*const Self>::new();
+        let mut pending = vec![self];
+        let mut nodes = 0usize;
+        let mut bytes = 0usize;
+        while let Some(node) = pending.pop() {
+            if matches!(node.node_type, NodeType::HashNode | NodeType::Empty)
+                || !visited.insert(node)
+            {
+                continue;
+            }
+            nodes += 1;
+            bytes = bytes
+                .saturating_add(mem::size_of::<Self>())
+                .saturating_add(node.key.capacity())
+                .saturating_add(node.value.capacity())
+                .saturating_add(node.children.capacity() * mem::size_of::<Arc<Self>>())
+                .saturating_add(node.hash_preimage.read().as_ref().map_or(0, Vec::capacity));
+            match node.node_type {
+                NodeType::BranchNode => pending.extend(node.children.iter().map(Arc::as_ref)),
+                NodeType::ExtensionNode => {
+                    if let Some(ref next) = node.next {
+                        pending.push(next.as_ref());
+                    }
+                }
+                _ => {}
+            }
+        }
+        (nodes, bytes)
+    }
+
     /// Computes the node hash (Hash256 of the serialized payload without the reference).
     pub fn hash(&self) -> UInt256 {
         match self.try_hash() {
@@ -347,12 +385,23 @@ impl Node {
 
     /// Attempts to compute the node hash, returning an error if serialization fails.
     pub fn try_hash(&self) -> MptResult<UInt256> {
+        self.try_hash_profiled(None)
+    }
+
+    /// Computes a node hash while optionally observing serialization and Hash256.
+    pub(crate) fn try_hash_profiled(&self, profile: Option<&MptProfile>) -> MptResult<UInt256> {
         if let Some(hash) = *self.hash.read() {
             return Ok(hash);
         }
 
-        let data = self.to_array_without_reference()?;
-        let hash_bytes = Crypto::hash256(&data);
+        let data = {
+            let _timer = MptProfileTimer::new(profile, MptProfileStage::Serialization);
+            self.to_array_without_reference_profiled(profile)?
+        };
+        let hash_bytes = {
+            let _timer = MptProfileTimer::new(profile, MptProfileStage::Hash256);
+            Crypto::hash256(&data)
+        };
         let hash = UInt256::from_bytes(&hash_bytes).map_err(MptError::from)?;
         *self.hash.write() = Some(hash);
         *self.hash_preimage.write() = Some(data);
@@ -397,18 +446,62 @@ impl Node {
 
     /// Serializes the node without the `reference` field.
     pub fn to_array_without_reference(&self) -> MptResult<Vec<u8>> {
+        self.to_array_without_reference_profiled(None)
+    }
+
+    fn to_array_without_reference_profiled(
+        &self,
+        profile: Option<&MptProfile>,
+    ) -> MptResult<Vec<u8>> {
+        if self.node_type == NodeType::BranchNode {
+            // A branch has at most seventeen hash-encoded children. Encode in
+            // one pass instead of walking all children once for byte_size and
+            // again through BinaryWriter. Invalid hash nodes retain the
+            // canonical writer path and its original error behaviour.
+            let mut data = Vec::with_capacity(1 + BRANCH_CHILD_COUNT * (1 + UINT256_SIZE));
+            data.push(NodeType::BranchNode.to_byte());
+            for child in &self.children {
+                match child.node_type {
+                    NodeType::Empty => data.push(NodeType::Empty.to_byte()),
+                    NodeType::HashNode => {
+                        let Some(hash) = *child.hash.read() else {
+                            let mut writer = BinaryWriter::with_capacity(self.byte_size());
+                            self.serialize_without_reference_profiled(&mut writer, profile)?;
+                            return Ok(writer.into_bytes());
+                        };
+                        data.push(NodeType::HashNode.to_byte());
+                        data.extend_from_slice(hash.as_ref());
+                    }
+                    NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode => {
+                        let hash = child.try_hash_profiled(profile)?;
+                        data.push(NodeType::HashNode.to_byte());
+                        data.extend_from_slice(hash.as_ref());
+                    }
+                }
+            }
+            return Ok(data);
+        }
+
         let mut writer = BinaryWriter::with_capacity(self.byte_size());
-        self.serialize_without_reference(&mut writer)?;
+        self.serialize_without_reference_profiled(&mut writer, profile)?;
         Ok(writer.into_bytes())
     }
 
     /// Serializes the node as a child according to the C# implementation rules.
     pub fn serialize_as_child(&self, writer: &mut BinaryWriter) -> MptResult<()> {
+        self.serialize_as_child_profiled(writer, None)
+    }
+
+    pub(crate) fn serialize_as_child_profiled(
+        &self,
+        writer: &mut BinaryWriter,
+        profile: Option<&MptProfile>,
+    ) -> MptResult<()> {
         match self.node_type {
             NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode => {
-                let hash = self.try_hash()?;
+                let hash = self.try_hash_profiled(profile)?;
                 writer.write_u8(NodeType::HashNode.to_byte())?;
-                writer.write_bytes(&hash.to_bytes()).map_err(MptError::from)
+                writer.write_bytes(hash.as_ref()).map_err(MptError::from)
             }
             NodeType::HashNode | NodeType::Empty => {
                 Serializable::serialize(self, writer).map_err(MptError::from)
@@ -494,10 +587,18 @@ impl Node {
     }
 
     fn serialize_without_reference(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        self.serialize_without_reference_profiled(writer, None)
+    }
+
+    fn serialize_without_reference_profiled(
+        &self,
+        writer: &mut BinaryWriter,
+        profile: Option<&MptProfile>,
+    ) -> IoResult<()> {
         writer.write_u8(self.node_type.to_byte())?;
         match self.node_type {
-            NodeType::BranchNode => self.serialize_branch(writer)?,
-            NodeType::ExtensionNode => self.serialize_extension(writer)?,
+            NodeType::BranchNode => self.serialize_branch_profiled(writer, profile)?,
+            NodeType::ExtensionNode => self.serialize_extension_profiled(writer, profile)?,
             NodeType::LeafNode => self.serialize_leaf(writer)?,
             NodeType::HashNode => self.serialize_hash(writer)?,
             NodeType::Empty => {}
@@ -505,23 +606,31 @@ impl Node {
         Ok(())
     }
 
-    fn serialize_branch(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+    fn serialize_branch_profiled(
+        &self,
+        writer: &mut BinaryWriter,
+        profile: Option<&MptProfile>,
+    ) -> IoResult<()> {
         for child in &self.children {
             child
-                .serialize_as_child(writer)
+                .serialize_as_child_profiled(writer, profile)
                 .map_err(|e| IoError::invalid_data(e.to_string()))?;
         }
         Ok(())
     }
 
-    fn serialize_extension(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+    fn serialize_extension_profiled(
+        &self,
+        writer: &mut BinaryWriter,
+        profile: Option<&MptProfile>,
+    ) -> IoResult<()> {
         let Some(next) = self.next.as_ref() else {
             return Err(IoError::invalid_data(
                 "extension node without child during serialization",
             ));
         };
         writer.write_var_bytes(&self.key)?;
-        next.serialize_as_child(writer)
+        next.serialize_as_child_profiled(writer, profile)
             .map_err(|e| IoError::invalid_data(e.to_string()))
     }
 
@@ -536,7 +645,7 @@ impl Node {
         let Some(hash) = *self.hash.read() else {
             return Err(IoError::invalid_data("hash node without cached hash"));
         };
-        writer.write_bytes(&hash.to_bytes())
+        writer.write_bytes(hash.as_ref())
     }
 
     fn deserialize_branch(reader: &mut MemoryReader) -> IoResult<Vec<Arc<Self>>> {

@@ -20,7 +20,7 @@ default = []
 # register the verification service with the unified signer.
 state-verifier = []
 # Task W3-C2: moved P2P peer discovery UPnP transport support.
-upnp = []
+upnp = ["dep:quick-xml", "dep:reqwest", "dep:url"]
 full = ["state-verifier", "upnp"]
 
 [dependencies]
@@ -66,13 +66,16 @@ if-addrs = "0.10"
 indexmap = { workspace = true }
 lru = { workspace = true }
 parking_lot = { workspace = true }
+quick-xml = { workspace = true, optional = true }
 rand = { workspace = true }
+reqwest = { workspace = true, optional = true }
 rayon = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true, features = ["codec", "rt"] }
 tracing = { workspace = true }
+url = { workspace = true, optional = true }
 uuid = { workspace = true }
 
 [dev-dependencies]

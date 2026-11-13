@@ -1,9 +1,9 @@
 //! Comprehensive tests for batch signature verification
 
 use neo_crypto::{
+    Crypto,
     batch_verifier::{BatchVerifier, SignatureComponents},
     signature::Secp256r1Crypto,
-    Crypto,
 };
 
 fn generate_keypair() -> ([u8; 32], [u8; 33]) {

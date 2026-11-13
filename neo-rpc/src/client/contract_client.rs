@@ -12,12 +12,12 @@
 use super::contract_script::{build_dynamic_call_script, emit_contract_call};
 use super::models::RpcInvokeResult;
 use crate::{RpcClient, RpcError};
-use neo_wallets::KeyPair;
 use neo_native_contracts::native::ContractManagement;
 use neo_primitives::{CallFlags, UInt160, WitnessScope};
 use neo_protocol::payloads::{Signer, Transaction};
 use neo_smart_contract::manifest::ContractManifest;
 use neo_vm::ScriptBuilder;
+use neo_wallets::KeyPair;
 use std::sync::Arc;
 
 /// Contract related operations through RPC API
@@ -120,14 +120,14 @@ mod tests {
     use crate::client::test_helpers::{localhost_binding_permitted, rpc_response};
     use base64::{Engine as _, engine::general_purpose};
     use mockito::{Matcher, Server};
-    use neo_protocol::ProtocolSettings;
-    use neo_wallets::KeyPair;
     use neo_json::{JArray, JObject, JToken};
     use neo_native_contracts::native::{GasToken, NativeContract};
     use neo_primitives::UInt160;
+    use neo_protocol::ProtocolSettings;
     use neo_smart_contract::manifest::ContractManifest;
     use neo_vm::ScriptBuilder;
     use neo_vm::{OpCode, StackValue};
+    use neo_wallets::KeyPair;
     use num_bigint::BigInt;
     use regex::escape;
     use reqwest::Url;

@@ -25,9 +25,9 @@ profiling = []
 # Full profiling with CPU profiler (Unix only, requires pprof)
 profiling-full = ["profiling", "pprof", "tracing-timing", "tracing-flame"]
 # Enable TEE (Trusted Execution Environment) support
-tee = ["dep:hkdf", "dep:aes-gcm", "dep:libloading"]
+tee = ["dep:neo-tee"]
 # Enable TEE with SGX hardware
-tee-sgx = ["tee", "dep:sgx-isa"]
+tee-sgx = ["tee", "neo-tee/tee-sgx"]
 # Enable HSM (Hardware Security Module) support
 hsm = ["dep:rpassword", "dep:hidapi", "dep:byteorder", "dep:cryptoki"]
 # Enable HSM with Ledger hardware wallet
@@ -39,6 +39,7 @@ hsm-pkcs11 = ["hsm", "dep:cryptoki"]
 # Task 206: consensus binds directly to neo-actors instead of the neo-core
 # `runtime` compatibility re-export (same types, TypeId-preserving).
 neo-actors = { workspace = true }
+neo-consensus = { workspace = true }
 # Task 177: bind directly to neo-smart-contract instead of neo-core::smart_contract re-exports.
 neo-smart-contract = { workspace = true }
 neo-crypto = { path = "../neo-crypto" }
@@ -57,15 +58,15 @@ neo-system = { workspace = true, features = ["state-verifier"] }
 # Wallet primitives (task D4): consumers bind to neo-wallets directly.
 neo-wallets = { workspace = true }
 neo-ledger = { path = "../neo-ledger" }
+neo-native-contracts = { workspace = true }
+neo-ai-agent = { workspace = true }
+neo-probe = { workspace = true }
 
 # TEMPORARILY DISABLED: neo-plugins being refactored
 # neo-plugins = { path = "../neo-plugins" }
 
-# TEE-specific dependencies (optional, enabled with tee feature)
-hkdf = { version = "0.12", optional = true }
-aes-gcm = { version = "0.10", optional = true }
-libloading = { version = "0.8", optional = true }
-sgx-isa = { version = "0.4", optional = true }
+# Canonical TEE implementation (optional, enabled with tee feature)
+neo-tee = { workspace = true, optional = true }
 
 # PIN input for HSM
 rpassword = { version = "7.3", optional = true }

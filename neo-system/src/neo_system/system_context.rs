@@ -29,11 +29,19 @@ pub(crate) fn context() -> Option<Arc<dyn SystemContext>> {
         .clone()
 }
 
-/// Clears the attached system context; used by tests to reset global state.
-#[cfg(test)]
-#[allow(dead_code)]
-pub(crate) fn clear_system_context() {
-    *SYSTEM_CONTEXT
+/// Detaches `context` during shutdown without clearing a newer active system.
+///
+/// The registry owns a strong reference to the context, which in turn owns the
+/// primary store. Failing to detach it keeps persistent backends locked after
+/// the actor hierarchy has stopped.
+pub(crate) fn clear_system_context(context: &Arc<dyn SystemContext>) {
+    let mut active = SYSTEM_CONTEXT
         .write()
-        .expect("system context lock poisoned") = None;
+        .expect("system context lock poisoned");
+    if active
+        .as_ref()
+        .is_some_and(|current| Arc::ptr_eq(current, context))
+    {
+        *active = None;
+    }
 }

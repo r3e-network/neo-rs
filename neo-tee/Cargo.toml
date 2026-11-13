@@ -1,0 +1,49 @@
+[package]
+name = "neo-tee"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "TEE sealing, attestation, wallet and fair-ordering support for Neo N3"
+
+[lib]
+path = "src/mod.rs"
+
+[features]
+default = []
+tee-sgx = ["dep:sgx-isa"]
+attestation = ["tee-sgx"]
+
+[dependencies]
+neo-crypto = { workspace = true }
+neo-primitives = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+base64 = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+hkdf = "0.12"
+aes-gcm = "0.10"
+zeroize = { workspace = true }
+parking_lot = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+libloading = "0.8"
+sgx-isa = { version = "0.4", optional = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

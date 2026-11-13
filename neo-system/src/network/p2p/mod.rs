@@ -35,9 +35,9 @@ pub mod message_command;
 pub mod message_flags;
 pub mod node_capability_type;
 pub mod protocol_message;
+pub mod services;
 pub mod timeouts;
 pub mod traits;
-pub mod services;
 pub mod verify_result;
 
 // Peer management
@@ -46,12 +46,9 @@ pub mod peer_policy;
 // Hexagonal ports
 pub mod ports;
 
-// Actor implementations
-pub mod actors;
-
 // Session state
-pub mod sessions;
 pub mod session_state;
+pub mod sessions;
 
 // Supporting functionality
 pub mod alerts;
@@ -98,9 +95,9 @@ pub use connection::PeerConnection;
 
 // Peer policy
 pub use peer_policy::{
-    BanEntry, BanList, InboundRateLimiter, PeerReputation, PeerReputationTracker,
-    DEFAULT_BAN_DURATION, DEFAULT_INBOUND_CONNECTION_BURST, DEFAULT_INBOUND_CONNECTION_RATE,
-    DEFAULT_REPUTATION_THRESHOLD, reputation, validate_peer_endpoint,
+    BanEntry, BanList, DEFAULT_BAN_DURATION, DEFAULT_INBOUND_CONNECTION_BURST,
+    DEFAULT_INBOUND_CONNECTION_RATE, DEFAULT_REPUTATION_THRESHOLD, InboundRateLimiter,
+    PeerReputation, PeerReputationTracker, reputation, validate_peer_endpoint,
 };
 
 // Services
@@ -117,7 +114,7 @@ pub use local_node::{
     BroadcastEvent, LocalNode, LocalNodeActor, LocalNodeCommand, LocalNodeHandle, RelayInventory,
     RemoteNodeSnapshot,
 };
-pub use peer::{ConnectedPeer, PeerCommand, PeerState, PeerTimer, MAX_COUNT_FROM_SEED_LIST};
+pub use peer::{ConnectedPeer, MAX_COUNT_FROM_SEED_LIST, PeerCommand, PeerState, PeerTimer};
 pub use remote_node::{
     MessageHandlerSubscription, RemoteNode, RemoteNodeCommand, register_message_received_handler,
     unregister_message_received_handler,

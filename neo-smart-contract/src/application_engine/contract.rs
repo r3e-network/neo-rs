@@ -21,7 +21,9 @@ fn native_call_trace_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| env_flag_enabled("NEO_TRACE_CALL_NATIVE", false))
 }
-pub(crate) fn register_contract_interops(engine: &mut ApplicationEngine) -> VmResult<()> {
+pub(crate) fn register_contract_interops(
+    engine: &mut dyn super::state::InteropRegistration,
+) -> VmResult<()> {
     engine.register_host_service(
         "System.Contract.Call",
         SYSTEM_CONTRACT_CALL_PRICE,

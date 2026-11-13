@@ -1,6 +1,5 @@
 use super::*;
 use crate::server::rpc_server_settings::RpcServerConfig;
-use neo_smart_contract::helper::Helper as ContractHelper;
 use neo_crypto::Secp256r1Crypto;
 use neo_io::BinaryWriter;
 use neo_native_contracts::native::LedgerContract;
@@ -14,12 +13,13 @@ use neo_protocol::payloads::conflicts::Conflicts;
 use neo_protocol::payloads::transaction::Transaction;
 use neo_protocol::payloads::transaction_attribute::TransactionAttribute;
 use neo_protocol::witness::Witness;
-use neo_wallets::signing::{
-    AuthenticatedContext, KeyRef, SignRequest, SignerService, SigningKeyBinding, SigningKeyResolver,
-};
+use neo_smart_contract::helper::Helper as ContractHelper;
 use neo_storage::{StorageItem, StorageKey};
 use neo_system::NeoSystem;
 use neo_vm::VmState as VMState;
+use neo_wallets::signing::{
+    AuthenticatedContext, KeyRef, SignRequest, SignerService, SigningKeyBinding, SigningKeyResolver,
+};
 use num_bigint::BigInt;
 use std::fs;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -173,7 +173,7 @@ fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {
 async fn create_wallet_file(password: &str) -> (String, KeyPair, String) {
     let settings = Arc::new(ProtocolSettings::default());
     let path = temp_wallet_path();
-    let wallet = Nep6Wallet::new(
+    let wallet = Nep6Wallet::create(
         Some("rpc-wallet".to_string()),
         Some(path.clone()),
         settings.clone(),
@@ -182,11 +182,8 @@ async fn create_wallet_file(password: &str) -> (String, KeyPair, String) {
     let nep2 = keypair
         .to_nep2(password, settings.address_version)
         .expect("nep2");
-    wallet
-        .import_nep2(&nep2, password)
-        .await
-        .expect("import nep2");
-    wallet.persist().expect("persist wallet");
+    wallet.import_nep2(&nep2, password).expect("import nep2");
+    wallet.save().expect("persist wallet");
     let address = WalletHelper::to_address(&keypair.get_script_hash(), settings.address_version);
     (path, keypair, address)
 }
@@ -1075,8 +1072,10 @@ async fn import_priv_key_returns_existing_account() {
 
     let params = [Value::String(existing_wif)];
     let result = tokio::task::block_in_place(|| (import_handler.callback())(&server, &params))
-        .expect("import existing");
-    let obj = result.as_object().expect("account json");
+        .unwrap_or_else(|error| panic!("import existing account failed: {error:?}"));
+    let obj = result
+        .as_object()
+        .unwrap_or_else(|| panic!("existing account result is not an object: {result}"));
     assert_eq!(
         obj.get("address").and_then(Value::as_str),
         Some(existing.address().as_str())

@@ -206,6 +206,12 @@ fn deploy_returns_expected_hash_and_prevents_duplicates() {
     let manifest_payload = manifest_bytes(&manifest);
 
     let mut engine = make_engine(snapshot, Some(UInt160::zero()), 50_000_000_000);
+    let expected_hash =
+        UInt160::parse("0x7b37d4bd3d87f53825c3554bd1a617318235a685").expect("contract hash");
+    let absent = engine
+        .call_native_contract(cm_hash, "getContract", &[expected_hash.to_bytes()])
+        .expect("cache absent contract");
+    assert!(absent.is_empty());
     let contract_bytes = engine
         .call_native_contract(
             cm_hash,
@@ -219,6 +225,10 @@ fn deploy_returns_expected_hash_and_prevents_duplicates() {
         contract.hash.to_hex_string(),
         "0x7b37d4bd3d87f53825c3554bd1a617318235a685"
     );
+    let deployed = engine
+        .call_native_contract(cm_hash, "getContract", &[expected_hash.to_bytes()])
+        .expect("read deployed contract after cached absence");
+    assert_eq!(contract_from_bytes(&deployed).hash, expected_hash);
 
     let err = engine
         .call_native_contract(
@@ -397,6 +407,10 @@ fn update_preserves_storage_and_increments_counter() {
     update_engine
         .refresh_context_tracking()
         .expect("refresh context");
+    let before_update = update_engine
+        .call_native_contract(cm_hash, "getContract", &[contract.hash.to_bytes()])
+        .expect("prime getContract cache");
+    assert_eq!(contract_from_bytes(&before_update).update_counter, 0);
 
     update_engine
         .call_native_contract(cm_hash, "update", &update_payload)
@@ -408,6 +422,10 @@ fn update_preserves_storage_and_increments_counter() {
             .expect("get contract")
             .expect("contract exists");
     assert_eq!(updated.update_counter, 1);
+    let after_update = update_engine
+        .call_native_contract(cm_hash, "getContract", &[contract.hash.to_bytes()])
+        .expect("getContract after update");
+    assert_eq!(contract_from_bytes(&after_update).update_counter, 1);
     assert_eq!(updated.id, contract.id);
     assert_eq!(updated.nef.script, updated_nef.script);
     assert_eq!(updated.manifest, updated_manifest);
@@ -780,6 +798,10 @@ fn destroy_removes_contract_and_storage() {
 
     let storage_key = StorageKey::new(contract.id, vec![0x01]);
     snapshot.add(storage_key, StorageItem::from_bytes(vec![0x01]));
+    let cached = engine
+        .call_native_contract(cm_hash, "getContract", &[contract.hash.to_bytes()])
+        .expect("prime contract caches before destroy");
+    assert!(!cached.is_empty());
 
     engine
         .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
@@ -814,6 +836,10 @@ fn destroy_removes_contract_and_storage() {
         ContractManagement::contract_storage_key(&contract.hash),
     );
     assert!(engine_snapshot.get(&contract_key).is_none());
+    let destroyed = engine
+        .call_native_contract(cm_hash, "getContract", &[contract.hash.to_bytes()])
+        .expect("read destroyed contract after cached hit");
+    assert!(destroyed.is_empty());
 }
 
 #[test]

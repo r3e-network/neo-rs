@@ -912,8 +912,8 @@ mod tests {
 
     #[test]
     fn check_sig_hash_matches_known_interop_hash() {
-        // System.Crypto.CheckSig => 0x747476aa (little-endian bytes).
-        assert_eq!(Helper::check_sig_hash(), [0xaa, 0x76, 0x74, 0x74]);
+        // System.Crypto.CheckSig => 0x27b3e756 (little-endian bytes).
+        assert_eq!(Helper::check_sig_hash(), [0x56, 0xe7, 0xb3, 0x27]);
     }
 
     #[test]
@@ -938,7 +938,7 @@ mod tests {
 
     #[test]
     fn xor_requires_equal_lengths() {
-        assert_eq!(Helper::xor(&[1, 2], &[3]).unwrap_err().is_empty(), false);
+        assert!(!Helper::xor(&[1, 2], &[3]).unwrap_err().is_empty());
         assert_eq!(
             Helper::xor(&[0xff, 0x0f], &[0x0f, 0xff]).unwrap(),
             vec![0xf0, 0xf0]

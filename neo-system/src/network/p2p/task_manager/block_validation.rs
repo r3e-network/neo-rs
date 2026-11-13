@@ -46,6 +46,7 @@ pub(super) enum PersistedBlockMatch {
     Unhashable(CoreError),
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum BlockHashMatch {
     Matches,
@@ -115,8 +116,8 @@ pub(super) fn match_persisted_block(
     }
 }
 
+#[cfg(test)]
 pub(super) fn block_matches_hash(block: &Block, expected_hash: &UInt256) -> BlockHashMatch {
-    // Clone required: `try_hash` requires `&mut self` but callers hold `&Block`.
     let mut candidate = block.clone();
     match candidate.try_hash() {
         Ok(candidate_hash) if candidate_hash == *expected_hash => BlockHashMatch::Matches,

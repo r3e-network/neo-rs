@@ -52,7 +52,7 @@ fn contract_basic_method_destroy_parameter_count() {
 
 #[test]
 fn contract_basic_method_names_are_unique() {
-    let methods = vec![
+    let methods = [
         ContractBasicMethod::VERIFY,
         ContractBasicMethod::INITIALIZE,
         ContractBasicMethod::DEPLOY,
@@ -60,7 +60,10 @@ fn contract_basic_method_names_are_unique() {
         ContractBasicMethod::DESTROY,
     ];
 
-    let unique_count = methods.iter().collect::<std::collections::HashSet<_>>().len();
+    let unique_count = methods
+        .iter()
+        .collect::<std::collections::HashSet<_>>()
+        .len();
     assert_eq!(unique_count, methods.len());
 }
 
@@ -87,9 +90,29 @@ fn contract_basic_method_names_follow_convention() {
 
 #[test]
 fn contract_basic_method_names_are_lowercase() {
-    assert!(ContractBasicMethod::VERIFY.chars().all(|c| c.is_lowercase() || c == '_'));
-    assert!(ContractBasicMethod::INITIALIZE.chars().all(|c| c.is_lowercase() || c == '_'));
-    assert!(ContractBasicMethod::DEPLOY.chars().all(|c| c.is_lowercase() || c == '_'));
-    assert!(ContractBasicMethod::UPDATE.chars().all(|c| c.is_lowercase() || c == '_'));
-    assert!(ContractBasicMethod::DESTROY.chars().all(|c| c.is_lowercase() || c == '_'));
+    assert!(
+        ContractBasicMethod::VERIFY
+            .chars()
+            .all(|c| c.is_lowercase() || c == '_')
+    );
+    assert!(
+        ContractBasicMethod::INITIALIZE
+            .chars()
+            .all(|c| c.is_lowercase() || c == '_')
+    );
+    assert!(
+        ContractBasicMethod::DEPLOY
+            .chars()
+            .all(|c| c.is_lowercase() || c == '_')
+    );
+    assert!(
+        ContractBasicMethod::UPDATE
+            .chars()
+            .all(|c| c.is_lowercase() || c == '_')
+    );
+    assert!(
+        ContractBasicMethod::DESTROY
+            .chars()
+            .all(|c| c.is_lowercase() || c == '_')
+    );
 }

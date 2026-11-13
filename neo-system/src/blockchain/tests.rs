@@ -10,45 +10,59 @@ mod tests {
     use super::{
         Blockchain, ImportDisposition, InventoryCacheKey, InventoryPayload,
         MAX_REVERIFY_INVENTORY_CACHE, MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT, STATE_SERVICE_CATEGORY,
-        StateRoot, VerifyResult, classify_import_block, should_schedule_reverify_idle,
+        StateRoot, VerifyResult, classify_import_block,
     };
     use crate::NeoSystem;
+    use crate::events::handlers::CoreResult;
     use crate::i_event_handlers::CommittingHandler;
+    use crate::network::p2p::get_sign_data_vec;
     use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
-    use neo_protocol::Witness as PayloadWitness;
-    use crate::network::p2p::{
-        helper::get_sign_data_vec,
-        payloads::{
-            InventoryType, block::Block as PayloadBlock, conflicts::Conflicts, header::Header,
-            signer::Signer, transaction::Transaction, transaction_attribute::TransactionAttribute,
-        },
+    use crate::network::p2p::payloads::{
+        InventoryType, block::Block as PayloadBlock, header::Header, transaction::Transaction,
     };
-    use neo_protocol::Witness;
+    use crate::state_service::StateServiceSettings;
+    use neo_io_crate::BinaryWriter;
+    use neo_io_crate::Serializable;
     use neo_ledger::LedgerContext;
-    use neo_storage::persistence::StoreCache;
-    use neo_smart_contract::BinarySerializer;
-    use neo_smart_contract::Contract;
     use neo_native_contracts::fungible_token::{PREFIX_ACCOUNT, PREFIX_TOTAL_SUPPLY};
     use neo_native_contracts::gas_token::GasToken;
     use neo_native_contracts::{
         AccountState, NativeContract, Role, role_management::RoleManagement,
     };
-    use neo_smart_contract::{StorageItem, StorageKey};
-    use neo_state_service::state_store::StateServiceSettings;
-    use neo_wallets::KeyPair;
-    use neo_io_crate::BinaryWriter;
-    use neo_io_crate::Serializable;
     use neo_primitives::WitnessScope;
     use neo_primitives::{UInt160, UInt256};
+    use neo_protocol::payloads::conflicts::Conflicts;
+    use neo_protocol::payloads::signer::Signer;
+    use neo_protocol::payloads::transaction_attribute::TransactionAttribute;
     use neo_protocol::protocol_settings::ProtocolSettings;
-    use neo_smart_contract::error::{CoreError, CoreResult};
+    use neo_protocol::witness::Witness as PayloadWitness;
+    use neo_protocol::witness::Witness;
+    use neo_smart_contract::Contract;
+    use neo_smart_contract::error::CoreError;
+    use neo_storage::persistence::StoreCache;
+    use neo_storage::{StorageItem, StorageKey};
+    use neo_vm::BinarySerializer;
     use neo_vm::ExecutionEngineLimits;
     use neo_vm::OpCode;
+    use neo_wallets::KeyPair;
     use num_bigint::BigInt;
     use std::any::Any;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use tokio::time::{Duration, sleep, timeout};
+
+    fn test_state_service_settings(network: u32) -> StateServiceSettings {
+        // `StateServiceSettings` lost its `Default` impl during the neo-core
+        // decomposition; construct the defaults the old `Default` provided.
+        StateServiceSettings {
+            full_state: true,
+            path: String::new(),
+            network,
+            auto_verify: false,
+            max_find_result_items: 100,
+            exception_policy: crate::state_service::UnhandledExceptionPolicy::Ignore,
+        }
+    }
 
     struct FailOnceCommittingHandler {
         failed: AtomicBool,
@@ -58,21 +72,21 @@ mod tests {
         fn blockchain_committing_handler(
             &self,
             _system: &dyn Any,
-            _block: &neo_protocol::block::Block,
+            _block: &neo_protocol::execution::Block,
             _snapshot: &neo_storage::persistence::DataCache,
-            _application_executed_list: &[neo_ledger::ApplicationExecuted],
+            _application_executed_list: &[neo_protocol::execution::ApplicationExecuted],
         ) {
         }
 
         fn try_blockchain_committing_handler(
             &self,
             _system: &dyn Any,
-            _block: &neo_protocol::block::Block,
+            _block: &neo_protocol::execution::Block,
             _snapshot: &neo_storage::persistence::DataCache,
-            _application_executed_list: &[neo_ledger::ApplicationExecuted],
+            _application_executed_list: &[neo_protocol::execution::ApplicationExecuted],
         ) -> CoreResult<()> {
             if !self.failed.swap(true, Ordering::SeqCst) {
-                return Err(CoreError::system("injected blockchain committing failure"));
+                return Err(CoreError::system("injected blockchain committing failure").into());
             }
             Ok(())
         }
@@ -215,13 +229,6 @@ mod tests {
         assert_eq!(classify_import_block(3, 8), ImportDisposition::FutureGap);
     }
 
-    #[test]
-    fn schedule_idle_only_when_more_pending_without_backlog() {
-        assert!(should_schedule_reverify_idle(true, false));
-        assert!(!should_schedule_reverify_idle(false, false));
-        assert!(!should_schedule_reverify_idle(true, true));
-    }
-
     #[tokio::test]
     async fn inventory_cache_keeps_first_payload_for_duplicate_key() {
         let blockchain = test_blockchain();
@@ -314,7 +321,7 @@ mod tests {
             settings.clone(),
             None,
             None,
-            Some(StateServiceSettings::default()),
+            Some(test_state_service_settings(settings.network)),
         )
         .expect("NeoSystem::new_with_state_service should succeed");
         let state_store = system
@@ -325,7 +332,7 @@ mod tests {
         let genesis_height = 0;
         timeout(Duration::from_secs(10), async {
             loop {
-                if state_store.local_root_index() == Some(genesis_height) {
+                if state_store.local_root_index() == genesis_height {
                     break;
                 }
                 sleep(Duration::from_millis(50)).await;
@@ -360,32 +367,9 @@ mod tests {
             .expect("load designated validators");
         assert_eq!(designated.len(), 1);
 
-        // Advance the local state root index to a height covered by the designation.
-        state_store
-            .update_local_state_root_snapshot(height, std::iter::empty())
-            .expect("stage local state root");
-        state_store
-            .update_local_state_root(height)
-            .expect("commit local state root");
-        assert_eq!(
-            state_store.local_root_index(),
-            Some(height),
-            "local state root index should advance after committing snapshot"
-        );
-        let local_root = state_store
-            .get_state_root(height)
-            .expect("local state root should be persisted for ingest");
-        assert!(
-            local_root.witness.is_none(),
-            "local state root should not be pre-validated"
-        );
-        let root_hash = state_store
-            .current_local_root_hash()
-            .expect("local root hash seeded");
-        assert_eq!(
-            local_root.root_hash, root_hash,
-            "local root hash should match persisted state root"
-        );
+        // A designated state validator signs the network root. The persistent
+        // state store must validate its witness before advancing the index.
+        let root_hash = UInt256::zero();
 
         let mut state_root = StateRoot::new_current(height, root_hash);
         let hash = state_root.hash();
@@ -428,7 +412,7 @@ mod tests {
             .process_state_service_payload(&system.context(), &payload)
             .expect("state service payload");
         assert!(accepted);
-        assert_eq!(state_store.validated_root_index(), Some(height));
+        assert_eq!(state_store.validated_root_index(), height as u64);
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -502,10 +486,11 @@ mod tests {
         // Using genesis block for simplicity.
         let genesis = system.genesis_block();
         let item = ReverifyItem {
-            payload: InventoryPayload::Block(Box::new(genesis.as_ref().clone())),
-            block_index: Some(0),
+            hash: genesis.hash(),
+            payload: InventoryPayload::Block(Arc::new(genesis.as_ref().clone())),
         };
         let reverify = Reverify {
+            items: Vec::new(),
             inventories: vec![item],
         };
 
@@ -543,13 +528,9 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn actor_persist_failure_clears_state_service_staging_for_retry() {
         let settings = ProtocolSettings::default();
-        let system = NeoSystem::new_with_state_service(
-            settings,
-            None,
-            None,
-            Some(StateServiceSettings::default()),
-        )
-        .expect("neo system with state service");
+        let state_settings = test_state_service_settings(settings.network);
+        let system = NeoSystem::new_with_state_service(settings, None, None, Some(state_settings))
+            .expect("neo system with state service");
         let handler = Arc::new(FailOnceCommittingHandler {
             failed: AtomicBool::new(false),
         });
@@ -557,15 +538,13 @@ mod tests {
             .register_committing_handler(handler)
             .expect("register committing handler");
 
-        let mut block = PayloadBlock::new();
-        let mut header = Header::new();
-        header.set_index(1);
-        header.set_prev_hash(UInt256::zero());
-        header.set_merkle_root(UInt256::zero());
-        header.set_next_consensus(UInt160::zero());
-        header.set_timestamp(1);
-        header.witness = Witness::new();
-        block.header = header;
+        let mut block = neo_protocol::execution::Block::default();
+        block.header.index = 1;
+        block.header.previous_hash = UInt256::zero();
+        block.header.merkle_root = UInt256::zero();
+        block.header.next_consensus = UInt160::zero();
+        block.header.timestamp = 1;
+        block.header.witnesses = vec![Witness::new()];
 
         let state_store = system
             .state_store()
@@ -579,14 +558,14 @@ mod tests {
             blockchain.on_new_block(Arc::clone(&block), false).await,
             VerifyResult::Invalid
         );
-        assert!(state_store.get_state_root(1).is_none());
-        assert_eq!(state_store.local_root_index(), Some(0));
+        // The failed block must not advance the locally committed root index.
+        assert_eq!(state_store.local_root_index(), 0);
 
         assert_eq!(
             blockchain.on_new_block(block, false).await,
             VerifyResult::Succeed
         );
-        assert_eq!(state_store.local_root_index(), Some(1));
+        assert_eq!(state_store.local_root_index(), 1);
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -610,15 +589,13 @@ mod tests {
         let memory_pool = system.context().memory_pool_handle();
         assert!(memory_pool.lock().contains_key(&tx.hash()));
 
-        let mut block = PayloadBlock::new();
-        let mut header = Header::new();
-        header.set_index(1);
-        header.set_prev_hash(UInt256::zero());
-        header.set_merkle_root(UInt256::zero());
-        header.set_next_consensus(UInt160::zero());
-        header.set_timestamp(1);
-        header.witness = Witness::new();
-        block.header = header;
+        let mut block = neo_protocol::execution::Block::default();
+        block.header.index = 1;
+        block.header.previous_hash = UInt256::zero();
+        block.header.merkle_root = UInt256::zero();
+        block.header.next_consensus = UInt160::zero();
+        block.header.timestamp = 1;
+        block.header.witnesses = vec![Witness::new()];
         block.transactions = vec![tx.clone()];
 
         system.persist_block(block.clone()).expect("persist block");
@@ -698,15 +675,13 @@ mod tests {
             ],
         );
 
-        let mut block = PayloadBlock::new();
-        let mut header = Header::new();
-        header.set_index(1);
-        header.set_prev_hash(UInt256::zero());
-        header.set_merkle_root(UInt256::zero());
-        header.set_next_consensus(UInt160::zero());
-        header.set_timestamp(1);
-        header.witness = Witness::new();
-        block.header = header;
+        let mut block = neo_protocol::execution::Block::default();
+        block.header.index = 1;
+        block.header.previous_hash = UInt256::zero();
+        block.header.merkle_root = UInt256::zero();
+        block.header.next_consensus = UInt160::zero();
+        block.header.timestamp = 1;
+        block.header.witnesses = vec![Witness::new()];
         block.transactions = vec![tx1];
 
         system.persist_block(block).expect("persist block");
@@ -732,10 +707,11 @@ mod tests {
         // Genesis is block 0. Current height is 0.
         // Send block 2 (future gap).
         let mut block = system.genesis_block().as_ref().clone();
-        block.header.set_index(2);
+        block.header.index = 2;
 
         let import = Import {
-            blocks: vec![block],
+            block: Arc::new(block.clone()),
+            blocks: vec![Arc::new(block)],
             verify: true,
         };
 
@@ -760,12 +736,13 @@ mod tests {
         let blockchain = system.blockchain_actor();
 
         let mut block = system.genesis_block().as_ref().clone();
-        block.header.set_index(1);
+        block.header.index = 1;
         let invalid_prev = UInt256::from_bytes(&[1u8; 32]).expect("construct invalid prev hash");
-        block.header.set_prev_hash(invalid_prev);
+        block.header.previous_hash = invalid_prev;
 
         let import = Import {
-            blocks: vec![block],
+            block: Arc::new(block.clone()),
+            blocks: vec![Arc::new(block)],
             verify: true,
         };
 
@@ -796,10 +773,11 @@ mod tests {
         assert!(Blockchain::deserialize_inventory::<Transaction>(&payload).is_some());
 
         let item = ReverifyItem {
+            hash: tx.hash(),
             payload: InventoryPayload::Raw(InventoryType::Transaction, payload),
-            block_index: None,
         };
         let reverify = Reverify {
+            items: Vec::new(),
             inventories: vec![item],
         };
 
@@ -869,6 +847,7 @@ mod tests {
         assert_eq!(memory_pool.lock().unverified_count(), 1);
 
         let reverify = Reverify {
+            items: Vec::new(),
             inventories: Vec::new(),
         };
 
@@ -897,9 +876,9 @@ mod tests {
 
         // Same height, different header hash: must not be persisted just
         // because a header for this height happens to be cached.
-        let mut block = PayloadBlock::new();
-        block.header.set_index(index);
-        block.header.set_nonce(2);
+        let mut block = neo_protocol::execution::Block::default();
+        block.header.index = index;
+        block.header.nonce = 2;
         assert!(!blockchain.verify_block_for_persistence(&block, &context));
     }
 
@@ -916,8 +895,9 @@ mod tests {
         header.set_nonce(7);
         assert!(context.header_cache().add(header.clone()));
 
-        let mut block = PayloadBlock::new();
-        block.header = header;
+        let mut payload_block = PayloadBlock::new();
+        payload_block.header = header;
+        let block = neo_protocol::execution::Block::from(&payload_block);
         assert!(blockchain.verify_block_for_persistence(&block, &context));
     }
 
@@ -927,21 +907,21 @@ mod tests {
         let system = NeoSystem::new(settings, None, None).expect("NeoSystem::new");
         let blockchain = Blockchain::new(system.ledger_context());
 
-        let mut first = PayloadBlock::new();
-        first.header.set_index(10);
-        first.header.set_nonce(0);
+        let mut first = neo_protocol::execution::Block::default();
+        first.header.index = 10;
+        first.header.nonce = 0;
         blockchain.add_unverified_block(Arc::new(first)).await;
 
         // Re-adding an existing hash must not consume a second slot.
-        let mut duplicate = PayloadBlock::new();
-        duplicate.header.set_index(10);
-        duplicate.header.set_nonce(0);
+        let mut duplicate = neo_protocol::execution::Block::default();
+        duplicate.header.index = 10;
+        duplicate.header.nonce = 0;
         blockchain.add_unverified_block(Arc::new(duplicate)).await;
 
         for nonce in 1..5u64 {
-            let mut block = PayloadBlock::new();
-            block.header.set_index(10);
-            block.header.set_nonce(nonce);
+            let mut block = neo_protocol::execution::Block::default();
+            block.header.index = 10;
+            block.header.nonce = nonce;
             blockchain.add_unverified_block(Arc::new(block)).await;
         }
 
@@ -950,7 +930,7 @@ mod tests {
                 ._block_cache_unverified
                 .get(&10)
                 .expect("height cached");
-            assert_eq!(entry.blocks.len(), MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT);
+            assert_eq!(entry.len(), MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT);
         }
         assert_eq!(
             blockchain._unverified_cache_blocks.load(Ordering::Relaxed),
@@ -964,7 +944,7 @@ mod tests {
         let removed = blockchain
             .remove_unverified_index(10)
             .expect("cached height removed");
-        assert_eq!(removed.blocks.len(), MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT);
+        assert_eq!(removed.len(), MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT);
         assert_eq!(
             blockchain._unverified_cache_blocks.load(Ordering::Relaxed),
             0

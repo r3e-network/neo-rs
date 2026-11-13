@@ -1,10 +1,10 @@
 //! ApplicationLogs service for capturing execution logs and serving RPC queries.
 
-use neo_protocol::execution::Block as ExecutionBlock;
 use neo_ledger::ApplicationExecuted;
 use neo_primitives::TriggerType;
 use neo_primitives::UInt256;
 use neo_primitives::panic_message;
+use neo_protocol::execution::Block as ExecutionBlock;
 use neo_storage::persistence::{DataCache, Store, StoreSnapshot};
 use neo_system::NeoSystem;
 use neo_system::i_event_handlers::{CommittedHandler, CommittingHandler};

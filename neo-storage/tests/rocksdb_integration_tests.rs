@@ -3,7 +3,7 @@ mod rocksdb_integration_tests {
     use neo_storage::persistence::providers::rocksdb::provider::RocksDBStoreProvider;
     use neo_storage::persistence::storage::StorageConfig;
     use neo_storage::persistence::write_batch_buffer::WriteBatchConfig;
-    use neo_storage::persistence::{StoreCache, StoreProvider};
+    use neo_storage::persistence::{ReadOnlyStoreGeneric, StoreCache, StoreProvider};
     use neo_storage::{StorageItem, StorageKey};
     use tempfile::TempDir;
 
@@ -105,10 +105,7 @@ mod rocksdb_integration_tests {
 
         // Large batch
         for i in 0..1000 {
-            let key = StorageKey::new(3, vec![
-                i as u8,
-                (i >> 8) as u8,
-            ]);
+            let key = StorageKey::new(3, vec![i as u8, (i >> 8) as u8]);
             let value = StorageItem::from_bytes(vec![i as u8]);
             cache.add(key, value);
         }
@@ -120,8 +117,8 @@ mod rocksdb_integration_tests {
         let key = StorageKey::new(3, vec![0, 0]);
         assert!(reader.get(&key).is_some());
 
-        let key = StorageKey::new(3, vec![255, 3]);
-        assert!(reader.get(&key).is_some());
+        let key = StorageKey::new(3, vec![231, 3]);
+        assert_eq!(reader.get(&key).expect("last written key").value(), &[231]);
     }
 
     #[test]
@@ -144,7 +141,9 @@ mod rocksdb_integration_tests {
 
         let mut snapshot = store.snapshot();
         let snapshot_mut = std::sync::Arc::get_mut(&mut snapshot).expect("exclusive");
-        snapshot_mut.put_sync(key.clone(), value.clone()).expect("put_sync");
+        snapshot_mut
+            .put_sync(key.clone(), value.clone())
+            .expect("put_sync");
         snapshot_mut.try_commit_durable().expect("durable commit");
 
         // Verify
@@ -267,10 +266,7 @@ mod rocksdb_integration_tests {
         // Write 10,000 items
         let mut cache = StoreCache::new_from_store(store.clone(), false);
         for i in 0..10000 {
-            let key = StorageKey::new(8, vec![
-                i as u8,
-                (i >> 8) as u8,
-            ]);
+            let key = StorageKey::new(8, vec![i as u8, (i >> 8) as u8]);
             let value = StorageItem::from_bytes(vec![i as u8]);
             cache.add(key, value);
         }
@@ -279,10 +275,7 @@ mod rocksdb_integration_tests {
         // Spot verification
         let reader = StoreCache::new_from_store(store, false);
         for i in (0..10000).step_by(100) {
-            let key = StorageKey::new(8, vec![
-                i as u8,
-                (i >> 8) as u8,
-            ]);
+            let key = StorageKey::new(8, vec![i as u8, (i >> 8) as u8]);
             assert!(reader.get(&key).is_some());
         }
     }

@@ -443,12 +443,10 @@ pub fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
             }
         }
         engine.unload_context(&mut context)?;
-        // Release the callee stack's reference now that the return values
-        // have counted references in the caller/result stack. The callee
-        // stack contents are left intact for native interop bookkeeping.
-        for item in &items {
-            context.reference_counter().remove_stack_reference(item);
-        }
+        // The host has finished its unload bookkeeping. Clear the callee stack
+        // exactly once now that the caller/result stack owns its references;
+        // leaving the items for EvaluationStack::drop would release them twice.
+        context.evaluation_stack_mut().clear();
     } else {
         engine.unload_context(&mut context)?;
     }
@@ -502,5 +500,53 @@ pub mod exception_handling {
     /// Executes the THROW opcode to throw an exception.
     pub fn throw(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
         super::throw(engine, instruction)
+    }
+}
+
+#[cfg(test)]
+mod ret_reference_tests {
+    use super::*;
+    use crate::{Script, StackItem};
+
+    fn cross_stack_return(item: StackItem, expected_count: usize) {
+        let mut engine = ExecutionEngine::new(None);
+        engine
+            .load_script(Script::new_relaxed(vec![OpCode::RET.byte()]), 1, 0)
+            .expect("load caller");
+        engine
+            .load_script(Script::new_relaxed(vec![OpCode::RET.byte()]), 1, 0)
+            .expect("load callee");
+        engine
+            .current_context_mut()
+            .expect("callee context")
+            .push(item)
+            .expect("push return value");
+        assert_eq!(engine.reference_counter().count(), expected_count);
+
+        ret(&mut engine, &Instruction::new(OpCode::RET, &[])).expect("cross-stack return");
+
+        assert_eq!(engine.invocation_stack().len(), 1);
+        assert_eq!(
+            engine
+                .current_context()
+                .expect("caller context")
+                .evaluation_stack()
+                .len(),
+            1
+        );
+        assert_eq!(engine.reference_counter().count(), expected_count);
+    }
+
+    #[test]
+    fn cross_stack_primitive_return_is_released_exactly_once() {
+        cross_stack_return(StackItem::from_int(42), 1);
+    }
+
+    #[test]
+    fn cross_stack_compound_return_keeps_caller_and_child_references() {
+        cross_stack_return(
+            StackItem::from_array(vec![StackItem::from_int(7), StackItem::Null]),
+            3,
+        );
     }
 }

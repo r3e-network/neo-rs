@@ -1,12 +1,12 @@
 use base64::{Engine as _, engine::general_purpose};
-use neo_protocol::ProtocolSettings;
-use neo_wallets::helper::Helper as WalletHelper;
-use neo_ledger::Block;
-use neo_protocol::payloads::Header as BlockHeader;
 use neo_io::serializable::Serializable;
 use neo_io::serializable::helper::get_var_size;
 use neo_json::{JObject, JToken};
+use neo_ledger::Block;
+use neo_protocol::ProtocolSettings;
+use neo_protocol::payloads::Header as BlockHeader;
 use neo_protocol::payloads::{Signer, Transaction};
+use neo_wallets::helper::Helper as WalletHelper;
 
 use super::attributes::attribute_from_json;
 use super::parsing::{
@@ -44,12 +44,18 @@ pub fn block_to_json(block: &mut Block, protocol_settings: &ProtocolSettings) ->
         "merkleroot".to_string(),
         JToken::String(header.merkle_root().to_string()),
     );
-    json.insert("time".to_string(), JToken::Number(header.timestamp() as f64));
+    json.insert(
+        "time".to_string(),
+        JToken::Number(header.timestamp() as f64),
+    );
     json.insert(
         "nonce".to_string(),
         JToken::String(format!("{:016X}", header.nonce())),
     );
-    json.insert("index".to_string(), JToken::Number(f64::from(header.index())));
+    json.insert(
+        "index".to_string(),
+        JToken::Number(f64::from(header.index())),
+    );
     json.insert(
         "primary".to_string(),
         JToken::Number(f64::from(header.primary_index())),
@@ -63,7 +69,7 @@ pub fn block_to_json(block: &mut Block, protocol_settings: &ProtocolSettings) ->
     );
     json.insert(
         "witnesses".to_string(),
-        object_array(&[header.witness.clone()], witness_to_json),
+        object_array(std::slice::from_ref(&header.witness), witness_to_json),
     );
     json.insert(
         "tx".to_string(),

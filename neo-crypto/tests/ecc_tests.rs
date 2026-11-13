@@ -76,11 +76,7 @@ fn test_eccurve_hash() {
 
 #[test]
 fn test_eccurve_all_variants() {
-    let curves = vec![
-        ECCurve::Secp256r1,
-        ECCurve::Secp256k1,
-        ECCurve::Ed25519,
-    ];
+    let curves = vec![ECCurve::Secp256r1, ECCurve::Secp256k1, ECCurve::Ed25519];
 
     assert_eq!(curves.len(), 3);
 
@@ -125,11 +121,7 @@ fn test_eccurve_serde() {
 fn test_eccurve_all_serde() {
     use serde_json;
 
-    let curves = vec![
-        ECCurve::Secp256r1,
-        ECCurve::Secp256k1,
-        ECCurve::Ed25519,
-    ];
+    let curves = vec![ECCurve::Secp256r1, ECCurve::Secp256k1, ECCurve::Ed25519];
 
     for curve in curves {
         let json = serde_json::to_string(&curve).unwrap();

@@ -266,7 +266,11 @@ impl LedgerContract {
         self.try_read_transaction_state(snapshot, hash)
     }
 
-    pub(super) fn store_block_state(
+    /// Stores a trimmed block, its height index, and its transaction records.
+    ///
+    /// Callers must also update the current-block pointer after all block state
+    /// has been staged successfully, normally through [`Self::set_current_block_state`].
+    pub fn store_block_state(
         &self,
         snapshot: &DataCache,
         block: &Block,
@@ -427,11 +431,10 @@ impl LedgerContract {
 }
 
 fn put_item(snapshot: &DataCache, key: StorageKey, item: StorageItem) {
-    if snapshot.get(&key).is_some() {
-        snapshot.update(key, item);
-    } else {
-        snapshot.add(key, item);
-    }
+    // DataCache::update is an upsert. A preceding get only repeated the
+    // persistent point lookup; block/hash keys are new on the common path,
+    // while current-block and VM-state records still replace existing values.
+    snapshot.update(key, item);
 }
 
 pub(super) fn max_traceable_blocks_from_snapshot<S>(snapshot: &S, default: u32) -> u32

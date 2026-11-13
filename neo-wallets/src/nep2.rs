@@ -65,7 +65,7 @@ impl ScryptParameters {
     }
 
     /// Builds the `scrypt::Params` for these settings with a 64-byte output.
-    fn to_scrypt_params(&self) -> WalletResult<scrypt::Params> {
+    fn to_scrypt_params(self) -> WalletResult<scrypt::Params> {
         if self.n == 0 || !self.n.is_power_of_two() {
             return Err(WalletError::Scrypt(
                 "scrypt N must be a non-zero power of two".to_string(),

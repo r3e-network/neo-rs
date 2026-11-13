@@ -1,6 +1,7 @@
 use crate::{
     error::{StorageError, StorageResult},
     persistence::{
+        commit_profile::{StoreCommitProfiler, StoreCommitStage, StoreCommitTimer},
         read_cache::{ReadCacheConfig, StorageReadCache},
         read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
         seek_direction::SeekDirection,
@@ -372,6 +373,10 @@ impl Store for RocksDbStore {
         self.flush_memtables();
     }
 
+    fn try_flush_durable(&self) -> StorageResult<()> {
+        RocksDbStore::try_flush_durable(self)
+    }
+
     fn supports_durable_writes(&self) -> bool {
         true
     }
@@ -435,6 +440,7 @@ pub struct RocksDbSnapshot {
     db: Arc<DB>,
     store: Arc<RocksDbStore>,
     store_view: Arc<dyn Store>,
+    commit_profiler: Option<Arc<dyn StoreCommitProfiler>>,
 }
 
 impl RocksDbSnapshot {
@@ -455,6 +461,7 @@ impl RocksDbSnapshot {
             db,
             store_view: store.clone(),
             store,
+            commit_profiler: None,
         }
     }
 
@@ -590,21 +597,29 @@ impl RocksDbSnapshot {
             }
         }
 
-        if let Some(ref cache) = self.read_cache {
-            for key in self.pending_changes.get_mut().keys() {
-                cache.remove(&StorageKey::from_bytes(key));
+        let batch = {
+            let _stage = StoreCommitTimer::new(
+                self.commit_profiler.as_deref(),
+                StoreCommitStage::WriteBatchBuild,
+            );
+            let mut batch = WriteBatch::default();
+            for (key, value) in self.pending_changes.get_mut().iter() {
+                match value {
+                    Some(val) => batch.put(key, val),
+                    None => batch.delete(key),
+                }
             }
-        }
+            batch
+        };
 
-        let mut batch = WriteBatch::default();
-        for (key, value) in self.pending_changes.get_mut().iter() {
-            match value {
-                Some(val) => batch.put(key, val),
-                None => batch.delete(key),
-            }
-        }
-
-        if let Err(err) = self.db.write_opt(batch, &write_opts) {
+        let write_result = {
+            let _stage = StoreCommitTimer::new(
+                self.commit_profiler.as_deref(),
+                StoreCommitStage::DatabaseWrite,
+            );
+            self.db.write_opt(batch, &write_opts)
+        };
+        if let Err(err) = write_result {
             error!(target: "neo", error = %err, durable = force_durable, "rocksdb snapshot commit failed");
             return Err(StorageError::CommitFailed(format!(
                 "RocksDB write failed: {}",
@@ -612,6 +627,20 @@ impl RocksDbSnapshot {
             )));
         }
 
+        // Invalidate only after the atomic database write succeeds. Invalidating
+        // before the write lets a concurrent latest-state read repopulate the
+        // cache with the old value, which would then survive the commit.
+        {
+            let _stage = StoreCommitTimer::new(
+                self.commit_profiler.as_deref(),
+                StoreCommitStage::CacheInvalidation,
+            );
+            if let Some(ref cache) = self.read_cache {
+                for key in self.pending_changes.get_mut().keys() {
+                    cache.remove(&StorageKey::from_bytes(key));
+                }
+            }
+        }
         self.pending_changes.get_mut().clear();
         self.has_pending_changes.store(false, Ordering::Release);
         Ok(())
@@ -771,18 +800,12 @@ impl ReadOnlyStore for RocksDbSnapshot {}
 
 impl WriteStore<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
     fn delete(&mut self, key: Vec<u8>) -> StorageResult<()> {
-        if let Some(ref cache) = self.read_cache {
-            cache.remove(&StorageKey::from_bytes(&key));
-        }
         self.pending_changes.get_mut().insert(key, None);
         self.has_pending_changes.store(true, Ordering::Release);
         Ok(())
     }
 
     fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> StorageResult<()> {
-        if let Some(ref cache) = self.read_cache {
-            cache.remove(&StorageKey::from_bytes(&key));
-        }
         self.pending_changes.get_mut().insert(key, Some(value));
         self.has_pending_changes.store(true, Ordering::Release);
         Ok(())
@@ -796,6 +819,10 @@ impl StoreSnapshot for RocksDbSnapshot {
 
     fn try_commit(&mut self) -> crate::persistence::store_snapshot::SnapshotCommitResult {
         self.commit_pending(false)
+    }
+
+    fn set_commit_profiler(&mut self, profiler: Option<Arc<dyn StoreCommitProfiler>>) {
+        self.commit_profiler = profiler;
     }
 
     fn try_commit_durable(&mut self) -> crate::persistence::store_snapshot::SnapshotCommitResult {
@@ -832,6 +859,15 @@ impl RocksDbStore {
             warn!(target: "neo", error = %err, "failed to enable auto compactions");
         }
         debug!(target: "neo", "disabled fast sync mode optimizations (WAL restored)");
+    }
+
+    /// Flushes buffered writes and synchronizes the WAL without discarding it.
+    /// Memtable flushing is unnecessary for WAL-backed crash durability.
+    pub fn try_flush_durable(&self) -> StorageResult<()> {
+        self.flush_batch_writes()?;
+        self.db.flush_wal(true).map_err(|err| {
+            StorageError::CommitFailed(format!("RocksDB durable WAL flush failed: {err}"))
+        })
     }
 
     /// Force flush all memtables to disk.
@@ -896,5 +932,116 @@ impl RocksDbStore {
     /// Forces a flush of pending batch writes.
     pub fn flush_batch_writes(&self) -> StorageResult<()> {
         self.batch_committer.buffer.force_flush()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn committed_snapshot_invalidates_latest_state_read_cache() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let config = StorageConfig {
+            path: temp.path().join("cache-commit"),
+            ..StorageConfig::default()
+        };
+        let mut store = RocksDbStore::open(
+            &config,
+            WriteBatchConfig::default(),
+            &Some(ReadCacheConfig::default()),
+            false,
+            false,
+        )
+        .unwrap();
+        store.enable_read_cache(ReadCacheConfig::default());
+        let key = StorageKey::new(1, b"current".to_vec());
+
+        let mut initial = store.snapshot();
+        Arc::get_mut(&mut initial)
+            .unwrap()
+            .put(key.to_array(), b"old".to_vec())
+            .unwrap();
+        Arc::get_mut(&mut initial).unwrap().try_commit().unwrap();
+        assert_eq!(store.try_get(&key).unwrap().value_bytes().as_ref(), b"old");
+
+        let mut pending = store.snapshot();
+        Arc::get_mut(&mut pending)
+            .unwrap()
+            .put(key.to_array(), b"new".to_vec())
+            .unwrap();
+        // Staging a write must not expose it or evict the valid committed value.
+        assert_eq!(store.try_get(&key).unwrap().value_bytes().as_ref(), b"old");
+        Arc::get_mut(&mut pending).unwrap().try_commit().unwrap();
+        assert_eq!(store.try_get(&key).unwrap().value_bytes().as_ref(), b"new");
+    }
+
+    #[derive(Default)]
+    struct RecordingProfiler(Mutex<Vec<StoreCommitStage>>);
+
+    impl StoreCommitProfiler for RecordingProfiler {
+        fn record(&self, stage: StoreCommitStage, _elapsed: std::time::Duration) {
+            self.0.lock().push(stage);
+        }
+    }
+
+    #[test]
+    fn store_cache_profiling_observes_commit_without_changing_data() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let config = StorageConfig {
+            path: temp.path().join("commit-profile"),
+            ..StorageConfig::default()
+        };
+        let store = RocksDbStore::open(
+            &config,
+            WriteBatchConfig::default(),
+            &Some(ReadCacheConfig::default()),
+            false,
+            false,
+        )
+        .unwrap();
+        let store: Arc<dyn Store> = Arc::new(store);
+        let profiler = Arc::new(RecordingProfiler::default());
+        let mut cache = crate::persistence::StoreCache::new(Arc::clone(&store));
+        cache.set_commit_profiler(Some(profiler.clone()));
+        let first = StorageKey::new(1, b"first".to_vec());
+        cache.add(first.clone(), StorageItem::from_bytes(b"one".to_vec()));
+
+        cache.try_commit().unwrap();
+
+        assert_eq!(
+            store.try_get(&first).unwrap().value_bytes().as_ref(),
+            b"one"
+        );
+        assert_eq!(
+            profiler.0.lock().as_slice(),
+            &[
+                StoreCommitStage::WriterSnapshotOpen,
+                StoreCommitStage::ChangeApplication,
+                StoreCommitStage::WriteBatchBuild,
+                StoreCommitStage::DatabaseWrite,
+                StoreCommitStage::CacheInvalidation,
+            ]
+        );
+
+        profiler.0.lock().clear();
+        cache.set_commit_profiler(None);
+        let second = StorageKey::new(1, b"second".to_vec());
+        cache.add(second.clone(), StorageItem::from_bytes(b"two".to_vec()));
+        cache.try_commit().unwrap();
+        assert_eq!(
+            store.try_get(&second).unwrap().value_bytes().as_ref(),
+            b"two"
+        );
+        assert!(profiler.0.lock().is_empty());
+        store.try_flush_durable().unwrap();
+        assert_eq!(
+            store.try_get(&first).unwrap().value_bytes().as_ref(),
+            b"one"
+        );
+        assert_eq!(
+            store.try_get(&second).unwrap().value_bytes().as_ref(),
+            b"two"
+        );
     }
 }

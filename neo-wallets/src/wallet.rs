@@ -8,7 +8,6 @@
 
 use crate::account::WalletAccount;
 use crate::key_pair::KeyPair;
-use async_trait::async_trait;
 use neo_primitives::{UInt160, UInt256};
 use neo_protocol::ProtocolSettings;
 use neo_smart_contract::contract::Contract;

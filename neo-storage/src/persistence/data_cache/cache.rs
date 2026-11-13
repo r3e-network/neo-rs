@@ -184,6 +184,15 @@ impl DataCache {
         self.read_only
     }
 
+    /// Returns whether this cache has an authoritative persistent read view.
+    ///
+    /// A `None` result from [`Self::get`] is then a confirmed absence. Callers
+    /// must retain a separate fallback only for detached caches without one.
+    #[must_use]
+    pub fn has_backing_store(&self) -> bool {
+        self.store_get.is_some()
+    }
+
     /// Adds a handler for read events.
     pub fn on_read(&self, handler: OnEntryDelegate) {
         self.on_read.write().push(handler);

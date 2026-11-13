@@ -11,14 +11,14 @@
 
 use super::models::RpcTransaction;
 use crate::{Nep17Api, RpcClient, RpcError, RpcUtility};
-use neo_wallets::KeyPair;
-use neo_wallets::helper::Helper as WalletHelper;
 use neo_crypto::ECPoint;
 use neo_native_contracts::native::{GasToken, NativeContract, NeoToken};
 use neo_primitives::BigDecimal;
 use neo_primitives::UInt160;
 use neo_protocol::payloads::Transaction;
 use neo_smart_contract::contract::Contract;
+use neo_wallets::KeyPair;
+use neo_wallets::helper::Helper as WalletHelper;
 use num_bigint::BigInt;
 use num_traits::cast::ToPrimitive;
 use std::sync::Arc;
@@ -361,7 +361,10 @@ impl WalletApi {
         // Wait for transaction to be included in a block
         let tx_hash = tx.hash();
         let timeout = std::time::Duration::from_secs(timeout_seconds);
-        let poll_interval = std::cmp::max(1, self.rpc_client.protocol_settings.milliseconds_per_block / 2);
+        let poll_interval = std::cmp::max(
+            1,
+            self.rpc_client.protocol_settings.milliseconds_per_block / 2,
+        );
         let poll_duration = tokio::time::Duration::from_millis(poll_interval as u64);
         let deadline = std::time::Instant::now() + timeout;
 

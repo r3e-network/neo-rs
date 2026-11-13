@@ -14,11 +14,14 @@ use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::warn;
 
 use crate::blockchain::{BlockchainCommand, BlockchainHandle};
+use crate::mempool::TransactionRouter as MempoolTransactionRouter;
 use crate::network::p2p::payloads::transaction::Transaction;
 use neo_protocol::protocol_settings::ProtocolSettings;
-use neo_ledger::{VerifyResult, verify_transaction_state_independent};
 
 const TX_ROUTER_MAILBOX_CAPACITY: usize = 65_536;
+/// Bounds speculative CPU work and queued results without delaying the first
+/// transaction: only work already present in the mailbox is added to a batch.
+const TX_ROUTER_PREVERIFY_BATCH_SIZE: usize = 64;
 
 struct TransactionRouterEnvelope {
     transaction: Transaction,
@@ -28,23 +31,44 @@ struct TransactionRouterEnvelope {
 
 /// Simple transaction router for state-independent verification
 struct TransactionRouter {
-    settings: ProtocolSettings,
+    inner: MempoolTransactionRouter,
 }
 
 impl TransactionRouter {
     fn new(settings: ProtocolSettings) -> Self {
-        Self { settings }
+        Self {
+            inner: MempoolTransactionRouter::new(settings),
+        }
     }
 
-    fn preverify(&self, transaction: Transaction, relay: bool) -> crate::blockchain::PreverifyCompleted {
-        let result = verify_transaction_state_independent(&transaction, &self.settings);
-        let hash = transaction.hash();
+    fn convert(
+        completed: crate::mempool::PreverifyCompleted,
+    ) -> crate::blockchain::PreverifyCompleted {
+        let hash = completed.transaction.hash();
         crate::blockchain::PreverifyCompleted {
             hash,
-            transaction,
-            result,
-            relay,
+            transaction: completed.transaction,
+            result: completed.result,
+            relay: completed.relay,
         }
+    }
+
+    fn preverify_batch(
+        &self,
+        envelopes: Vec<TransactionRouterEnvelope>,
+    ) -> Vec<(Option<ActorRef>, crate::blockchain::PreverifyCompleted)> {
+        let (senders, transactions): (Vec<_>, Vec<_>) = envelopes
+            .into_iter()
+            .map(|envelope| (envelope.sender, (envelope.transaction, envelope.relay)))
+            .unzip();
+
+        self.inner
+            .preverify_batch(transactions)
+            .into_iter()
+            .map(Self::convert)
+            .zip(senders)
+            .map(|(completed, sender)| (sender, completed))
+            .collect()
     }
 }
 
@@ -128,17 +152,31 @@ async fn run_transaction_router(
     blockchain: BlockchainHandle,
     mut receiver: mpsc::Receiver<TransactionRouterEnvelope>,
 ) {
-    while let Some(envelope) = receiver.recv().await {
-        let completed = router.preverify(envelope.transaction, envelope.relay);
-        if let Err(error) = blockchain.tell_from(
-            BlockchainCommand::PreverifyCompleted(completed),
-            envelope.sender,
-        ) {
-            warn!(
-                target: "neo",
-                %error,
-                "failed to deliver preverify result to blockchain actor"
-            );
+    while let Some(first) = receiver.recv().await {
+        let mut envelopes = Vec::with_capacity(TX_ROUTER_PREVERIFY_BATCH_SIZE);
+        envelopes.push(first);
+        for _ in 1..TX_ROUTER_PREVERIFY_BATCH_SIZE {
+            match receiver.try_recv() {
+                Ok(envelope) => envelopes.push(envelope),
+                Err(mpsc::error::TryRecvError::Empty | mpsc::error::TryRecvError::Disconnected) => {
+                    break;
+                }
+            }
+        }
+
+        // Parallel verification is confined to pure, state-independent work.
+        // Delivery remains sequential and in mailbox order; the blockchain actor
+        // still performs canonical state-dependent validation and pool admission.
+        for (sender, completed) in router.preverify_batch(envelopes) {
+            if let Err(error) =
+                blockchain.tell_from(BlockchainCommand::PreverifyCompleted(completed), sender)
+            {
+                warn!(
+                    target: "neo",
+                    %error,
+                    "failed to deliver preverify result to blockchain actor"
+                );
+            }
         }
     }
 }
@@ -147,7 +185,6 @@ async fn run_transaction_router(
 mod tests {
     use super::*;
     use crate::blockchain::PreverifyCompleted;
-    use crate::network::p2p::payloads::transaction::TransactionExt;
     use async_trait::async_trait;
     use neo_actors::{Actor, ActorContext, ActorResult, ActorSystem, Props};
     use neo_ledger::VerifyResult;
@@ -234,9 +271,9 @@ mod tests {
                 .expect("probe actor")
         };
         let settings = Arc::new(ProtocolSettings::default());
-        let handle = TransactionRouterHandle::spawn(settings.clone(), probe);
+        let handle = TransactionRouterHandle::spawn(settings.clone(), BlockchainHandle::new(probe));
         let transaction = Transaction::new();
-        let expected = transaction.verify_state_independent(&settings);
+        let expected = neo_ledger::verify_transaction_state_independent(&transaction, &settings);
 
         handle
             .try_enqueue_preverify(transaction.clone(), true)
@@ -274,8 +311,10 @@ mod tests {
                 )
                 .expect("blockchain probe")
         };
-        let handle =
-            TransactionRouterHandle::spawn(Arc::new(ProtocolSettings::default()), blockchain);
+        let handle = TransactionRouterHandle::spawn(
+            Arc::new(ProtocolSettings::default()),
+            BlockchainHandle::new(blockchain),
+        );
 
         handle
             .try_enqueue_preverify_from(Transaction::new(), true, Some(sender_ref))
@@ -287,5 +326,31 @@ mod tests {
             .expect("sender capture result");
 
         assert!(sender_matches);
+    }
+
+    #[test]
+    fn transaction_router_batch_preserves_mailbox_order_and_relay_flags() {
+        let router = TransactionRouter::new(ProtocolSettings::default());
+        let envelopes = (0..TX_ROUTER_PREVERIFY_BATCH_SIZE)
+            .map(|nonce| {
+                let mut transaction = Transaction::new();
+                transaction.set_nonce(nonce as u32);
+                TransactionRouterEnvelope {
+                    transaction,
+                    relay: nonce % 2 == 0,
+                    sender: None,
+                }
+            })
+            .collect();
+
+        let completed = router.preverify_batch(envelopes);
+
+        assert_eq!(completed.len(), TX_ROUTER_PREVERIFY_BATCH_SIZE);
+        for (nonce, (sender, result)) in completed.into_iter().enumerate() {
+            assert!(sender.is_none());
+            assert_eq!(result.transaction.nonce(), nonce as u32);
+            assert_eq!(result.relay, nonce % 2 == 0);
+            assert_eq!(result.result, VerifyResult::Succeed);
+        }
     }
 }

@@ -1,0 +1,48 @@
+[package]
+name = "neo-signer-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Reference mTLS remote signer service with explicit simulation-attestation boundaries"
+
+[[bin]]
+name = "neo-signer-server"
+path = "src/main.rs"
+
+[dependencies]
+neo-crypto = { workspace = true }
+neo-wallets = { workspace = true }
+neo-tee = { workspace = true }
+hyper = { workspace = true }
+rustls = "0.21"
+rustls-pemfile = "1.0"
+tokio-rustls = "0.24"
+tokio = { workspace = true, features = ["signal"] }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+uuid = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+parking_lot = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+reqwest = { workspace = true, features = ["json", "rustls-tls"] }
+rcgen = "0.12"
+tempfile = { workspace = true }
+rand = { workspace = true }
+
+[lints]
+workspace = true

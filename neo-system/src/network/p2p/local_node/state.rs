@@ -263,6 +263,12 @@ impl LocalNode {
         *self.system_context.write() = Some(context);
     }
 
+    /// Detaches the system context during shutdown, breaking the strong
+    /// `NeoSystemContext <-> LocalNode` ownership cycle.
+    pub fn clear_system_context(&self) {
+        *self.system_context.write() = None;
+    }
+
     /// Returns the previously attached system context if available.
     pub fn system_context(&self) -> Option<Arc<NeoSystemContext>> {
         self.system_context.read().as_ref().cloned()

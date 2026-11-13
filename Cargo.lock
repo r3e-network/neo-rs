@@ -2492,6 +2492,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "neo-ai-agent"
+version = "0.20.0"
+dependencies = [
+ "async-trait",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "neo-benches"
 version = "0.20.0"
 dependencies = [
@@ -2499,14 +2513,36 @@ dependencies = [
  "hex",
  "neo-crypto",
  "neo-io",
+ "neo-native-contracts",
  "neo-primitives",
  "neo-protocol",
  "neo-smart-contract",
  "neo-storage",
  "neo-system",
  "neo-vm",
+ "neo-wallets",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "neo-consensus"
+version = "0.20.0"
+dependencies = [
+ "async-trait",
+ "bincode",
+ "lru",
+ "neo-crypto",
+ "neo-io",
+ "neo-primitives",
+ "neo-vm",
+ "proptest",
+ "rand 0.8.8",
+ "serde",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "zeroize",
 ]
 
 [[package]]
@@ -2604,6 +2640,7 @@ dependencies = [
  "num-traits",
  "parking_lot",
  "rand 0.8.8",
+ "rayon",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -2638,7 +2675,6 @@ dependencies = [
 name = "neo-node"
 version = "0.20.0"
 dependencies = [
- "aes-gcm",
  "anyhow",
  "async-trait",
  "base64 0.22.1",
@@ -2652,20 +2688,23 @@ dependencies = [
  "futures",
  "hex",
  "hidapi",
- "hkdf",
  "hyper 0.14.32",
- "libloading 0.8.9",
  "mimalloc",
  "neo-actors",
+ "neo-ai-agent",
+ "neo-consensus",
  "neo-crypto",
  "neo-io",
  "neo-ledger",
+ "neo-native-contracts",
  "neo-primitives",
+ "neo-probe",
  "neo-protocol",
  "neo-rpc",
  "neo-smart-contract",
  "neo-storage",
  "neo-system",
+ "neo-tee",
  "neo-vm",
  "neo-wallets",
  "num-bigint",
@@ -2681,7 +2720,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "sgx-isa",
  "sha2",
  "sysinfo",
  "tempfile",
@@ -2752,6 +2790,23 @@ dependencies = [
  "sha2",
  "thiserror 2.0.21",
  "tracing",
+]
+
+[[package]]
+name = "neo-probe"
+version = "0.20.0"
+dependencies = [
+ "neo-ai-agent",
+ "neo-native-contracts",
+ "neo-primitives",
+ "neo-protocol",
+ "neo-smart-contract",
+ "neo-storage",
+ "neo-vm",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -2830,6 +2885,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "neo-signer-server"
+version = "0.20.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "hex",
+ "hyper 0.14.32",
+ "neo-crypto",
+ "neo-tee",
+ "neo-wallets",
+ "parking_lot",
+ "rand 0.8.8",
+ "rcgen",
+ "reqwest",
+ "rustls 0.21.12",
+ "rustls-pemfile",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-rustls 0.24.1",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
 name = "neo-smart-contract"
 version = "0.20.0"
 dependencies = [
@@ -2903,8 +2987,10 @@ dependencies = [
  "neo-wallets",
  "num-bigint",
  "parking_lot",
+ "quick-xml",
  "rand 0.8.8",
  "rayon",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -2912,7 +2998,34 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
+]
+
+[[package]]
+name = "neo-tee"
+version = "0.20.0"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "async-trait",
+ "base64 0.22.1",
+ "hex",
+ "hkdf",
+ "libloading 0.8.9",
+ "neo-crypto",
+ "neo-primitives",
+ "parking_lot",
+ "rand 0.8.8",
+ "serde",
+ "serde_json",
+ "sgx-isa",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "zeroize",
 ]
 
 [[package]]
@@ -2921,9 +3034,11 @@ version = "0.20.0"
 dependencies = [
  "criterion",
  "hex",
+ "neo-consensus",
  "neo-crypto",
  "neo-io",
  "neo-json",
+ "neo-native-contracts",
  "neo-primitives",
  "neo-protocol",
  "neo-rpc",
@@ -2941,12 +3056,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "neo-validator"
+version = "0.20.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.22.1",
+ "clap",
+ "futures",
+ "hex",
+ "http-body 0.4.6",
+ "hyper 0.14.32",
+ "neo-crypto",
+ "neo-io",
+ "neo-ledger",
+ "neo-native-contracts",
+ "neo-primitives",
+ "neo-protocol",
+ "neo-storage",
+ "neo-system",
+ "neo-vm",
+ "parking_lot",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "subtle",
+ "tempfile",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "zeroize",
+]
+
+[[package]]
 name = "neo-vm"
 version = "0.20.0"
 dependencies = [
  "base64 0.22.1",
  "bitflags 2.13.2",
  "bumpalo",
+ "criterion",
  "hex",
  "neo-crypto",
  "neo-io",
@@ -3274,6 +3426,16 @@ name = "peeking_take_while"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b17cddbe7ec3f8bc800887bab5e717348c95ea2ca0b1bf0837fb964dc67099"
+
+[[package]]
+name = "pem"
+version = "3.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d30c53c26bc5b31a98cd02d20f25a7c8567146caf63ed593a9d87b2775291be"
+dependencies = [
+ "base64 0.22.1",
+ "serde_core",
+]
 
 [[package]]
 name = "pem-rfc7468"
@@ -3877,6 +4039,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62c64daa8e9438b84aaae55010a93f396f8e60e3911590fcba770d04643fc1dd"
 dependencies = [
  "cipher",
+]
+
+[[package]]
+name = "rcgen"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48406db8ac1f3cbc7dcdb56ec355343817958a356ff430259bb07baf7607e1e1"
+dependencies = [
+ "pem",
+ "ring",
+ "time",
+ "yasna",
 ]
 
 [[package]]
@@ -4600,10 +4774,25 @@ name = "state-root-diff"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "clap",
+ "neo-io",
+ "neo-json",
+ "neo-ledger",
+ "neo-native-contracts",
+ "neo-primitives",
+ "neo-protocol",
+ "neo-rpc",
  "neo-storage",
+ "neo-system",
+ "neo-validator",
+ "neo-vm",
+ "reqwest",
  "serde",
  "serde_json",
+ "sysinfo",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]
@@ -5381,11 +5570,16 @@ name = "validation-diff"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "clap",
  "hex",
  "neo-io",
+ "neo-json",
+ "neo-ledger",
  "neo-primitives",
  "neo-protocol",
+ "neo-rpc",
+ "neo-vm",
  "serde",
  "serde_json",
 ]
@@ -5883,6 +6077,9 @@ name = "yasna"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e17bb3549cc1321ae1296b9cdc2698e2b6cb1992adfa19a8c72e5b7a738f44cd"
+dependencies = [
+ "time",
+]
 
 [[package]]
 name = "yoke"

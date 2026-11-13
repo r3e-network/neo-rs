@@ -177,7 +177,9 @@ pub fn plan_block_index_request(
 /// Combines the in-memory header cache tip with the ledger's highest header
 /// index, taking the highest known source.
 pub fn effective_header_height(header_cache_last: Option<u32>, ledger_highest: u32) -> u32 {
-    header_cache_last.unwrap_or(ledger_highest).max(ledger_highest)
+    header_cache_last
+        .unwrap_or(ledger_highest)
+        .max(ledger_highest)
 }
 
 /// Plans a `GetHeaders` request when the peer is ahead, the global header task

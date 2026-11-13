@@ -1,8 +1,10 @@
 //! PKCS#11 HSM signer implementation
 
-use crate::device::{HsmDeviceInfo, HsmDeviceType};
-use crate::error::{HsmError, HsmResult};
-use crate::signer::{HsmKeyInfo, HsmSigner, normalize_public_key, script_hash_from_public_key};
+use crate::hsm::device::{HsmDeviceInfo, HsmDeviceType};
+use crate::hsm::error::{HsmError, HsmResult};
+use crate::hsm::signer::{
+    HsmKeyInfo, HsmSigner, normalize_public_key, script_hash_from_public_key,
+};
 use async_trait::async_trait;
 use parking_lot::RwLock;
 use std::path::Path;

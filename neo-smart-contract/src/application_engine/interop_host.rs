@@ -12,7 +12,14 @@ impl InteropHost for ApplicationEngine {
                 self.add_cpu_fee(entry.price)
                     .map_err(map_core_error_to_vm_error)?;
             }
-            (entry.handler)(self, engine)
+            if let Some(profiler) = self.profiler.clone() {
+                let started = std::time::Instant::now();
+                let result = (entry.handler)(self, engine);
+                profiler.record_syscall(hash, started.elapsed());
+                result
+            } else {
+                (entry.handler)(self, engine)
+            }
         } else {
             Err(VmError::InteropService {
                 service: format!("0x{hash:08x}"),
@@ -40,6 +47,22 @@ impl InteropHost for ApplicationEngine {
         engine: &mut ExecutionEngine,
         context: &ExecutionContext,
     ) -> VmResult<()> {
+        // CALL clones share the script, evaluation stack and ExecutionContextState
+        // with their caller. Their RET cannot change the current contract, snapshot,
+        // call flags or fee-whitelist state, so avoid repeating the cross-contract
+        // refresh on this hot path. Diagnostics still observe every unloaded frame.
+        // Script identity (not script-hash equality) is required: a dynamic self-call
+        // loads a fresh Script and must still take the cross-contract path below.
+        let is_cross_contract_unload = engine.current_context().is_none_or(|current_ctx| {
+            !std::sync::Arc::ptr_eq(&current_ctx.script_arc(), &context.script_arc())
+        });
+        if !is_cross_contract_unload {
+            if let Some(diagnostic) = self.diagnostic.as_mut() {
+                diagnostic.context_unloaded(context);
+            }
+            return Ok(());
+        }
+
         self.invalidate_fee_whitelist();
         // DEADLOCK FIX: When CALL creates a callee context via clone_with_position,
         // caller and callee share the same `states: Arc<RwLock<HashMap>>`. Looking up
@@ -65,22 +88,8 @@ impl InteropHost for ApplicationEngine {
             let script_hash = state.script_hash;
             (snapshot, notif_count, dynamic_call, script_hash)
         };
-        // Lock is now dropped — safe to acquire caller's state lock
-        // Match C# semantics: only cross-contract unloads (different script)
-        // trigger child snapshot commit and dynamic-call return normalization.
-        // Compare script hashes first because this engine may materialize fresh
-        // script objects for equivalent contracts during load.
-        // Match C# `ContextUnloaded`: `context.Script != CurrentContext?.Script` uses
-        // reference equality, so a contract invoking itself via `System.Contract.Call`
-        // is treated as a cross-contract unload (each LoadContract creates a fresh Script
-        // instance). Using script_hash equality here would incorrectly skip the dynamic-call
-        // null placeholder push for self-calls, causing stack underflow at the caller's
-        // post-SYSCALL DROP.
-        let is_cross_contract_unload = engine.current_context().is_none_or(|current_ctx| {
-            !std::sync::Arc::ptr_eq(&current_ctx.script_arc(), &context.script_arc())
-        });
         let _ = unloaded_script_hash;
-        // Phase 2: Commit snapshot and propagate state to caller (cross-contract only)
+        // Phase 2: Commit snapshot and propagate state to caller.
         if is_cross_contract_unload {
             {
                 let mut state = state_arc.lock();
@@ -159,6 +168,9 @@ impl InteropHost for ApplicationEngine {
         if opcode_price > 0 {
             self.add_cpu_fee(opcode_price)
                 .map_err(map_core_error_to_vm_error)?;
+        }
+        if let Some(profiler) = self.profiler.as_ref() {
+            profiler.record_opcode(instruction.opcode.byte());
         }
         if let Some(diagnostic) = self.diagnostic.as_mut() {
             diagnostic.pre_execute_instruction(instruction);

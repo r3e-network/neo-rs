@@ -2,49 +2,89 @@ use super::*;
 use crate::i_event_handlers::{CommittingHandler, WalletChangedHandler};
 use crate::neo_system::NeoSystemContext;
 use crate::neo_system::converters::{convert_ledger_block, convert_ledger_header};
-use crate::neo_system::relay::LEDGER_HYDRATION_WINDOW;
 use crate::network::p2p::ChannelsConfig;
-use crate::network::p2p::payloads::Transaction;
-use neo_protocol::Witness as PayloadWitness;
-use async_trait::async_trait;
-use neo_ledger::Block as LedgerBlock;
-use neo_ledger::Block;
+use neo_native_contracts::ledger_contract::LedgerContract;
+use neo_primitives::{UInt160, UInt256};
+use neo_protocol::execution::Block as LedgerBlock;
+use neo_protocol::execution::BlockHeader as LedgerBlockHeader;
+use neo_protocol::witness::Witness as PayloadWitness;
+use neo_protocol::witness::Witness;
+use neo_smart_contract::contract::Contract;
 use neo_storage::persistence::StoreCache;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
 use neo_storage::persistence::store::Store;
-use neo_smart_contract::contract::Contract;
-use neo_native_contracts::trimmed_block::TrimmedBlock;
 use neo_wallets::WalletProvider;
 use neo_wallets::key_pair::KeyPair;
 use neo_wallets::{Version, Wallet, WalletAccount, WalletError, WalletResult};
-use neo_io_crate::Serializable;
-use neo_primitives::{UInt160, UInt256};
-use neo_protocol::witness::Witness;
 use std::any::Any;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
 use tokio::time::{Duration, sleep, timeout};
 
-// Local replicas of the ledger-contract storage-key builders. The authoritative
-// `keys` module now lives in `neo-native-contracts` and is crate-private there,
-// so these tests rebuild the identical key layout directly.
-fn ledger_block_hash_key(index: u32) -> Vec<u8> {
-    let mut key = Vec::with_capacity(1 + std::mem::size_of::<u32>());
-    key.push(9); // PREFIX_BLOCK_HASH
-    key.extend_from_slice(&index.to_be_bytes());
-    neo_storage::types::StorageKey::new(-4, key).to_array()
+fn test_chain(length: u32) -> Vec<LedgerBlock> {
+    let mut previous_hash = UInt256::zero();
+    (0..length)
+        .map(|index| {
+            let header = LedgerBlockHeader::new(
+                0,
+                previous_hash,
+                UInt256::zero(),
+                u64::from(index),
+                u64::from(index),
+                index,
+                0,
+                UInt160::zero(),
+                vec![Witness::new()],
+            );
+            let block = LedgerBlock::new(header, Vec::new());
+            previous_hash = block.hash();
+            block
+        })
+        .collect()
 }
 
-fn ledger_block_key(hash: &UInt256) -> Vec<u8> {
-    let mut key = Vec::with_capacity(1 + hash.to_bytes().len());
-    key.push(5); // PREFIX_BLOCK
-    key.extend_from_slice(&hash.to_bytes());
-    neo_storage::types::StorageKey::new(-4, key).to_array()
+#[derive(Clone)]
+struct SharedMemoryStoreProvider {
+    store: Arc<MemoryStore>,
+    requested_paths: Arc<Mutex<Vec<String>>>,
 }
 
-fn ledger_current_block_key() -> Vec<u8> {
-    neo_storage::types::StorageKey::new(-4, vec![12]).to_array()
+impl StoreProvider for SharedMemoryStoreProvider {
+    fn name(&self) -> &str {
+        "SharedMemoryProbe"
+    }
+
+    fn get_store(&self, path: &str) -> neo_storage::error::StorageResult<Arc<dyn Store>> {
+        self.requested_paths.lock().push(path.to_string());
+        Ok(self.store.clone())
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn neo_system_persists_genesis_through_the_supplied_provider() {
+    let shared_store = Arc::new(MemoryStore::new());
+    let requested_paths = Arc::new(Mutex::new(Vec::new()));
+    let provider = Arc::new(SharedMemoryStoreProvider {
+        store: Arc::clone(&shared_store),
+        requested_paths: Arc::clone(&requested_paths),
+    });
+    let system = NeoSystem::new(
+        ProtocolSettings::default(),
+        Some(provider),
+        Some("t11-explicit-provider-path".to_string()),
+    )
+    .expect("system to start with the supplied provider");
+
+    assert_eq!(
+        requested_paths.lock().as_slice(),
+        ["t11-explicit-provider-path"]
+    );
+    let cache = StoreCache::new_from_snapshot(shared_store.snapshot());
+    assert!(LedgerContract::new().contains_block(&cache, &system.genesis_block().hash()));
+    assert_eq!(system.current_block_index(), 0);
+
+    system.shutdown().await.expect("shutdown succeeds");
 }
 
 #[derive(Debug)]
@@ -79,9 +119,10 @@ fn hydrate_ledger_from_empty_store_is_noop() {
     let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
     let store_cache = StoreCache::new_from_store(store, true);
     let ledger = Arc::new(LedgerContext::default());
-    let header_cache = HeaderCache::new();
+    let header_cache = Arc::new(HeaderCache::new());
 
-    NeoSystemContext::hydrate_ledger_from_store(&store_cache, &ledger, &header_cache);
+    NeoSystemContext::hydrate_ledger_from_store(&store_cache, &ledger, &header_cache)
+        .expect("empty store is valid");
 
     assert_eq!(ledger.current_height(), 0);
     assert_eq!(header_cache.count(), 0);
@@ -90,133 +131,29 @@ fn hydrate_ledger_from_empty_store_is_noop() {
 #[test]
 fn hydrate_ledger_restores_height_and_headers() {
     let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
-    let mut snapshot = store.snapshot();
-    let snapshot = Arc::get_mut(&mut snapshot).expect("mutable snapshot");
+    let mut store_cache = StoreCache::new_from_store(store, false);
+    let blocks = test_chain(2);
+    let ledger_contract = LedgerContract::new();
+    for block in &blocks {
+        ledger_contract
+            .store_block_state(store_cache.data_cache(), block, &[])
+            .expect("store block through the canonical writer");
+    }
+    let tip = &blocks[1];
+    ledger_contract
+        .set_current_block_state(store_cache.data_cache(), &tip.hash(), tip.index())
+        .expect("store current block pointer");
+    store_cache.commit();
 
-    // Persist two blocks (genesis index 0 and block index 1).
-    let mut persist_block = |index: u32, nonce: u64| {
-        let header = neo_protocol::block_header::BlockHeader {
-            index,
-            timestamp: index as u64,
-            nonce,
-            witnesses: vec![Witness::new()],
-            ..Default::default()
-        };
-        let block = Block {
-            header: header.clone(),
-            transactions: Vec::new(),
-        };
-        let hash = block.hash();
-
-        let key = ledger_block_hash_key(index);
-        snapshot.put(key, hash.to_bytes().to_vec()).unwrap();
-
-        let block_key = ledger_block_key(&hash);
-        let mut writer = neo_io_crate::BinaryWriter::new();
-        let exec_header = neo_protocol::execution::BlockHeader::new(
-            header.version,
-            header.previous_hash,
-            header.merkle_root,
-            header.timestamp,
-            header.nonce,
-            header.index,
-            header.primary_index,
-            header.next_consensus,
-            header.witnesses.clone(),
-        );
-        let trimmed = TrimmedBlock::create(exec_header, Vec::new());
-        trimmed
-            .serialize(&mut writer)
-            .expect("trimmed block serialize");
-        snapshot.put(block_key, writer.to_bytes()).unwrap();
-        hash
-    };
-
-    let _genesis_hash = persist_block(0, 1);
-    let hash = persist_block(1, 42);
-
-    // Persist current block pointer.
-    let current_key = ledger_current_block_key();
-    let mut current_state = Vec::with_capacity(36);
-    current_state.extend_from_slice(&hash.to_bytes());
-    current_state.extend_from_slice(&1u32.to_le_bytes());
-    snapshot.put(current_key, current_state).unwrap();
-    snapshot.commit();
-
-    let store_cache = StoreCache::new_from_store(store, true);
     let ledger = Arc::new(LedgerContext::default());
-    let header_cache = HeaderCache::new();
+    let header_cache = Arc::new(HeaderCache::new());
+    NeoSystemContext::hydrate_ledger_from_store(&store_cache, &ledger, &header_cache)
+        .expect("hydrate complete chain");
 
-    NeoSystemContext::hydrate_ledger_from_store(&store_cache, &ledger, &header_cache);
     assert_eq!(ledger.current_height(), 1);
     assert_eq!(header_cache.count(), 2);
-    assert_eq!(ledger.block_hash_at(1), Some(hash));
-}
-
-#[test]
-fn hydrate_ledger_respects_bounded_window() {
-    let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
-    let mut snapshot = store.snapshot();
-    let snapshot = Arc::get_mut(&mut snapshot).expect("mutable snapshot");
-
-    // Persist a chain longer than the hydration window.
-    let total_blocks = LEDGER_HYDRATION_WINDOW + 5;
-    let mut last_hash = UInt256::zero();
-    for index in 0..=total_blocks {
-        let header = neo_protocol::block_header::BlockHeader {
-            index,
-            timestamp: index as u64,
-            nonce: index as u64,
-            witnesses: vec![Witness::new()],
-            ..Default::default()
-        };
-        let block = Block {
-            header: header.clone(),
-            transactions: Vec::new(),
-        };
-        let hash = block.hash();
-
-        let key = ledger_block_hash_key(index);
-        snapshot.put(key, hash.to_bytes().to_vec()).unwrap();
-
-        let block_key = ledger_block_key(&hash);
-        let mut writer = neo_io_crate::BinaryWriter::new();
-        let exec_header = neo_protocol::execution::BlockHeader::new(
-            header.version,
-            header.previous_hash,
-            header.merkle_root,
-            header.timestamp,
-            header.nonce,
-            header.index,
-            header.primary_index,
-            header.next_consensus,
-            header.witnesses.clone(),
-        );
-        let trimmed = TrimmedBlock::create(exec_header, Vec::new());
-        trimmed.serialize(&mut writer).expect("serialize block");
-        snapshot.put(block_key, writer.to_bytes()).unwrap();
-        last_hash = hash;
-    }
-
-    // Persist current block pointer to the tip.
-    let current_key = ledger_current_block_key();
-    let mut current_state = Vec::with_capacity(36);
-    current_state.extend_from_slice(&last_hash.to_bytes());
-    current_state.extend_from_slice(&total_blocks.to_le_bytes());
-    snapshot.put(current_key, current_state).unwrap();
-    snapshot.commit();
-
-    let store_cache = StoreCache::new_from_store(store, true);
-    let ledger = Arc::new(LedgerContext::default());
-    let header_cache = HeaderCache::new();
-
-    NeoSystemContext::hydrate_ledger_from_store(&store_cache, &ledger, &header_cache);
-
-    assert_eq!(ledger.current_height(), total_blocks);
-    assert_eq!(ledger.block_hash_at(total_blocks), Some(last_hash));
-    assert_eq!(header_cache.count(), LEDGER_HYDRATION_WINDOW as usize);
-    // Genesis block should not be hydrated when the window is bounded.
-    assert!(ledger.block_hash_at(0).is_none());
+    assert_eq!(ledger.block_hash_at(1), Some(tip.hash()));
+    assert_eq!(ledger.block_hash_at(0), Some(blocks[0].hash()));
 }
 
 fn sample_u256(byte: u8) -> UInt256 {
@@ -229,18 +166,17 @@ fn sample_u160(byte: u8) -> UInt160 {
 
 fn sample_ledger_header() -> LedgerBlockHeader {
     let witness = neo_protocol::witness::Witness::new_with_scripts(vec![1, 2, 3], vec![4, 5, 6]);
-    LedgerBlockHeader {
-        version: 1,
-        previous_hash: sample_u256(1),
-        merkle_root: sample_u256(2),
-        timestamp: 42,
-        nonce: 7,
-        index: 10,
-        primary_index: 3,
-        next_consensus: sample_u160(5),
-        witnesses: vec![witness],
-        ..Default::default()
-    }
+    LedgerBlockHeader::new(
+        1,
+        sample_u256(1),
+        sample_u256(2),
+        42,
+        7,
+        10,
+        3,
+        sample_u160(5),
+        vec![witness],
+    )
 }
 
 #[test]
@@ -310,7 +246,6 @@ struct DummyWallet {
     version: Version,
 }
 
-#[async_trait]
 impl Wallet for DummyWallet {
     fn name(&self) -> &str {
         "dummy"
@@ -324,11 +259,7 @@ impl Wallet for DummyWallet {
         &self.version
     }
 
-    async fn change_password(
-        &self,
-        _old_password: &str,
-        _new_password: &str,
-    ) -> WalletResult<bool> {
+    fn change_password(&self, _old_password: &str, _new_password: &str) -> WalletResult<bool> {
         Ok(false)
     }
 
@@ -336,11 +267,11 @@ impl Wallet for DummyWallet {
         false
     }
 
-    async fn create_account(&self, _private_key: &[u8]) -> WalletResult<Arc<dyn WalletAccount>> {
+    fn create_account(&self, _private_key: &[u8]) -> WalletResult<Arc<dyn WalletAccount>> {
         Err(WalletError::Other("not implemented".to_string()))
     }
 
-    async fn create_account_with_contract(
+    fn create_account_with_contract(
         &self,
         _contract: Contract,
         _key_pair: Option<KeyPair>,
@@ -348,18 +279,18 @@ impl Wallet for DummyWallet {
         Err(WalletError::Other("not implemented".to_string()))
     }
 
-    async fn create_account_watch_only(
+    fn create_account_watch_only(
         &self,
         _script_hash: UInt160,
     ) -> WalletResult<Arc<dyn WalletAccount>> {
         Err(WalletError::Other("not implemented".to_string()))
     }
 
-    async fn delete_account(&self, _script_hash: &UInt160) -> WalletResult<bool> {
+    fn delete_account(&self, _script_hash: &UInt160) -> WalletResult<bool> {
         Ok(false)
     }
 
-    async fn export(&self, _path: &str, _password: &str) -> WalletResult<()> {
+    fn export(&self, _path: &str, _password: &str) -> WalletResult<()> {
         Err(WalletError::Other("not implemented".to_string()))
     }
 
@@ -371,19 +302,11 @@ impl Wallet for DummyWallet {
         Vec::new()
     }
 
-    async fn get_available_balance(&self, _asset_id: &UInt256) -> WalletResult<i64> {
-        Ok(0)
-    }
-
-    async fn get_unclaimed_gas(&self) -> WalletResult<i64> {
-        Ok(0)
-    }
-
-    async fn import_wif(&self, _wif: &str) -> WalletResult<Arc<dyn WalletAccount>> {
+    fn import_wif(&self, _wif: &str) -> WalletResult<Arc<dyn WalletAccount>> {
         Err(WalletError::Other("not implemented".to_string()))
     }
 
-    async fn import_nep2(
+    fn import_nep2(
         &self,
         _nep2_key: &str,
         _password: &str,
@@ -395,29 +318,25 @@ impl Wallet for DummyWallet {
         None
     }
 
-    async fn set_default_account(&self, _script_hash: &UInt160) -> WalletResult<()> {
+    fn set_default_account(&self, _script_hash: &UInt160) -> WalletResult<()> {
         Ok(())
     }
 
-    async fn sign(&self, _data: &[u8], _script_hash: &UInt160) -> WalletResult<Vec<u8>> {
+    fn sign(&self, _data: &[u8], _script_hash: &UInt160) -> WalletResult<Vec<u8>> {
         Err(WalletError::Other("not implemented".to_string()))
     }
 
-    async fn sign_transaction(&self, _transaction: &mut Transaction) -> WalletResult<()> {
-        Ok(())
-    }
-
-    async fn unlock(&self, _password: &str) -> WalletResult<bool> {
+    fn unlock(&self, _password: &str) -> WalletResult<bool> {
         Ok(true)
     }
 
     fn lock(&self) {}
 
-    async fn verify_password(&self, _password: &str) -> WalletResult<bool> {
+    fn verify_password(&self, _password: &str) -> WalletResult<bool> {
         Ok(true)
     }
 
-    async fn save(&self) -> WalletResult<()> {
+    fn save(&self) -> WalletResult<()> {
         Ok(())
     }
 }
@@ -563,9 +482,9 @@ impl CommittingHandler for GenesisIndexCapture {
     fn blockchain_committing_handler(
         &self,
         _system: &dyn Any,
-        block: &neo_protocol::block::Block,
+        block: &neo_protocol::execution::Block,
         _snapshot: &neo_storage::persistence::DataCache,
-        _executed: &[neo_ledger::ApplicationExecuted],
+        _executed: &[neo_protocol::execution::ApplicationExecuted],
     ) {
         self.seen.store(block.index(), Ordering::SeqCst);
     }

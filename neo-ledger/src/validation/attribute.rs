@@ -1,14 +1,13 @@
 use neo_native_contracts::{
-    LedgerContract, NativeContract, NativeHelpers, PolicyContract, Role, RoleManagement,
+    LedgerContract, NativeHelpers, PolicyContract, Role, RoleManagement,
     oracle_contract::OracleContract,
 };
-use neo_primitives::{CallFlags, UInt160, WitnessScope};
-use neo_protocol::payloads::{OracleResponse, Transaction, TransactionAttribute};
+use neo_primitives::{UInt160, WitnessScope};
+use neo_protocol::payloads::{OracleResponse, Transaction, TransactionAttribute, get_fixed_script};
 use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_smart_contract::helper::Helper;
 use neo_storage::persistence::DataCache;
-use neo_vm::{OpCode, ScriptBuilder};
-use tracing::{error, warn};
+use tracing::warn;
 
 pub fn verify_attribute(
     attribute: &TransactionAttribute,
@@ -72,23 +71,13 @@ pub fn attribute_network_fee(
     }
 }
 
+/// Returns the fixed script required by oracle response transactions.
+///
+/// Compatibility re-export of the single source of truth in
+/// `neo_protocol::payloads::get_fixed_script`; oracle response verification
+/// and every response-transaction producer share those exact bytes.
 pub fn oracle_fixed_script() -> Vec<u8> {
-    static ORACLE_FINISH_SCRIPT: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
-    ORACLE_FINISH_SCRIPT
-        .get_or_init(|| {
-            let oracle_hash = OracleContract::new().hash();
-            let mut builder = ScriptBuilder::new();
-            builder.emit_opcode(OpCode::NEWARRAY0);
-            builder.emit_push_int(CallFlags::ALL.bits() as i64);
-            builder.emit_push("finish".as_bytes());
-            builder.emit_push(&oracle_hash.to_array());
-            if let Err(err) = builder.emit_syscall("System.Contract.Call") {
-                error!(?err, "Failed to build OracleContract finish syscall script");
-                return Vec::new();
-            }
-            builder.to_array()
-        })
-        .clone()
+    get_fixed_script()
 }
 
 fn verify_oracle_response(

@@ -1,35 +1,28 @@
 //! Service initialization and plugin setup.
 
-// TODO: Re-enable when these modules are implemented
-// use crate::ai_agent::AiAgentRuntime;
-// use crate::consensus::DbftConsensusController;
-// use crate::signing_provider::NodeSignerRuntime;
 use crate::cli::NodeCli;
 use crate::config::{
     DbftSettings, NodeConfig, resolve_application_logs_store_path,
     resolve_tokens_tracker_store_path,
 };
-// TODO: Re-enable when neo-native-contracts is added as dependency
-// use neo_native_contracts::native::ContractManagement;
+use crate::consensus::{DbftConsensusController, ensure_wallet_can_validate};
 use crate::wallet_provider::NodeWalletProvider;
 use anyhow::{Context, Result, bail};
-use neo_wallets::{Nep6Wallet, Wallet as CoreWallet, WalletProvider};
-use neo_system::network::p2p::ChannelsConfig;
+use neo_native_contracts::native::ContractManagement;
 use neo_protocol::ProtocolSettings;
 use neo_rpc::application_logs::ApplicationLogsService;
 use neo_rpc::server::{
-    RpcServer, RpcServerApplicationLogs, RpcServerBlockchain, RpcServerNode,
-    // RpcServerOracle, // TODO: Re-enable when neo-oracle crate is available
-    RpcServerSettings, RpcServerSmartContract,
-    // RpcServerState, // TODO: Re-enable when neo-state-service crate is available
-    RpcServerUtilities, RpcServerWallet,
+    RpcServer, RpcServerApplicationLogs, RpcServerBlockchain, RpcServerNode, RpcServerOracle,
+    RpcServerSettings, RpcServerSmartContract, RpcServerState, RpcServerUtilities, RpcServerWallet,
 };
 use neo_rpc::tokens_tracker::{TokensTracker, TokensTrackerService};
-use neo_wallets::signing::TrustedSignerClient;
-use neo_system::state_service::StateServiceSettings;
 use neo_system::i_event_handlers::{CommittedHandler, CommittingHandler, WalletChangedHandler};
+use neo_system::network::p2p::ChannelsConfig;
 use neo_system::oracle_service::OracleService;
+use neo_system::state_service::StateServiceSettings;
 use neo_system::{NeoSystem, StateServiceVerification};
+use neo_wallets::signing::TrustedSignerClient;
+use neo_wallets::{Nep6Wallet, Wallet as CoreWallet, WalletProvider};
 use parking_lot::RwLock as ParkingRwLock;
 use serde_json::Value;
 use std::{fs, path::PathBuf, sync::Arc};
@@ -59,21 +52,16 @@ pub(crate) fn apply_mempool_policy(node_config: &NodeConfig, system: &Arc<NeoSys
 }
 
 pub(crate) fn validate_contract_management_integrity(system: &Arc<NeoSystem>) -> Result<()> {
-    // TODO: Re-enable when neo-native-contracts is available
-    // let store_cache = system.store_cache();
-    // ContractManagement::validate_snapshot_integrity(store_cache.data_cache())
-    //     .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-    //
-    // let non_native_contracts = ContractManagement::list_contracts(store_cache.data_cache())
-    //     .map_err(|e| anyhow::anyhow!(e.to_string()))?
-    //     .len();
-    // info!(
-    //     target: "neo",
-    //     non_native_contracts,
-    //     "ContractManagement snapshot integrity check passed"
-    // );
-    let _ = system; // Suppress unused variable warning
-    info!(target: "neo", "ContractManagement integrity check skipped (not yet implemented)");
+    let store_cache = system.store_cache();
+    ContractManagement::validate_snapshot_integrity(store_cache.data_cache())
+        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+    let non_native_contracts = ContractManagement::list_contracts(store_cache.data_cache())
+        .map_err(|error| anyhow::anyhow!(error.to_string()))?
+        .len();
+    info!(
+        target: "neo",
+        non_native_contracts, "ContractManagement snapshot integrity check passed"
+    );
     Ok(())
 }
 
@@ -400,17 +388,13 @@ pub(crate) async fn start_rpc_server_if_enabled(
         server.register_handlers(RpcServerApplicationLogs::register_handlers());
     }
     if has_state_service {
-        // TODO: Re-enable when RpcServerState is available
-        // server.register_handlers(RpcServerState::register_handlers());
-        warn!("State service RPC handlers not yet available");
+        server.register_handlers(RpcServerState::register_handlers());
     }
     if has_tokens_tracker {
         server.register_handlers(neo_rpc::server::RpcServerTokensTracker::register_handlers());
     }
     if has_oracle_service {
-        // TODO: Re-enable when RpcServerOracle is available
-        // server.register_handlers(RpcServerOracle::register_handlers());
-        warn!("Oracle service RPC handlers not yet available");
+        server.register_handlers(RpcServerOracle::register_handlers());
     }
 
     // Privacy mode (strictly opt-in): register the encrypted submission
@@ -511,84 +495,63 @@ pub(crate) fn maybe_enable_state_service_verification(
 
 pub(crate) fn maybe_enable_dbft_consensus(
     dbft_settings: &Option<DbftSettings>,
-    _protocol_settings: &ProtocolSettings,
-    _system: &Arc<NeoSystem>,
-    _wallet_provider: Option<&Arc<NodeWalletProvider>>,
-    _signer_runtime: Option<()>, // Changed from Option<Arc<NodeSignerRuntime>>
-    _diagnostics: (), // Changed from Arc<AiAgentRuntime>
+    protocol_settings: &ProtocolSettings,
+    system: &Arc<NeoSystem>,
+    wallet_provider: Option<&Arc<NodeWalletProvider>>,
 ) -> Result<()> {
-    // TODO: Re-enable when DbftConsensusController, NodeSignerRuntime, and AiAgentRuntime are available
-    if dbft_settings.is_some() {
-        warn!(
-            target: "neo",
-            "dBFT consensus requested but not yet implemented; skipping"
+    let Some(settings) = dbft_settings else {
+        return Ok(());
+    };
+
+    if settings.ignore_recovery_logs {
+        bail!("dBFT requires recovery logs; IgnoreRecoveryLogs is unsafe");
+    }
+    if settings.recovery_logs.trim().is_empty() {
+        bail!("dBFT requires a non-empty durable recovery path");
+    }
+    if settings.network != protocol_settings.network {
+        bail!(
+            "dBFT network mismatch: configured 0x{:08x}, expected 0x{:08x}",
+            settings.network,
+            protocol_settings.network
         );
     }
-    Ok(())
 
-    // Original implementation (commented out):
-    // let Some(settings) = dbft_settings else {
-    //     return Ok(());
-    // };
-    // let signer_runtime =
-    //     signer_runtime.context("dBFT validator mode requires the unified signer service")?;
-    //
-    // if settings.ignore_recovery_logs {
-    //     bail!("dBFT signer mode requires recovery logs; IgnoreRecoveryLogs is unsafe");
-    // }
-    // if settings.recovery_logs.trim().is_empty() {
-    //     bail!("dBFT signer mode requires a non-empty durable recovery path");
-    // }
-    //
-    // if settings.network != protocol_settings.network {
-    //     warn!(
-    //         target: "neo",
-    //         configured = format_args!("0x{:08x}", settings.network),
-    //         expected = format_args!("0x{:08x}", protocol_settings.network),
-    //         "dBFT network mismatch; skipping"
-    //     );
-    //     return Ok(());
-    // }
-    //
-    // if settings.auto_start && wallet_provider.is_none() {
-    //     warn!(
-    //         target: "neo",
-    //         "dBFT auto_start requires wallet provider; skipping"
-    //     );
-    //     return Ok(());
-    // }
-    //
-    // system
-    //     .register_wallet_changed_handler({
-    //         let controller = Arc::new(DbftConsensusController::new(
-    //             system.clone(),
-    //             settings.clone(),
-    //             signer_runtime,
-    //             diagnostics,
-    //         ));
-    //         system
-    //             .add_service::<DbftConsensusController, _>(Arc::clone(&controller))
-    //             .map_err(|e| anyhow::anyhow!(e.to_string()))
-    //             .context("failed to register dBFT consensus service")?;
-    //         controller as Arc<dyn WalletChangedHandler + Send + Sync>
-    //     })
-    //     .map_err(|e| anyhow::anyhow!(e.to_string()))
-    //     .context("failed to register dBFT wallet handler")?;
-    //
-    // info!(
-    //     target: "neo",
-    //     auto_start = settings.auto_start,
-    //     recovery_logs = %settings.recovery_logs,
-    //     "dBFT consensus enabled"
-    // );
-    // if !settings.auto_start {
-    //     info!(
-    //         target: "neo",
-    //         "dBFT auto_start disabled; consensus will not start automatically"
-    //     );
-    // }
-    //
-    // Ok(())
+    let provider = wallet_provider.context(
+        "dBFT validator mode requires a wallet provider; refusing to start a node that cannot produce blocks",
+    )?;
+    let wallet = provider.get_wallet().context(
+        "dBFT validator mode requires a loaded wallet; refusing to start a node that cannot produce blocks",
+    )?;
+    ensure_wallet_can_validate(system, &wallet).map_err(anyhow::Error::msg)?;
+
+    let controller = Arc::new(DbftConsensusController::new(
+        system.clone(),
+        settings.clone(),
+    ));
+    system
+        .add_service::<DbftConsensusController, _>(Arc::clone(&controller))
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("failed to register dBFT consensus service")?;
+    system
+        .register_wallet_changed_handler(controller as Arc<dyn WalletChangedHandler + Send + Sync>)
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("failed to register dBFT wallet handler")?;
+
+    info!(
+        target: "neo",
+        auto_start = settings.auto_start,
+        recovery_logs = %settings.recovery_logs,
+        "dBFT consensus enabled"
+    );
+    if !settings.auto_start {
+        info!(
+            target: "neo",
+            "dBFT auto_start disabled; consensus will not start automatically"
+        );
+    }
+
+    Ok(())
 }
 
 pub(crate) fn maybe_enable_application_logs(
@@ -1011,6 +974,119 @@ pub(crate) fn maybe_open_wallet(
         );
     }
     Ok(true)
+}
+
+#[cfg(test)]
+mod startup_validation_tests {
+    use super::*;
+    use neo_wallets::{KeyPair, Nep6Wallet};
+
+    fn dbft_settings(network: u32) -> Option<DbftSettings> {
+        Some(DbftSettings {
+            recovery_logs: "ConsensusState".to_string(),
+            ignore_recovery_logs: false,
+            auto_start: false,
+            network,
+            max_block_size: 65_536,
+            max_block_system_fee: 150_000_000_000,
+            exception_policy: neo_primitives::UnhandledExceptionPolicy::StopNode,
+        })
+    }
+
+    fn validator_settings(private_key: &[u8; 32]) -> ProtocolSettings {
+        let validator = KeyPair::from_private_key(private_key)
+            .expect("validator key")
+            .get_public_key_point()
+            .expect("validator public key");
+        let mut settings = ProtocolSettings::default();
+        settings.network = 42;
+        settings.validators_count = 1;
+        settings.standby_committee = vec![validator];
+        settings
+    }
+
+    fn wallet(settings: &ProtocolSettings, private_key: &[u8; 32]) -> Arc<Nep6Wallet> {
+        let wallet = Arc::new(Nep6Wallet::create(
+            Some("dbft-startup-test".to_string()),
+            None,
+            Arc::new(settings.clone()),
+        ));
+        wallet.create_account(private_key).expect("wallet account");
+        wallet
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn dbft_startup_rejects_missing_provider_wallet_and_network_mismatch() {
+        let settings = ProtocolSettings::default();
+        let system = NeoSystem::new(settings.clone(), None, None).expect("neo system");
+        let configured = dbft_settings(settings.network);
+
+        let error = maybe_enable_dbft_consensus(&configured, &settings, &system, None)
+            .expect_err("missing provider must fail");
+        assert!(error.to_string().contains("requires a wallet provider"));
+
+        let provider = Arc::new(NodeWalletProvider::new());
+        let error = maybe_enable_dbft_consensus(&configured, &settings, &system, Some(&provider))
+            .expect_err("missing wallet must fail");
+        assert!(error.to_string().contains("requires a loaded wallet"));
+
+        let mismatched = dbft_settings(settings.network.wrapping_add(1));
+        let error = maybe_enable_dbft_consensus(&mismatched, &settings, &system, None)
+            .expect_err("network mismatch must fail before provider setup");
+        assert!(error.to_string().contains("network mismatch"));
+
+        system.shutdown().await.expect("shutdown");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn dbft_startup_rejects_a_wallet_without_the_next_validator_key() {
+        let settings = validator_settings(&[0x41; 32]);
+        let system = NeoSystem::new(settings.clone(), None, None).expect("neo system");
+        let provider = Arc::new(NodeWalletProvider::new());
+        provider.set_wallet(Some(wallet(&settings, &[0x42; 32])));
+
+        let error = maybe_enable_dbft_consensus(
+            &dbft_settings(settings.network),
+            &settings,
+            &system,
+            Some(&provider),
+        )
+        .expect_err("a non-validator key must not start dBFT");
+        assert!(
+            error
+                .to_string()
+                .contains("requires an unlocked validator key")
+        );
+
+        system.shutdown().await.expect("shutdown");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn dbft_startup_accepts_the_next_validator_key_even_without_auto_start() {
+        let settings = validator_settings(&[0x43; 32]);
+        let system = NeoSystem::new(settings.clone(), None, None).expect("neo system");
+        let wallet: Arc<dyn CoreWallet> = wallet(&settings, &[0x43; 32]);
+        ensure_wallet_can_validate(&system, &wallet).expect("shared validator preflight");
+        let provider = Arc::new(NodeWalletProvider::new());
+        provider.set_wallet(Some(wallet));
+
+        maybe_enable_dbft_consensus(
+            &dbft_settings(settings.network),
+            &settings,
+            &system,
+            Some(&provider),
+        )
+        .expect("manual-start validator mode still requires and accepts signing authority");
+
+        system.shutdown().await.expect("shutdown");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn contract_management_integrity_validates_the_native_snapshot() {
+        let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("neo system");
+        validate_contract_management_integrity(&system).expect("native snapshot integrity");
+        system.shutdown().await.expect("shutdown");
+    }
 }
 
 #[cfg(all(test, feature = "tee"))]

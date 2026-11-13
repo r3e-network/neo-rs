@@ -33,7 +33,7 @@ pub use neo_primitives::{
 };
 pub use not_valid_before::NotValidBefore;
 pub use notary_assisted::NotaryAssisted;
-pub use oracle_response::OracleResponse;
+pub use oracle_response::{OracleResponse, get_fixed_script};
 pub use signer::{MAX_SIGNER_SUBITEMS, Signer};
 pub use transaction::Transaction;
 pub use transaction_attribute::TransactionAttribute;

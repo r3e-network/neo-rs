@@ -76,9 +76,8 @@ fn network_error_from_io_error_preserves_message() {
     let io_err = std::io::Error::new(std::io::ErrorKind::TimedOut, "operation timed out");
     let net_err: NetworkError = io_err.into();
 
-    let msg = match net_err {
-        NetworkError::ConnectionError(m) => m,
-        _ => panic!("Expected ConnectionError variant"),
+    let NetworkError::ConnectionError(msg) = net_err else {
+        panic!("Expected ConnectionError variant");
     };
 
     assert!(msg.contains("timed out"));
@@ -131,12 +130,11 @@ fn network_error_empty_strings() {
 #[test]
 fn network_result_ok() {
     let result: Result<i32, NetworkError> = Ok(42);
-    assert_eq!(result.unwrap(), 42);
+    assert!(matches!(result, Ok(42)));
 }
 
 #[test]
 fn network_result_err() {
     let result: Result<i32, NetworkError> = Err(NetworkError::Timeout);
-    assert!(result.is_err());
-    assert!(result.unwrap_err().is_timeout());
+    assert!(matches!(result, Err(NetworkError::Timeout)));
 }

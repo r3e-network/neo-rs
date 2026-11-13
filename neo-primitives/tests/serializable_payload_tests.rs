@@ -38,10 +38,7 @@ fn serializable_payload_hash_data_returns_data() {
 fn serializable_payload_witness_count() {
     let payload = MockPayload {
         data: vec![],
-        witnesses: vec![
-            (vec![1], vec![2]),
-            (vec![3], vec![4]),
-        ],
+        witnesses: vec![(vec![1], vec![2]), (vec![3], vec![4])],
     };
 
     assert_eq!(payload.witness_count(), 2);
@@ -75,10 +72,7 @@ fn serializable_payload_invocation_script() {
 fn serializable_payload_verification_script() {
     let payload = MockPayload {
         data: vec![],
-        witnesses: vec![
-            (vec![10, 20], vec![40, 50, 60]),
-            (vec![70], vec![80]),
-        ],
+        witnesses: vec![(vec![10, 20], vec![40, 50, 60]), (vec![70], vec![80])],
     };
 
     assert_eq!(payload.verification_script(0), &[40, 50, 60]);
@@ -89,9 +83,7 @@ fn serializable_payload_verification_script() {
 fn serializable_payload_empty_scripts() {
     let payload = MockPayload {
         data: vec![],
-        witnesses: vec![
-            (vec![], vec![]),
-        ],
+        witnesses: vec![(vec![], vec![])],
     };
 
     assert_eq!(payload.invocation_script(0), &[]);

@@ -272,9 +272,9 @@ pub use abi::{
 };
 pub use host::{interop_hash, syscall_arg_count};
 pub use interpreter::{
-    CALLT_MARKER, CALLT_MARKER_HI, INITIALIZER_COMPLETE_MARKER, SyscallProvider, interpret,
-    interpret_with_stack_and_syscalls, interpret_with_stack_and_syscalls_at,
-    interpret_with_stack_and_syscalls_at_with_initializer,
+    CALLT_MARKER, CALLT_MARKER_HI, INITIALIZER_COMPLETE_MARKER, InterpreterSemantics,
+    SyscallProvider, interpret, interpret_with_stack_and_syscalls,
+    interpret_with_stack_and_syscalls_at, interpret_with_stack_and_syscalls_at_with_initializer,
     interpret_with_stack_and_syscalls_at_with_initializer_and_result_limit,
     interpret_with_stack_and_syscalls_at_with_result_limit, interpret_with_syscalls,
     last_interpreter_ip, last_result_limit, last_result_stack_len, last_result_stage,

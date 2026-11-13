@@ -1213,6 +1213,13 @@ fn test_white_list_fee() {
         vec![Signer::new(committee, WitnessScope::GLOBAL)],
         None,
     );
+    let snapshot_before_uncommitted_change = Arc::new(snapshot.fork_isolated());
+    let shared_fee_cache = engine.native_contract_cache_handle();
+    // Populate a negative fee-cache entry before changing the whitelist in the
+    // same transaction. The setter must invalidate it before the next call.
+    engine
+        .call_native_contract(neo.hash(), "balanceOf", &[committee.to_bytes()])
+        .expect("balanceOf before whitelist");
     engine
         .call_native_contract(
             policy.hash(),
@@ -1227,6 +1234,26 @@ fn test_white_list_fee() {
         .expect("setWhitelistFeeContract");
 
     assert_eq!(engine.notifications().len(), 1);
+    let fee_before_whitelisted_call = engine.fee_consumed();
+    engine
+        .call_native_contract(neo.hash(), "balanceOf", &[committee.to_bytes()])
+        .expect("whitelisted balanceOf after cached miss");
+    assert_eq!(engine.fee_consumed(), fee_before_whitelisted_call);
+
+    // A different engine over the pre-transaction snapshot must not observe the
+    // speculative whitelist decision, even though it shares the block cache.
+    let mut next_engine = make_engine(
+        snapshot_before_uncommitted_change,
+        settings.clone(),
+        vec![Signer::new(committee, WitnessScope::GLOBAL)],
+        None,
+    )
+    .with_native_contract_cache_handle(shared_fee_cache);
+    let fee_before_uncommitted_call = next_engine.fee_consumed();
+    next_engine
+        .call_native_contract(neo.hash(), "balanceOf", &[committee.to_bytes()])
+        .expect("balanceOf on isolated pre-transaction state");
+    assert!(next_engine.fee_consumed() > fee_before_uncommitted_call);
 
     // Whitelisted.
     let mut engine = make_engine_with_script(

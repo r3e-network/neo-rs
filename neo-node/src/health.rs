@@ -36,33 +36,55 @@ where
     let storage_filter = warp::any().map(move || storage_path.clone());
     let rpc_filter = warp::any().map(move || rpc_enabled);
 
-    let health_route = warp::path("health")
-        .and(health_state_filter)
-        .and(max_lag_filter)
-        .and(storage_filter)
-        .and(rpc_filter)
-        .and_then(|state: Arc<RwLock<HealthState>>, max_lag: u32, storage: Option<String>, rpc: bool| async move {
-            let state = state.read().await;
-            let lag = state.header_height.saturating_sub(state.current_height);
-            let healthy = lag <= max_lag;
+    let health_route =
+        warp::path("health")
+            .and(health_state_filter)
+            .and(max_lag_filter)
+            .and(storage_filter)
+            .and(rpc_filter)
+            .and_then(
+                |state: Arc<RwLock<HealthState>>,
+                 max_lag: u32,
+                 storage: Option<String>,
+                 rpc: bool| async move {
+                    let state = state.read().await;
+                    let lag = state.header_height.saturating_sub(state.current_height);
+                    let healthy = lag <= max_lag;
 
-            let status = if healthy { warp::http::StatusCode::OK } else { warp::http::StatusCode::SERVICE_UNAVAILABLE };
+                    let status = if healthy {
+                        warp::http::StatusCode::OK
+                    } else {
+                        warp::http::StatusCode::SERVICE_UNAVAILABLE
+                    };
 
-            let response = serde_json::json!({
-                "healthy": healthy,
-                "current_height": state.current_height,
-                "header_height": state.header_height,
-                "lag": lag,
-                "max_lag": max_lag,
-                "storage": storage,
-                "rpc_enabled": rpc,
-            });
+                    let response = serde_json::json!({
+                        "healthy": healthy,
+                        "current_height": state.current_height,
+                        "header_height": state.header_height,
+                        "lag": lag,
+                        "max_lag": max_lag,
+                        "storage": storage,
+                        "rpc_enabled": rpc,
+                    });
 
-            Ok::<_, warp::Rejection>(warp::reply::with_status(warp::reply::json(&response), status))
-        });
+                    Ok::<_, warp::Rejection>(warp::reply::with_status(
+                        warp::reply::json(&response),
+                        status,
+                    ))
+                },
+            );
 
-    let (_, server) = warp::serve(health_route)
-        .bind_with_graceful_shutdown(([0, 0, 0, 0], port), async move {
+    let metrics_route = warp::path("metrics").map(|| {
+        warp::reply::with_header(
+            crate::metrics::gather_prometheus(),
+            "content-type",
+            "text/plain; version=0.0.4; charset=utf-8",
+        )
+    });
+    let routes = health_route.or(metrics_route);
+
+    let (_, server) =
+        warp::serve(routes).bind_with_graceful_shutdown(([0, 0, 0, 0], port), async move {
             shutdown.await;
         });
 
@@ -105,10 +127,7 @@ mod tests {
         let _ = shutdown_tx.send(());
 
         // Server should exit gracefully
-        let result = tokio::time::timeout(
-            tokio::time::Duration::from_secs(2),
-            server
-        ).await;
+        let result = tokio::time::timeout(tokio::time::Duration::from_secs(2), server).await;
 
         assert!(result.is_ok(), "Server should exit on shutdown signal");
     }

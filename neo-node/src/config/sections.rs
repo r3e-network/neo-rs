@@ -16,6 +16,8 @@ pub struct NodeConfig {
     pub p2p: P2PSection,
     pub storage: StorageSection,
     pub blockchain: BlockchainSection,
+    /// Transaction execution engine selection. Defaults to the canonical VM.
+    pub execution: ExecutionSection,
     pub rpc: RpcSection,
     pub application_logs: Option<ApplicationLogsSection>,
     pub state_service: Option<StateServiceSection>,
@@ -98,6 +100,22 @@ pub struct BlockchainSection {
     pub max_transactions_per_block: Option<u32>,
     /// Maximum free transactions per block
     pub max_free_transactions_per_block: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ExecutionSection {
+    /// `canonical`, `auto`, or `verify`; invalid values are rejected at startup.
+    #[serde(alias = "Mode")]
+    pub mode: String,
+}
+
+impl Default for ExecutionSection {
+    fn default() -> Self {
+        Self {
+            mode: "canonical".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default, Serialize)]
@@ -426,10 +444,11 @@ impl Default for SignerServiceSection {
 }
 
 /// Configured signer provider implementation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum SignerProviderKind {
     /// Local NEP-6 software wallet.
+    #[default]
     Nep6,
     /// Local HSM wallet adapter.
     Hsm,
@@ -441,12 +460,6 @@ pub enum SignerProviderKind {
     Remote,
     /// Remotely attested hardware TEE signer requiring a production verifier.
     RemoteTee,
-}
-
-impl Default for SignerProviderKind {
-    fn default() -> Self {
-        Self::Nep6
-    }
 }
 
 /// One explicitly capability-scoped signer provider.
@@ -607,6 +620,22 @@ pub struct TelemetryMetricsSection {
     pub bind_address: Option<String>,
 }
 
+/// Optional real HTTP model provider for advisory-only diagnostics.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelProviderSection {
+    /// Provider API and response schema.
+    pub kind: neo_ai_agent::ProviderKind,
+    /// HTTPS endpoint, or HTTP only for a loopback provider.
+    pub endpoint: url::Url,
+    /// Remote or local model identifier.
+    pub model: String,
+    /// Environment variable containing the credential; never the credential itself.
+    pub credential_env: Option<neo_ai_agent::CredentialEnv>,
+    /// Timeout, concurrency, retry, budget and circuit-breaker limits.
+    pub limits: neo_ai_agent::RuntimeLimits,
+}
+
 /// Capability-limited node diagnostics and bounded auto-action settings.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -621,6 +650,8 @@ pub struct DiagnosticsSection {
     pub audit_enabled: bool,
     /// Durable hash-chained JSONL audit path. Required when diagnostics are enabled.
     pub audit_path: String,
+    /// Optional real model provider. Absence keeps model diagnosis unavailable.
+    pub model_provider: Option<ModelProviderSection>,
     /// Bounded evidence queue capacity.
     pub evidence_queue_capacity: usize,
     /// Base node evidence sampling interval.
@@ -665,6 +696,7 @@ impl Default for DiagnosticsSection {
             observe_only: true,
             audit_enabled: true,
             audit_path: "data/diagnostics-audit.jsonl".to_string(),
+            model_provider: None,
             evidence_queue_capacity: 1_024,
             sampling_interval_ms: 1_000,
             event_freshness_ms: 5_000,

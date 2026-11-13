@@ -1,8 +1,10 @@
 //! Ledger hardware wallet signer implementation
 
-use crate::device::{HsmDeviceInfo, HsmDeviceType};
-use crate::error::{HsmError, HsmResult};
-use crate::signer::{HsmKeyInfo, HsmSigner, normalize_public_key, script_hash_from_public_key};
+use crate::hsm::device::{HsmDeviceInfo, HsmDeviceType};
+use crate::hsm::error::{HsmError, HsmResult};
+use crate::hsm::signer::{
+    HsmKeyInfo, HsmSigner, normalize_public_key, script_hash_from_public_key,
+};
 use async_trait::async_trait;
 use parking_lot::RwLock;
 
@@ -28,17 +30,27 @@ pub struct LedgerSigner {
     device_info: HsmDeviceInfo,
     hid_api: HidApi,
     device_index: u32,
+    timeout_ms: i32,
     is_ready: RwLock<bool>,
     is_locked: RwLock<bool>,
-    cached_keys: RwLock<Vec<HsmKeyInfo>>,
 }
 
 impl LedgerSigner {
-    /// Create a new Ledger signer
-    ///
-    /// # Arguments
-    /// * `device_index` - Index of the Ledger device (0 for first device)
+    /// Creates a Ledger signer with a 30-second device timeout.
     pub fn new(device_index: u32) -> HsmResult<Self> {
+        Self::new_with_timeout(device_index, 30_000)
+    }
+
+    /// Creates a Ledger signer with an explicit device timeout.
+    pub fn new_with_timeout(device_index: u32, timeout_ms: u64) -> HsmResult<Self> {
+        let timeout_ms = i32::try_from(timeout_ms)
+            .ok()
+            .filter(|timeout| *timeout > 0)
+            .ok_or_else(|| {
+                HsmError::InitFailed(
+                    "Ledger timeout must be between 1 and i32::MAX milliseconds".to_string(),
+                )
+            })?;
         let hid_api = HidApi::new()
             .map_err(|e| HsmError::InitFailed(format!("Failed to init HID: {}", e)))?;
 
@@ -48,9 +60,9 @@ impl LedgerSigner {
             device_info,
             hid_api,
             device_index,
+            timeout_ms,
             is_ready: RwLock::new(false),
             is_locked: RwLock::new(true),
-            cached_keys: RwLock::new(Vec::new()),
         })
     }
 
@@ -170,7 +182,7 @@ impl LedgerSigner {
         let mut buf = [0u8; 65];
         loop {
             let read_len = device
-                .read_timeout(&mut buf, 30000)
+                .read_timeout(&mut buf, self.timeout_ms)
                 .map_err(|e| HsmError::DeviceError(format!("Read failed: {}", e)))?;
 
             // Platform-dependent layouts: some hidapi backends deliver the
@@ -333,14 +345,12 @@ impl HsmSigner for LedgerSigner {
     }
 
     async fn list_keys(&self) -> HsmResult<Vec<HsmKeyInfo>> {
-        // Return first 5 keys from default derivation paths
+        // Ledger has no key-enumeration APDU. Probe the conventional account-0
+        // paths, but never turn transport/device failures into an empty wallet.
         let mut keys = Vec::new();
-        for i in 0..5 {
-            let path = super::neo_derivation_path(0, i);
-            match self.get_key(&path).await {
-                Ok(key) => keys.push(key),
-                Err(_) => break, // Stop on first error
-            }
+        for index in 0..5 {
+            let path = super::neo_derivation_path(0, index);
+            keys.push(self.get_key(&path).await?);
         }
         Ok(keys)
     }

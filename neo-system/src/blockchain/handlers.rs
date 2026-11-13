@@ -3,8 +3,8 @@
 //
 
 use super::*;
-use neo_protocol::execution::BlockHeader;
 use neo_ledger::HeaderCache;
+use neo_protocol::execution::BlockHeader;
 
 /// Verifies a block header against the header cache or store.
 ///
@@ -35,7 +35,8 @@ fn verify_header_with_cache(
     header_cache: &HeaderCache,
 ) -> bool {
     // Convert execution BlockHeader to payload Header for neo-ledger validation
-    let payload_header = neo_protocol::execution::conversions::convert_ledger_header(header.clone());
+    let payload_header =
+        neo_protocol::execution::conversions::convert_ledger_header(header.clone());
 
     // Use neo_ledger's comprehensive header verification with cache support
     // This handles:
@@ -43,12 +44,7 @@ fn verify_header_with_cache(
     // 2. Validation against previous header (index, prev_hash, timestamp progression)
     // 3. Witness verification (cryptographic signature against next_consensus script hash)
     // 4. Automatic fallback to store-based verification when cache is empty
-    neo_ledger::verify_header_with_cache(
-        &payload_header,
-        settings,
-        store_cache,
-        header_cache,
-    )
+    neo_ledger::verify_header_with_cache(&payload_header, settings, store_cache, header_cache)
 }
 
 impl Blockchain {
@@ -152,14 +148,9 @@ impl Blockchain {
             }
         }
 
-        if let Err(error) = self.ledger.insert_block(block.to_payload_block()) {
-            tracing::warn!(
-                target: "neo",
-                %error,
-                index,
-                "failed to insert persisted block into ledger cache"
-            );
-        }
+        // `NeoSystem::persist_block` advances the shared ledger only after the
+        // store commit succeeds. This completion handler owns post-commit pool
+        // maintenance and notifications, not a second ledger insertion.
 
         for transaction in &block.transactions {
             let tx_hash = match transaction.try_hash() {
@@ -243,7 +234,12 @@ impl Blockchain {
             }
 
             let block_header: BlockHeader = header.clone().into();
-            if !verify_header_with_cache(&block_header, settings.as_ref(), &store_cache, &header_cache) {
+            if !verify_header_with_cache(
+                &block_header,
+                settings.as_ref(),
+                &store_cache,
+                &header_cache,
+            ) {
                 break;
             }
 
@@ -396,11 +392,11 @@ impl Blockchain {
                         }
                         InventoryType::Transaction => {
                             Self::deserialize_inventory::<Transaction>(&payload)
-                                .map(|tx| InventoryPayload::Transaction(tx))
+                                .map(InventoryPayload::Transaction)
                         }
                         InventoryType::Consensus | InventoryType::Extensible => {
                             Self::deserialize_inventory::<ExtensiblePayload>(&payload)
-                                .map(|payload| InventoryPayload::Extensible(payload))
+                                .map(InventoryPayload::Extensible)
                         }
                     };
 
@@ -426,10 +422,7 @@ impl Blockchain {
     async fn handle_reverify_payload(&self, payload: InventoryPayload, ctx: &ActorContext) {
         match payload {
             InventoryPayload::Block(block) => {
-                if let Err(error) = self
-                    .handle_block_inventory(block, false, false, ctx)
-                    .await
-                {
+                if let Err(error) = self.handle_block_inventory(block, false, false, ctx).await {
                     tracing::debug!(
                         target: "neo",
                         %error,
@@ -457,7 +450,7 @@ impl Blockchain {
         &self,
         block: Arc<Block>,
         relay: bool,
-        _pre_verified: bool,
+        pre_verified: bool,
         ctx: &ActorContext,
     ) -> ActorResult {
         let index = block.index();
@@ -474,7 +467,9 @@ impl Blockchain {
             }
         };
 
-        let result = self.on_new_block(Arc::clone(&block), true).await;
+        // Pre-verification covers only the state-independent block checks. The
+        // normal persistence path still performs all state-dependent validation.
+        let result = self.on_new_block(Arc::clone(&block), !pre_verified).await;
 
         // Opportunistically drain unverified cache inline. Scheduling via
         // self_ref().tell() can silently fail when the mailbox is full (try_send),
@@ -667,17 +662,28 @@ impl Blockchain {
             });
         }
 
-        // Relay result response handling
-        //
-        // In a full actor system implementation, we would send the relay result
-        // back to the original sender for RPC response or internal coordination.
-        // The current architecture doesn't require explicit reply messages since:
-        // - RPC methods wait on async channels
-        // - Plugin events handle notifications
-        // - Mempool tracking provides state queries
-        //
-        // Future enhancement: Add actor reply channel for synchronous relay confirmation
-        // }
+        // Preserve inventory identity for consumers that must resume work only
+        // after verification (notably dBFT, which retrieves the cached payload).
+        let outcome = crate::network::p2p::ports::RelayOutcome {
+            inventory_type,
+            hash,
+            block_index,
+            result,
+        };
+        if let Some(sender) = ctx.sender() {
+            // A caller that supplied a responder is waiting for the terminal
+            // verification result, not merely for an event-stream notification.
+            // Use the neutral outcome type so the system layer stays independent
+            // of RPC response formatting.
+            if let Err(error) = sender.tell(outcome.clone()) {
+                tracing::debug!(
+                    target: "neo",
+                    %error,
+                    "failed to deliver inventory verification result to caller"
+                );
+            }
+        }
+        context.actor_system.event_stream().publish(outcome);
     }
 
     pub(super) async fn handle_relay_result(&self, _result: neo_ledger::RelayResult<()>) {}

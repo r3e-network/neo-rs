@@ -270,9 +270,7 @@ fn flush_and_verify_checkpoint(
     {
         tracker.flush();
     }
-    let state_root_index = state_store
-        .as_ref()
-        .map(|store| store.local_root_index().unwrap_or(0));
+    let state_root_index = state_store.as_ref().map(|store| store.local_root_index());
 
     let local_view_height = read_local_view_height(system).unwrap_or(0);
 
@@ -310,7 +308,7 @@ fn flush_and_verify_checkpoint(
     // index must have reached the imported height, otherwise the computed roots
     // would be silently unservable after a restart.
     if let Some(state_root_index) = state_root_index
-        && state_root_index < expected_height
+        && state_root_index < u64::from(expected_height)
     {
         bail!(
             "flush verification failed ({reason}): state service local root index {} is behind expected height {}",

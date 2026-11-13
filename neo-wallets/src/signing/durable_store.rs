@@ -116,6 +116,7 @@ impl DurableSigningStore {
         if valid_prefix_len != bytes.len() {
             let repair = OpenOptions::new()
                 .create(true)
+                .truncate(false)
                 .write(true)
                 .open(path)
                 .and_then(|file| {

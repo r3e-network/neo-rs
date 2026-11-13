@@ -1,7 +1,7 @@
 //! Shared wallet witness script helpers.
 
-use neo_wallets::{WalletError, WalletResult};
 use neo_vm::ScriptBuilder;
+use neo_wallets::{WalletError, WalletResult};
 
 #[allow(dead_code)]
 pub(crate) fn signature_invocation(signature: &[u8]) -> WalletResult<Vec<u8>> {

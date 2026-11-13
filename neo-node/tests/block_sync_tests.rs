@@ -1,31 +1,37 @@
 //! Integration tests for block synchronization
 
 use anyhow::Result;
+use neo_primitives::UInt256;
 use neo_protocol::ProtocolSettings;
-use neo_protocol::payloads::{Block, Header};
 use neo_system::NeoSystem;
-use std::sync::Arc;
+use neo_system::network::p2p::ChannelsConfig;
 use tokio::time::Duration;
+
+/// Channels configuration that keeps the P2P layer dormant in tests.
+fn offline_channels_config() -> ChannelsConfig {
+    ChannelsConfig {
+        tcp: None,
+        min_desired_connections: 0,
+        max_connections: 0,
+        ..Default::default()
+    }
+}
 
 #[tokio::test]
 async fn test_blockchain_genesis_block() -> Result<()> {
     let protocol_settings = ProtocolSettings::default();
-    let system = Arc::new(NeoSystem::new(protocol_settings, None, None)?);
+    let system = NeoSystem::new(protocol_settings, None, None)?;
 
-    let blockchain = system.blockchain().as_ref().unwrap();
+    let context = system.context();
 
     // Genesis block should exist at height 0
-    let height = blockchain.height()?;
+    let height = system.current_block_index();
     assert_eq!(height, 0, "Blockchain should start at genesis");
 
     // Get genesis block
-    let genesis = blockchain.get_block(0)?;
-    assert!(genesis.is_some(), "Genesis block should exist");
-
-    if let Some(block) = genesis {
-        assert_eq!(block.index(), 0);
-        assert!(block.transactions().is_empty() || !block.transactions().is_empty());
-    }
+    let genesis = context.genesis_block();
+    assert_eq!(genesis.index(), 0, "Genesis block should exist");
+    let _tx_count = genesis.transactions.len();
 
     system.shutdown().await?;
     Ok(())
@@ -34,15 +40,13 @@ async fn test_blockchain_genesis_block() -> Result<()> {
 #[tokio::test]
 async fn test_blockchain_height_tracking() -> Result<()> {
     let protocol_settings = ProtocolSettings::default();
-    let system = Arc::new(NeoSystem::new(protocol_settings, None, None)?);
+    let system = NeoSystem::new(protocol_settings, None, None)?;
 
-    let blockchain = system.blockchain().as_ref().unwrap();
-
-    let initial_height = blockchain.height()?;
+    let initial_height = system.current_block_index();
     assert_eq!(initial_height, 0);
 
     // Verify height is consistent across multiple calls
-    let height2 = blockchain.height()?;
+    let height2 = system.current_block_index();
     assert_eq!(initial_height, height2);
 
     system.shutdown().await?;
@@ -52,16 +56,18 @@ async fn test_blockchain_height_tracking() -> Result<()> {
 #[tokio::test]
 async fn test_blockchain_block_retrieval() -> Result<()> {
     let protocol_settings = ProtocolSettings::default();
-    let system = Arc::new(NeoSystem::new(protocol_settings, None, None)?);
+    let system = NeoSystem::new(protocol_settings, None, None)?;
 
-    let blockchain = system.blockchain().as_ref().unwrap();
+    let context = system.context();
+    let genesis_hash = context.genesis_block().hash();
 
     // Try to get genesis block
-    let block = blockchain.get_block(0)?;
+    let block = context.try_get_block(&genesis_hash);
     assert!(block.is_some());
 
     // Try to get non-existent block
-    let non_existent = blockchain.get_block(99999)?;
+    let non_existent_hash = UInt256::from_bytes(&[0x77; 32])?;
+    let non_existent = context.try_get_block(&non_existent_hash);
     assert!(non_existent.is_none());
 
     system.shutdown().await?;
@@ -71,15 +77,15 @@ async fn test_blockchain_block_retrieval() -> Result<()> {
 #[tokio::test]
 async fn test_blockchain_header_retrieval() -> Result<()> {
     let protocol_settings = ProtocolSettings::default();
-    let system = Arc::new(NeoSystem::new(protocol_settings, None, None)?);
+    let system = NeoSystem::new(protocol_settings, None, None)?;
 
-    let blockchain = system.blockchain().as_ref().unwrap();
+    let context = system.context();
 
     // Get genesis header
-    let header = blockchain.get_header(0)?;
-    assert!(header.is_some());
+    let headers = context.headers_from_index(0, 1);
+    assert!(!headers.is_empty());
 
-    if let Some(hdr) = header {
+    if let Some(hdr) = headers.first() {
         assert_eq!(hdr.index(), 0);
     }
 
@@ -87,21 +93,23 @@ async fn test_blockchain_header_retrieval() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_blockchain_concurrent_reads() -> Result<()> {
     let protocol_settings = ProtocolSettings::default();
-    let system = Arc::new(NeoSystem::new(protocol_settings, None, None)?);
+    let system = NeoSystem::new(protocol_settings, None, None)?;
 
-    let blockchain = system.blockchain().clone().unwrap();
+    let context = system.context();
+    let genesis_hash = context.genesis_block().hash();
 
     // Spawn multiple concurrent read tasks
     let handles: Vec<_> = (0..10)
         .map(|_| {
-            let bc = blockchain.clone();
+            let ctx = context.clone();
+            let hash = genesis_hash;
             tokio::spawn(async move {
-                let _height = bc.height().unwrap();
-                let _block = bc.get_block(0).unwrap();
-                let _header = bc.get_header(0).unwrap();
+                let _height = ctx.current_block_index();
+                let _block = ctx.try_get_block(&hash);
+                let _headers = ctx.headers_from_index(0, 1);
             })
         })
         .collect();
@@ -118,15 +126,14 @@ async fn test_blockchain_concurrent_reads() -> Result<()> {
 #[tokio::test]
 async fn test_blockchain_store_cache_integration() -> Result<()> {
     let protocol_settings = ProtocolSettings::default();
-    let system = Arc::new(NeoSystem::new(protocol_settings, None, None)?);
+    let system = NeoSystem::new(protocol_settings, None, None)?;
 
     let store_cache = system.store_cache();
-    let blockchain = system.blockchain().as_ref().unwrap();
 
-    // Verify store cache and blockchain are synchronized
-    assert!(store_cache.is_commit_mode());
+    // Verify store cache is writable (commit mode, not a read-only snapshot)
+    assert!(!store_cache.data_cache().is_read_only());
 
-    let height = blockchain.height()?;
+    let height = system.current_block_index();
     assert_eq!(height, 0);
 
     system.shutdown().await?;
@@ -141,19 +148,16 @@ async fn test_blockchain_with_storage_backend() -> Result<()> {
     let storage_path = temp_dir.path().to_str().unwrap();
 
     let protocol_settings = ProtocolSettings::default();
-    let system = Arc::new(NeoSystem::new(
-        protocol_settings,
-        Some(storage_path),
-        None,
-    )?);
+    let system = NeoSystem::new(protocol_settings, None, Some(storage_path.to_string()))?;
 
-    let blockchain = system.blockchain().as_ref().unwrap();
+    let context = system.context();
 
     // Verify blockchain works with persistent storage
-    let height = blockchain.height()?;
+    let height = system.current_block_index();
     assert_eq!(height, 0);
 
-    let genesis = blockchain.get_block(0)?;
+    let genesis_hash = context.genesis_block().hash();
+    let genesis = context.try_get_block(&genesis_hash);
     assert!(genesis.is_some());
 
     system.shutdown().await?;
@@ -163,18 +167,13 @@ async fn test_blockchain_with_storage_backend() -> Result<()> {
 #[tokio::test]
 async fn test_blockchain_genesis_hash() -> Result<()> {
     let protocol_settings = ProtocolSettings::default();
-    let system = Arc::new(NeoSystem::new(protocol_settings, None, None)?);
+    let system = NeoSystem::new(protocol_settings, None, None)?;
 
-    let blockchain = system.blockchain().as_ref().unwrap();
+    let genesis = system.context().genesis_block();
 
     // Get genesis block and verify it has a valid hash
-    let genesis = blockchain.get_block(0)?;
-    assert!(genesis.is_some());
-
-    if let Some(block) = genesis {
-        let hash = block.hash();
-        assert!(!hash.is_zero(), "Genesis block should have non-zero hash");
-    }
+    let hash = genesis.hash();
+    assert!(!hash.is_zero(), "Genesis block should have non-zero hash");
 
     system.shutdown().await?;
     Ok(())
@@ -183,16 +182,15 @@ async fn test_blockchain_genesis_hash() -> Result<()> {
 #[tokio::test]
 async fn test_blockchain_contains_block() -> Result<()> {
     let protocol_settings = ProtocolSettings::default();
-    let system = Arc::new(NeoSystem::new(protocol_settings, None, None)?);
+    let system = NeoSystem::new(protocol_settings, None, None)?;
 
-    let blockchain = system.blockchain().as_ref().unwrap();
+    let context = system.context();
 
     // Get genesis hash
-    let genesis = blockchain.get_block(0)?.unwrap();
-    let genesis_hash = genesis.hash();
+    let genesis_hash = context.genesis_block().hash();
 
     // Check if blockchain contains genesis block
-    let contains = blockchain.contains_block(&genesis_hash)?;
+    let contains = context.try_get_block(&genesis_hash).is_some();
     assert!(contains, "Blockchain should contain genesis block");
 
     system.shutdown().await?;
@@ -202,12 +200,10 @@ async fn test_blockchain_contains_block() -> Result<()> {
 #[tokio::test]
 async fn test_blockchain_transaction_in_genesis() -> Result<()> {
     let protocol_settings = ProtocolSettings::default();
-    let system = Arc::new(NeoSystem::new(protocol_settings, None, None)?);
+    let system = NeoSystem::new(protocol_settings, None, None)?;
 
-    let blockchain = system.blockchain().as_ref().unwrap();
-
-    let genesis = blockchain.get_block(0)?.unwrap();
-    let transactions = genesis.transactions();
+    let genesis = system.context().genesis_block();
+    let transactions = &genesis.transactions;
 
     // Genesis block may or may not have transactions depending on protocol settings
     // Just verify we can access them without error
@@ -222,34 +218,30 @@ async fn test_blockchain_multiple_instances() -> Result<()> {
     let protocol_settings = ProtocolSettings::default();
 
     // Create multiple independent blockchain instances
-    let system1 = Arc::new(NeoSystem::new(protocol_settings.clone(), None, None)?);
-    let system2 = Arc::new(NeoSystem::new(protocol_settings.clone(), None, None)?);
-
-    let bc1 = system1.blockchain().as_ref().unwrap();
-    let bc2 = system2.blockchain().as_ref().unwrap();
+    let system1 = NeoSystem::new(protocol_settings.clone(), None, None)?;
+    let system2 = NeoSystem::new(protocol_settings.clone(), None, None)?;
 
     // Both should have genesis
-    assert_eq!(bc1.height()?, 0);
-    assert_eq!(bc2.height()?, 0);
+    assert_eq!(system1.current_block_index(), 0);
+    assert_eq!(system2.current_block_index(), 0);
 
     system1.shutdown().await?;
     system2.shutdown().await?;
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_blockchain_sync_readiness() -> Result<()> {
     let protocol_settings = ProtocolSettings::default();
-    let system = Arc::new(NeoSystem::new(protocol_settings, None, None)?);
+    let system = NeoSystem::new(protocol_settings, None, None)?;
 
     // Start the node
-    system.start_node(&None)?;
+    system.start_node(offline_channels_config())?;
 
     // Give it time to initialize
     tokio::time::sleep(Duration::from_millis(100)).await;
 
-    let blockchain = system.blockchain().as_ref().unwrap();
-    let height = blockchain.height()?;
+    let height = system.current_block_index();
 
     // Should still be at genesis after initialization
     assert_eq!(height, 0);

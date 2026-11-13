@@ -68,6 +68,7 @@ pub(super) fn parse_object_field<T>(
     parse_field(field_token)
 }
 
+#[cfg(test)]
 pub(super) fn token_as_boolean(token: JToken, context: &str) -> Result<bool, ClientRpcError> {
     match token {
         JToken::Boolean(value) => Ok(value),

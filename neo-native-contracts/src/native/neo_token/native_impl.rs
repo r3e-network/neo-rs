@@ -196,14 +196,23 @@ impl NativeContract for NeoToken {
     /// Matches C# NeoToken.PostPersistAsync.
     fn post_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         let block = engine.get_persisting_block()?;
+        let profiling =
+            neo_smart_contract::env_flags::env_flag_enabled("NEO_PERSIST_PROFILE", false);
+        let elapsed_ns = |started: Option<std::time::Instant>| {
+            started.map_or(0, |value| {
+                value.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64
+            })
+        };
 
         let committee_count = engine.protocol_settings().committee_members_count();
         let validators_count =
             usize::try_from(engine.protocol_settings().validators_count.max(0)).unwrap_or(0);
         let snapshot = engine.snapshot_cache();
 
+        let committee_started = profiling.then(std::time::Instant::now);
         let committee =
             self.committee_from_cache_with_votes(snapshot.as_ref(), engine.protocol_settings())?;
+        let committee_ns = elapsed_ns(committee_started);
         if committee.is_empty() {
             return Ok(());
         }
@@ -214,23 +223,28 @@ impl NativeContract for NeoToken {
             return Ok(());
         }
 
+        let gas_started = profiling.then(std::time::Instant::now);
         let ledger = LedgerContract::new();
         let current_index = ledger
             .current_index(snapshot.as_ref())
             .unwrap_or(block.index());
         let gas_per_block =
             self.get_gas_per_block_internal(snapshot.as_ref(), current_index.saturating_add(1));
+        let gas_ns = elapsed_ns(gas_started);
 
         // Use safe arithmetic for committee reward calculation
         let committee_reward =
             SafeArithmetic::safe_mul(&gas_per_block, &BigInt::from(Self::COMMITTEE_REWARD_RATIO))?;
         let committee_reward = SafeArithmetic::safe_div(&committee_reward, &BigInt::from(100i64))?;
 
+        let mint_started = profiling.then(std::time::Instant::now);
         if !committee_reward.is_zero() {
             let pubkey = &committee[reward_index].0;
             let account = Contract::create_signature_contract(pubkey.clone()).script_hash();
             GasToken::new().mint(engine, &account, &committee_reward, false)?;
         }
+        let mint_ns = elapsed_ns(mint_started);
+        let voter_started = profiling.then(std::time::Instant::now);
 
         if Self::should_refresh_committee(block.index(), committee_count) {
             let m = i64::try_from(committee_count)
@@ -302,6 +316,16 @@ impl NativeContract for NeoToken {
             }
         }
 
+        if profiling {
+            eprintln!(
+                "neo-post-persist-profile height={} committee_ns={} gas_ns={} mint_ns={} voter_ns={}",
+                block.index(),
+                committee_ns,
+                gas_ns,
+                mint_ns,
+                elapsed_ns(voter_started)
+            );
+        }
         Ok(())
     }
 }

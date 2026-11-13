@@ -4,16 +4,37 @@ use anyhow::Result;
 use neo_protocol::ProtocolSettings;
 use neo_system::NeoSystem;
 use neo_system::network::p2p::ChannelsConfig;
-use std::sync::Arc;
 use tokio::time::Duration;
 
-#[tokio::test]
+/// Channels configuration that keeps the P2P layer dormant in tests:
+/// no TCP listener and no desired peers.
+fn offline_channels_config() -> ChannelsConfig {
+    ChannelsConfig {
+        tcp: None,
+        min_desired_connections: 0,
+        max_connections: 0,
+        ..Default::default()
+    }
+}
+
+/// Configuration with explicit connection bounds. The former per-channel
+/// capacity fields (`task_manager`/`blockchain`/`remote_node`/`local_node`)
+/// were replaced by the connection-limit based `ChannelsConfig`.
+fn bounded_channels_config(min_connections: usize, max_connections: usize) -> ChannelsConfig {
+    ChannelsConfig {
+        min_desired_connections: min_connections,
+        max_connections,
+        ..offline_channels_config()
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn test_p2p_system_initialization() -> Result<()> {
     let protocol_settings = ProtocolSettings::default();
-    let system = Arc::new(NeoSystem::new(protocol_settings, None, None)?);
+    let system = NeoSystem::new(protocol_settings, None, None)?;
 
     // Start the node with P2P disabled (no actual network connections)
-    system.start_node(&None)?;
+    system.start_node(offline_channels_config())?;
 
     // Verify system is running
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -22,59 +43,44 @@ async fn test_p2p_system_initialization() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_p2p_channels_config() -> Result<()> {
-    let channels_config = ChannelsConfig {
-        task_manager: 16,
-        blockchain: 16,
-        remote_node: 16,
-        local_node: 16,
-    };
+    let channels_config = bounded_channels_config(16, 16);
 
     let protocol_settings = ProtocolSettings::default();
-    let system = Arc::new(NeoSystem::new(protocol_settings, None, Some(channels_config))?);
+    let system = NeoSystem::new(protocol_settings, None, None)?;
 
-    system.start_node(&None)?;
+    system.start_node(channels_config)?;
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     system.shutdown().await?;
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_p2p_custom_channels() -> Result<()> {
-    // Test with larger channel sizes for high-throughput scenarios
-    let channels_config = ChannelsConfig {
-        task_manager: 64,
-        blockchain: 64,
-        remote_node: 64,
-        local_node: 64,
-    };
+    // Test with larger connection limits for high-throughput scenarios
+    let channels_config = bounded_channels_config(64, 64);
 
     let protocol_settings = ProtocolSettings::default();
-    let system = Arc::new(NeoSystem::new(protocol_settings, None, Some(channels_config))?);
+    let system = NeoSystem::new(protocol_settings, None, None)?;
 
-    system.start_node(&None)?;
+    system.start_node(channels_config)?;
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     system.shutdown().await?;
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_p2p_minimal_channels() -> Result<()> {
-    // Test with minimal channel sizes
-    let channels_config = ChannelsConfig {
-        task_manager: 4,
-        blockchain: 4,
-        remote_node: 4,
-        local_node: 4,
-    };
+    // Test with minimal connection limits
+    let channels_config = bounded_channels_config(4, 4);
 
     let protocol_settings = ProtocolSettings::default();
-    let system = Arc::new(NeoSystem::new(protocol_settings, None, Some(channels_config))?);
+    let system = NeoSystem::new(protocol_settings, None, None)?;
 
-    system.start_node(&None)?;
+    system.start_node(channels_config)?;
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     system.shutdown().await?;
@@ -89,10 +95,10 @@ async fn test_p2p_protocol_settings() -> Result<()> {
     protocol_settings.network = 0x334F454E;
     protocol_settings.seed_list = vec![];
 
-    let system = Arc::new(NeoSystem::new(protocol_settings.clone(), None, None)?);
+    let system = NeoSystem::new(protocol_settings.clone(), None, None)?;
 
-    assert_eq!(system.protocol_settings().network, 0x334F454E);
-    assert_eq!(system.protocol_settings().seed_list.len(), 0);
+    assert_eq!(system.settings().network, 0x334F454E);
+    assert_eq!(system.settings().seed_list.len(), 0);
 
     system.shutdown().await?;
     Ok(())
@@ -108,25 +114,30 @@ async fn test_p2p_seed_list_configuration() -> Result<()> {
         "seed2.neo.org:10333".to_string(),
     ];
 
-    let system = Arc::new(NeoSystem::new(protocol_settings.clone(), None, None)?);
+    let system = NeoSystem::new(protocol_settings.clone(), None, None)?;
 
-    assert_eq!(system.protocol_settings().seed_list.len(), 2);
-    assert!(system.protocol_settings().seed_list.contains(&"seed1.neo.org:10333".to_string()));
+    assert_eq!(system.settings().seed_list.len(), 2);
+    assert!(
+        system
+            .settings()
+            .seed_list
+            .contains(&"seed1.neo.org:10333".to_string())
+    );
 
     system.shutdown().await?;
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_p2p_concurrent_node_startup() -> Result<()> {
     // Test multiple nodes can start concurrently (different instances)
     let protocol_settings = ProtocolSettings::default();
 
-    let system1 = Arc::new(NeoSystem::new(protocol_settings.clone(), None, None)?);
-    let system2 = Arc::new(NeoSystem::new(protocol_settings.clone(), None, None)?);
+    let system1 = NeoSystem::new(protocol_settings.clone(), None, None)?;
+    let system2 = NeoSystem::new(protocol_settings.clone(), None, None)?;
 
-    system1.start_node(&None)?;
-    system2.start_node(&None)?;
+    system1.start_node(offline_channels_config())?;
+    system2.start_node(offline_channels_config())?;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
 
@@ -135,13 +146,13 @@ async fn test_p2p_concurrent_node_startup() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_p2p_node_restart() -> Result<()> {
     let protocol_settings = ProtocolSettings::default();
-    let system = Arc::new(NeoSystem::new(protocol_settings, None, None)?);
+    let system = NeoSystem::new(protocol_settings, None, None)?;
 
     // Start node
-    system.start_node(&None)?;
+    system.start_node(offline_channels_config())?;
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     // Shutdown
@@ -165,39 +176,36 @@ async fn test_p2p_network_magic_validation() -> Result<()> {
 
     for magic in test_magics {
         protocol_settings.network = magic;
-        let system = Arc::new(NeoSystem::new(protocol_settings.clone(), None, None)?);
+        let system = NeoSystem::new(protocol_settings.clone(), None, None)?;
 
-        assert_eq!(system.protocol_settings().network, magic);
+        assert_eq!(system.settings().network, magic);
         system.shutdown().await?;
     }
 
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_p2p_connection_timeout_settings() -> Result<()> {
     let protocol_settings = ProtocolSettings::default();
-    let system = Arc::new(NeoSystem::new(protocol_settings, None, None)?);
+    let system = NeoSystem::new(protocol_settings, None, None)?;
 
-    system.start_node(&None)?;
+    system.start_node(offline_channels_config())?;
 
     // Verify system can handle quick shutdown (no hanging connections)
-    tokio::time::timeout(
-        Duration::from_secs(5),
-        system.shutdown()
-    ).await??;
+    tokio::time::timeout(Duration::from_secs(5), system.shutdown()).await??;
 
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_p2p_multiple_sequential_startups() -> Result<()> {
     let protocol_settings = ProtocolSettings::default();
 
     // Test multiple sequential node startups
     for _ in 0..3 {
-        let system = Arc::new(NeoSystem::new(protocol_settings.clone(), None, None)?);
-        system.start_node(&None)?;
+        let system = NeoSystem::new(protocol_settings.clone(), None, None)?;
+        system.start_node(offline_channels_config())?;
         tokio::time::sleep(Duration::from_millis(50)).await;
         system.shutdown().await?;
     }
@@ -205,19 +213,19 @@ async fn test_p2p_multiple_sequential_startups() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_p2p_channels_independent() -> Result<()> {
     // Verify different channel configurations work independently
     let configs = vec![
-        ChannelsConfig { task_manager: 8, blockchain: 8, remote_node: 8, local_node: 8 },
-        ChannelsConfig { task_manager: 16, blockchain: 16, remote_node: 16, local_node: 16 },
-        ChannelsConfig { task_manager: 32, blockchain: 32, remote_node: 32, local_node: 32 },
+        bounded_channels_config(8, 8),
+        bounded_channels_config(16, 16),
+        bounded_channels_config(32, 32),
     ];
 
     for config in configs {
         let protocol_settings = ProtocolSettings::default();
-        let system = Arc::new(NeoSystem::new(protocol_settings, None, Some(config))?);
-        system.start_node(&None)?;
+        let system = NeoSystem::new(protocol_settings, None, None)?;
+        system.start_node(config)?;
         tokio::time::sleep(Duration::from_millis(50)).await;
         system.shutdown().await?;
     }

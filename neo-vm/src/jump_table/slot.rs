@@ -109,13 +109,17 @@ fn init_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 
     if argument_count > 0 {
         let mut arg_items = Vec::with_capacity(argument_count);
-        for _ in 0..argument_count {
-            arg_items.push(ctx.pop()?);
-        }
         // C# Neo.VM JumpTable.InitSlot consumes arguments from the evaluation stack in order:
         // `for (int i = 0; i < count; i++) items[i] = EvaluationStack.Pop();`
         // Thus items[0] is the topmost popped element (first popped from stack top).
-        let rc = ctx.evaluation_stack().reference_counter().clone();
+        // Keep argument pops and the final reference-counter lookup under one stack lock.
+        let rc = {
+            let mut stack = ctx.evaluation_stack_mut();
+            for _ in 0..argument_count {
+                arg_items.push(stack.pop()?);
+            }
+            stack.reference_counter().clone()
+        };
         ctx.set_arguments(Some(crate::slot::Slot::with_items(arg_items, rc)));
     }
 
@@ -250,4 +254,90 @@ fn store_argument(engine: &mut ExecutionEngine, instruction: &Instruction) -> Vm
         .first()
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing index"))? as usize;
     store_argument_n(engine, index)
+}
+
+#[cfg(test)]
+mod init_slot_lock_tests {
+    use super::*;
+    use crate::{Script, StackItem};
+
+    fn loaded_engine() -> ExecutionEngine {
+        let mut engine = ExecutionEngine::new(None);
+        engine
+            .load_script(Script::new_relaxed(vec![OpCode::RET.byte()]), -1, 0)
+            .expect("load test script");
+        engine
+    }
+
+    #[test]
+    fn init_slot_single_lock_preserves_argument_order_and_local_slots() {
+        let mut engine = loaded_engine();
+        {
+            let ctx = engine.current_context_mut().expect("current context");
+            ctx.push(StackItem::from_int(1)).expect("push first");
+            ctx.push(StackItem::from_int(2)).expect("push second");
+            ctx.push(StackItem::from_int(3)).expect("push third");
+        }
+
+        init_slot(&mut engine, &Instruction::new(OpCode::INITSLOT, &[2, 3]))
+            .expect("initialize slots");
+
+        let ctx = engine.current_context_mut().expect("current context");
+        let locals = ctx.local_variables().expect("local variables");
+        assert_eq!(locals.len(), 2);
+        assert!(locals.iter().all(|item| *item == StackItem::Null));
+        assert_eq!(
+            ctx.arguments().expect("arguments").to_vec(),
+            vec![
+                StackItem::from_int(3),
+                StackItem::from_int(2),
+                StackItem::from_int(1),
+            ]
+        );
+        assert_eq!(ctx.evaluation_stack().len(), 0);
+        assert_eq!(engine.reference_counter().count(), 5);
+    }
+
+    #[test]
+    fn init_slot_single_lock_uses_the_same_reference_counter() {
+        let mut engine = loaded_engine();
+        let array = StackItem::from_array(vec![StackItem::from_int(7)]);
+        {
+            let ctx = engine.current_context_mut().expect("current context");
+            ctx.push(array.clone()).expect("push array");
+            ctx.push(StackItem::from_int(99)).expect("push integer");
+        }
+        assert_eq!(engine.reference_counter().count(), 3);
+
+        init_slot(&mut engine, &Instruction::new(OpCode::INITSLOT, &[1, 2]))
+            .expect("initialize slots");
+
+        let ctx = engine.current_context().expect("current context");
+        let arguments = ctx.arguments().expect("arguments");
+        assert_eq!(arguments.get(0), Some(&StackItem::from_int(99)));
+        assert_eq!(arguments.get(1), Some(&array));
+        assert_eq!(engine.reference_counter().count(), 4);
+    }
+
+    #[test]
+    fn init_slot_single_lock_preserves_underflow_state() {
+        let mut engine = loaded_engine();
+        {
+            let ctx = engine.current_context_mut().expect("current context");
+            ctx.push(StackItem::from_int(11)).expect("push first");
+            ctx.push(StackItem::from_int(22)).expect("push second");
+        }
+
+        let error = init_slot(&mut engine, &Instruction::new(OpCode::INITSLOT, &[2, 3]))
+            .expect_err("third argument pop must underflow");
+
+        assert!(matches!(error, VmError::StackUnderflow { .. }));
+        let ctx = engine.current_context().expect("current context");
+        assert!(ctx.arguments().is_none());
+        let locals = ctx.local_variables().expect("local variables");
+        assert_eq!(locals.len(), 2);
+        assert!(locals.iter().all(|item| *item == StackItem::Null));
+        assert_eq!(ctx.evaluation_stack().len(), 0);
+        assert_eq!(engine.reference_counter().count(), 2);
+    }
 }

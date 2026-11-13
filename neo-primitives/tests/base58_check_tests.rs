@@ -1,6 +1,6 @@
 use neo_primitives::base58_check::{
-    decode_address_payload, decode_check, encode_address_payload, encode_check,
-    AddressDecodeError, Base58CheckDecodeError, ADDRESS_PAYLOAD_SIZE,
+    ADDRESS_PAYLOAD_SIZE, AddressDecodeError, Base58CheckDecodeError, decode_address_payload,
+    decode_check, encode_address_payload, encode_check,
 };
 
 #[test]
@@ -28,7 +28,10 @@ fn decode_check_empty_string_fails() {
 #[test]
 fn decode_check_invalid_base58_fails() {
     let result = decode_check("0OIl");
-    assert!(matches!(result, Err(Base58CheckDecodeError::InvalidBase58 { .. })));
+    assert!(matches!(
+        result,
+        Err(Base58CheckDecodeError::InvalidBase58 { .. })
+    ));
 }
 
 #[test]
@@ -36,7 +39,7 @@ fn decode_check_invalid_checksum_fails() {
     let mut encoded = encode_check(b"test");
     encoded.push('a'); // corrupt the checksum
     let result = decode_check(&encoded);
-    assert!(matches!(result, Err(_)));
+    assert!(result.is_err());
 }
 
 #[test]
@@ -51,7 +54,9 @@ fn encode_address_payload_formats_correctly() {
 #[test]
 fn decode_address_payload_extracts_script_hash() {
     let version = 0x35;
-    let script_hash = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+    let script_hash = [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+    ];
     let address = encode_address_payload(version, &script_hash);
 
     let decoded = decode_address_payload(&address, version).unwrap();
@@ -67,7 +72,10 @@ fn decode_address_payload_wrong_version_fails() {
     let result = decode_address_payload(&address, 0x36);
     assert!(matches!(
         result,
-        Err(AddressDecodeError::InvalidVersion { expected: 0x36, actual: 0x35 })
+        Err(AddressDecodeError::InvalidVersion {
+            expected: 0x36,
+            actual: 0x35
+        })
     ));
 }
 
@@ -112,17 +120,25 @@ fn base58_check_decode_error_display() {
     let err = Base58CheckDecodeError::InvalidChecksum;
     assert_eq!(err.to_string(), "invalid Base58Check checksum");
 
-    let err = Base58CheckDecodeError::InvalidBase58 { message: "test".to_string() };
+    let err = Base58CheckDecodeError::InvalidBase58 {
+        message: "test".to_string(),
+    };
     assert_eq!(err.to_string(), "invalid Base58: test");
 }
 
 #[test]
 fn address_decode_error_display() {
-    let err = AddressDecodeError::InvalidLength { expected: 21, actual: 10 };
+    let err = AddressDecodeError::InvalidLength {
+        expected: 21,
+        actual: 10,
+    };
     assert!(err.to_string().contains("expected 21"));
     assert!(err.to_string().contains("got 10"));
 
-    let err = AddressDecodeError::InvalidVersion { expected: 0x35, actual: 0x17 };
+    let err = AddressDecodeError::InvalidVersion {
+        expected: 0x35,
+        actual: 0x17,
+    };
     assert!(err.to_string().contains("expected 53"));
     assert!(err.to_string().contains("got 23"));
 }

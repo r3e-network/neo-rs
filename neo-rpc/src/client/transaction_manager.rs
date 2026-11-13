@@ -10,18 +10,18 @@
 // modifications are permitted.
 
 use crate::{Nep17Api, RpcClient, RpcError, TransactionManagerFactory};
-use neo_protocol::signing_data::get_sign_data_vec;
-use neo_wallets::helper::Helper as WalletHelper;
-use neo_wallets::KeyPair;
+use neo_crypto::ECPoint;
 use neo_ledger::VerifiableExt;
 use neo_native_contracts::native::{GasToken, NativeContract};
 use neo_primitives::UInt160;
 use neo_protocol::payloads::{Signer, Transaction, TransactionAttribute};
+use neo_protocol::signing_data::get_sign_data_vec;
 use neo_protocol::witness::Witness;
 use neo_smart_contract::contract::Contract;
 use neo_storage::persistence::DataCache;
-use neo_crypto::ECPoint;
 use neo_vm::ScriptBuilder;
+use neo_wallets::KeyPair;
+use neo_wallets::helper::Helper as WalletHelper;
 use num_bigint::BigInt;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -53,11 +53,11 @@ impl ContextItem {
     /// Adds a signature for a given public key.
     /// Returns `true` if the signature was newly added, `false` if it already existed.
     fn add_signature(&mut self, public_key: ECPoint, signature: Vec<u8>) -> bool {
-        if self.signatures.contains_key(&public_key) {
-            false
-        } else {
-            self.signatures.insert(public_key, signature);
+        if let std::collections::hash_map::Entry::Vacant(e) = self.signatures.entry(public_key) {
+            e.insert(signature);
             true
+        } else {
+            false
         }
     }
 
@@ -121,8 +121,6 @@ struct ContractParametersContext {
     tx: Transaction,
     /// Context items per script hash
     items: HashMap<UInt160, ContextItem>,
-    /// Network magic number
-    network: u32,
 }
 
 impl ContractParametersContext {
@@ -132,15 +130,10 @@ impl ContractParametersContext {
     /// * `snapshot` - Blockchain snapshot (currently unused, matches C# signature)
     /// * `tx` - The transaction to sign
     /// * `network` - Network magic number for signature domain separation
-    fn new(
-        _snapshot: Arc<DataCache>,
-        tx: Transaction,
-        network: u32,
-    ) -> Self {
+    fn new(_snapshot: Arc<DataCache>, tx: Transaction, _network: u32) -> Self {
         Self {
             tx,
             items: HashMap::new(),
-            network,
         }
     }
 
@@ -158,7 +151,9 @@ impl ContractParametersContext {
     ) -> Result<bool, String> {
         let hash = contract.script_hash();
 
-        let item = self.items.get_mut(&hash)
+        let item = self
+            .items
+            .get_mut(&hash)
             .ok_or_else(|| format!("Contract not found: {}", hash))?;
 
         // Reject duplicate signatures after context is complete
@@ -176,12 +171,9 @@ impl ContractParametersContext {
         let hash = contract.script_hash();
         let parameter_count = contract.parameter_list.len();
 
-        if !self.items.contains_key(&hash) {
-            let item = ContextItem::new(
-                contract.script.clone(),
-                parameter_count,
-            );
-            self.items.insert(hash, item);
+        if let std::collections::hash_map::Entry::Vacant(e) = self.items.entry(hash) {
+            let item = ContextItem::new(contract.script.clone(), parameter_count);
+            e.insert(item);
         }
     }
 
@@ -256,7 +248,8 @@ impl SignItem {
 
     /// Adds a key pair to this sign item if it's not already present.
     fn add_key(&mut self, key: KeyPair) -> Result<(), RpcError> {
-        let exists = self.key_pairs
+        let exists = self
+            .key_pairs
             .iter()
             .any(|candidate| candidate.private_key() == key.private_key());
 
@@ -533,7 +526,9 @@ impl TransactionManager {
         // Build final witnesses from collected signatures
         let final_witnesses = self.context.witnesses();
         if final_witnesses.is_empty() {
-            return Err("No witnesses available; context incomplete".to_string().into());
+            return Err("No witnesses available; context incomplete"
+                .to_string()
+                .into());
         }
         self.tx.set_witnesses(final_witnesses);
 
@@ -561,7 +556,8 @@ impl TransactionManager {
         {
             item.add_key(key)?;
         } else {
-            self.sign_store.push(SignItem::new(contract.clone(), vec![key])?);
+            self.sign_store
+                .push(SignItem::new(contract.clone(), vec![key])?);
         }
 
         self.context.add_contract(contract);
@@ -610,9 +606,9 @@ impl TransactionManager {
 mod tests {
     use super::*;
     use mockito::{Matcher, Server};
-    use neo_protocol::ProtocolSettings;
     use neo_json::{JArray, JObject, JToken};
     use neo_primitives::WitnessScope;
+    use neo_protocol::ProtocolSettings;
     use reqwest::Url;
     use std::net::TcpListener;
 

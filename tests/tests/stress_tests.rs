@@ -7,11 +7,10 @@
 //! 4. Large block test - blocks with 1000+ transactions
 //! 5. Network stress test - high message volume and concurrent connections
 
-use neo_ledger::{Block, BlockHeader};
-use neo_primitives::{UInt160, WitnessScope};
+use neo_primitives::{UInt160, UInt256, WitnessScope};
 use neo_protocol::builders::TransactionBuilder;
+use neo_protocol::execution::{Block, BlockHeader};
 use neo_protocol::payloads::transaction::Transaction;
-use parking_lot::Mutex;
 use std::time::{Duration, Instant};
 use tokio::task::JoinSet;
 use tracing::info;
@@ -44,6 +43,21 @@ impl StressMetrics {
     }
 }
 
+/// Reads the shared stress-test duration without imposing a one-hour local run.
+/// Set `NEO_STRESS_DURATION_SECS=3600` for the sustained production soak test.
+fn stress_duration(default_seconds: u64) -> Duration {
+    let seconds = std::env::var("NEO_STRESS_DURATION_SECS")
+        .ok()
+        .map(|value| {
+            value
+                .parse::<u64>()
+                .unwrap_or_else(|_| panic!("NEO_STRESS_DURATION_SECS must be a positive integer"))
+        })
+        .unwrap_or(default_seconds);
+    assert!(seconds > 0, "stress duration must be greater than zero");
+    Duration::from_secs(seconds)
+}
+
 /// Create a synthetic transaction for testing
 fn create_test_transaction(index: u64) -> Transaction {
     TransactionBuilder::new()
@@ -60,18 +74,17 @@ fn create_test_transaction(index: u64) -> Transaction {
 
 /// Create a block with specified number of transactions
 fn create_test_block(index: u32, tx_count: usize) -> Block {
-    let header = BlockHeader {
-        version: 0,
-        previous_hash: neo_primitives::UInt256::zero(),
-        merkle_root: neo_primitives::UInt256::zero(),
-        timestamp: 1_678_000_000 + (index as u64),
-        nonce: 0xDEADBEEF,
+    let header = BlockHeader::new(
+        0,
+        UInt256::zero(),
+        UInt256::zero(),
+        1_678_000_000 + (index as u64),
+        0xDEADBEEF,
         index,
-        primary_index: 0,
-        next_consensus: UInt160::zero(),
-        witnesses: vec![],
-        _hash: Mutex::new(None),
-    };
+        0,
+        UInt160::zero(),
+        vec![],
+    );
 
     let mut transactions = Vec::with_capacity(tx_count);
     for i in 0..tx_count {
@@ -93,7 +106,7 @@ async fn stress_test_maximum_throughput() {
     info!("=== STRESS TEST 1: MAXIMUM THROUGHPUT ===");
 
     let mut metrics = StressMetrics::default();
-    let _test_duration = Duration::from_secs(30);
+    let batch_duration = stress_duration(1);
     let start_time = Instant::now();
 
     let batch_sizes = vec![10, 50, 100, 200, 500, 1000];
@@ -106,7 +119,7 @@ async fn stress_test_maximum_throughput() {
         let batch_start = Instant::now();
         let mut processed = 0u64;
 
-        while batch_start.elapsed() < Duration::from_secs(5) {
+        while batch_start.elapsed() < batch_duration {
             let mut transactions = Vec::with_capacity(batch_size);
             for i in 0..batch_size {
                 transactions.push(create_test_transaction(processed + i as u64));
@@ -167,16 +180,14 @@ async fn stress_test_sustained_load() {
 
     info!("=== STRESS TEST 2: SUSTAINED LOAD (shortened for testing) ===");
 
-    // For CI/testing, run for 60 seconds instead of 1 hour
-    // In production, change to Duration::from_secs(3600)
-    let test_duration = Duration::from_secs(60);
+    let test_duration = stress_duration(5);
     let target_tps = 80.0; // Target 80 TPS (80% of assumed 100 TPS capacity)
-    let batch_size = 100;
-    let batch_interval = Duration::from_millis(1250); // 100 tx / 1.25s = 80 TPS
+    let batch_interval = Duration::from_millis(1250).min(test_duration / 4);
+    let batch_size = ((target_tps * batch_interval.as_secs_f64()).ceil() as usize).max(1);
 
     let mut metrics = StressMetrics::default();
     let start_time = Instant::now();
-    let mut last_batch = Instant::now();
+    let mut last_batch = Instant::now() - batch_interval;
     let mut memory_samples = Vec::new();
 
     info!(
@@ -228,7 +239,7 @@ async fn stress_test_sustained_load() {
     metrics.total_duration_ms = start_time.elapsed().as_millis() as u64;
 
     // Check for memory leaks
-    let memory_growth = if memory_samples.len() > 1 {
+    let memory_growth = if memory_samples.len() > 1 && memory_samples[0] > 0 {
         let first = memory_samples[0];
         let last = memory_samples[memory_samples.len() - 1];
         ((last as f64 - first as f64) / first as f64) * 100.0
@@ -277,14 +288,15 @@ async fn stress_test_spike_load() {
     let normal_tps = 50.0;
     let spike_multiplier = 10;
     let spike_tps = normal_tps * spike_multiplier as f64;
+    let phase_duration = stress_duration(1);
 
     let mut metrics = StressMetrics::default();
     let start_time = Instant::now();
 
-    // Phase 1: Normal load (10 seconds)
+    // Phase 1: Normal load (configured duration)
     info!("Phase 1: Normal load at {} TPS", normal_tps);
     let phase1_start = Instant::now();
-    while phase1_start.elapsed() < Duration::from_secs(10) {
+    while phase1_start.elapsed() < phase_duration {
         let tx = create_test_transaction(metrics.total_transactions);
         let _ = tx.hash();
         metrics.successful_transactions += 1;
@@ -296,7 +308,7 @@ async fn stress_test_spike_load() {
         (metrics.total_transactions as f64 * 1000.0) / phase1_start.elapsed().as_millis() as f64;
     info!("Phase 1 complete: {:.2} TPS", phase1_tps);
 
-    // Phase 2: Spike load (10 seconds)
+    // Phase 2: Spike load (configured duration)
     info!(
         "Phase 2: SPIKE load at {} TPS ({}x)",
         spike_tps, spike_multiplier
@@ -304,7 +316,7 @@ async fn stress_test_spike_load() {
     let phase2_start = Instant::now();
     let phase2_start_count = metrics.total_transactions;
 
-    while phase2_start.elapsed() < Duration::from_secs(10) {
+    while phase2_start.elapsed() < phase_duration {
         // Send burst of transactions
         for _ in 0..spike_multiplier {
             let tx = create_test_transaction(metrics.total_transactions);
@@ -319,12 +331,12 @@ async fn stress_test_spike_load() {
     let phase2_tps = (phase2_txs as f64 * 1000.0) / phase2_start.elapsed().as_millis() as f64;
     info!("Phase 2 complete: {:.2} TPS", phase2_tps);
 
-    // Phase 3: Recovery to normal load (10 seconds)
+    // Phase 3: Recovery to normal load (configured duration)
     info!("Phase 3: Recovery to normal load");
     let phase3_start = Instant::now();
     let phase3_start_count = metrics.total_transactions;
 
-    while phase3_start.elapsed() < Duration::from_secs(10) {
+    while phase3_start.elapsed() < phase_duration {
         let tx = create_test_transaction(metrics.total_transactions);
         let _ = tx.hash();
         metrics.successful_transactions += 1;

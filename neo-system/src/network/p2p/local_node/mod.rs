@@ -69,10 +69,10 @@ use crate::network::p2p::payloads::{
     extensible_payload::ExtensiblePayload, network_address_with_time::NetworkAddressWithTime,
     transaction::Transaction,
 };
+use crate::network::p2p::services::PeerManagerService;
 use crate::network::p2p::{NetworkMessage, ProtocolMessage};
 use async_trait::async_trait;
 use neo_actors::{Actor, ActorContext, ActorRef, ActorResult, Props, Terminated};
-use crate::network::p2p::services::PeerManagerService;
 use neo_io_crate::{BinaryWriter, Serializable};
 use neo_protocol::protocol_settings::ProtocolSettings;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};

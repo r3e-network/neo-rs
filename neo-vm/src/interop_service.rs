@@ -12,6 +12,7 @@ use crate::syscalls;
 use neo_primitives::CallFlags;
 use std::collections::HashMap;
 use std::str;
+use std::sync::Arc;
 
 /// Function pointer used for interop handlers that execute within the VM itself.
 pub type InteropCallback = fn(&mut ExecutionEngine) -> VmResult<()>;
@@ -46,6 +47,7 @@ pub struct VmInteropDescriptor {
 }
 
 /// Internal representation of a registered descriptor including its computed hash.
+#[derive(Clone)]
 struct RegisteredDescriptor {
     descriptor: VmInteropDescriptor,
     hash: u32,
@@ -82,6 +84,7 @@ pub trait InteropHost {
     ) -> VmResult<()> {
         Ok(())
     }
+
     /// Called when an execution context is unloaded from the invocation stack.
     fn on_context_unloaded(
         &mut self,
@@ -135,9 +138,12 @@ pub trait InteropHost {
 }
 
 /// `InteropService` manages syscall descriptors and dispatches them just like the C# implementation.
-#[derive(Default)]
+///
+/// Cloning shares the immutable registry. Registration uses copy-on-write so a
+/// host-specific descriptor can never mutate another engine's service.
+#[derive(Clone, Default)]
 pub struct InteropService {
-    descriptors: HashMap<u32, RegisteredDescriptor>,
+    descriptors: Arc<HashMap<u32, RegisteredDescriptor>>,
 }
 
 impl InteropService {
@@ -151,7 +157,7 @@ impl InteropService {
         syscalls::init();
 
         Self {
-            descriptors: HashMap::new(),
+            descriptors: Arc::new(HashMap::new()),
         }
     }
 
@@ -167,7 +173,7 @@ impl InteropService {
         }
 
         let hash = registered.hash;
-        self.descriptors.insert(hash, registered);
+        Arc::make_mut(&mut self.descriptors).insert(hash, registered);
         Ok(hash)
     }
 
@@ -298,4 +304,29 @@ fn hash_syscall(api: &str) -> VmResult<u32> {
     }
 
     Ok(crate::interop_hash(api))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn private_registration_does_not_mutate_cloned_service() {
+        let mut original = InteropService::new();
+        original
+            .register_host_descriptor("Test.Shared", 3, CallFlags::READ_STATES)
+            .expect("shared descriptor");
+        let mut private = original.clone();
+
+        private
+            .register_host_descriptor("Test.Private", 7, CallFlags::WRITE_STATES)
+            .expect("private descriptor");
+
+        assert!(original.get_method(b"Test.Private").is_none());
+        assert_eq!(private.get_price(b"Test.Private"), 7);
+        assert_eq!(original.get_price(b"Test.Shared"), 3);
+        assert_eq!(private.get_price(b"Test.Shared"), 3);
+        assert_eq!(original.len(), 1);
+        assert_eq!(private.len(), 2);
+    }
 }

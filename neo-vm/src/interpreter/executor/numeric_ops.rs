@@ -1,3 +1,4 @@
+use super::super::api::InterpreterSemantics;
 use super::super::helpers::*;
 use super::super::opcodes::*;
 use super::super::runtime_types::StackValue;
@@ -15,7 +16,11 @@ use alloc::{
 };
 
 #[inline]
-pub(super) fn execute(opcode: u8, stack: &mut Vec<StackValue>) -> Result<Dispatch, String> {
+pub(super) fn execute(
+    opcode: u8,
+    stack: &mut Vec<StackValue>,
+    semantics: InterpreterSemantics,
+) -> Result<Dispatch, String> {
     let mut value_stack = InterpreterValueStack::new(stack);
 
     match opcode {
@@ -59,8 +64,24 @@ pub(super) fn execute(opcode: u8, stack: &mut Vec<StackValue>) -> Result<Dispatc
         SQRT => stack_shape::unary_value(&mut value_stack, arithmetic_rules::sqrt_value)?,
         MODMUL => stack_shape::ternary_value(&mut value_stack, arithmetic_rules::modmul_values)?,
         MODPOW => stack_shape::ternary_value(&mut value_stack, arithmetic_rules::modpow_values)?,
-        SHL => shift_value(&mut value_stack, arithmetic_rules::shl_value)?,
-        SHR => shift_value(&mut value_stack, arithmetic_rules::shr_value)?,
+        SHL => shift_value(
+            &mut value_stack,
+            if semantics.zero_shift_converts_to_integer {
+                arithmetic_rules::shl_value
+            } else {
+                arithmetic_rules::shl_value_pre_gorgon
+            },
+            semantics.zero_shift_converts_to_integer,
+        )?,
+        SHR => shift_value(
+            &mut value_stack,
+            if semantics.zero_shift_converts_to_integer {
+                arithmetic_rules::shr_value
+            } else {
+                arithmetic_rules::shr_value_pre_gorgon
+            },
+            semantics.zero_shift_converts_to_integer,
+        )?,
         NOT => stack_shape::unary_bool(&mut value_stack, comparison_rules::not_value)?,
         MUL => stack_shape::binary_value(&mut value_stack, arithmetic_rules::mul_values)?,
         DIV => stack_shape::binary_value(&mut value_stack, arithmetic_rules::div_values)?,
@@ -88,11 +109,25 @@ pub(super) fn execute(opcode: u8, stack: &mut Vec<StackValue>) -> Result<Dispatc
 fn shift_value(
     stack: &mut InterpreterValueStack<'_>,
     op: fn(AbiStackValue, i64) -> Result<AbiStackValue, String>,
+    zero_shift_converts_to_integer: bool,
 ) -> Result<(), String> {
     let shift = stack.pop_shift_count()?;
     let value = stack.pop_interpreter_value()?;
-    // No zero-shift shortcut: `shl_value`/`shr_value` implement Gorgon
-    // semantics, converting the operand to `Integer` even at shift 0.
+    // Match the canonical numeric bridge's Buffer normalization for both
+    // hardforks, not only for the pre-Gorgon zero-shift case.
+    let value = match value {
+        StackValue::Buffer(_, bytes) => StackValue::ByteString(bytes),
+        value => value,
+    };
+    if shift == 0 && !zero_shift_converts_to_integer {
+        // Push the interpreter value directly so Array/Struct/Map identity and
+        // aliases survive a zero shift. Host-only objects still follow the
+        // canonical conversion error path below.
+        if !matches!(value, StackValue::Interop(_) | StackValue::Iterator(_)) {
+            stack.push_interpreter_value(value);
+            return Ok(());
+        }
+    }
     stack.push_abi_value(op(into_abi_value(value), shift)?)
 }
 

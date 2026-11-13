@@ -10,8 +10,8 @@ use crate::network::p2p::payloads::merkle_block_payload::MerkleBlockPayload;
 use crate::network::p2p::payloads::transaction::{MAX_TRANSACTION_SIZE, Transaction};
 use crate::network::p2p::payloads::{block::Block, extensible_payload::ExtensiblePayload};
 use crate::network::p2p::task_manager::BLOCK_INDEX_LOOKAHEAD;
-use neo_native_contracts::ledger_contract::LedgerContract;
 use neo_io_crate::Serializable;
+use neo_native_contracts::ledger_contract::LedgerContract;
 use neo_primitives::ContainsTransactionType;
 use neo_primitives::UInt160;
 use neo_primitives::UInt256;
@@ -22,19 +22,6 @@ fn should_reprocess_known_block(block_index: u32, current_height: u32) -> bool {
     // A previous attempt at exactly this height may have failed local commit
     // after the payload was accepted. Other known blocks remain deduplicated.
     block_index == current_height.saturating_add(1)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::should_reprocess_known_block;
-
-    #[test]
-    fn known_block_retry_is_limited_to_the_persistence_frontier() {
-        assert!(should_reprocess_known_block(8, 7));
-        assert!(!should_reprocess_known_block(9, 7));
-        assert!(!should_reprocess_known_block(7, 7));
-        assert!(!should_reprocess_known_block(0, u32::MAX));
-    }
 }
 
 impl RemoteNode {
@@ -410,9 +397,9 @@ impl RemoteNode {
                     if !self.sent_hashes.try_add(hash) {
                         continue;
                     }
-                    if let Some(mut block) = self.system.try_get_block(&hash) {
+                    if let Some(block) = self.system.try_get_block(&hash) {
                         if let Some(flags) = self.bloom_filter_flags(&block) {
-                            let payload = match MerkleBlockPayload::try_create(&mut block, flags) {
+                            let payload = match MerkleBlockPayload::try_create(&block, flags) {
                                 Ok(payload) => payload,
                                 Err(error) => {
                                     warn!(
@@ -509,12 +496,12 @@ impl RemoteNode {
                 break;
             };
 
-            let Some(mut block) = self.system.try_get_block(&hash) else {
+            let Some(block) = self.system.try_get_block(&hash) else {
                 break;
             };
 
             if let Some(flags) = self.bloom_filter_flags(&block) {
-                let payload = match MerkleBlockPayload::try_create(&mut block, flags) {
+                let payload = match MerkleBlockPayload::try_create(&block, flags) {
                     Ok(payload) => payload,
                     Err(error) => {
                         warn!(
@@ -553,5 +540,18 @@ impl RemoteNode {
                 "failed to notify task manager about inventory restart"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_reprocess_known_block;
+
+    #[test]
+    fn known_block_retry_is_limited_to_the_persistence_frontier() {
+        assert!(should_reprocess_known_block(8, 7));
+        assert!(!should_reprocess_known_block(9, 7));
+        assert!(!should_reprocess_known_block(7, 7));
+        assert!(!should_reprocess_known_block(0, u32::MAX));
     }
 }

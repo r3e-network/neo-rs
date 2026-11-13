@@ -1,7 +1,7 @@
 use super::TaskManager;
 use crate::neo_system::NeoSystemContext;
 use neo_actors::ActorContext;
-use neo_ledger::{PersistCompleted, PersistFailed, RelayResult};
+use neo_ledger::{PersistCompleted, PersistFailed};
 use neo_primitives::UInt256;
 use std::sync::Arc;
 use tracing::trace;

@@ -3,12 +3,10 @@
 //! This module provides functions to initialize the storage layer and hydrate
 //! the ledger from persisted state.
 
-use neo_ledger::{LedgerContext, HeaderCache};
+use neo_ledger::{HeaderCache, LedgerContext};
 use neo_storage::persistence::StoreCache;
-use neo_storage::persistence::providers::memory_store::MemoryStore;
 use neo_storage::persistence::store::Store;
-use neo_storage::types::{StorageKey, StorageItem};
-use crate::services::StateStoreService;
+use neo_storage::persistence::store_provider::StoreProvider;
 use std::sync::Arc;
 
 /// Error type for storage operations.
@@ -31,46 +29,23 @@ impl From<StorageError> for neo_smart_contract::CoreError {
     }
 }
 
-/// Concrete implementation of StateStoreService using MemoryStore.
-impl StateStoreService for MemoryStore {
-    fn on_new_state_root(&self, _state_root: crate::state_service::StateRoot) -> bool {
-        // Memory store doesn't persist state roots
-        true
-    }
-
-    fn local_root_index(&self) -> u64 {
-        // Memory store doesn't track state root index
-        0
-    }
-
-    fn validated_root_index(&self) -> u64 {
-        // Memory store doesn't track validated state root index
-        0
-    }
-
-    fn set_reference_root_fetcher(&self, _fetcher: Arc<dyn Fn(u32) -> Option<neo_primitives::UInt256> + Send + Sync>) {
-        // Memory store doesn't use reference roots
-    }
-
-    fn flush(&self) {
-        // Memory store doesn't need flushing
-    }
-}
-
-/// Initializes the storage layer for NeoSystem.
-///
-/// # Returns
-/// A tuple containing:
-/// - The main store
-/// - A store cache for ledger hydration
-/// - An optional state store
+/// Initializes the primary store and its hydration cache.
 pub fn init_store(
-) -> Result<(Arc<dyn Store>, Arc<StoreCache>, Option<Arc<dyn StateStoreService>>), StorageError> {
-    let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    store_provider: &Arc<dyn StoreProvider>,
+    storage_path: Option<&str>,
+) -> Result<(Arc<dyn Store>, Arc<StoreCache>), StorageError> {
+    let path = storage_path.unwrap_or("");
+    let store = store_provider
+        .get_store(path)
+        .map_err(|error| StorageError {
+            message: format!(
+                "Failed to open the primary store with provider '{}' at '{}': {error}",
+                store_provider.name(),
+                path
+            ),
+        })?;
     let store_cache = Arc::new(StoreCache::new(Arc::clone(&store)));
-    let state_store: Option<Arc<dyn StateStoreService>> = Some(Arc::new(MemoryStore::new()));
-
-    Ok((store, store_cache, state_store))
+    Ok((store, store_cache))
 }
 
 /// Hydrates the ledger from persisted storage.
@@ -102,123 +77,105 @@ pub fn init_store(
 /// - Deserialization fails for any block
 /// - Storage read errors occur
 pub fn hydrate_ledger(
-    store_cache: &Arc<StoreCache>,
+    store_cache: &StoreCache,
     ledger: &Arc<LedgerContext>,
     header_cache: &Arc<HeaderCache>,
 ) -> Result<(), StorageError> {
-    use neo_io_crate::MemoryReader;
-    use neo_io_crate::Serializable;
+    use neo_native_contracts::ledger_contract::{HashOrIndex, LedgerContract};
     use neo_primitives::UInt256;
-    use neo_protocol::payloads::block::Block;
-    use neo_storage::persistence::SeekDirection;
-    use neo_storage::types::StorageKey;
 
-    // Storage prefix for blockchain data (matches C# LedgerContract storage layout)
-    const PREFIX_BLOCK: u8 = 5;
-    const PREFIX_CURRENT_BLOCK: u8 = 12;
+    let ledger_contract = LedgerContract::new();
+    let current_height = ledger_contract
+        .current_index(store_cache)
+        .map_err(|error| StorageError {
+            message: format!("Failed to read current block index: {error}"),
+        })?;
+    let current_hash = ledger_contract
+        .current_hash(store_cache)
+        .map_err(|error| StorageError {
+            message: format!("Failed to read current block hash: {error}"),
+        })?;
+    let first_hash = ledger_contract
+        .get_block_hash_by_index(store_cache, 0)
+        .map_err(|error| StorageError {
+            message: format!("Failed to read genesis block index: {error}"),
+        })?;
 
-    // Step 1: Load current block height from storage
-    let current_height_key = StorageKey::new(
-        -4, // LedgerContract ID (native contract)
-        vec![PREFIX_CURRENT_BLOCK],
-    );
-
-    let current_height = if let Some(item) = store_cache.get(&current_height_key) {
-        let value = item.value();
-        if value.len() < 4 {
-            0u32
-        } else {
-            u32::from_le_bytes([value[0], value[1], value[2], value[3]])
+    if first_hash.is_none() {
+        if current_height != 0 || current_hash != UInt256::zero() {
+            return Err(StorageError {
+                message: "Current block pointer exists without a genesis block".to_string(),
+            });
         }
-    } else {
-        // No persisted state - fresh database
-        return Ok(());
-    };
-
-    if current_height == 0 {
-        // Only genesis block or no blocks persisted
         return Ok(());
     }
 
-    // Step 2: Load and validate genesis block
-    let genesis_key = StorageKey::new(
-        -4, // LedgerContract ID
-        {
-            let mut key = vec![PREFIX_BLOCK];
-            key.extend_from_slice(&0u32.to_le_bytes()); // index 0
-            key
-        },
-    );
+    let mut previous_hash = UInt256::zero();
+    let mut blocks = Vec::with_capacity(current_height as usize + 1);
+    for index in 0..=current_height {
+        let indexed_hash = ledger_contract
+            .get_block_hash_by_index(store_cache, index)
+            .map_err(|error| StorageError {
+                message: format!("Failed to read block hash at height {index}: {error}"),
+            })?
+            .ok_or_else(|| StorageError {
+                message: format!("Block at height {index} not found in storage"),
+            })?;
+        let block = ledger_contract
+            .get_block(store_cache, HashOrIndex::Index(index))
+            .map_err(|error| StorageError {
+                message: format!("Failed to deserialize block at height {index}: {error}"),
+            })?
+            .ok_or_else(|| StorageError {
+                message: format!("Block at height {index} not found in storage"),
+            })?;
 
-    let genesis_item = store_cache.get(&genesis_key).ok_or_else(|| StorageError {
-        message: "Genesis block not found in storage".to_string(),
-    })?;
-
-    let mut reader = MemoryReader::new(genesis_item.value());
-    let genesis_block = Block::deserialize(&mut reader)
-        .map_err(|e| StorageError {
-            message: format!("Failed to deserialize genesis block: {}", e),
-        })?;
-
-    // Insert genesis block into ledger
-    ledger.insert_block(genesis_block).map_err(|e| StorageError {
-        message: format!("Failed to insert genesis block: {}", e),
-    })?;
-
-    // Step 3: Iterate through persisted blocks sequentially
-    let mut prev_hash = ledger.block_hash_at(0).ok_or_else(|| StorageError {
-        message: "Genesis block hash not available after insertion".to_string(),
-    })?;
-
-    for index in 1..=current_height {
-        let block_key = StorageKey::new(
-            -4,
-            {
-                let mut key = vec![PREFIX_BLOCK];
-                key.extend_from_slice(&index.to_le_bytes());
-                key
-            },
-        );
-
-        let block_item = store_cache.get(&block_key).ok_or_else(|| StorageError {
-            message: format!("Block at height {} not found in storage", index),
-        })?;
-
-        let mut reader = MemoryReader::new(block_item.value());
-        let block = Block::deserialize(&mut reader).map_err(|e| {
-            StorageError {
-                message: format!("Failed to deserialize block at height {}: {}", index, e),
-            }
-        })?;
-
-        // Step 4: Validate chain integrity - previous hash must match
-        if block.header.prev_hash() != &prev_hash {
+        if block.index() != index {
             return Err(StorageError {
                 message: format!(
-                    "Chain integrity broken at height {}: expected prev_hash {}, got {}",
-                    index, prev_hash, block.header.prev_hash()
+                    "Block index mismatch at height {index}: stored header reports {}",
+                    block.index()
+                ),
+            });
+        }
+        let block_hash = block.hash();
+        if block_hash != indexed_hash {
+            return Err(StorageError {
+                message: format!(
+                    "Block hash mismatch at height {index}: index contains {indexed_hash}, header hashes to {block_hash}"
+                ),
+            });
+        }
+        if block.prev_hash() != &previous_hash {
+            return Err(StorageError {
+                message: format!(
+                    "Chain integrity broken at height {index}: expected prev_hash {previous_hash}, got {}",
+                    block.prev_hash()
                 ),
             });
         }
 
-        // Insert block into ledger (rebuilds block index)
-        let block_hash = ledger.insert_block(block.clone()).map_err(|e| StorageError {
-            message: format!("Failed to insert block at height {}: {}", index, e),
-        })?;
-
-        // Step 5: Populate header cache with recent headers
-        // Keep last 10,000 headers in cache (matches C# HeaderCache behavior)
-        const HEADER_CACHE_SIZE: u32 = 10_000;
-        if current_height >= HEADER_CACHE_SIZE && index >= current_height - HEADER_CACHE_SIZE {
-            header_cache.add(block.header.clone());
-        } else if current_height < HEADER_CACHE_SIZE {
-            header_cache.add(block.header.clone());
-        }
-
-        prev_hash = block_hash;
+        previous_hash = block_hash;
+        blocks.push(super::converters::convert_execution_block(block));
     }
 
-    // Step 6: Set final current height in ledger
+    if current_hash != previous_hash {
+        return Err(StorageError {
+            message: format!(
+                "Current block hash mismatch: pointer contains {current_hash}, tip hashes to {previous_hash}"
+            ),
+        });
+    }
+
+    // Validate the complete chain before mutating either runtime cache. A corrupt
+    // store therefore cannot leave a caller with a partially hydrated ledger.
+    for block in blocks {
+        let header = block.header.clone();
+        ledger.insert_block(block).map_err(|error| StorageError {
+            message: format!("Failed to insert hydrated block: {error}"),
+        })?;
+        header_cache.add(header);
+    }
     ledger.record_tip(current_height);
 
     tracing::info!(
@@ -226,7 +183,95 @@ pub fn hydrate_ledger(
         height = current_height,
         "Storage hydration completed successfully"
     );
+    Ok(())
+}
 
+/// Hydrates only the persisted tip for a checkpoint-gated offline replay.
+///
+/// This deliberately does not replace full chain hydration for online nodes. The
+/// caller must independently authenticate the checkpoint and its audit history
+/// before executing successors. The tip index, indexed hash, current-hash pointer,
+/// and previous-block linkage are still checked against persistent storage.
+pub fn hydrate_ledger_tip_for_checkpoint_replay(
+    store_cache: &StoreCache,
+    ledger: &Arc<LedgerContext>,
+    header_cache: &Arc<HeaderCache>,
+) -> Result<(), StorageError> {
+    use neo_native_contracts::ledger_contract::{HashOrIndex, LedgerContract};
+    use neo_primitives::UInt256;
+
+    let ledger_contract = LedgerContract::new();
+    let current_height = ledger_contract
+        .current_index(store_cache)
+        .map_err(|error| StorageError {
+            message: format!("Failed to read current block index: {error}"),
+        })?;
+    let current_hash = ledger_contract
+        .current_hash(store_cache)
+        .map_err(|error| StorageError {
+            message: format!("Failed to read current block hash: {error}"),
+        })?;
+    let first_hash = ledger_contract
+        .get_block_hash_by_index(store_cache, 0)
+        .map_err(|error| StorageError {
+            message: format!("Failed to read genesis block index: {error}"),
+        })?;
+    if first_hash.is_none() {
+        if current_height != 0 || current_hash != UInt256::zero() {
+            return Err(StorageError {
+                message: "Current block pointer exists without a genesis block".to_string(),
+            });
+        }
+        return Ok(());
+    }
+
+    let indexed_hash = ledger_contract
+        .get_block_hash_by_index(store_cache, current_height)
+        .map_err(|error| StorageError {
+            message: format!("Failed to read tip hash at height {current_height}: {error}"),
+        })?
+        .ok_or_else(|| StorageError {
+            message: format!("Tip at height {current_height} not found in storage"),
+        })?;
+    let tip = ledger_contract
+        .get_block(store_cache, HashOrIndex::Index(current_height))
+        .map_err(|error| StorageError {
+            message: format!("Failed to deserialize tip at height {current_height}: {error}"),
+        })?
+        .ok_or_else(|| StorageError {
+            message: format!("Tip at height {current_height} not found in storage"),
+        })?;
+    if tip.index() != current_height || tip.hash() != indexed_hash || indexed_hash != current_hash {
+        return Err(StorageError {
+            message: "Persisted tip height, indexed hash, or current hash is inconsistent"
+                .to_string(),
+        });
+    }
+    if current_height > 0 {
+        let previous = ledger_contract
+            .get_block(store_cache, HashOrIndex::Index(current_height - 1))
+            .map_err(|error| StorageError {
+                message: format!("Failed to deserialize tip parent: {error}"),
+            })?
+            .ok_or_else(|| StorageError {
+                message: "Tip parent is missing from storage".to_string(),
+            })?;
+        if previous.index() + 1 != current_height || tip.prev_hash() != &previous.hash() {
+            return Err(StorageError {
+                message: "Persisted tip parent linkage is inconsistent".to_string(),
+            });
+        }
+    }
+
+    let execution_tip = super::converters::convert_execution_block(tip);
+    let header = execution_tip.header.clone();
+    ledger
+        .insert_block(execution_tip)
+        .map_err(|error| StorageError {
+            message: format!("Failed to insert checkpoint tip: {error}"),
+        })?;
+    header_cache.add(header);
+    ledger.record_tip(current_height);
     Ok(())
 }
 
@@ -254,62 +299,48 @@ pub fn hydrate_ledger(
 /// - Required native contract state is missing
 /// - Deserialization fails
 pub fn hydrate_native_contracts(
-    store_cache: &Arc<StoreCache>,
-    // TODO: Re-enable when NativeContractsCache is implemented in neo-smart-contract
-    // _native_contract_cache: &Arc<std::sync::Mutex<neo_smart_contract::NativeContractsCache>>,
+    store_cache: &StoreCache,
+    native_services: &neo_smart_contract::application_engine::EngineNativeServices,
+    settings: &neo_protocol::ProtocolSettings,
 ) -> Result<(), StorageError> {
-    use neo_storage::persistence::SeekDirection;
-    use neo_storage::types::StorageKey;
+    use neo_native_contracts::ContractManagement;
+    use neo_primitives::TriggerType;
+    use neo_smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
 
-    // Native contract IDs (negative values per C# Neo convention)
-    const NEO_CONTRACT_ID: i32 = -5;
-    const GAS_CONTRACT_ID: i32 = -6;
-    const POLICY_CONTRACT_ID: i32 = -7;
-    const ROLE_MANAGEMENT_CONTRACT_ID: i32 = -8;
-    const ORACLE_CONTRACT_ID: i32 = -9;
-    const LEDGER_CONTRACT_ID: i32 = -4;
-
-    let contract_ids = [
-        LEDGER_CONTRACT_ID,
-        NEO_CONTRACT_ID,
-        GAS_CONTRACT_ID,
-        POLICY_CONTRACT_ID,
-        ROLE_MANAGEMENT_CONTRACT_ID,
-        ORACLE_CONTRACT_ID,
-    ];
-
-    // Load and validate native contract state for each contract
-    for contract_id in &contract_ids {
-        // Create prefix key for this contract's storage
-        let prefix_key = StorageKey::new(*contract_id, vec![]);
-
-        // Iterate through all storage items for this contract
-        let mut item_count = 0usize;
-        for (_key, _item) in store_cache.find(Some(&prefix_key), SeekDirection::Forward) {
-            // Count items to validate storage is accessible
-            item_count += 1;
-
-            // In production, this would:
-            // 1. Parse specific keys (candidates, validators, gas per block, etc.)
-            // 2. Rebuild in-memory caches for fast lookups
-            // 3. Validate state transitions and constraints
-        }
-
-        if item_count > 0 {
-            tracing::debug!(
-                target: "neo::storage",
-                contract_id = *contract_id,
-                items = item_count,
-                "Hydrated native contract state"
-            );
-        }
-    }
+    // ContractManagement is the only standard native contract with a persisted
+    // metadata cache. The other standard contracts are stateless handles or build
+    // their method metadata on demand; calling their genesis initialize hooks here
+    // would incorrectly mutate an already-running chain.
+    let contract = native_services
+        .registry
+        .get(&ContractManagement::contract_hash())
+        .ok_or_else(|| StorageError {
+            message: "ContractManagement is missing from the native registry".to_string(),
+        })?;
+    let snapshot = Arc::new(store_cache.data_cache().clone());
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Application,
+        None,
+        snapshot,
+        None,
+        settings.clone(),
+        TEST_MODE_GAS,
+        None,
+        native_services.clone(),
+    )
+    .map_err(|error| StorageError {
+        message: format!("Failed to create native hydration engine: {error}"),
+    })?;
+    contract
+        .initialize(&mut engine)
+        .map_err(|error| StorageError {
+            message: format!("Failed to hydrate ContractManagement: {error}"),
+        })?;
 
     tracing::info!(
         target: "neo::storage",
         "Native contract cache hydration completed"
     );
-
     Ok(())
 }
 
@@ -330,6 +361,7 @@ pub fn hydrate_native_contracts(
 ///
 /// # Errors
 /// Returns `StorageError` if validation fails.
+#[cfg(test)]
 pub fn validate_chain_integrity(
     ledger: &Arc<LedgerContext>,
     header_cache: &Arc<HeaderCache>,
@@ -351,9 +383,11 @@ pub fn validate_chain_integrity(
         message: "Genesis block hash not found after hydration".to_string(),
     })?;
 
-    let _genesis_block = ledger.get_block(&genesis_hash).ok_or_else(|| StorageError {
-        message: "Genesis block not accessible after hydration".to_string(),
-    })?;
+    let _genesis_block = ledger
+        .get_block(&genesis_hash)
+        .ok_or_else(|| StorageError {
+            message: "Genesis block not accessible after hydration".to_string(),
+        })?;
 
     // Validate header cache contains recent blocks
     if expected_height > 0 {
@@ -383,260 +417,234 @@ pub fn validate_chain_integrity(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_io_crate::BinaryWriter;
-    use neo_io_crate::Serializable;
-    use neo_primitives::UInt256;
-    use neo_protocol::payloads::block::Block;
-    use neo_protocol::payloads::header::Header;
-    use neo_storage::types::StorageItem;
+    use neo_native_contracts::ledger_contract::LedgerContract;
+    use neo_native_contracts::native::composition::default_native_services;
+    use neo_primitives::{UInt160, UInt256};
+    use neo_protocol::ProtocolSettings;
+    use neo_protocol::execution::{Block, BlockHeader};
+    use neo_protocol::witness::Witness;
+    use neo_storage::persistence::providers::memory_store::MemoryStore;
+
+    fn block(index: u32, previous_hash: UInt256) -> Block {
+        Block::new(
+            BlockHeader::new(
+                0,
+                previous_hash,
+                UInt256::zero(),
+                u64::from(index),
+                u64::from(index),
+                index,
+                0,
+                UInt160::zero(),
+                vec![Witness::new()],
+            ),
+            Vec::new(),
+        )
+    }
+
+    fn chain(length: u32) -> Vec<Block> {
+        let mut previous_hash = UInt256::zero();
+        (0..length)
+            .map(|index| {
+                let block = block(index, previous_hash);
+                previous_hash = block.hash();
+                block
+            })
+            .collect()
+    }
+
+    fn persist_blocks(store_cache: &mut StoreCache, blocks: &[Block]) {
+        let ledger_contract = LedgerContract::new();
+        for block in blocks {
+            ledger_contract
+                .store_block_state(store_cache.data_cache(), block, &[])
+                .expect("store block through the canonical ledger writer");
+        }
+        let tip = blocks.last().expect("at least one block");
+        ledger_contract
+            .set_current_block_state(store_cache.data_cache(), &tip.hash(), tip.index())
+            .expect("store current block pointer");
+        store_cache.commit();
+    }
+
+    fn empty_cache() -> StoreCache {
+        let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+        StoreCache::new(store)
+    }
 
     #[test]
     fn test_init_store() {
-        let result = init_store();
+        let provider: Arc<dyn StoreProvider> =
+            Arc::new(neo_storage::persistence::providers::MemoryStoreProvider::new());
+        let result = init_store(&provider, None);
         assert!(result.is_ok());
 
-        let (_store, _cache, state_store) = result.unwrap();
-        assert!(state_store.is_some());
+        let (_store, cache) = result.unwrap();
+        assert!(!cache.data_cache().is_read_only());
     }
 
     #[test]
     fn test_hydrate_ledger_empty_storage() {
-        let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
-        let store_cache = Arc::new(StoreCache::new(store));
+        let store_cache = empty_cache();
         let ledger = Arc::new(LedgerContext::default());
         let header_cache = Arc::new(HeaderCache::new());
 
-        // Should succeed with empty storage (no blocks persisted)
-        let result = hydrate_ledger(&store_cache, &ledger, &header_cache);
-        assert!(result.is_ok());
+        hydrate_ledger(&store_cache, &ledger, &header_cache).expect("empty store is valid");
         assert_eq!(ledger.current_height(), 0);
+        assert_eq!(header_cache.count(), 0);
     }
 
     #[test]
     fn test_hydrate_ledger_with_genesis() {
-        let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
-        let mut store_cache = StoreCache::new(Arc::clone(&store));
+        let mut store_cache = empty_cache();
+        let blocks = chain(1);
+        persist_blocks(&mut store_cache, &blocks);
 
-        // Create genesis block
-        let mut genesis = Block::new();
-        genesis.header.set_index(0);
-        genesis.header.prev_hash = UInt256::zero();
-
-        // Serialize genesis block
-        let mut writer = ByteWriter::new();
-        genesis.write(&mut writer).unwrap();
-        let block_bytes = writer.into_bytes();
-
-        // Store genesis block
-        const PREFIX_BLOCK: u8 = 5;
-        let genesis_key = StorageKey::new(
-            -4,
-            {
-                let mut key = vec![PREFIX_BLOCK];
-                key.extend_from_slice(&0u32.to_le_bytes());
-                key
-            },
-        );
-        store_cache.add(genesis_key, StorageItem::new(block_bytes));
-
-        // Store current height
-        const PREFIX_CURRENT_BLOCK: u8 = 12;
-        let height_key = StorageKey::new(-4, vec![PREFIX_CURRENT_BLOCK]);
-        store_cache.add(height_key, StorageItem::new(0u32.to_le_bytes().to_vec()));
-
-        // Commit to storage
-        store_cache.commit();
-
-        // Hydrate
         let ledger = Arc::new(LedgerContext::default());
         let header_cache = Arc::new(HeaderCache::new());
-        let result = hydrate_ledger(&Arc::new(store_cache), &ledger, &header_cache);
+        hydrate_ledger(&store_cache, &ledger, &header_cache).expect("hydrate genesis");
 
-        assert!(result.is_ok());
         assert_eq!(ledger.current_height(), 0);
-        assert!(ledger.block_hash_at(0).is_some());
+        assert_eq!(ledger.block_hash_at(0), Some(blocks[0].hash()));
+        assert_eq!(header_cache.count(), 1);
     }
 
     #[test]
     fn test_hydrate_ledger_with_chain() {
-        let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
-        let mut store_cache = StoreCache::new(Arc::clone(&store));
+        let mut store_cache = empty_cache();
+        let blocks = chain(3);
+        persist_blocks(&mut store_cache, &blocks);
 
-        const PREFIX_BLOCK: u8 = 5;
-        const PREFIX_CURRENT_BLOCK: u8 = 12;
-
-        // Create and store genesis block
-        let mut genesis = Block::new();
-        genesis.header.set_index(0);
-        genesis.header.prev_hash = UInt256::zero();
-
-        let genesis_hash = {
-            let mut writer = ByteWriter::new();
-            genesis.write(&mut writer).unwrap();
-            let block_bytes = writer.into_bytes();
-            let key = StorageKey::new(
-                -4,
-                {
-                    let mut k = vec![PREFIX_BLOCK];
-                    k.extend_from_slice(&0u32.to_le_bytes());
-                    k
-                },
-            );
-            store_cache.add(key, StorageItem::new(block_bytes));
-            genesis.try_hash().unwrap()
-        };
-
-        // Create and store block 1
-        let mut block1 = Block::new();
-        block1.header.set_index(1);
-        block1.header.prev_hash = genesis_hash;
-
-        let block1_hash = {
-            let mut writer = ByteWriter::new();
-            block1.write(&mut writer).unwrap();
-            let block_bytes = writer.into_bytes();
-            let key = StorageKey::new(
-                -4,
-                {
-                    let mut k = vec![PREFIX_BLOCK];
-                    k.extend_from_slice(&1u32.to_le_bytes());
-                    k
-                },
-            );
-            store_cache.add(key, StorageItem::new(block_bytes));
-            block1.try_hash().unwrap()
-        };
-
-        // Create and store block 2
-        let mut block2 = Block::new();
-        block2.header.set_index(2);
-        block2.header.prev_hash = block1_hash;
-
-        {
-            let mut writer = ByteWriter::new();
-            block2.write(&mut writer).unwrap();
-            let block_bytes = writer.into_bytes();
-            let key = StorageKey::new(
-                -4,
-                {
-                    let mut k = vec![PREFIX_BLOCK];
-                    k.extend_from_slice(&2u32.to_le_bytes());
-                    k
-                },
-            );
-            store_cache.add(key, StorageItem::new(block_bytes));
-        }
-
-        // Store current height
-        let height_key = StorageKey::new(-4, vec![PREFIX_CURRENT_BLOCK]);
-        store_cache.add(height_key, StorageItem::new(2u32.to_le_bytes().to_vec()));
-
-        // Commit to storage
-        store_cache.commit();
-
-        // Hydrate
         let ledger = Arc::new(LedgerContext::default());
         let header_cache = Arc::new(HeaderCache::new());
-        let result = hydrate_ledger(&Arc::new(store_cache), &ledger, &header_cache);
+        hydrate_ledger(&store_cache, &ledger, &header_cache).expect("hydrate complete chain");
 
-        assert!(result.is_ok());
         assert_eq!(ledger.current_height(), 2);
-        assert!(ledger.block_hash_at(0).is_some());
-        assert!(ledger.block_hash_at(1).is_some());
-        assert!(ledger.block_hash_at(2).is_some());
+        for block in &blocks {
+            assert_eq!(ledger.block_hash_at(block.index()), Some(block.hash()));
+        }
         assert_eq!(header_cache.count(), 3);
     }
 
     #[test]
-    fn test_hydrate_ledger_broken_chain() {
-        let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
-        let mut store_cache = StoreCache::new(Arc::clone(&store));
+    fn test_checkpoint_replay_hydrates_only_the_authenticated_tip() {
+        let mut store_cache = empty_cache();
+        let blocks = chain(3);
+        persist_blocks(&mut store_cache, &blocks);
 
-        const PREFIX_BLOCK: u8 = 5;
-        const PREFIX_CURRENT_BLOCK: u8 = 12;
-
-        // Create genesis block
-        let mut genesis = Block::new();
-        genesis.header.set_index(0);
-        genesis.header.prev_hash = UInt256::zero();
-
-        {
-            let mut writer = ByteWriter::new();
-            genesis.write(&mut writer).unwrap();
-            let block_bytes = writer.into_bytes();
-            let key = StorageKey::new(
-                -4,
-                {
-                    let mut k = vec![PREFIX_BLOCK];
-                    k.extend_from_slice(&0u32.to_le_bytes());
-                    k
-                },
-            );
-            store_cache.add(key, StorageItem::new(block_bytes));
-        }
-
-        // Create block 1 with WRONG prev_hash (breaks chain)
-        let mut block1 = Block::new();
-        block1.header.set_index(1);
-        block1.header.prev_hash = UInt256::from([1u8; 32]); // Wrong hash
-
-        {
-            let mut writer = ByteWriter::new();
-            block1.write(&mut writer).unwrap();
-            let block_bytes = writer.into_bytes();
-            let key = StorageKey::new(
-                -4,
-                {
-                    let mut k = vec![PREFIX_BLOCK];
-                    k.extend_from_slice(&1u32.to_le_bytes());
-                    k
-                },
-            );
-            store_cache.add(key, StorageItem::new(block_bytes));
-        }
-
-        // Store current height
-        let height_key = StorageKey::new(-4, vec![PREFIX_CURRENT_BLOCK]);
-        store_cache.add(height_key, StorageItem::new(1u32.to_le_bytes().to_vec()));
-
-        store_cache.commit();
-
-        // Hydrate should fail due to broken chain
         let ledger = Arc::new(LedgerContext::default());
         let header_cache = Arc::new(HeaderCache::new());
-        let result = hydrate_ledger(&Arc::new(store_cache), &ledger, &header_cache);
+        hydrate_ledger_tip_for_checkpoint_replay(&store_cache, &ledger, &header_cache)
+            .expect("hydrate checkpoint tip");
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().message.contains("Chain integrity broken"));
+        assert_eq!(ledger.current_height(), 2);
+        assert_eq!(ledger.block_hash_at(2), Some(blocks[2].hash()));
+        assert_eq!(ledger.block_hash_at(0), None);
+        assert_eq!(ledger.block_hash_at(1), None);
+        assert_eq!(header_cache.count(), 1);
+    }
+
+    #[test]
+    fn test_checkpoint_replay_rejects_broken_tip_parent() {
+        let mut store_cache = empty_cache();
+        let genesis = block(0, UInt256::zero());
+        let broken = block(1, UInt256::from([1u8; 32]));
+        persist_blocks(&mut store_cache, &[genesis, broken]);
+
+        let ledger = Arc::new(LedgerContext::default());
+        let header_cache = Arc::new(HeaderCache::new());
+        let error = hydrate_ledger_tip_for_checkpoint_replay(&store_cache, &ledger, &header_cache)
+            .expect_err("broken tip parent must fail closed");
+        assert!(error.message.contains("parent linkage"));
+        assert_eq!(header_cache.count(), 0);
+    }
+
+    #[test]
+    fn test_hydrate_ledger_broken_chain_does_not_partially_hydrate() {
+        let mut store_cache = empty_cache();
+        let genesis = block(0, UInt256::zero());
+        let broken = block(1, UInt256::from([1u8; 32]));
+        persist_blocks(&mut store_cache, &[genesis, broken]);
+
+        let ledger = Arc::new(LedgerContext::default());
+        let header_cache = Arc::new(HeaderCache::new());
+        let error = hydrate_ledger(&store_cache, &ledger, &header_cache)
+            .expect_err("broken previous-hash link must fail closed");
+
+        assert!(error.message.contains("Chain integrity broken"));
+        assert!(ledger.block_hash_at(0).is_none());
+        assert_eq!(header_cache.count(), 0);
+    }
+
+    #[test]
+    fn test_hydrate_ledger_rejects_missing_block() {
+        let mut store_cache = empty_cache();
+        let blocks = chain(2);
+        let ledger_contract = LedgerContract::new();
+        ledger_contract
+            .store_block_state(store_cache.data_cache(), &blocks[0], &[])
+            .expect("store genesis");
+        ledger_contract
+            .set_current_block_state(store_cache.data_cache(), &blocks[1].hash(), 1)
+            .expect("store tip beyond available blocks");
+        store_cache.commit();
+
+        let ledger = Arc::new(LedgerContext::default());
+        let header_cache = Arc::new(HeaderCache::new());
+        let error = hydrate_ledger(&store_cache, &ledger, &header_cache)
+            .expect_err("missing indexed block must fail closed");
+
+        assert!(error.message.contains("height 1 not found"));
+        assert!(ledger.block_hash_at(0).is_none());
+        assert_eq!(header_cache.count(), 0);
+    }
+
+    #[test]
+    fn test_hydrate_ledger_rejects_tip_hash_mismatch() {
+        let mut store_cache = empty_cache();
+        let blocks = chain(2);
+        let ledger_contract = LedgerContract::new();
+        for block in &blocks {
+            ledger_contract
+                .store_block_state(store_cache.data_cache(), block, &[])
+                .expect("store block");
+        }
+        ledger_contract
+            .set_current_block_state(store_cache.data_cache(), &blocks[0].hash(), 1)
+            .expect("store inconsistent tip");
+        store_cache.commit();
+
+        let ledger = Arc::new(LedgerContext::default());
+        let header_cache = Arc::new(HeaderCache::new());
+        let error = hydrate_ledger(&store_cache, &ledger, &header_cache)
+            .expect_err("tip hash mismatch must fail closed");
+
+        assert!(error.message.contains("Current block hash mismatch"));
+        assert!(ledger.block_hash_at(0).is_none());
+        assert_eq!(header_cache.count(), 0);
     }
 
     #[test]
     fn test_validate_chain_integrity() {
         let ledger = Arc::new(LedgerContext::default());
         let header_cache = Arc::new(HeaderCache::new());
+        let genesis = block(0, UInt256::zero());
 
-        // Create and insert genesis block
-        let mut genesis = Block::new();
-        genesis.header.set_index(0);
-        genesis.header.prev_hash = UInt256::zero();
-
-        ledger.insert_block(genesis.clone()).unwrap();
-        header_cache.add(genesis.header);
+        ledger.insert_block(genesis.to_payload_block()).unwrap();
+        header_cache.add(super::super::converters::convert_execution_header(
+            genesis.header,
+        ));
         ledger.record_tip(0);
 
-        // Validate
-        let result = validate_chain_integrity(&ledger, &header_cache, 0);
-        assert!(result.is_ok());
+        validate_chain_integrity(&ledger, &header_cache, 0).expect("valid genesis");
     }
 
     #[test]
     fn test_validate_chain_integrity_height_mismatch() {
         let ledger = Arc::new(LedgerContext::default());
         let header_cache = Arc::new(HeaderCache::new());
-
         ledger.record_tip(5);
 
-        // Expect height 10 but ledger reports 5
         let result = validate_chain_integrity(&ledger, &header_cache, 10);
         assert!(result.is_err());
         assert!(result.unwrap_err().message.contains("Height mismatch"));
@@ -644,14 +652,10 @@ mod tests {
 
     #[test]
     fn test_hydrate_native_contracts() {
-        let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
-        let store_cache = Arc::new(StoreCache::new(store));
-        let cache = Arc::new(std::sync::Mutex::new(
-            neo_smart_contract::NativeContractsCache::new(),
-        ));
+        let store_cache = empty_cache();
+        let native_services = default_native_services();
 
-        // Should succeed even with empty storage
-        let result = hydrate_native_contracts(&store_cache, &cache);
-        assert!(result.is_ok());
+        hydrate_native_contracts(&store_cache, &native_services, &ProtocolSettings::default())
+            .expect("empty native storage is valid");
     }
 }

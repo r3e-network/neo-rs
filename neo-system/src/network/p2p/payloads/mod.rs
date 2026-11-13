@@ -45,9 +45,9 @@ pub use ping_payload::PingPayload;
 pub use version_payload::VersionPayload;
 
 // Re-export core protocol types from neo-protocol
-pub use neo_protocol::payloads::{Block, Transaction, Witness};
-pub use neo_protocol::payloads::extensible::Extensible as ExtensiblePayload;
 pub use neo_protocol::payloads::Header;
+pub use neo_protocol::payloads::extensible::Extensible as ExtensiblePayload;
+pub use neo_protocol::payloads::{Block, Transaction, Witness};
 
 // Re-export InventoryType from parent module for compatibility
 pub use super::InventoryType;
@@ -59,7 +59,8 @@ pub mod block {
 
 pub mod transaction {
     pub use neo_protocol::payloads::Transaction;
-    pub const MAX_TRANSACTION_SIZE: usize = neo_protocol::payloads::transaction::MAX_TRANSACTION_SIZE;
+    pub const MAX_TRANSACTION_SIZE: usize =
+        neo_protocol::payloads::transaction::MAX_TRANSACTION_SIZE;
 }
 
 pub mod extensible_payload {

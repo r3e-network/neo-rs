@@ -36,10 +36,10 @@ pub(crate) fn normalize_neofs_hex_header(value: &str) -> String {
     if is_hex(normalized) {
         return normalized.to_string();
     }
-    if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(normalized) {
-        if !decoded.is_empty() {
-            return hex::encode(decoded);
-        }
+    if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(normalized)
+        && !decoded.is_empty()
+    {
+        return hex::encode(decoded);
     }
     trimmed.to_string()
 }

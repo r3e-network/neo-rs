@@ -22,26 +22,31 @@ pub(crate) fn attach_mempool_callbacks(
     blockchain: BlockchainHandle,
 ) {
     let mut pool = memory_pool.lock();
-    let context_added = context.clone();
+    // The context owns the mempool. Strong callback captures would therefore
+    // create reference cycles and keep the context's primary store alive after
+    // shutdown, preventing persistent backends from being reopened.
+    let context_added = Arc::downgrade(context);
     pool.transaction_added = Some(Box::new(move |_sender, tx| {
-        context_added.broadcast_plugin_event(crate::events::PluginEvent::MempoolTransactionAdded {
-            tx_hash: tx.hash().to_string(),
-        });
+        if let Some(context) = context_added.upgrade() {
+            context.broadcast_plugin_event(crate::events::PluginEvent::MempoolTransactionAdded {
+                tx_hash: tx.hash().to_string(),
+            });
+        }
     }));
 
-    let context_removed = context.clone();
+    let context_removed = Arc::downgrade(context);
     pool.transaction_removed = Some(Box::new(move |_sender, args| {
         let hashes = args
             .transactions
             .iter()
             .map(|tx| tx.hash().to_string())
             .collect::<Vec<_>>();
-        context_removed.broadcast_plugin_event(
-            crate::events::PluginEvent::MempoolTransactionRemoved {
+        if let Some(context) = context_removed.upgrade() {
+            context.broadcast_plugin_event(crate::events::PluginEvent::MempoolTransactionRemoved {
                 tx_hashes: hashes,
                 reason: format!("{:?}", args.reason),
-            },
-        );
+            });
+        }
     }));
 
     let local_node_ref = local_node.clone();

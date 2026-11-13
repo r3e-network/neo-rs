@@ -57,6 +57,7 @@ pub mod oracle_response_code;
 pub mod rpc_exception;
 pub mod serializable_payload;
 pub mod storage;
+/// Process-wide UTC time source with deterministic test overrides.
 pub mod time_provider;
 pub mod transaction_attribute_type;
 pub mod transaction_removal_reason;

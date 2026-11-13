@@ -1,5 +1,5 @@
-use neo_protocol::{execution::{Block, ApplicationExecuted}};
 use crate::network::p2p::Message;
+use neo_protocol::execution::{ApplicationExecuted, Block};
 use neo_storage::persistence::DataCache;
 use neo_wallets::Wallet;
 use std::{any::Any, sync::Arc};
@@ -39,6 +39,18 @@ pub trait CommittingHandler {
         application_executed_list: &[ApplicationExecuted],
     ) -> CoreResult<()> {
         self.blockchain_committing_handler(system, block, snapshot, application_executed_list);
+        Ok(())
+    }
+
+    /// Discards state staged by the committing hook after a failed participant
+    /// vote, store commit, or runtime-cache update. Stateless handlers need no
+    /// rollback and retain the default no-op.
+    fn blockchain_rollback_handler(
+        &self,
+        _system: &dyn Any,
+        _block: &Block,
+        _snapshot: &DataCache,
+    ) -> CoreResult<()> {
         Ok(())
     }
 }

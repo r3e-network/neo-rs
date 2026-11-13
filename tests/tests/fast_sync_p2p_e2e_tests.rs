@@ -6,14 +6,10 @@
 //! 3. P2P inventory message exchange, block payloads, and Merkle root determinism
 //! 4. Cross-node ledger snapshot consistency after fast-sync completion
 
-use neo_ledger::block::Block as LedgerBlock;
-use neo_ledger::blockchain_application_executed::ApplicationExecuted;
-use neo_system::network::p2p::message::Message;
-use neo_system::network::p2p::message_command::MessageCommand;
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
-use neo_system::network::p2p::payloads::{InvPayload, PingPayload};
 use neo_primitives::{InventoryType, UInt160, UInt256, WitnessScope};
 use neo_protocol::ProtocolSettings;
+use neo_protocol::execution::{ApplicationExecuted, Block as ExecBlock};
 use neo_protocol::payloads::Signer;
 use neo_protocol::payloads::block::Block as PayloadBlock;
 use neo_protocol::payloads::header::Header;
@@ -22,6 +18,9 @@ use neo_protocol::witness::Witness;
 use neo_storage::persistence::DataCache;
 use neo_system::NeoSystem;
 use neo_system::i_event_handlers::CommittingHandler;
+use neo_system::network::p2p::message::Message;
+use neo_system::network::p2p::message_command::MessageCommand;
+use neo_system::network::p2p::payloads::{InvPayload, PingPayload};
 use neo_vm::OpCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -38,7 +37,7 @@ impl CommittingHandler for FastSyncCaptureHandler {
     fn blockchain_committing_handler(
         &self,
         _system: &dyn std::any::Any,
-        _block: &LedgerBlock,
+        _block: &ExecBlock,
         _snapshot: &DataCache,
         _application_executed_list: &[ApplicationExecuted],
     ) {
@@ -60,23 +59,27 @@ fn create_test_tx(sender: UInt160, nonce: u32) -> Transaction {
 }
 
 fn create_child_block(
-    prev_block: &mut PayloadBlock,
+    prev_block: &ExecBlock,
     index: u32,
     timestamp_delta: u64,
     transactions: Vec<Transaction>,
-) -> PayloadBlock {
+) -> ExecBlock {
     let prev_hash = prev_block.hash();
-    let mut block = PayloadBlock::new();
+    // Build the canonical payload block first so the merkle root and header
+    // hash follow the exact payload semantics, then project to the execution
+    // representation that NeoSystem::persist_block and the committing
+    // handlers consume.
+    let mut payload_block = PayloadBlock::new();
     let mut header = Header::new();
     header.set_index(index);
     header.set_prev_hash(prev_hash);
-    header.set_next_consensus(*prev_block.next_consensus());
-    header.set_timestamp(prev_block.timestamp() + timestamp_delta);
+    header.set_next_consensus(prev_block.header.next_consensus);
+    header.set_timestamp(prev_block.header.timestamp + timestamp_delta);
     header.witness = Witness::new();
-    block.header = header;
-    block.transactions = transactions;
-    block.rebuild_merkle_root();
-    block
+    payload_block.header = header;
+    payload_block.transactions = transactions;
+    payload_block.rebuild_merkle_root();
+    ExecBlock::from(&payload_block)
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -87,10 +90,10 @@ async fn test_dual_node_fast_sync_e2e() {
     let node_a = NeoSystem::new(settings.clone(), None, None).expect("start node A");
     assert_eq!(node_a.current_block_index(), 0);
 
-    let mut genesis_a = node_a.genesis_block().as_ref().clone();
+    let genesis_a = node_a.genesis_block().as_ref().clone();
 
     // Generate Block 1 (empty block)
-    let mut block1 = create_child_block(&mut genesis_a, 1, 15_000, Vec::new());
+    let block1 = create_child_block(&genesis_a, 1, 15_000, Vec::new());
     node_a
         .persist_block(block1.clone())
         .expect("persist block 1 on node A");
@@ -98,13 +101,13 @@ async fn test_dual_node_fast_sync_e2e() {
     // Generate Block 2 (with a transaction)
     let sender = UInt160::from([0x77u8; 20]);
     let tx1 = create_test_tx(sender, 42);
-    let mut block2 = create_child_block(&mut block1, 2, 15_000, vec![tx1]);
+    let block2 = create_child_block(&block1, 2, 15_000, vec![tx1]);
     node_a
         .persist_block(block2.clone())
         .expect("persist block 2 on node A");
 
     // Generate Block 3 (empty block)
-    let mut block3 = create_child_block(&mut block2, 3, 15_000, Vec::new());
+    let block3 = create_child_block(&block2, 3, 15_000, Vec::new());
     node_a
         .persist_block(block3.clone())
         .expect("persist block 3 on node A");

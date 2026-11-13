@@ -1,7 +1,7 @@
-use neo_protocol::ProtocolSettings;
 use neo_crypto::{ECCurve, ECPoint};
 use neo_io::witness_rule::{WitnessCondition, WitnessRule, WitnessRuleAction};
 use neo_json::{JArray, JObject};
+use neo_protocol::ProtocolSettings;
 
 pub fn rule_from_json(
     json: &JObject,
@@ -157,9 +157,9 @@ fn parse_group_bytes(value: &str) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_wallets::KeyPair;
     use neo_json::JToken;
     use neo_primitives::UInt160;
+    use neo_wallets::KeyPair;
 
     fn assert_rule_roundtrip(rule: WitnessRule) {
         let json = rule.to_json();

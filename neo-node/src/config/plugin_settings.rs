@@ -2,8 +2,10 @@ use anyhow::{Context, Result, bail};
 use neo_primitives::constants::MAX_BLOCK_SIZE;
 use neo_rpc::application_logs::ApplicationLogsSettings;
 use neo_rpc::tokens_tracker::TokensTrackerSettings;
-use neo_system::state_service::{StateServiceSettings, UnhandledExceptionPolicy as StateExceptionPolicy};
 use neo_system::oracle_service::OracleServiceSettings;
+use neo_system::state_service::{
+    StateServiceSettings, UnhandledExceptionPolicy as StateExceptionPolicy,
+};
 use serde::Deserialize;
 use std::{env, fs, path::PathBuf, time::Duration};
 use url::Url;
@@ -38,10 +40,6 @@ fn state_service_config_path() -> PathBuf {
     plugins_directory()
         .join("StateService")
         .join("StateService.json")
-}
-
-fn state_service_directory() -> PathBuf {
-    plugins_directory().join("StateService")
 }
 
 fn tokens_tracker_config_path() -> PathBuf {
@@ -379,15 +377,6 @@ pub fn resolve_application_logs_store_path(settings: &ApplicationLogsSettings) -
         path
     } else {
         application_logs_directory().join(path)
-    }
-}
-
-pub fn resolve_state_service_store_path(settings: &StateServiceSettings) -> PathBuf {
-    let path = PathBuf::from(format_network_path(&settings.path, settings.network));
-    if path.is_absolute() {
-        path
-    } else {
-        state_service_directory().join(path)
     }
 }
 

@@ -55,6 +55,14 @@ static NEO_HASH: LazyLock<UInt160> =
 /// wires the NEP-17 surface alongside governance and committee management.
 pub struct NeoToken {
     methods: &'static [NativeMethod],
+    /// Pure decode memoization keyed by the complete current storage value.
+    /// No chain identity, height, balance, or snapshot pointer is retained.
+    committee_decode_cache: parking_lot::RwLock<Option<CommitteeDecodeCache>>,
+}
+
+struct CommitteeDecodeCache {
+    encoded: Vec<u8>,
+    committee: Vec<(ECPoint, BigInt)>,
 }
 
 neo_storage::impl_default_via_new!(NeoToken);

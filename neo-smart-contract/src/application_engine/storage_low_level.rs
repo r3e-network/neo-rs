@@ -166,15 +166,26 @@ impl ApplicationEngine {
     where
         F: FnOnce(&mut ExecutionContextState),
     {
-        // Ensure the VM has a valid host pointer in case the engine has moved since creation.
-        self.attach_host();
         let script = Script::from(script_bytes)
             .map_err(|e| Error::invalid_operation(format!("Invalid script: {e}")))?;
+        self.load_parsed_script_with_state(script, rvcount, initial_position, configure)
+    }
+
+    pub(super) fn load_parsed_script_with_state<F>(
+        &mut self,
+        script: Script,
+        rvcount: i32,
+        initial_position: usize,
+        configure: F,
+    ) -> Result<ExecutionContext>
+    where
+        F: FnOnce(&mut ExecutionContextState),
+    {
+        // Ensure the VM has a valid host pointer in case the engine has moved since creation.
+        self.attach_host();
         {
             let engine = self.vm_engine.engine_mut();
             let context = engine.create_context(script, rvcount, initial_position);
-            let script_hash = UInt160::from_bytes(&context.script_hash())
-                .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {e}")))?;
             let state_arc = context
                 .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
             let call_flags = {
@@ -184,6 +195,11 @@ impl ApplicationEngine {
                 state.snapshot_cache = Some(Arc::new(self.snapshot_cache.clone_cache()));
                 configure(&mut state);
                 if state.script_hash.is_none() {
+                    // Contract calls already know their deployed contract hash. Avoid
+                    // hashing the full script again only to overwrite that value.
+                    let script_hash = UInt160::from_bytes(&context.script_hash()).map_err(|e| {
+                        Error::invalid_operation(format!("Invalid script hash: {e}"))
+                    })?;
                     state.script_hash = Some(script_hash);
                 }
                 state.call_flags

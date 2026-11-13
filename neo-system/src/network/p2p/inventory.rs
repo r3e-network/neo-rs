@@ -156,8 +156,10 @@ pub fn on_transaction(
         .iter()
         .map(|signer| signer.account)
         .collect();
-    let has_conflict =
-        !signer_accounts.is_empty() && ports.mempool.contains_conflict_hash(&hash, &signer_accounts);
+    let has_conflict = !signer_accounts.is_empty()
+        && ports
+            .mempool
+            .contains_conflict_hash(&hash, &signer_accounts);
 
     if contains != ContainsTransactionType::NotExist || has_conflict {
         return;
@@ -315,9 +317,7 @@ pub fn on_get_data(
                     .try_get_relay_extensible(&hash)
                     .or_else(|| ports.mempool.try_get_extensible(&hash))
                 {
-                    out.push(NetworkMessage::new(ProtocolMessage::Extensible(
-                        extensible,
-                    )));
+                    out.push(NetworkMessage::new(ProtocolMessage::Extensible(extensible)));
                 }
             }
         }
@@ -333,11 +333,7 @@ pub fn on_get_data(
 }
 
 /// Pushes either a `MerkleBlock` (when a bloom filter matches) or the full block.
-fn push_block_or_merkle(
-    state: &SessionState,
-    out: &mut Vec<NetworkMessage>,
-    block: Block,
-) {
+fn push_block_or_merkle(state: &SessionState, out: &mut Vec<NetworkMessage>, block: Block) {
     match state.bloom_filter.flags(&block) {
         Some(flags) => match MerkleBlockPayload::try_create(&block, flags) {
             Ok(payload) => out.push(NetworkMessage::new(ProtocolMessage::MerkleBlock(payload))),
@@ -352,7 +348,11 @@ fn push_block_or_merkle(
 /// Handles a `GetBlocks` request by announcing the requested hash range as `Inv`.
 pub fn on_get_blocks(ports: &RemoteSessionPorts, payload: GetBlocksPayload) -> Vec<NetworkMessage> {
     // Validate that the start hash exists in the ledger (matches C# behavior).
-    if ports.ledger_query.try_get_block(&payload.hash_start).is_none() {
+    if ports
+        .ledger_query
+        .try_get_block(&payload.hash_start)
+        .is_none()
+    {
         return Vec::new();
     }
 

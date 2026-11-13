@@ -10,7 +10,6 @@
 use super::message_command::MessageCommand;
 use super::protocol_message::{NetworkMessage, ProtocolMessage};
 use neo_io_crate::Serializable;
-use neo_protocol::payloads::Block;
 use std::collections::VecDeque;
 
 /// Number of bits in the message command domain (one byte = 256 values).
@@ -269,7 +268,7 @@ pub const MAX_MEMORY_PER_PEER: usize = 8 * 1024 * 1024;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::payloads::{InvPayload, PingPayload};
+    use crate::network::p2p::payloads::{InvPayload, PingPayload};
     use neo_primitives::{InventoryType, UInt256};
 
     const TEST_MAX_QUEUE_BYTES: usize = usize::MAX;
@@ -318,8 +317,8 @@ mod tests {
         let mut queues = OutboundQueues::default();
         push_queues(&mut queues, ping(1), 1024).unwrap();
 
-        let err = push_queues(&mut queues, ping(2), 1024)
-            .expect_err("duplicate single-queued command");
+        let err =
+            push_queues(&mut queues, ping(2), 1024).expect_err("duplicate single-queued command");
         assert_eq!(err, QueuePushError::Duplicate);
     }
 

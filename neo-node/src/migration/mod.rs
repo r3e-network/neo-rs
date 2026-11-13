@@ -1,18 +1,16 @@
-//! Migration utilities for importing data from neo-cli and neo-go.
+//! Configuration migration utilities for neo-cli and neo-go data directories.
 //!
-//! This module provides seamless migration from C# neo-cli and Go neo-go nodes,
-//! allowing neo-rs to continue syncing from their data directories without
-//! re-synchronizing the entire blockchain.
+//! Direct storage conversion is deliberately rejected until the source and target
+//! schemas can be converted and verified completely; configuration-only migration
+//! remains available and never claims that chain data was imported.
 
+pub mod detector;
 pub mod neo_cli;
 pub mod neo_go;
-pub mod detector;
-pub mod config_parser;
-pub mod storage_adapter;
 
-use std::path::Path;
 use anyhow::{Result, bail};
-use tracing::{info, warn};
+use std::path::Path;
+use tracing::info;
 
 /// Supported Neo node implementations for migration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,29 +41,22 @@ pub struct MigrationConfig {
     pub implementation: NodeImplementation,
     /// Whether to migrate storage data
     pub migrate_storage: bool,
-    /// Whether to migrate configuration
+    /// Whether to parse and report configuration
     pub migrate_config: bool,
-    /// Whether to verify migrated data
+    /// Whether to validate the migration result
     pub verify: bool,
 }
 
 /// Detect which Neo implementation the source directory belongs to.
-///
-/// Checks for characteristic files and directory structures:
-/// - neo-cli: config.json, protocol.*.json, Storage/
-/// - neo-go: config.yml, .bolt or .db files in the root
 pub fn detect_implementation(source_dir: &Path) -> Result<NodeImplementation> {
     detector::detect_implementation(source_dir)
 }
 
-/// Migrate from neo-cli or neo-go to neo-rs.
+/// Migrate configuration and, when supported, storage from another Neo node.
 ///
-/// This function:
-/// 1. Detects the source implementation type
-/// 2. Parses protocol configuration
-/// 3. Migrates RocksDB/LevelDB storage
-/// 4. Validates the migration
-/// 5. Returns the starting block height
+/// Configuration-only mode parses the protocol settings and returns the detected
+/// network. It does not create a target chain database or imply that blocks were
+/// imported. Storage mode currently fails closed for both implementations.
 pub async fn migrate(config: MigrationConfig) -> Result<MigrationResult> {
     info!(
         "Starting migration from {} at {}",
@@ -73,37 +64,37 @@ pub async fn migrate(config: MigrationConfig) -> Result<MigrationResult> {
         config.source_dir.display()
     );
 
-    // Validate source directory
-    if !config.source_dir.exists() {
-        bail!("Source directory does not exist: {}", config.source_dir.display());
+    if !config.source_dir.is_dir() {
+        bail!(
+            "Source directory does not exist or is not a directory: {}",
+            config.source_dir.display()
+        );
+    }
+    if !config.migrate_config && !config.migrate_storage {
+        bail!("Migration has no effect: both configuration and storage are disabled");
     }
 
-    // Create target directory if needed
-    if !config.target_dir.exists() {
-        std::fs::create_dir_all(&config.target_dir)?;
-    }
-
-    // Migrate based on implementation
     let result = match config.implementation {
-        NodeImplementation::NeoCli => {
-            neo_cli::migrate(&config).await?
-        }
-        NodeImplementation::NeoGo => {
-            neo_go::migrate(&config).await?
-        }
+        NodeImplementation::NeoCli => neo_cli::migrate(&config).await?,
+        NodeImplementation::NeoGo => neo_go::migrate(&config).await?,
     };
 
-    info!(
-        "Migration complete: {} blocks, {} state entries, starting from height {}",
-        result.blocks_migrated, result.state_entries_migrated, result.starting_height
-    );
-
     if config.verify {
-        info!("Verifying migrated data...");
         verify_migration(&config, &result)?;
-        info!("Verification passed");
     }
 
+    if config.migrate_storage {
+        info!(
+            "Migration complete: {} blocks, {} state entries, starting from height {}",
+            result.blocks_migrated, result.state_entries_migrated, result.starting_height
+        );
+    } else {
+        info!(
+            network = %result.network,
+            magic = result.protocol_magic,
+            "Configuration parsed; no chain data was imported"
+        );
+    }
     Ok(result)
 }
 
@@ -122,19 +113,24 @@ pub struct MigrationResult {
     pub network: String,
 }
 
-/// Verify that the migration was successful.
+/// Validates result invariants without pretending to inspect unmigrated storage.
 fn verify_migration(config: &MigrationConfig, result: &MigrationResult) -> Result<()> {
-    // Basic sanity checks
-    if result.starting_height == 0 && result.blocks_migrated > 0 {
-        warn!("Starting height is 0 but blocks were migrated - possible issue");
+    if result.network.is_empty() {
+        bail!("Migration returned an empty network name");
     }
-
-    // Verify target directory structure
-    if !config.target_dir.exists() {
-        bail!("Target directory was not created: {}", config.target_dir.display());
+    if !config.migrate_storage
+        && (result.blocks_migrated != 0
+            || result.state_entries_migrated != 0
+            || result.starting_height != 0)
+    {
+        bail!("Configuration-only migration returned fabricated chain-data statistics");
     }
-
-    info!("Migration verification: All checks passed");
+    if config.migrate_storage && !config.target_dir.join("RocksDBStore").is_dir() {
+        bail!(
+            "Storage migration completed without a target database: {}",
+            config.target_dir.display()
+        );
+    }
     Ok(())
 }
 
@@ -146,5 +142,70 @@ mod tests {
     fn test_node_implementation_str() {
         assert_eq!(NodeImplementation::NeoCli.as_str(), "neo-cli");
         assert_eq!(NodeImplementation::NeoGo.as_str(), "neo-go");
+    }
+
+    #[test]
+    fn config_only_verification_rejects_fabricated_statistics() {
+        let config = MigrationConfig {
+            source_dir: Path::new("source").to_path_buf(),
+            target_dir: Path::new("target").to_path_buf(),
+            implementation: NodeImplementation::NeoCli,
+            migrate_storage: false,
+            migrate_config: true,
+            verify: true,
+        };
+        let result = MigrationResult {
+            blocks_migrated: 1,
+            state_entries_migrated: 0,
+            starting_height: 1,
+            protocol_magic: 5195086,
+            network: "mainnet".to_string(),
+        };
+        assert!(verify_migration(&config, &result).is_err());
+    }
+
+    #[tokio::test]
+    async fn config_only_migration_does_not_require_source_storage() {
+        const COMMITTEE: &str =
+            "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c";
+
+        for implementation in [NodeImplementation::NeoCli, NodeImplementation::NeoGo] {
+            let temp = tempfile::tempdir().unwrap();
+            let source = temp.path().join("source");
+            std::fs::create_dir(&source).unwrap();
+            match implementation {
+                NodeImplementation::NeoCli => std::fs::write(
+                    source.join("protocol.mainnet.json"),
+                    format!(
+                        r#"{{"ProtocolConfiguration":{{"Network":12345,"StandbyCommittee":["{COMMITTEE}"]}}}}"#
+                    ),
+                )
+                .unwrap(),
+                NodeImplementation::NeoGo => std::fs::write(
+                    source.join("config.yml"),
+                    format!(
+                        "ProtocolConfiguration:\n  Magic: 12345\n  StandbyCommittee: [\"{COMMITTEE}\"]\n"
+                    ),
+                )
+                .unwrap(),
+            }
+            let target = temp.path().join("target");
+            let result = migrate(MigrationConfig {
+                source_dir: source,
+                target_dir: target.clone(),
+                implementation,
+                migrate_storage: false,
+                migrate_config: true,
+                verify: true,
+            })
+            .await
+            .unwrap();
+
+            assert_eq!(result.protocol_magic, 12345);
+            assert_eq!(result.blocks_migrated, 0);
+            assert_eq!(result.state_entries_migrated, 0);
+            assert_eq!(result.starting_height, 0);
+            assert!(!target.exists());
+        }
     }
 }

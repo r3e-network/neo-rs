@@ -1,11 +1,10 @@
 //! Integration tests for NEO token native contract.
 
-use neo_native_contracts::{NeoToken, NativeContract};
-use neo_protocol::{Hardfork, ProtocolSettings};
+use neo_native_contracts::{NativeContract, NeoToken};
+use neo_protocol::ProtocolSettings;
+use neo_protocol::execution::Block;
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_storage::persistence::DataCache;
-use neo_protocol::execution::Block;
-use neo_primitives::UInt160;
 use std::sync::Arc;
 
 fn make_test_settings() -> ProtocolSettings {
@@ -35,12 +34,15 @@ fn make_test_engine(snapshot: Arc<DataCache>) -> ApplicationEngine {
         neo_primitives::trigger_type::TriggerType::Application,
         None,
         snapshot,
-        Some(neo_protocol::execution::conversions::convert_ledger_block(block)),
+        Some(neo_protocol::execution::conversions::convert_ledger_block(
+            block,
+        )),
         settings,
         i64::MAX,
         None,
         neo_native_contracts::composition::default_native_services(),
-    ).expect("create engine")
+    )
+    .expect("create engine")
 }
 
 #[test]

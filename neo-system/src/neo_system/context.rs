@@ -14,42 +14,37 @@ use std::thread;
 
 use neo_actors::{ActorSystemHandle, EventStreamHandle};
 use tokio::sync::mpsc;
-use tracing::{trace, warn};
+use tracing::trace;
 
 use super::actors::TransactionRouterHandle;
 use super::converters::{convert_execution_block, convert_execution_header};
 use super::registry::ServiceRegistry;
-use super::relay::{LEDGER_HYDRATION_WINDOW, RelayExtensibleCache, RelayExtensibleEntry};
-use super::system::{ReadinessStatus, STATE_STORE_SERVICE};
+use super::relay::{RelayExtensibleCache, RelayExtensibleEntry};
+use super::system::ReadinessStatus;
 use crate::blockchain::BlockchainHandle;
 use crate::events::{PluginEvent, broadcast_plugin_event};
 use crate::i_event_handlers::{CommittedHandler, CommittingHandler, WalletChangedHandler};
 use crate::mempool::MemoryPool;
 use crate::network::p2p::{
     LocalNode, LocalNodeHandle, TaskManagerHandle,
-    payloads::{
-        extensible_payload::ExtensiblePayload, header::Header,
-        transaction::Transaction,
-    },
+    payloads::{extensible_payload::ExtensiblePayload, header::Header, transaction::Transaction},
 };
-use crate::services::SystemContext;
-use neo_primitives::LogLevel;
-use neo_ledger::{LedgerContext, HeaderCache};
-use neo_storage::persistence::{StoreCache, store::Store, store_provider::StoreProvider};
-use crate::services::{
-    LedgerService, LockedMempoolService, MempoolService, PeerManagerService, StateStoreService,
-};
-use neo_smart_contract::application_engine::ApplicationEngine;
-use neo_primitives::LogEventArgs;
-use neo_native_contracts::ledger_contract::{HashOrIndex, LedgerContract};
-use neo_vm::NotifyEventArgs;
 use crate::services::StateStoreService as StateStore;
-use neo_wallets::{Wallet, WalletProvider};
+use crate::services::SystemContext;
+use crate::services::{MempoolService, PeerManagerService, StateStoreService};
+use neo_ledger::{HeaderCache, LedgerContext};
+use neo_native_contracts::ledger_contract::{HashOrIndex, LedgerContract};
+use neo_primitives::LogEventArgs;
+use neo_primitives::LogLevel;
 use neo_primitives::contains_transaction_type::ContainsTransactionType;
 use neo_primitives::{UInt160, UInt256};
 use neo_protocol::protocol_settings::ProtocolSettings;
+use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::error::{CoreError, CoreResult};
+use neo_storage::persistence::{StoreCache, store::Store, store_provider::StoreProvider};
+use neo_vm::NotifyEventArgs;
 use neo_vm::VmState;
+use neo_wallets::{Wallet, WalletProvider};
 
 use super::core::NeoSystem;
 
@@ -152,7 +147,7 @@ pub struct NeoSystemContext {
     pub(crate) genesis_block: Arc<neo_protocol::execution::Block>,
     pub(crate) ledger: Arc<LedgerContext>,
     pub(crate) state_service_enabled: bool,
-    pub(crate) state_store: Arc<dyn StateStore>,
+    pub(crate) state_store: Option<Arc<dyn StateStore>>,
     pub(crate) memory_pool: Arc<Mutex<MemoryPool>>,
     pub(crate) header_cache: Arc<HeaderCache>,
     pub(crate) local_node_state: Arc<LocalNode>,
@@ -237,9 +232,7 @@ impl NeoSystemContext {
         if !self.state_service_enabled {
             return Ok(None);
         }
-        // Note: Cannot use typed_service for trait objects directly due to size constraints
-        // Return the stored state_store directly
-        Ok(Some(self.state_store.clone()))
+        Ok(self.state_store.clone())
     }
 
     /// Typed state store view.
@@ -276,7 +269,8 @@ impl NeoSystemContext {
         &self,
     ) -> CoreResult<Option<Arc<dyn MempoolService + Send + Sync + 'static>>> {
         Ok(self.mempool_service()?.map(|svc| {
-            Arc::new(crate::mempool::services::MutexMempoolService::new(svc)) as Arc<dyn MempoolService + Send + Sync>
+            Arc::new(crate::mempool::services::MutexMempoolService::new(svc))
+                as Arc<dyn MempoolService + Send + Sync>
         }))
     }
 
@@ -573,54 +567,13 @@ impl NeoSystemContext {
         self.service_registry.has_named_service(name)
     }
 
+    #[cfg(test)]
     pub(crate) fn hydrate_ledger_from_store(
         store_cache: &StoreCache,
         ledger: &Arc<LedgerContext>,
-        header_cache: &HeaderCache,
-    ) {
-        let ledger_contract = LedgerContract::new();
-        let Ok(height) = ledger_contract.current_index(store_cache) else {
-            return;
-        };
-
-        let start = height.saturating_sub(LEDGER_HYDRATION_WINDOW.saturating_sub(1));
-        if start > 0 {
-            trace!(
-                target: "neo",
-                tip = height,
-                window = LEDGER_HYDRATION_WINDOW,
-                start,
-                "bounded ledger hydration"
-            );
-        }
-        for index in start..=height {
-            match ledger_contract.get_block(store_cache, HashOrIndex::Index(index)) {
-                Ok(Some(block)) => {
-                    let payload_block = convert_execution_block(block);
-                    let header_clone = payload_block.header.clone();
-                    // insert_block will populate hash/header caches and advance height markers.
-                    match ledger.insert_block(payload_block) {
-                        Ok(_) => {
-                            // keep header cache warm for network queries
-                            header_cache.add(header_clone);
-                        }
-                        Err(err) => {
-                            warn!(
-                                target: "neo",
-                                index,
-                                error = %err,
-                                "failed to hydrate block into ledger cache"
-                            );
-                        }
-                    }
-                }
-                Ok(None) => break,
-                Err(err) => {
-                    warn!(target: "neo", index, error = %err, "failed to hydrate block from store");
-                    break;
-                }
-            }
-        }
+        header_cache: &Arc<HeaderCache>,
+    ) -> Result<(), super::storage::StorageError> {
+        super::storage::hydrate_ledger(store_cache, ledger, header_cache)
     }
 
     /// Returns the current best block index known to the system. This will be wired
@@ -808,7 +761,10 @@ impl NeoSystemContext {
         transaction: Transaction,
     ) -> neo_smart_contract::error::CoreResult<UInt256> {
         self.ledger.insert_transaction(transaction).map_err(|e| {
-            neo_smart_contract::error::CoreError::invalid_operation(format!("Failed to insert transaction: {}", e))
+            neo_smart_contract::error::CoreError::invalid_operation(format!(
+                "Failed to insert transaction: {}",
+                e
+            ))
         })
     }
 
@@ -818,9 +774,15 @@ impl NeoSystemContext {
     }
 
     /// Registers a block with the in-memory ledger cache and returns its hash.
-    pub fn record_block(&self, block: neo_ledger::Block) -> neo_smart_contract::error::CoreResult<UInt256> {
+    pub fn record_block(
+        &self,
+        block: neo_ledger::Block,
+    ) -> neo_smart_contract::error::CoreResult<UInt256> {
         self.ledger.insert_block(block).map_err(|e| {
-            neo_smart_contract::error::CoreError::invalid_operation(format!("Failed to insert block: {}", e))
+            neo_smart_contract::error::CoreError::invalid_operation(format!(
+                "Failed to insert block: {}",
+                e
+            ))
         })
     }
 

@@ -54,7 +54,7 @@ async fn raw_response(module: &jsonrpsee::RpcModule<impl Clone>, request: Value)
         .raw_json_request(&request.to_string(), 1)
         .await
         .expect("raw json response");
-    serde_json::from_str(&response).expect("json response")
+    serde_json::from_str(response.get()).expect("json response")
 }
 
 fn assert_neo_error(response: &Value, error: ServerRpcError) {

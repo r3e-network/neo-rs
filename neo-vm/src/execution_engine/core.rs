@@ -97,6 +97,16 @@ impl ExecutionEngine {
         self.set_state(VMState::FAULT);
     }
 
+    /// Transitions to FAULT through the canonical exception formatter.
+    ///
+    /// Host-side direct dispatch uses this entry point so an optimized path
+    /// retains the same uncaught exception text and instruction location as
+    /// the interpreter. Normal VM execution continues to call `on_fault`
+    /// internally.
+    pub fn fault(&mut self, error: VmError) {
+        self.on_fault(error);
+    }
+
     /// Returns the reference counter.
     #[inline]
     #[must_use]

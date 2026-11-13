@@ -39,19 +39,46 @@ fn trigger_type_c_sharp_style_aliases() {
 
 #[test]
 fn trigger_type_from_str_case_insensitive() {
-    assert_eq!(TriggerType::from_str("OnPersist").unwrap(), TriggerType::ON_PERSIST);
-    assert_eq!(TriggerType::from_str("onpersist").unwrap(), TriggerType::ON_PERSIST);
-    assert_eq!(TriggerType::from_str("ONPERSIST").unwrap(), TriggerType::ON_PERSIST);
-    assert_eq!(TriggerType::from_str("oNpErSiSt").unwrap(), TriggerType::ON_PERSIST);
+    assert_eq!(
+        TriggerType::from_str("OnPersist").unwrap(),
+        TriggerType::ON_PERSIST
+    );
+    assert_eq!(
+        TriggerType::from_str("onpersist").unwrap(),
+        TriggerType::ON_PERSIST
+    );
+    assert_eq!(
+        TriggerType::from_str("ONPERSIST").unwrap(),
+        TriggerType::ON_PERSIST
+    );
+    assert_eq!(
+        TriggerType::from_str("oNpErSiSt").unwrap(),
+        TriggerType::ON_PERSIST
+    );
 }
 
 #[test]
 fn trigger_type_from_str_all_variants() {
-    assert_eq!(TriggerType::from_str("OnPersist").unwrap(), TriggerType::ON_PERSIST);
-    assert_eq!(TriggerType::from_str("PostPersist").unwrap(), TriggerType::POST_PERSIST);
-    assert_eq!(TriggerType::from_str("Verification").unwrap(), TriggerType::VERIFICATION);
-    assert_eq!(TriggerType::from_str("Application").unwrap(), TriggerType::APPLICATION);
-    assert_eq!(TriggerType::from_str("System").unwrap(), TriggerType::SYSTEM);
+    assert_eq!(
+        TriggerType::from_str("OnPersist").unwrap(),
+        TriggerType::ON_PERSIST
+    );
+    assert_eq!(
+        TriggerType::from_str("PostPersist").unwrap(),
+        TriggerType::POST_PERSIST
+    );
+    assert_eq!(
+        TriggerType::from_str("Verification").unwrap(),
+        TriggerType::VERIFICATION
+    );
+    assert_eq!(
+        TriggerType::from_str("Application").unwrap(),
+        TriggerType::APPLICATION
+    );
+    assert_eq!(
+        TriggerType::from_str("System").unwrap(),
+        TriggerType::SYSTEM
+    );
     assert_eq!(TriggerType::from_str("All").unwrap(), TriggerType::ALL);
 }
 
@@ -109,7 +136,7 @@ fn trigger_type_is_all() {
 #[test]
 fn trigger_type_clone_and_copy() {
     let trigger = TriggerType::VERIFICATION;
-    let cloned = trigger.clone();
+    let cloned = trigger;
     let copied = trigger;
     assert_eq!(trigger, cloned);
     assert_eq!(trigger, copied);
@@ -127,7 +154,10 @@ fn trigger_type_debug_format() {
 fn trigger_type_equality() {
     assert_eq!(TriggerType::ON_PERSIST, TriggerType::ON_PERSIST);
     assert_ne!(TriggerType::ON_PERSIST, TriggerType::POST_PERSIST);
-    assert_eq!(TriggerType::ON_PERSIST | TriggerType::POST_PERSIST, TriggerType::SYSTEM);
+    assert_eq!(
+        TriggerType::ON_PERSIST | TriggerType::POST_PERSIST,
+        TriggerType::SYSTEM
+    );
 }
 
 #[test]

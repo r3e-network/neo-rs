@@ -44,8 +44,20 @@ members = [
     # Oracle service for external data
     "neo-oracle",
 
+    # dBFT 2.0 consensus engine
+    "neo-consensus",
+    # Canonical TEE sealing, attestation, wallet and fair-ordering implementation
+    "neo-tee",
+    # Dedicated mTLS remote signer reference service
+    "neo-signer-server",
+    # Capability-limited diagnostics and detached probe protocol
+    "neo-ai-agent",
+    "neo-probe",
+
     # Node daemon (standalone RPC server)
     "neo-node",
+    # Independent fail-closed neo-cli / neo-go state validator and RPC gateway
+    "neo-validator",
 
     # === Integration Tests ===
     "tests",
@@ -81,7 +93,7 @@ exclude = [
 version = "0.20.0"
 edition = "2024"
 # MSRV equals the rust-toolchain.toml pin; see docs/TOOLCHAIN.md.
-rust-version = "1.95"
+rust-version = "1.99"
 authors = [
     "R3E Network <jimmy@r3e.network>"
 ]
@@ -101,8 +113,8 @@ msrv = "1.99"
 # CARGO_BUILD_WARNINGS=deny, so every `warn` here is a hard gate in CI.
 # Policy: docs/TOOLCHAIN.md#lint-policy.
 [workspace.lints.clippy]
-# Adopted idioms (docs/TOOLCHAIN.md#adopted-language-and-library-features).
-manual_let_else = "warn"
+# `match` with an early return remains supported for protocol error paths.
+manual_let_else = "allow"
 
 # Style lints that do not fit this codebase (moved from the CI command line).
 doc_overindented_list_items = "allow"
@@ -142,6 +154,11 @@ neo-smart-contract = { path = "neo-smart-contract" }
 neo-system = { path = "neo-system" }
 neo-wallets = { path = "neo-wallets" }
 neo-oracle = { path = "neo-oracle" }
+neo-consensus = { path = "neo-consensus" }
+neo-tee = { path = "neo-tee" }
+neo-signer-server = { path = "neo-signer-server" }
+neo-ai-agent = { path = "neo-ai-agent", version = "0.20.0" }
+neo-probe = { path = "neo-probe", version = "0.20.0" }
 
 # Application layer
 # neo-cli removed: functionality merged into neo-node
@@ -233,6 +250,7 @@ rocksdb = { version = "0.21", default-features = false, features = ["snappy", "l
 # HTTP and JSON-RPC
 hyper = { version = "0.14", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "blocking", "stream", "gzip"] }
+quick-xml = "=0.26.0"
 # Low-level networking
 socket2 = "0.5"
 

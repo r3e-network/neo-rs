@@ -174,7 +174,10 @@ mod tests {
 
         let outcome = validate_incoming_block(block, None);
 
-        assert!(matches!(outcome, IncomingBlockOutcome::Store { index: 7, .. }));
+        assert!(matches!(
+            outcome,
+            IncomingBlockOutcome::Store { index: 7, .. }
+        ));
     }
 
     #[test]

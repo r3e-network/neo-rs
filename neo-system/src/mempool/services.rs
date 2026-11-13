@@ -3,7 +3,7 @@
 //! Distributed from `neo-core::services::traits` and `neo-core::services::mod`.
 
 use super::memory_pool::MemoryPool;
-use parking_lot::{RwLock, Mutex};
+use parking_lot::{Mutex, RwLock};
 use std::sync::Arc;
 
 /// Mempool operations used across networking and RPC layers.

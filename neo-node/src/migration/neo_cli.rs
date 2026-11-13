@@ -1,12 +1,10 @@
 //! Migration from C# neo-cli to neo-rs.
 
 use super::{MigrationConfig, MigrationResult};
-use anyhow::{Result, Context, bail};
-use neo_storage::persistence::StoreCache;
+use anyhow::{Context, Result, bail};
 use neo_protocol::ProtocolSettings;
 use std::path::Path;
-use std::sync::Arc;
-use tracing::{info, debug};
+use tracing::{debug, info};
 
 /// Migrate from neo-cli to neo-rs.
 ///
@@ -22,15 +20,13 @@ pub async fn migrate(config: &MigrationConfig) -> Result<MigrationResult> {
     let protocol_settings = parse_protocol_config(&config.source_dir)?;
     info!("Detected network: magic={}", protocol_settings.network);
 
-    // Step 2: Detect storage backend
-    let storage_path = detect_storage_path(&config.source_dir)?;
-    info!("Found storage at: {}", storage_path.display());
-
-    // Step 3: Migrate storage if requested
+    // Configuration-only migration must not require a source chain database.
     let (blocks_migrated, state_entries, starting_height) = if config.migrate_storage {
+        let storage_path = detect_storage_path(&config.source_dir)?;
+        info!("Found storage at: {}", storage_path.display());
         migrate_storage(&storage_path, &config.target_dir, &protocol_settings).await?
     } else {
-        info!("Skipping storage migration (config-only mode)");
+        info!("Skipping storage detection and migration (config-only mode)");
         (0, 0, 0)
     };
 
@@ -67,55 +63,21 @@ fn parse_protocol_config(source_dir: &Path) -> Result<ProtocolSettings> {
 
 /// Parse protocol JSON into ProtocolSettings.
 fn parse_protocol_json(json: &str) -> Result<ProtocolSettings> {
-    let value: serde_json::Value = serde_json::from_str(json)
-        .context("Failed to parse protocol JSON")?;
+    let value: serde_json::Value =
+        serde_json::from_str(json).context("Failed to parse protocol JSON")?;
+    let protocol = value
+        .get("ProtocolConfiguration")
+        .context("Missing ProtocolConfiguration")?;
+    if protocol.get("Network").is_none() {
+        bail!("Missing Network magic");
+    }
+    if protocol.get("StandbyCommittee").is_none() {
+        bail!("Missing StandbyCommittee");
+    }
 
-    // Extract key fields from neo-cli protocol.json format
-    let magic = value["ProtocolConfiguration"]["Network"]
-        .as_u64()
-        .context("Missing Network magic")? as u32;
-
-    let address_version = value["ProtocolConfiguration"]["AddressVersion"]
-        .as_u64()
-        .unwrap_or(53) as u8;
-
-    let standby_committee: Vec<String> = value["ProtocolConfiguration"]["StandbyCommittee"]
-        .as_array()
-        .context("Missing StandbyCommittee")?
-        .iter()
-        .filter_map(|v| v.as_str().map(String::from))
-        .collect();
-
-    let seed_list: Vec<String> = value["ProtocolConfiguration"]["SeedList"]
-        .as_array()
-        .unwrap_or(&Vec::new())
-        .iter()
-        .filter_map(|v| v.as_str().map(String::from))
-        .collect();
-
-    let max_transactions_per_block = value["ProtocolConfiguration"]["MaxTransactionsPerBlock"]
-        .as_u64()
-        .unwrap_or(512) as u32;
-
-    let memory_pool_max_transactions = value["ProtocolConfiguration"]["MemoryPoolMaxTransactions"]
-        .as_u64()
-        .unwrap_or(50000) as u32;
-
-    let milliseconds_per_block = value["ProtocolConfiguration"]["MillisecondsPerBlock"]
-        .as_u64()
-        .unwrap_or(15000) as u32;
-
-    // Build ProtocolSettings
-    // Note: This is a simplified conversion; full implementation would handle all fields
-    Ok(ProtocolSettings::new(
-        magic,
-        address_version,
-        standby_committee,
-        seed_list,
-        max_transactions_per_block,
-        memory_pool_max_transactions,
-        milliseconds_per_block,
-    ))
+    // Delegate every consensus-critical field, including hardfork heights,
+    // validator count, gas distribution and trace limits, to the canonical loader.
+    ProtocolSettings::load_from_stream(&mut json.as_bytes()).map_err(anyhow::Error::msg)
 }
 
 /// Detect storage directory (RocksDB or LevelDB).
@@ -134,113 +96,42 @@ fn detect_storage_path(source_dir: &Path) -> Result<std::path::PathBuf> {
         return Ok(leveldb);
     }
 
-    bail!("No RocksDBStore or LevelDBStore found in {}", storage_base.display())
+    bail!(
+        "No RocksDBStore or LevelDBStore found in {}",
+        storage_base.display()
+    )
 }
 
-/// Migrate storage data from neo-cli to neo-rs.
+/// Rejects direct storage copying until schema conversion is implemented.
 ///
-/// neo-cli key encoding:
-/// - Block: 0x01 + block_hash (32 bytes)
-/// - Transaction: 0x02 + tx_hash (32 bytes)
-/// - State: 0x40 + contract_id (varint) + key
-///
-/// neo-rs uses the same RocksDB format, so we can copy directly or symlink.
+/// Historical neo-cli key prefixes differ from the ledger-prefixed neo-rs layout,
+/// and LevelDB files are not RocksDB files. Configuration-only migration remains
+/// available through [`migrate`].
 async fn migrate_storage(
     source_storage: &Path,
     target_dir: &Path,
     _protocol_settings: &ProtocolSettings,
 ) -> Result<(u64, u64, u32)> {
-    info!("Migrating storage from {} to {}", source_storage.display(), target_dir.display());
-
-    // Strategy 1: Direct copy (safest but slower)
-    // Strategy 2: Symlink (fastest but requires same filesystem)
-    // Strategy 3: RocksDB backup/restore (balanced)
-
-    // For now, use direct copy
-    let target_storage = target_dir.join("RocksDBStore");
-
-    if target_storage.exists() {
-        bail!("Target storage already exists: {}", target_storage.display());
-    }
-
-    info!("Copying RocksDB data...");
-    copy_dir_all(source_storage, &target_storage)?;
-
-    // Read metadata to get block height
-    let height = read_current_height(&target_storage)?;
-
-    info!("Storage migrated: current height = {}", height);
-
-    // Count blocks and state entries (approximate)
-    let blocks = height as u64;
-    let state_entries = estimate_state_entries(&target_storage)?;
-
-    Ok((blocks, state_entries, height))
-}
-
-/// Recursively copy a directory.
-fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
-    std::fs::create_dir_all(dst)?;
-
-    for entry in std::fs::read_dir(src)? {
-        let entry = entry?;
-        let ty = entry.file_type()?;
-
-        if ty.is_dir() {
-            copy_dir_all(&entry.path(), &dst.join(entry.file_name()))?;
-        } else {
-            std::fs::copy(entry.path(), dst.join(entry.file_name()))?;
-        }
-    }
-
-    Ok(())
-}
-
-/// Read current block height from storage.
-fn read_current_height(storage_path: &Path) -> Result<u32> {
-    // Open RocksDB and read the current block height
-    // Key: 0x05 (SYS_CurrentBlock)
-
-    use rocksdb::{DB, Options};
-
-    let mut opts = Options::default();
-    opts.set_max_open_files(1000);
-
-    let db = DB::open_for_read_only(&opts, storage_path, false)
-        .context("Failed to open RocksDB")?;
-
-    let key = [0x05u8]; // SYS_CurrentBlock prefix
-
-    if let Some(value) = db.get(&key)? {
-        // Value format: block_hash (32 bytes) + height (4 bytes LE)
-        if value.len() >= 36 {
-            let height_bytes = &value[32..36];
-            let height = u32::from_le_bytes([
-                height_bytes[0],
-                height_bytes[1],
-                height_bytes[2],
-                height_bytes[3],
-            ]);
-            return Ok(height);
-        }
-    }
-
-    Ok(0)
-}
-
-/// Estimate number of state entries.
-fn estimate_state_entries(_storage_path: &Path) -> Result<u64> {
-    // Rough estimate: count keys with prefix 0x40 (ST_Storage)
-    // For now, return a placeholder
-    Ok(0)
+    // neo-rs uses ledger-prefixed keys (including the signed ledger id), not the
+    // historical one-byte neo-cli layout previously assumed here. LevelDB also
+    // cannot be opened as RocksDB. Refuse every direct copy until conversion and
+    // completeness validation cover the actual source and target schemas.
+    bail!(
+        "neo-cli storage migration is not supported yet (source: {}, target: {}); \
+         use an offline verified block export/import instead of copying LevelDB or RocksDB files",
+        source_storage.display(),
+        target_dir.display()
+    )
 }
 
 /// Detect network name from protocol settings.
 fn detect_network_name(settings: &ProtocolSettings) -> String {
-    match settings.network {
-        5195086 => "mainnet".to_string(),      // 0x004F454E (Neo N3 MainNet)
-        1951352142 => "testnet".to_string(),   // 0x7474654E (Neo N3 TestNet)
-        _ => format!("custom-{}", settings.network),
+    if settings.network == ProtocolSettings::mainnet().network {
+        "mainnet".to_string()
+    } else if settings.network == ProtocolSettings::testnet().network {
+        "testnet".to_string()
+    } else {
+        format!("custom-{}", settings.network)
     }
 }
 
@@ -257,28 +148,53 @@ mod tests {
                 "StandbyCommittee": [
                     "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c"
                 ],
+                "ValidatorsCount": 1,
                 "SeedList": ["seed1.neo.org:10333"],
                 "MaxTransactionsPerBlock": 512,
                 "MemoryPoolMaxTransactions": 50000,
-                "MillisecondsPerBlock": 15000
+                "MillisecondsPerBlock": 15000,
+                "Hardforks": {
+                    "HF_Aspidochelone": 0,
+                    "HF_Basilisk": 12
+                }
             }
         }"#;
 
         let settings = parse_protocol_json(json).unwrap();
         assert_eq!(settings.network, 5195086);
         assert_eq!(settings.address_version, 53);
+        assert_eq!(settings.validators_count, 1);
+        assert_eq!(
+            settings.hardforks.get(&neo_protocol::Hardfork::HfBasilisk),
+            Some(&12)
+        );
     }
 
     #[test]
     fn test_detect_network_name() {
         let mut settings = ProtocolSettings::default();
-        settings.network = 5195086;
+        settings.network = ProtocolSettings::mainnet().network;
         assert_eq!(detect_network_name(&settings), "mainnet");
 
-        settings.network = 1951352142;
+        settings.network = ProtocolSettings::testnet().network;
         assert_eq!(detect_network_name(&settings), "testnet");
 
         settings.network = 12345;
         assert_eq!(detect_network_name(&settings), "custom-12345");
+    }
+
+    #[tokio::test]
+    async fn unsupported_storage_copy_fails_without_creating_target_storage() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("LevelDBStore");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::write(source.join("CURRENT"), b"leveldb metadata").unwrap();
+        let target = temp.path().join("target");
+
+        let error = migrate_storage(&source, &target, &ProtocolSettings::default())
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("not supported"));
+        assert!(!target.join("RocksDBStore").exists());
     }
 }

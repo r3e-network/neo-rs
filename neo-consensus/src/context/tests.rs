@@ -1,0 +1,917 @@
+use super::*;
+
+fn create_test_validators(count: usize) -> Vec<ValidatorInfo> {
+    (0..count)
+        .map(|i| ValidatorInfo {
+            index: i as u8,
+            public_key: ECPoint::infinity(neo_crypto::ECCurve::Secp256r1),
+            script_hash: UInt160::zero(),
+        })
+        .collect()
+}
+
+fn message_hash(index: u32) -> UInt256 {
+    let mut hash_bytes = [0u8; 32];
+    hash_bytes[0..4].copy_from_slice(&index.to_le_bytes());
+    UInt256::from_bytes(&hash_bytes).unwrap()
+}
+
+#[test]
+fn test_consensus_context_new() {
+    let validators = create_test_validators(7);
+    let ctx = ConsensusContext::new(100, validators, Some(0), None);
+
+    assert_eq!(ctx.block_index, 100);
+    assert_eq!(ctx.view_number, 0);
+    assert_eq!(ctx.validator_count(), 7);
+    assert_eq!(ctx.my_index, Some(0));
+}
+
+#[test]
+fn test_f_and_m_calculations() {
+    // 7 validators: f = 2, M = 5
+    let validators = create_test_validators(7);
+    let ctx = ConsensusContext::new(0, validators, None, None);
+    assert_eq!(ctx.f(), 2);
+    assert_eq!(ctx.m(), 5);
+
+    // 4 validators: f = 1, M = 3
+    let validators = create_test_validators(4);
+    let ctx = ConsensusContext::new(0, validators, None, None);
+    assert_eq!(ctx.f(), 1);
+    assert_eq!(ctx.m(), 3);
+
+    // 21 validators: f = 6, M = 15
+    let validators = create_test_validators(21);
+    let ctx = ConsensusContext::new(0, validators, None, None);
+    assert_eq!(ctx.f(), 6);
+    assert_eq!(ctx.m(), 15);
+}
+
+#[test]
+fn test_primary_index() {
+    let validators = create_test_validators(7);
+    let mut ctx = ConsensusContext::new(0, validators, Some(0), None);
+
+    // Block 0, view 0: primary = 0
+    assert_eq!(ctx.primary_index(), 0);
+    assert!(ctx.is_primary());
+
+    // Block 0, view 1: primary = (0 - 1) mod 7 = 6 (matches C# DBFTPlugin)
+    ctx.view_number = 1;
+    assert_eq!(ctx.primary_index(), 6);
+    assert!(!ctx.is_primary());
+
+    // Block 7, view 0: primary = 0 (7 % 7 = 0)
+    ctx.block_index = 7;
+    ctx.view_number = 0;
+    assert_eq!(ctx.primary_index(), 0);
+}
+
+#[test]
+fn test_has_enough_responses() {
+    let validators = create_test_validators(7);
+    let mut ctx = ConsensusContext::new(0, validators, Some(0), None);
+    let preparation_hash = UInt256::from_bytes(&[0x11; 32]).expect("hash");
+    ctx.preparation_hash = Some(preparation_hash);
+
+    // Need M = 5 responses
+    assert!(!ctx.has_enough_prepare_responses());
+
+    ctx.prepare_request_received = true;
+    for idx in 1u8..=3 {
+        ctx.prepare_responses.insert(idx, vec![idx]);
+        ctx.prepare_response_hashes.insert(idx, preparation_hash);
+    }
+    assert!(!ctx.has_enough_prepare_responses()); // 4 < 5
+
+    ctx.prepare_responses.insert(4, vec![4]);
+    ctx.prepare_response_hashes.insert(4, preparation_hash);
+    assert!(ctx.has_enough_prepare_responses()); // 5 >= 5
+}
+
+#[test]
+fn mismatched_prepare_response_hashes_do_not_count_toward_quorum() {
+    let validators = create_test_validators(7);
+    let mut ctx = ConsensusContext::new(0, validators, Some(1), None);
+    let expected = UInt256::from_bytes(&[0x11; 32]).expect("hash");
+    let other = UInt256::from_bytes(&[0x22; 32]).expect("hash");
+    ctx.preparation_hash = Some(expected);
+    ctx.prepare_request_received = true; // primary (0) implicit vote
+
+    for idx in 1u8..=4 {
+        ctx.prepare_responses.insert(idx, vec![idx]);
+        ctx.prepare_response_hashes.insert(idx, other);
+    }
+    // 1 (PrepareRequest) + 0 matching responses < M=5
+    assert!(!ctx.has_enough_prepare_responses());
+
+    ctx.prepare_response_hashes.insert(1, expected);
+    ctx.prepare_response_hashes.insert(2, expected);
+    ctx.prepare_response_hashes.insert(3, expected);
+    ctx.prepare_response_hashes.insert(4, expected);
+    assert!(ctx.has_enough_prepare_responses()); // 1 + 4 = 5
+}
+
+#[test]
+fn primary_mismatched_response_without_prepare_request_does_not_count() {
+    // Recovery / gossip path: preparation_hash known from peers, but this node
+    // never verified PrepareRequest. Primary slot must not be filled by a
+    // PrepareResponse bound to a different hash.
+    let validators = create_test_validators(7);
+    let mut ctx = ConsensusContext::new(0, validators, Some(1), None);
+    let expected = UInt256::from_bytes(&[0x11; 32]).expect("hash");
+    let other = UInt256::from_bytes(&[0x22; 32]).expect("hash");
+    ctx.preparation_hash = Some(expected);
+    ctx.prepare_request_received = false;
+
+    // Primary (0) sends divergent PrepareResponse; backups 1..=4 match expected.
+    ctx.prepare_responses.insert(0, vec![0]);
+    ctx.prepare_response_hashes.insert(0, other);
+    for idx in 1u8..=4 {
+        ctx.prepare_responses.insert(idx, vec![idx]);
+        ctx.prepare_response_hashes.insert(idx, expected);
+    }
+    // 4 matching (no primary) < M=5
+    assert!(!ctx.has_enough_prepare_responses());
+
+    ctx.prepare_response_hashes.insert(0, expected);
+    assert!(ctx.has_enough_prepare_responses()); // 5 matching including primary
+}
+
+#[test]
+fn prepare_request_and_primary_response_do_not_double_count() {
+    let validators = create_test_validators(7);
+    let mut ctx = ConsensusContext::new(0, validators, Some(1), None);
+    let expected = UInt256::from_bytes(&[0x11; 32]).expect("hash");
+    ctx.preparation_hash = Some(expected);
+    ctx.prepare_request_received = true;
+    ctx.prepare_responses.insert(0, vec![0]);
+    ctx.prepare_response_hashes.insert(0, expected);
+    for idx in 1u8..=3 {
+        ctx.prepare_responses.insert(idx, vec![idx]);
+        ctx.prepare_response_hashes.insert(idx, expected);
+    }
+    // primary once + backups 1..=3 = 4 < 5
+    assert!(!ctx.has_enough_prepare_responses());
+
+    ctx.prepare_responses.insert(4, vec![4]);
+    ctx.prepare_response_hashes.insert(4, expected);
+    assert!(ctx.has_enough_prepare_responses());
+}
+
+#[test]
+fn test_reset_for_new_view() {
+    let validators = create_test_validators(7);
+    let mut ctx = ConsensusContext::new(0, validators, Some(1), None);
+
+    ctx.prepare_request_received = true;
+    ctx.prepare_responses.insert(0, vec![0]);
+    ctx.commits.insert(0, vec![0]);
+    ctx.commit_view_numbers.insert(0, 0);
+
+    ctx.reset_for_new_view(1, 1000);
+
+    assert_eq!(ctx.view_number, 1);
+    assert_eq!(ctx.view_start_time, 1000);
+    assert!(!ctx.prepare_request_received);
+    assert!(ctx.prepare_responses.is_empty());
+    assert!(!ctx.commits.is_empty());
+}
+
+#[test]
+fn test_timeout_calculation() {
+    let validators = create_test_validators(7);
+    // my_index = None → never primary, so the backup/backoff formula applies.
+    let mut ctx = ConsensusContext::new(0, validators, None, None);
+
+    // View 0: base << 1 = 30s (matches C# shift by ViewNumber+1)
+    assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 2);
+
+    // View 1: base << 2 = 60s
+    ctx.view_number = 1;
+    assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 4);
+
+    // View 2: base << 3 = 120s
+    ctx.view_number = 2;
+    assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 8);
+
+    // No clamping: the shift keeps doubling per view (saturating far beyond).
+    ctx.view_number = 10;
+    assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 2048);
+
+    // A primary at view 0 starts with a single block time.
+    let validators = create_test_validators(7);
+    let mut ctx = ConsensusContext::new(0, validators, Some(0), None);
+    assert_eq!(ctx.primary_index(), 0);
+    ctx.view_number = 0;
+    assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS);
+}
+
+#[test]
+fn test_change_timer_and_extend_timer_by_factor() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(0, validators, None, None);
+
+    // Backup view 0 starts with 2 * block time (30 seconds).
+    assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 2);
+    ctx.change_timer(1_000, BLOCK_TIME_MS * 2);
+    assert!(!ctx.is_timed_out(31_000));
+
+    // Remaining 20 seconds + (2 * 15 seconds / M=3) = 30 seconds.
+    ctx.extend_timer_by_factor(11_000, 2);
+    assert_eq!(ctx.view_start_time, 11_000);
+    assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 2);
+    assert!(!ctx.is_timed_out(41_000));
+    assert!(ctx.is_timed_out(41_001));
+
+    // Requesting view 1 schedules the next view's 4 * block time deadline.
+    ctx.change_timer_for_view(50_000, 1);
+    assert_eq!(ctx.view_start_time, 50_000);
+    assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 4);
+}
+
+#[test]
+fn test_save_and_load_roundtrip() {
+    use std::env;
+
+    // Create a test context with some state
+    let validators = create_test_validators(7);
+    let mut ctx = ConsensusContext::new(100, validators.clone(), None, Some(0));
+
+    // Set up some consensus state
+    ctx.view_number = 2;
+    ctx.proposed_block_hash = Some(UInt256::from_bytes(&[1u8; 32]).unwrap());
+    ctx.preparation_hash = Some(UInt256::from_bytes(&[9u8; 32]).unwrap());
+    ctx.proposed_timestamp = 1234567890;
+    ctx.proposed_tx_hashes = vec![
+        UInt256::from_bytes(&[2u8; 32]).unwrap(),
+        UInt256::from_bytes(&[3u8; 32]).unwrap(),
+    ];
+    ctx.nonce = 42;
+    ctx.prepare_request_received = true;
+    ctx.prepare_request_invocation = Some(vec![0x0c, 0x40, 0xaa]);
+    ctx.prepare_responses.insert(1, vec![0xaa, 0xbb, 0xcc]);
+    ctx.prepare_responses.insert(2, vec![0xdd, 0xee, 0xff]);
+    ctx.prepare_response_hashes
+        .insert(1, UInt256::from_bytes(&[0x10; 32]).unwrap());
+    ctx.prepare_response_hashes
+        .insert(2, UInt256::from_bytes(&[0x11; 32]).unwrap());
+    ctx.commits.insert(0, vec![0x11, 0x22, 0x33]);
+    ctx.commits.insert(1, vec![0x44, 0x55, 0x66]);
+    ctx.commit_view_numbers.insert(0, 2);
+    ctx.commit_view_numbers.insert(1, 2);
+    ctx.commit_invocations.insert(0, vec![0x0c, 0x40, 0xbb]);
+    ctx.commit_invocations.insert(1, vec![0x0c, 0x40, 0xcc]);
+    ctx.change_views.insert(3, (3, ChangeViewReason::Timeout));
+    ctx.change_views
+        .insert(4, (3, ChangeViewReason::TxNotFound));
+    ctx.change_view_invocations
+        .insert(3, vec![0x0c, 0x40, 0xdd]);
+    ctx.change_view_invocations
+        .insert(4, vec![0x0c, 0x40, 0xee]);
+    ctx.last_change_view_timestamps.insert(3, 1_111);
+    ctx.last_change_view_timestamps.insert(4, 2_222);
+
+    // Save to a temporary file
+    let temp_dir = env::temp_dir();
+    let temp_path = temp_dir.join("test_consensus_state.bin");
+
+    ctx.save(&temp_path).expect("Failed to save context");
+
+    // Load it back
+    let loaded_ctx =
+        ConsensusContext::load(&temp_path, validators, Some(0)).expect("Failed to load context");
+
+    // Verify all persisted fields match
+    assert_eq!(loaded_ctx.block_index, 100);
+    assert_eq!(loaded_ctx.view_number, 2);
+    assert_eq!(
+        loaded_ctx.proposed_block_hash,
+        Some(UInt256::from_bytes(&[1u8; 32]).unwrap())
+    );
+    assert_eq!(
+        loaded_ctx.preparation_hash,
+        Some(UInt256::from_bytes(&[9u8; 32]).unwrap())
+    );
+    assert_eq!(loaded_ctx.proposed_timestamp, 1234567890);
+    assert_eq!(loaded_ctx.proposed_tx_hashes.len(), 2);
+    assert_eq!(
+        loaded_ctx.proposed_tx_hashes[0],
+        UInt256::from_bytes(&[2u8; 32]).unwrap()
+    );
+    assert_eq!(
+        loaded_ctx.proposed_tx_hashes[1],
+        UInt256::from_bytes(&[3u8; 32]).unwrap()
+    );
+    assert_eq!(loaded_ctx.nonce, 42);
+    assert!(loaded_ctx.prepare_request_received);
+    assert_eq!(
+        loaded_ctx.prepare_request_invocation,
+        Some(vec![0x0c, 0x40, 0xaa])
+    );
+    assert_eq!(loaded_ctx.prepare_responses.len(), 2);
+    assert_eq!(
+        loaded_ctx.prepare_responses.get(&1),
+        Some(&vec![0xaa, 0xbb, 0xcc])
+    );
+    assert_eq!(
+        loaded_ctx.prepare_responses.get(&2),
+        Some(&vec![0xdd, 0xee, 0xff])
+    );
+    assert_eq!(loaded_ctx.prepare_response_hashes.len(), 2);
+    assert_eq!(
+        loaded_ctx.prepare_response_hashes.get(&1),
+        Some(&UInt256::from_bytes(&[0x10; 32]).unwrap())
+    );
+    assert_eq!(
+        loaded_ctx.prepare_response_hashes.get(&2),
+        Some(&UInt256::from_bytes(&[0x11; 32]).unwrap())
+    );
+    assert_eq!(loaded_ctx.commits.len(), 2);
+    assert_eq!(loaded_ctx.commits.get(&0), Some(&vec![0x11, 0x22, 0x33]));
+    assert_eq!(loaded_ctx.commits.get(&1), Some(&vec![0x44, 0x55, 0x66]));
+    assert_eq!(loaded_ctx.commit_view_numbers.get(&0), Some(&2));
+    assert_eq!(loaded_ctx.commit_view_numbers.get(&1), Some(&2));
+    assert_eq!(
+        loaded_ctx.commit_invocations.get(&0),
+        Some(&vec![0x0c, 0x40, 0xbb])
+    );
+    assert_eq!(
+        loaded_ctx.commit_invocations.get(&1),
+        Some(&vec![0x0c, 0x40, 0xcc])
+    );
+    assert_eq!(loaded_ctx.change_views.len(), 2);
+    assert_eq!(
+        loaded_ctx.change_views.get(&3),
+        Some(&(3, ChangeViewReason::Timeout))
+    );
+    assert_eq!(
+        loaded_ctx.change_views.get(&4),
+        Some(&(3, ChangeViewReason::TxNotFound))
+    );
+    assert_eq!(
+        loaded_ctx.change_view_invocations.get(&3),
+        Some(&vec![0x0c, 0x40, 0xdd])
+    );
+    assert_eq!(
+        loaded_ctx.change_view_invocations.get(&4),
+        Some(&vec![0x0c, 0x40, 0xee])
+    );
+    assert_eq!(loaded_ctx.last_change_view_timestamps.get(&3), Some(&1_111));
+    assert_eq!(loaded_ctx.last_change_view_timestamps.get(&4), Some(&2_222));
+
+    // Verify non-persisted fields are reset
+    assert_eq!(loaded_ctx.state, ConsensusState::Initial);
+    assert_eq!(loaded_ctx.view_start_time, 0);
+    assert_eq!(loaded_ctx.expected_block_time, 0);
+    assert!(loaded_ctx.last_seen_messages.is_empty());
+
+    // Clean up
+    let _ = std::fs::remove_file(&temp_path);
+}
+
+#[test]
+fn test_save_empty_state() {
+    use std::env;
+
+    // Create a minimal context
+    let validators = create_test_validators(4);
+    let ctx = ConsensusContext::new(0, validators.clone(), None, None);
+
+    // Save to a temporary file
+    let temp_dir = env::temp_dir();
+    let temp_path = temp_dir.join("test_consensus_empty.bin");
+
+    ctx.save(&temp_path).expect("Failed to save empty context");
+
+    // Load it back
+    let loaded_ctx =
+        ConsensusContext::load(&temp_path, validators, None).expect("Failed to load empty context");
+
+    // Verify basic fields
+    assert_eq!(loaded_ctx.block_index, 0);
+    assert_eq!(loaded_ctx.view_number, 0);
+    assert_eq!(loaded_ctx.proposed_block_hash, None);
+    assert!(!loaded_ctx.prepare_request_received);
+    assert!(loaded_ctx.prepare_responses.is_empty());
+    assert!(loaded_ctx.prepare_response_hashes.is_empty());
+    assert!(loaded_ctx.commits.is_empty());
+    assert!(loaded_ctx.change_views.is_empty());
+    assert!(loaded_ctx.change_view_invocations.is_empty());
+    assert!(loaded_ctx.commit_invocations.is_empty());
+    assert!(loaded_ctx.prepare_request_invocation.is_none());
+    assert!(loaded_ctx.commit_view_numbers.is_empty());
+
+    // Clean up
+    let _ = std::fs::remove_file(&temp_path);
+}
+
+#[test]
+fn test_save_atomic_write() {
+    use std::env;
+
+    let validators = create_test_validators(4);
+    let ctx = ConsensusContext::new(42, validators, Some(1), None);
+
+    let temp_dir = env::temp_dir();
+    let temp_path = temp_dir.join("test_consensus_atomic.bin");
+
+    // Save should succeed
+    ctx.save(&temp_path).expect("Failed to save");
+
+    // Verify the temp file is cleaned up
+    let temp_tmp_path = temp_path.with_extension("tmp");
+    assert!(!temp_tmp_path.exists(), "Temp file should be cleaned up");
+
+    // Verify the final file exists
+    assert!(temp_path.exists(), "Final file should exist");
+
+    // Clean up
+    let _ = std::fs::remove_file(&temp_path);
+}
+
+#[test]
+fn test_load_nonexistent_file() {
+    use std::env;
+
+    let validators = create_test_validators(4);
+    let temp_dir = env::temp_dir();
+    let nonexistent_path = temp_dir.join("nonexistent_consensus_state.bin");
+
+    // Should return an IO error
+    let result = ConsensusContext::load(&nonexistent_path, validators, None);
+    assert!(result.is_err());
+    match result {
+        Err(ConsensusError::IoError(_)) => {} // Expected
+        _ => panic!("Expected IoError"),
+    }
+}
+
+#[test]
+fn test_load_corrupted_file() {
+    use std::env;
+
+    let validators = create_test_validators(4);
+    let temp_dir = env::temp_dir();
+    let corrupted_path = temp_dir.join("test_consensus_corrupted.bin");
+
+    // Write garbage data
+    std::fs::write(&corrupted_path, b"this is not valid bincode data")
+        .expect("Failed to write corrupted file");
+
+    // Should return a serialization error
+    let result = ConsensusContext::load(&corrupted_path, validators, None);
+    assert!(result.is_err());
+    match result {
+        Err(ConsensusError::BincodeError(_)) => {} // Expected
+        _ => panic!("Expected BincodeError"),
+    }
+
+    // Clean up
+    let _ = std::fs::remove_file(&corrupted_path);
+}
+
+#[test]
+fn test_count_committed() {
+    let validators = create_test_validators(7);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+
+    // Initially no commits
+    assert_eq!(ctx.count_committed(), 0);
+
+    // Add some commits
+    ctx.commits.insert(0, vec![0x11]);
+    assert_eq!(ctx.count_committed(), 1);
+
+    ctx.commits.insert(1, vec![0x22]);
+    ctx.commits.insert(2, vec![0x33]);
+    assert_eq!(ctx.count_committed(), 3);
+}
+
+#[test]
+fn test_count_failed_empty() {
+    let validators = create_test_validators(7);
+    let ctx = ConsensusContext::new(100, validators, Some(0), None);
+
+    // A context that has not started a round has no failure history yet.
+    assert_eq!(ctx.count_failed(), 0);
+}
+
+#[test]
+fn test_count_failed_with_old_messages() {
+    let validators = create_test_validators(7);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+
+    // Simulate messages from validators at different block heights
+    ctx.last_seen_messages.insert(0, 100); // Current block - not failed
+    ctx.last_seen_messages.insert(1, 99); // Previous block - not failed
+    ctx.last_seen_messages.insert(2, 98); // Old block (< 99) - FAILED
+    ctx.last_seen_messages.insert(3, 95); // Very old block - FAILED
+    // Validators 4, 5, 6 have no messages - FAILED
+
+    // Failed: validators 2, 3, 4, 5, 6 = 5 validators
+    assert_eq!(ctx.count_failed(), 5);
+}
+
+#[test]
+fn test_count_failed_threshold() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(10, validators, Some(0), None);
+
+    // Block 10, threshold is 9 (block_index - 1)
+    // Messages at block 9 or higher are OK
+    // Messages at block 8 or lower are failed
+
+    ctx.last_seen_messages.insert(0, 10); // OK
+    ctx.last_seen_messages.insert(1, 9); // OK (exactly at threshold)
+    ctx.last_seen_messages.insert(2, 8); // FAILED (< threshold)
+    // Validator 3 has no message - FAILED
+
+    assert_eq!(ctx.count_failed(), 2); // Validators 2 and 3
+}
+
+#[test]
+fn test_more_than_f_nodes_committed_or_lost() {
+    // 7 validators: f = 2, M = 5
+    let validators = create_test_validators(7);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+
+    // Initially: committed=0, failed=0, total=0, f=2
+    // 0 > 2? No
+    assert!(!ctx.more_than_f_nodes_committed_or_lost());
+
+    // Add 2 commits: committed=2, failed=0, total=2, f=2
+    // 2 > 2? No
+    ctx.commits.insert(0, vec![0x11]);
+    ctx.commits.insert(1, vec![0x22]);
+    assert!(!ctx.more_than_f_nodes_committed_or_lost());
+
+    // Add 1 more commit: committed=3, failed=0, total=3, f=2
+    // 3 > 2? Yes - SHOULD REQUEST RECOVERY
+    ctx.commits.insert(2, vec![0x33]);
+    assert!(ctx.more_than_f_nodes_committed_or_lost());
+}
+
+#[test]
+fn test_not_accepting_payloads_due_to_view_changing() {
+    // 4 validators: f = 1, M = 3
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(100, validators, Some(1), None);
+
+    assert!(!ctx.view_changing());
+    assert!(!ctx.not_accepting_payloads_due_to_view_changing());
+
+    // Simulate requesting a view change.
+    ctx.change_views.insert(1, (1, ChangeViewReason::Timeout));
+    assert!(ctx.view_changing());
+    assert!(ctx.not_accepting_payloads_due_to_view_changing());
+
+    // If more than F nodes committed or are lost, accept payloads again.
+    ctx.commits.insert(0, vec![0x11]);
+    ctx.commits.insert(2, vec![0x22]);
+    assert!(ctx.more_than_f_nodes_committed_or_lost());
+    assert!(!ctx.not_accepting_payloads_due_to_view_changing());
+}
+
+#[test]
+fn test_more_than_f_nodes_with_failed() {
+    // 7 validators: f = 2, M = 5
+    let validators = create_test_validators(7);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+
+    // Simulate 2 commits and 1 failed node
+    ctx.commits.insert(0, vec![0x11]);
+    ctx.commits.insert(1, vec![0x22]);
+
+    ctx.last_seen_messages.insert(0, 100);
+    ctx.last_seen_messages.insert(1, 100);
+    ctx.last_seen_messages.insert(2, 100);
+    ctx.last_seen_messages.insert(3, 100);
+    ctx.last_seen_messages.insert(4, 100);
+    ctx.last_seen_messages.insert(5, 100);
+    ctx.last_seen_messages.insert(6, 95); // Old message - FAILED
+
+    // committed=2, failed=1, total=3, f=2
+    // 3 > 2? Yes - SHOULD REQUEST RECOVERY
+    assert_eq!(ctx.count_committed(), 2);
+    assert_eq!(ctx.count_failed(), 1);
+    assert!(ctx.more_than_f_nodes_committed_or_lost());
+}
+
+#[test]
+fn test_more_than_f_nodes_edge_case() {
+    // 4 validators: f = 1, M = 3
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(50, validators, Some(0), None);
+
+    // committed=1, failed=0, total=1, f=1
+    // 1 > 1? No
+    ctx.commits.insert(0, vec![0x11]);
+    assert!(!ctx.more_than_f_nodes_committed_or_lost());
+
+    // committed=1, failed=1, total=2, f=1
+    // 2 > 1? Yes - SHOULD REQUEST RECOVERY
+    ctx.last_seen_messages.insert(0, 50);
+    ctx.last_seen_messages.insert(1, 50);
+    ctx.last_seen_messages.insert(2, 50);
+    ctx.last_seen_messages.insert(3, 45); // Old - FAILED
+
+    assert_eq!(ctx.count_failed(), 1);
+    assert!(ctx.more_than_f_nodes_committed_or_lost());
+}
+
+#[test]
+fn test_update_last_seen_message() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+
+    assert!(ctx.last_seen_messages.is_empty());
+
+    ctx.update_last_seen_message(0, 100);
+    assert_eq!(ctx.last_seen_messages.get(&0), Some(&100));
+
+    ctx.update_last_seen_message(1, 101);
+    assert_eq!(ctx.last_seen_messages.get(&1), Some(&101));
+
+    // Update existing entry
+    ctx.update_last_seen_message(0, 102);
+    assert_eq!(ctx.last_seen_messages.get(&0), Some(&102));
+}
+
+#[test]
+fn test_message_hash_caching() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+
+    // Create test message hashes
+    let hash1 = UInt256::from_bytes(&[1u8; 32]).unwrap();
+    let hash2 = UInt256::from_bytes(&[2u8; 32]).unwrap();
+
+    // Initially, no messages have been seen
+    assert!(!ctx.has_seen_message(&hash1));
+    assert!(!ctx.has_seen_message(&hash2));
+
+    // Mark hash1 as seen
+    ctx.mark_message_seen(&hash1);
+    assert!(ctx.has_seen_message(&hash1));
+    assert!(!ctx.has_seen_message(&hash2));
+
+    // Mark hash2 as seen
+    ctx.mark_message_seen(&hash2);
+    assert!(ctx.has_seen_message(&hash1));
+    assert!(ctx.has_seen_message(&hash2));
+
+    // Marking the same hash again should be idempotent
+    ctx.mark_message_seen(&hash1);
+    assert!(ctx.has_seen_message(&hash1));
+}
+
+#[test]
+fn test_recovery_response_hash_cache_is_independent() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+    let hash = UInt256::from_bytes(&[7u8; 32]).unwrap();
+
+    ctx.mark_message_seen(&hash);
+    assert!(!ctx.has_sent_recovery_response(&hash));
+    ctx.mark_recovery_response_sent(&hash);
+    assert!(ctx.has_sent_recovery_response(&hash));
+
+    ctx.reset_for_new_block(101, 2000);
+    assert!(!ctx.has_seen_message(&hash));
+    assert!(!ctx.has_sent_recovery_response(&hash));
+}
+
+#[test]
+fn test_extend_timer_does_not_change_view_changing_or_commit_timer() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+    ctx.change_timer(1000, 5000);
+    ctx.change_views.insert(0, (1, ChangeViewReason::Timeout));
+    ctx.extend_timer_by_factor(2000, 4);
+    assert_eq!(ctx.view_start_time, 1000);
+    assert_eq!(ctx.get_timeout(), 5000);
+
+    ctx.change_views.clear();
+    ctx.commits.insert(0, vec![1]);
+    ctx.extend_timer_by_factor(2000, 4);
+    assert_eq!(ctx.view_start_time, 1000);
+    assert_eq!(ctx.get_timeout(), 5000);
+}
+
+#[test]
+fn test_message_cache_cleared_on_new_block() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+
+    // Add some message hashes
+    let hash1 = UInt256::from_bytes(&[1u8; 32]).unwrap();
+    let hash2 = UInt256::from_bytes(&[2u8; 32]).unwrap();
+    ctx.mark_message_seen(&hash1);
+    ctx.mark_message_seen(&hash2);
+
+    assert!(ctx.has_seen_message(&hash1));
+    assert!(ctx.has_seen_message(&hash2));
+
+    // Reset for new block should clear the cache
+    ctx.reset_for_new_block(101, 2000);
+
+    assert!(!ctx.has_seen_message(&hash1));
+    assert!(!ctx.has_seen_message(&hash2));
+    assert_eq!(ctx.block_index, 101);
+}
+
+#[test]
+fn test_message_cache_not_cleared_on_view_change() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+
+    // Add some message hashes
+    let hash1 = UInt256::from_bytes(&[1u8; 32]).unwrap();
+    ctx.mark_message_seen(&hash1);
+    assert!(ctx.has_seen_message(&hash1));
+
+    // Reset for new view should NOT clear the message cache
+    // (messages are still valid within the same block)
+    ctx.reset_for_new_view(1, 1000);
+
+    assert!(ctx.has_seen_message(&hash1));
+    assert_eq!(ctx.view_number, 1);
+}
+
+#[test]
+fn test_message_cache_prevents_replay() {
+    let validators = create_test_validators(7);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+
+    // Simulate receiving the same message twice
+    let msg_hash = UInt256::from_bytes(&[0xaa; 32]).unwrap();
+
+    // First time: message is new
+    assert!(!ctx.has_seen_message(&msg_hash));
+    ctx.mark_message_seen(&msg_hash);
+
+    // Second time: message is duplicate (replay attack)
+    assert!(ctx.has_seen_message(&msg_hash));
+}
+
+#[test]
+fn test_message_cache_lru_limit() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+
+    for i in 0..MAX_MESSAGE_CACHE_SIZE {
+        ctx.mark_message_seen(&message_hash(i as u32));
+    }
+
+    let first_hash = message_hash(0);
+    let second_hash = message_hash(1);
+    assert!(ctx.has_seen_message(&first_hash));
+    assert!(ctx.has_seen_message(&second_hash));
+    assert_eq!(ctx.seen_message_hashes.len(), MAX_MESSAGE_CACHE_SIZE);
+
+    let overflow_hash = message_hash(MAX_MESSAGE_CACHE_SIZE as u32);
+    ctx.mark_message_seen(&overflow_hash);
+
+    assert!(!ctx.has_seen_message(&first_hash));
+    assert!(ctx.has_seen_message(&second_hash));
+    assert!(ctx.has_seen_message(&overflow_hash));
+    assert_eq!(ctx.seen_message_hashes.len(), MAX_MESSAGE_CACHE_SIZE);
+}
+
+#[test]
+fn test_message_cache_duplicate_and_contains_do_not_refresh_lru_order() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+
+    for i in 0..MAX_MESSAGE_CACHE_SIZE {
+        ctx.mark_message_seen(&message_hash(i as u32));
+    }
+
+    let first_hash = message_hash(0);
+    let second_hash = message_hash(1);
+    assert!(ctx.has_seen_message(&first_hash));
+    ctx.mark_message_seen(&first_hash);
+
+    let overflow_hash = message_hash(MAX_MESSAGE_CACHE_SIZE as u32);
+    ctx.mark_message_seen(&overflow_hash);
+
+    assert!(!ctx.has_seen_message(&first_hash));
+    assert!(ctx.has_seen_message(&second_hash));
+    assert!(ctx.has_seen_message(&overflow_hash));
+}
+
+#[test]
+fn commit_signing_waits_for_proposed_transactions() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+    ctx.proposed_block_hash = Some(UInt256::zero());
+    ctx.preparation_hash = Some(UInt256::zero());
+    ctx.proposed_tx_hashes = vec![UInt256::from([0x11; 32])];
+
+    assert!(
+        !ctx.can_sign_commit(),
+        "must not sign a commit before the proposed transactions are present"
+    );
+
+    ctx.mark_transactions_available();
+    assert!(ctx.can_sign_commit());
+}
+
+#[test]
+fn recovered_non_empty_proposal_requires_transaction_revalidation() {
+    let validators = create_test_validators(4);
+    let mut original = ConsensusContext::new(100, validators.clone(), Some(0), None);
+    original.proposed_block_hash = Some(UInt256::from([0x21; 32]));
+    original.preparation_hash = Some(UInt256::from([0x22; 32]));
+    original.proposed_tx_hashes = vec![UInt256::from([0x23; 32])];
+    original.mark_transactions_available();
+
+    let encoded = original.to_bytes().expect("serialize recovery state");
+    let mut recovered =
+        ConsensusContext::from_bytes(&encoded, validators, Some(0)).expect("recover context");
+
+    assert!(!recovered.transactions_available);
+    assert!(!recovered.can_sign_commit());
+    recovered.mark_transactions_available();
+    assert!(recovered.can_sign_commit());
+}
+
+#[test]
+fn recovered_empty_proposal_does_not_require_transaction_revalidation() {
+    let validators = create_test_validators(4);
+    let mut original = ConsensusContext::new(100, validators.clone(), Some(0), None);
+    original.proposed_block_hash = Some(UInt256::from([0x31; 32]));
+    original.preparation_hash = Some(UInt256::from([0x32; 32]));
+
+    let encoded = original.to_bytes().expect("serialize recovery state");
+    let recovered =
+        ConsensusContext::from_bytes(&encoded, validators, Some(0)).expect("recover context");
+
+    assert!(recovered.proposed_tx_hashes.is_empty());
+    assert!(recovered.can_sign_commit());
+}
+
+#[test]
+fn commit_persistence_permit_binds_exact_recovery_record() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+    let proposal_hash = UInt256::from([0x41; 32]);
+    let signature = vec![0x42; 64];
+    ctx.proposed_block_hash = Some(proposal_hash);
+    ctx.add_commit(0, 0, signature.clone())
+        .expect("local commit");
+
+    let permit = ctx
+        .commit_persistence_permit()
+        .expect("build permit")
+        .expect("local permit");
+    assert!(permit.validate().is_ok());
+    assert!(permit.covers_commit(100, 0, 0, &signature));
+    assert!(!permit.covers_commit(100, 1, 0, &signature));
+
+    let mut tampered = permit;
+    tampered.recovery_state[0] ^= 1;
+    assert!(tampered.validate().is_err());
+}
+
+#[test]
+fn sealed_commit_permit_survives_view_change_for_recovery_relay() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+    let proposal_hash = UInt256::from([0x51; 32]);
+    let signature = vec![0x52; 64];
+    ctx.proposed_block_hash = Some(proposal_hash);
+    ctx.add_commit(0, 0, signature.clone())
+        .expect("local commit");
+    ctx.seal_commit_persistence_permit().expect("seal permit");
+
+    ctx.reset_for_new_view(1, 2_000);
+    let permit = ctx
+        .commit_persistence_permit()
+        .expect("load sealed permit")
+        .expect("earlier-view permit");
+
+    assert!(permit.covers_commit(100, 0, 0, &signature));
+    assert_eq!(permit.proposal_hash, proposal_hash);
+}
+
+#[test]
+fn durable_recovery_write_failure_is_reported() {
+    let path = std::env::temp_dir().join(format!(
+        "neo-consensus-durable-failure-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&path);
+    std::fs::create_dir_all(&path).expect("create blocking directory");
+
+    let result = ConsensusContext::save_bytes_durable(&path, b"recovery-state");
+    assert!(
+        result.is_err(),
+        "a directory cannot become a recovery record"
+    );
+
+    let _ = std::fs::remove_dir_all(&path);
+    let _ = std::fs::remove_file(path.with_extension("tmp"));
+}

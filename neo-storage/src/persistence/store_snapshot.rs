@@ -1,4 +1,7 @@
-use super::{read_only_store::ReadOnlyStoreGeneric, store::Store, write_store::WriteStore};
+use super::{
+    commit_profile::StoreCommitProfiler, read_only_store::ReadOnlyStoreGeneric, store::Store,
+    write_store::WriteStore,
+};
 use crate::error::StorageError;
 use std::sync::Arc;
 
@@ -28,6 +31,10 @@ pub trait StoreSnapshot:
     /// are properly handled and not silently ignored, which could lead to data loss or
     /// blockchain state inconsistency.
     fn try_commit(&mut self) -> SnapshotCommitResult;
+
+    /// Attaches an observation-only profiler for backend commit internals.
+    /// Backends without internal profiling support may keep this as a no-op.
+    fn set_commit_profiler(&mut self, _profiler: Option<Arc<dyn StoreCommitProfiler>>) {}
 
     /// Commits with synchronous durability and WAL enabled.
     ///

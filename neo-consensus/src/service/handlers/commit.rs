@@ -1,0 +1,355 @@
+use super::super::helpers::{current_timestamp, invocation_script_from_signature};
+use super::super::{BlockData, ConsensusEvent, ConsensusService};
+use crate::context::ConsensusState;
+use crate::messages::ConsensusPayload;
+use crate::{ConsensusError, ConsensusResult};
+use tracing::{debug, info, warn};
+
+impl ConsensusService {
+    /// Handles Commit message
+    #[tracing::instrument(name = "consensus_commit", skip(self, payload), fields(block_index = self.context.block_index, view = payload.view_number, validator = payload.validator_index))]
+    pub(in crate::service) fn on_commit(
+        &mut self,
+        payload: &ConsensusPayload,
+    ) -> ConsensusResult<()> {
+        // A validator has one commit slot per view. Commits retained from an
+        // earlier view are recovery evidence and must not block this view.
+        if self
+            .context
+            .commit_view_numbers
+            .get(&payload.validator_index)
+            .copied()
+            == Some(self.context.view_number)
+        {
+            return Err(ConsensusError::AlreadyReceived(payload.validator_index));
+        }
+
+        debug!(
+            block_index = self.context.block_index,
+            validator = payload.validator_index,
+            "Received Commit"
+        );
+
+        // SECURITY: A valid Commit always carries a 64-byte signature (the validator's
+        // signature over the block's sign data). Empty data would allow a malicious
+        // validator to inject fake commits that count toward the M-of-N threshold.
+        if payload.data.len() != 64 {
+            return Err(ConsensusError::InvalidSignatureLength {
+                expected: 64,
+                got: payload.data.len(),
+            });
+        }
+
+        // Verify the ExtensiblePayload witness signature for **every** commit,
+        // regardless of view. C# authenticates the payload in `OnConsensusPayload`
+        // before dispatching; doing it only for current-view commits allows any peer
+        // to forge a Commit under another validator's index. Because the per-index
+        // commit slot is first-writer-wins (`commits.contains_key` above), a forged
+        // off-view Commit permanently suppresses that validator's real Commit and
+        // can stall the round indefinitely.
+        if payload.witness.is_empty() {
+            warn!(
+                validator = payload.validator_index,
+                "Commit missing witness"
+            );
+            return Err(ConsensusError::signature_failed("Commit missing witness"));
+        }
+        let sign_data = self.dbft_sign_data(payload)?;
+        if !self.verify_signature(&sign_data, &payload.witness, payload.validator_index) {
+            warn!(
+                validator = payload.validator_index,
+                "Commit witness signature verification failed"
+            );
+            return Err(ConsensusError::signature_failed(
+                "Commit witness signature invalid",
+            ));
+        }
+
+        let is_current_view = payload.view_number == self.context.view_number;
+        if is_current_view {
+            // C# extends the timer after a valid current-view Commit is accepted.
+            self.context.extend_timer_by_factor(current_timestamp(), 4);
+        }
+        if !is_current_view {
+            // Store off-view commit as recovery evidence. The witness signature
+            // has already been verified above, which proves this validator sent
+            // this payload. We cannot verify the block-hash signature without
+            // that view's proposed block hash, so we store the raw signature for
+            // recovery relay and skip the block-hash verification and check_commits.
+            self.context.add_commit(
+                payload.validator_index,
+                payload.view_number,
+                payload.data.clone(),
+            )?;
+            // Witness is guaranteed non-empty (validated above).
+            self.context.commit_invocations.insert(
+                payload.validator_index,
+                invocation_script_from_signature(&payload.witness),
+            );
+            return Ok(());
+        }
+
+        // SECURITY: For current-view commits we must have a proposed block hash to
+        // verify the commit signature against. Without it, we cannot authenticate
+        // the signature and must reject the commit to prevent unverified commits
+        // from counting toward the M-of-N threshold.
+        let Some(block_hash) = self.context.proposed_block_hash else {
+            // C# stores the payload and re-verifies it once the header is
+            // known. Keep the witness-verified commit (the 64-byte block
+            // signature is checked when the proposal arrives).
+            self.pending_commits.insert(
+                payload.validator_index,
+                (
+                    payload.view_number,
+                    payload.data.clone(),
+                    invocation_script_from_signature(&payload.witness),
+                ),
+            );
+            debug!(
+                validator = payload.validator_index,
+                "Commit buffered until the proposal block hash is available"
+            );
+            return Ok(());
+        };
+
+        // dBFT commit signature is a signature over block.GetSignData(network),
+        // which is `[network:4][block_hash:32]`.
+        let mut block_sign_data = Vec::with_capacity(4 + 32);
+        block_sign_data.extend_from_slice(&self.network.to_le_bytes());
+        block_sign_data.extend_from_slice(&block_hash.as_bytes());
+
+        // Verify the commit signature over the block hash.
+        // (payload.data is guaranteed to be exactly 64 bytes by the check above.)
+        if !self.verify_signature(&block_sign_data, &payload.data, payload.validator_index) {
+            warn!(
+                validator = payload.validator_index,
+                "Commit signature verification failed"
+            );
+            return Err(ConsensusError::signature_failed("Commit signature invalid"));
+        }
+
+        // Add the commit (signature is in the payload data)
+        self.context.add_commit(
+            payload.validator_index,
+            payload.view_number,
+            payload.data.clone(),
+        )?;
+        // Witness is guaranteed non-empty (validated above).
+        self.context.commit_invocations.insert(
+            payload.validator_index,
+            invocation_script_from_signature(&payload.witness),
+        );
+
+        self.check_commits()?;
+
+        Ok(())
+    }
+
+    /// Re-verifies commits that arrived before the proposal hash was known.
+    ///
+    /// Called after a `PrepareRequest` installs `proposed_block_hash`. This is
+    /// the Rust equivalent of C#'s deferred commit verification; it lets a
+    /// restarted or late-joining validator finalize the current round instead
+    /// of discarding the commits it already received.
+    pub(in crate::service) fn promote_pending_commits(&mut self) -> ConsensusResult<()> {
+        let Some(block_hash) = self.context.proposed_block_hash else {
+            return Ok(());
+        };
+        let pending = std::mem::take(&mut self.pending_commits);
+        if pending.is_empty() {
+            return Ok(());
+        }
+
+        let mut block_sign_data = Vec::with_capacity(4 + 32);
+        block_sign_data.extend_from_slice(&self.network.to_le_bytes());
+        block_sign_data.extend_from_slice(&block_hash.as_bytes());
+
+        for (validator_index, (view_number, signature, invocation)) in pending {
+            if view_number != self.context.view_number {
+                continue;
+            }
+            if !self.verify_signature(&block_sign_data, &signature, validator_index) {
+                warn!(
+                    validator = validator_index,
+                    "Buffered commit failed block-hash signature verification"
+                );
+                continue;
+            }
+            match self
+                .context
+                .add_commit(validator_index, view_number, signature)
+            {
+                Ok(()) => {
+                    self.context
+                        .commit_invocations
+                        .insert(validator_index, invocation);
+                }
+                Err(ConsensusError::AlreadyReceived(_)) => {}
+                Err(error) => {
+                    warn!(validator = validator_index, %error, "Failed to promote buffered commit");
+                }
+            }
+        }
+
+        self.check_commits()
+    }
+
+    /// Checks if we have enough commits to finalize the block
+    pub(in crate::service) fn check_commits(&mut self) -> ConsensusResult<()> {
+        if !self.context.has_enough_commits() {
+            return Ok(());
+        }
+
+        if self.context.state == ConsensusState::Committed {
+            return Ok(());
+        }
+
+        let Some(block_hash) = self.context.proposed_block_hash else {
+            warn!(
+                block_index = self.context.block_index,
+                commits = self.context.commits.len(),
+                "Enough commits but no verified proposal hash; withholding BlockCommitted"
+            );
+            return Ok(());
+        };
+
+        // SECURITY: Re-verify all commit signatures against the proposed block hash.
+        // This catches off-view commits that were accepted with only witness verification
+        // but whose block-hash signatures were deferred until the block hash became known.
+        // Without this check, a malicious validator could send a forged off-view commit
+        // signature that would count toward the M-of-N threshold.
+        let mut block_sign_data = Vec::with_capacity(4 + 32);
+        block_sign_data.extend_from_slice(&self.network.to_le_bytes());
+        block_sign_data.extend_from_slice(&block_hash.as_bytes());
+
+        let mut purged_count = 0;
+        let invalid_commits: Vec<u8> = self
+            .context
+            .commits
+            .iter()
+            .filter(|&(&validator_index, signature)| {
+                !self.verify_signature(&block_sign_data, signature, validator_index)
+            })
+            .map(|(&validator_index, _)| validator_index)
+            .collect();
+
+        for validator_index in invalid_commits {
+            warn!(
+                block_index = self.context.block_index,
+                validator = validator_index,
+                "Purged commit with invalid block-hash signature (likely off-view with forged signature)"
+            );
+            self.context.commits.remove(&validator_index);
+            purged_count += 1;
+        }
+
+        if purged_count > 0 {
+            warn!(
+                block_index = self.context.block_index,
+                purged = purged_count,
+                remaining = self.context.commits.len(),
+                "Purged commits with invalid block-hash signatures"
+            );
+            // After purging, check if we still have enough commits
+            if !self.context.has_enough_commits() {
+                return Ok(());
+            }
+        }
+
+        // C# refuses to assemble a block before every proposed transaction is
+        // locally present (`TransactionHashes.All(p => Transactions.ContainsKey(p))`).
+        // Without this gate a node that received M commits but not the payloads
+        // would emit BlockCommitted for a block it cannot construct.
+        if !self.context.proposed_tx_hashes.is_empty() && !self.context.transactions_available {
+            warn!(
+                block_index = self.context.block_index,
+                commits = self.context.commits.len(),
+                "Enough commits but proposed transactions are not available; withholding BlockCommitted"
+            );
+            return Ok(());
+        }
+
+        // We have enough commits - block is finalized!
+        info!(
+            block_index = self.context.block_index,
+            commits = self.context.commits.len(),
+            "Block committed! Preparing block data for assembly..."
+        );
+
+        self.context.state = ConsensusState::Committed;
+
+        // Prepare block data for upper layer to assemble the final Block structure
+        let block_data = self.prepare_block_data()?;
+
+        self.send_event(ConsensusEvent::BlockCommitted {
+            block_index: self.context.block_index,
+            block_hash,
+            block_data,
+        })?;
+
+        self.running = false;
+
+        Ok(())
+    }
+
+    /// Prepares block data for assembly by upper layers.
+    ///
+    /// This matches C# `DBFTPlugin`'s `CreateBlock()` preparation logic:
+    /// 1. Collect M commit signatures from validators
+    /// 2. Gather all metadata needed for block construction
+    /// 3. Return structured data for upper layer to build Block + multi-sig witness
+    ///
+    /// The upper layer (neo-node) will:
+    /// - Build multi-sig witness from signatures + validator pubkeys
+    /// - Fetch actual transactions from mempool
+    /// - Construct complete Block structure with header + transactions + witness
+    /// - Calculate merkle root and finalize the block
+    ///
+    /// # Returns
+    /// * `Ok(BlockData)` - Complete data for block assembly
+    /// * `Err(ConsensusError)` - If data preparation fails
+    fn prepare_block_data(&self) -> ConsensusResult<BlockData> {
+        // Get validator public keys for multi-sig witness
+        let validator_pubkeys: Vec<neo_crypto::ECPoint> = self
+            .context
+            .validators
+            .iter()
+            .map(|v| v.public_key.clone())
+            .collect();
+
+        // Calculate M (required signatures for consensus)
+        let m = self.context.m();
+
+        // Collect commit signatures in validator index order
+        let mut signatures: Vec<(u8, Vec<u8>)> = self.context.collect_commit_signatures();
+        signatures.sort_by_key(|(idx, _)| *idx);
+
+        if signatures.len() < m {
+            return Err(ConsensusError::InsufficientSignatures {
+                required: m,
+                got: signatures.len(),
+            });
+        }
+
+        info!(
+            block_index = self.context.block_index,
+            signatures = signatures.len(),
+            required = m,
+            validators = validator_pubkeys.len(),
+            tx_count = self.context.proposed_tx_hashes.len(),
+            "Block data prepared for assembly"
+        );
+
+        Ok(BlockData {
+            block_index: self.context.block_index,
+            timestamp: self.context.proposed_timestamp,
+            nonce: self.context.nonce,
+            primary_index: self.context.primary_index(),
+            transaction_hashes: self.context.proposed_tx_hashes.clone(),
+            signatures,
+            validator_pubkeys,
+            required_signatures: m,
+            commit_persistence: self.context.commit_persistence_permit()?,
+        })
+    }
+}

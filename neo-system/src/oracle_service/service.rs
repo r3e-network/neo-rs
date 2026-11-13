@@ -8,22 +8,21 @@
 //! Arc<NeoSystem>)` construction API for consumers (neo-node startup,
 //! neo-rpc).
 
-// Tests temporarily disabled - using signing_stubs::tests instead
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod response_tx_tests;
 
 pub(super) use super::OracleServiceSettings;
 use super::adapters::{
     CoreOracleSigner, CoreOracleWallet, CoreResponseTxBuilder, CoreSignatureVerifier,
     CoreSnapshotFactory, CoreTxRelay,
 };
-use super::signing_stubs::TrustedSignerClient;
 use crate::neo_system::NeoSystem;
 use neo_crypto::ECPoint;
-use neo_wallets::Wallet;
 use neo_oracle::service::OracleService as EngineService;
 pub use neo_oracle::{OracleServiceError, OracleStatus};
-#[cfg(disabled_test)]
+use neo_wallets::Wallet;
+use neo_wallets::signing::TrustedSignerClient;
+#[cfg(test)]
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -202,13 +201,13 @@ impl crate::i_event_handlers::WalletChangedHandler for OracleService {
     }
 }
 
-#[cfg(disabled_test)]
-#[allow(dead_code)] mod task34_signing_tests {
+#[cfg(test)]
+mod task34_signing_tests {
     use super::{OracleService, OracleServiceError, OracleServiceSettings};
     use async_trait::async_trait;
-    use neo_wallets::KeyPair;
     use neo_protocol::protocol_settings::ProtocolSettings;
-    use neo_signing::{
+    use neo_wallets::KeyPair;
+    use neo_wallets::signing::{
         AuthenticatedContext, FrozenSignIntent, IdempotencyInfo, KeyRef, ProtocolContext,
         SIGNING_SCHEMA_VERSION, SignError, SignErrorCode, SignPayload, SignPurpose, SignRequest,
         SignResponse, SignResult, SignerService, SigningKeyBinding, SigningKeyResolver,
@@ -249,7 +248,7 @@ impl crate::i_event_handlers::WalletChangedHandler for OracleService {
                 schema_version: SIGNING_SCHEMA_VERSION,
                 request_id: request.request_id.clone(),
                 key_ref: request.key_ref.clone(),
-                algorithm: neo_signing::ALGORITHM_ECDSA_P256_SHA256.to_string(),
+                algorithm: neo_wallets::signing::ALGORITHM_ECDSA_P256_SHA256.to_string(),
                 signature: vec![0x34; 64],
                 signed_digest: request.payload.signing_digest(),
                 request_digest,
@@ -298,7 +297,7 @@ impl crate::i_event_handlers::WalletChangedHandler for OracleService {
         registered_key_ref: KeyRef,
         private_key_byte: u8,
     ) -> OracleSigningHarness {
-        let protocol = ProtocolSettings::testnet();
+        let protocol = ProtocolSettings::mainnet();
         let network = protocol.network;
         let system = crate::neo_system::NeoSystem::new(protocol, None, None).expect("Neo system");
         let service = OracleService::new(
@@ -404,7 +403,7 @@ impl crate::i_event_handlers::WalletChangedHandler for OracleService {
             .service
             .sign_neo_payload(
                 operation_id.to_string(),
-                harness.account.clone(),
+                harness.account,
                 payload.clone(),
                 TEST_PROTOCOL,
                 fields.clone(),
@@ -447,7 +446,7 @@ impl crate::i_event_handlers::WalletChangedHandler for OracleService {
             .service
             .sign_neo_payload(
                 operation_id.to_string(),
-                harness.account.clone(),
+                harness.account,
                 payload.clone(),
                 TEST_PROTOCOL,
                 fields.clone(),
@@ -488,7 +487,7 @@ impl crate::i_event_handlers::WalletChangedHandler for OracleService {
             .service
             .sign_neo_payload(
                 operation_id.to_string(),
-                harness.account.clone(),
+                harness.account,
                 payload.clone(),
                 TEST_PROTOCOL,
                 fields.clone(),

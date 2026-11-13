@@ -177,10 +177,11 @@ mod tests {
     use super::BloomFilterState;
     use crate::network::p2p::payloads::{
         block::Block, filter_add_payload::FilterAddPayload, filter_load_payload::FilterLoadPayload,
-        signer::Signer, transaction::Transaction, witness::Witness,
+        transaction::Transaction,
     };
     use neo_crypto::BloomFilter;
     use neo_primitives::{UInt160, WitnessScope};
+    use neo_protocol::payloads::{Signer, Witness};
     use neo_vm::OpCode;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 

@@ -17,9 +17,9 @@ use super::{
 use base64::Engine as _;
 use neo_crypto::{Crypto, ECPoint};
 use neo_primitives::UInt160;
-use neo_smart_contract::contract::Contract;
 use neo_protocol::get_sign_data_vec;
 use neo_protocol::payloads::Transaction;
+use neo_smart_contract::contract::Contract;
 use neo_vm::ScriptBuilder;
 use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
@@ -90,12 +90,12 @@ where
         let task = queue.get_mut(&request_id).expect("oracle task inserted");
 
         // Check if task has been pending for too long
-        if let Ok(elapsed) = SystemTime::now().duration_since(task.timestamp) {
-            if elapsed > MAX_TASK_PENDING_TIME {
-                return Err(OracleServiceError::Processing(
-                    "Task has been pending for too long".to_string(),
-                ));
-            }
+        if let Ok(elapsed) = SystemTime::now().duration_since(task.timestamp)
+            && elapsed > MAX_TASK_PENDING_TIME
+        {
+            return Err(OracleServiceError::Processing(
+                "Task has been pending for too long".to_string(),
+            ));
         }
 
         if let Some(tx) = response_tx {

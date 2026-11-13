@@ -43,7 +43,7 @@ fn unhandled_exception_policy_default_is_stop_node() {
 #[test]
 fn unhandled_exception_policy_clone() {
     let policy = UnhandledExceptionPolicy::Ignore;
-    let cloned = policy.clone();
+    let cloned = policy;
     assert_eq!(policy, cloned);
 }
 
@@ -57,16 +57,34 @@ fn unhandled_exception_policy_copy() {
 #[test]
 fn unhandled_exception_policy_debug_format() {
     assert_eq!(format!("{:?}", UnhandledExceptionPolicy::Ignore), "Ignore");
-    assert_eq!(format!("{:?}", UnhandledExceptionPolicy::StopPlugin), "StopPlugin");
-    assert_eq!(format!("{:?}", UnhandledExceptionPolicy::StopNode), "StopNode");
-    assert_eq!(format!("{:?}", UnhandledExceptionPolicy::Continue), "Continue");
-    assert_eq!(format!("{:?}", UnhandledExceptionPolicy::Terminate), "Terminate");
+    assert_eq!(
+        format!("{:?}", UnhandledExceptionPolicy::StopPlugin),
+        "StopPlugin"
+    );
+    assert_eq!(
+        format!("{:?}", UnhandledExceptionPolicy::StopNode),
+        "StopNode"
+    );
+    assert_eq!(
+        format!("{:?}", UnhandledExceptionPolicy::Continue),
+        "Continue"
+    );
+    assert_eq!(
+        format!("{:?}", UnhandledExceptionPolicy::Terminate),
+        "Terminate"
+    );
 }
 
 #[test]
 fn unhandled_exception_policy_equality() {
-    assert_eq!(UnhandledExceptionPolicy::Ignore, UnhandledExceptionPolicy::Ignore);
-    assert_ne!(UnhandledExceptionPolicy::Ignore, UnhandledExceptionPolicy::Continue);
+    assert_eq!(
+        UnhandledExceptionPolicy::Ignore,
+        UnhandledExceptionPolicy::Ignore
+    );
+    assert_ne!(
+        UnhandledExceptionPolicy::Ignore,
+        UnhandledExceptionPolicy::Continue
+    );
 }
 
 #[test]

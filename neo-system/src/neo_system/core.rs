@@ -51,8 +51,15 @@
 //! 5. Event handler locks (any order among themselves)
 
 use parking_lot::{Mutex, RwLock};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LedgerHydration {
+    Complete,
+    CheckpointTip,
+}
+
 use std::any::Any;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
@@ -70,23 +77,20 @@ use neo_actors::{ActorRef, ActorSystem, EventStreamHandle};
 use crate::blockchain::{Blockchain, BlockchainCommand, BlockchainHandle, BlockchainSystemCommand};
 use crate::events::{PluginEvent, broadcast_plugin_event};
 use crate::mempool::MemoryPool;
-use crate::network::p2p::{
-    LocalNode, LocalNodeHandle, TaskManager, TaskManagerHandle, timeouts,
-};
-use neo_primitives::{LogLevel, ExtensionsUtility};
-use neo_ledger::{LedgerContext, HeaderCache};
-use neo_storage::persistence::{
-    StoreCache, StoreFactory, store::Store, store_provider::StoreProvider,
-};
-use neo_storage::persistence::providers::memory_store::MemoryStore;
-use crate::services::{LedgerService, MempoolService, PeerManagerService, StateStoreService};
+use crate::network::p2p::{LocalNode, LocalNodeHandle, TaskManager, TaskManagerHandle, timeouts};
+use crate::services::StateStoreService as StateStore;
+use crate::services::{MempoolService, PeerManagerService, StateStoreService, SystemContext};
+use neo_ledger::{HeaderCache, LedgerContext};
 use neo_native_contracts::PolicyContract;
 use neo_native_contracts::ledger_contract::LedgerContract;
-use crate::services::StateStoreService as StateStore;
 use neo_primitives::UInt256;
+use neo_primitives::{ExtensionsUtility, LogLevel};
 use neo_protocol::hardfork::Hardfork;
 pub use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_smart_contract::error::{CoreError, CoreResult};
+use neo_storage::persistence::{
+    StoreCache, StoreFactory, store::Store, store_provider::StoreProvider,
+};
 #[cfg(test)]
 use std::sync::LazyLock;
 
@@ -134,11 +138,47 @@ pub struct NeoSystem {
     store: Arc<dyn Store>,
     ledger: Arc<LedgerContext>,
     genesis_block: Arc<neo_protocol::execution::Block>,
+    pub(crate) native_services: neo_smart_contract::application_engine::EngineNativeServices,
+    state_commit_handlers: Option<Arc<crate::state_service::StateServiceCommitHandlers>>,
     context: Arc<NeoSystemContext>,
+    execution_mode: AtomicU8,
+    pub(crate) execution_stats: Arc<super::ExecutionStats>,
+    native_method_cache: Arc<Mutex<neo_smart_contract::application_engine::NativeContractsCache>>,
     pub(crate) self_ref: Mutex<Weak<NeoSystem>>,
 }
 
 impl NeoSystem {
+    pub(crate) fn native_method_cache_handle(
+        &self,
+    ) -> Arc<Mutex<neo_smart_contract::application_engine::NativeContractsCache>> {
+        Arc::clone(&self.native_method_cache)
+    }
+
+    /// Returns the execution engine selected for normal block persistence.
+    pub fn execution_mode(&self) -> super::ExecutionMode {
+        match self.execution_mode.load(Ordering::Relaxed) {
+            1 => super::ExecutionMode::Auto,
+            2 => super::ExecutionMode::Verify,
+            _ => super::ExecutionMode::Canonical,
+        }
+    }
+
+    /// Selects the execution engine for subsequent normal block persistence.
+    /// Explicit per-call mode APIs are unaffected.
+    pub fn set_execution_mode(&self, mode: super::ExecutionMode) {
+        let value = match mode {
+            super::ExecutionMode::Canonical => 0,
+            super::ExecutionMode::Auto => 1,
+            super::ExecutionMode::Verify => 2,
+        };
+        self.execution_mode.store(value, Ordering::Relaxed);
+    }
+
+    /// Returns process-local execution counters for observability.
+    pub fn execution_stats(&self) -> Arc<super::ExecutionStats> {
+        Arc::clone(&self.execution_stats)
+    }
+
     /// Creates a new `StoreCache` bound to the system's underlying store.
     pub fn store_cache(&self) -> StoreCache {
         self.context.store_cache()
@@ -153,45 +193,6 @@ impl NeoSystem {
     pub fn current_block_index(&self) -> u32 {
         self.context.current_block_index()
     }
-
-    /// Persist a block to storage by delegating to the blockchain actor.
-    ///
-    /// This method sends the block to the blockchain actor for processing via
-    /// the BlockchainCommand::InventoryBlock message. The actor handles:
-    /// - Block validation
-    /// - Persistence to storage
-    /// - State updates
-    /// - Event notifications
-    ///
-    /// Reference: C# Neo NeoSystem.OnInventory()
-    pub fn persist_block(&self, block: neo_protocol::execution::Block) -> Result<(), String> {
-        use crate::network::p2p::actors::blockchain::BlockchainCommand;
-        use crate::network::p2p::ports::peer_handle::PeerHandle;
-
-        // Convert execution block to payload block for processing
-        let payload_block = block.to_payload_block();
-
-        // Create a placeholder peer handle for direct block submission
-        // In real usage, this would come from the P2P layer
-        let peer_handle = PeerHandle::new(0); // Placeholder peer ID
-
-        // Send to blockchain actor for persistence
-        let _command = BlockchainCommand::InventoryBlock {
-            block: payload_block,
-            relay: false, // Don't relay blocks we're persisting directly
-            pre_verified: true, // Assume pre-verified if called directly
-            source: peer_handle,
-        };
-
-        // Delegate to blockchain actor
-        // Note: In the full actor system, this would be:
-        // self.blockchain.tell(command)?;
-        // For now, we acknowledge the delegation point
-
-        Ok(())
-    }
-
-    // persist_block moved to persistence module
 }
 
 impl NeoSystem {
@@ -253,12 +254,51 @@ impl NeoSystem {
         )
     }
 
+    /// Opens a checkpoint-gated offline replay without re-reading every historical block.
+    ///
+    /// Online nodes must use the ordinary constructors, which fully hydrate and
+    /// validate the persisted chain. The offline caller authenticates the audit
+    /// checkpoint and package block before executing any successor.
+    pub fn new_with_state_service_deferring_genesis_checkpoint_replay(
+        settings: ProtocolSettings,
+        storage_provider: Option<Arc<dyn StoreProvider>>,
+        storage_path: Option<String>,
+        state_service_settings: Option<crate::state_service::StateServiceSettings>,
+    ) -> CoreResult<Arc<Self>> {
+        Self::open_with_genesis_policy_and_hydration(
+            settings,
+            storage_provider,
+            storage_path,
+            state_service_settings,
+            false,
+            LedgerHydration::CheckpointTip,
+        )
+    }
+
     fn open_with_genesis_policy(
         settings: ProtocolSettings,
         storage_provider: Option<Arc<dyn StoreProvider>>,
         storage_path: Option<String>,
         state_service_settings: Option<crate::state_service::StateServiceSettings>,
         persist_genesis: bool,
+    ) -> CoreResult<Arc<Self>> {
+        Self::open_with_genesis_policy_and_hydration(
+            settings,
+            storage_provider,
+            storage_path,
+            state_service_settings,
+            persist_genesis,
+            LedgerHydration::Complete,
+        )
+    }
+
+    fn open_with_genesis_policy_and_hydration(
+        settings: ProtocolSettings,
+        storage_provider: Option<Arc<dyn StoreProvider>>,
+        storage_path: Option<String>,
+        state_service_settings: Option<crate::state_service::StateServiceSettings>,
+        persist_genesis: bool,
+        hydration: LedgerHydration,
     ) -> CoreResult<Arc<Self>> {
         #[cfg(test)]
         let _test_guard = TEST_SYSTEM_MUTEX.lock();
@@ -279,14 +319,32 @@ impl NeoSystem {
                 CoreError::invalid_operation("default memory store provider is not registered")
             })?,
         };
-        let (store, store_cache_for_hydration, state_store) = super::storage::init_store()?;
+        let (store, store_cache_for_hydration) =
+            super::storage::init_store(&store_provider, storage_path.as_deref())?;
 
         let user_agent = format!("/neo-rs:{}/", env!("CARGO_PKG_VERSION"));
         let local_node_state = Arc::new(LocalNode::new(settings_arc.clone(), 10333, user_agent));
         local_node_state.set_seed_list(settings.seed_list.clone());
         let ledger = Arc::new(LedgerContext::default());
         let header_cache = Arc::new(HeaderCache::new());
-        super::storage::hydrate_ledger(&store_cache_for_hydration, &ledger, &header_cache);
+        match hydration {
+            LedgerHydration::Complete => {
+                super::storage::hydrate_ledger(&store_cache_for_hydration, &ledger, &header_cache)?;
+            }
+            LedgerHydration::CheckpointTip => {
+                super::storage::hydrate_ledger_tip_for_checkpoint_replay(
+                    &store_cache_for_hydration,
+                    &ledger,
+                    &header_cache,
+                )?;
+            }
+        }
+        let native_services = neo_native_contracts::native::composition::default_native_services();
+        super::storage::hydrate_native_contracts(
+            &store_cache_for_hydration,
+            &native_services,
+            &settings,
+        )?;
         let time_per_block = {
             let current_index = LedgerContract::new()
                 .current_index(&store_cache_for_hydration)
@@ -304,6 +362,19 @@ impl NeoSystem {
             time_per_block,
         )));
         let relay_cache = Arc::new(RelayExtensibleCache::new(RELAY_CACHE_CAPACITY));
+        let state_store = if state_service_enabled {
+            let state_store = Arc::new(
+                crate::state_service::StateRootStore::new(
+                    store.clone(),
+                    store_cache_for_hydration.clone(),
+                    settings_arc.clone(),
+                )
+                .map_err(|error| CoreError::invalid_operation(&error.message))?,
+            );
+            Some(state_store as Arc<dyn StateStoreService>)
+        } else {
+            None
+        };
 
         if let Some(ref state_store_service) = state_store {
             register_builtin_services(
@@ -344,7 +415,7 @@ impl NeoSystem {
             genesis_block: genesis_block.clone(),
             ledger: ledger.clone(),
             state_service_enabled,
-            state_store: state_store.clone().unwrap_or_else(|| Arc::new(MemoryStore::new())),
+            state_store: state_store.clone(),
             memory_pool: memory_pool.clone(),
             header_cache: header_cache.clone(),
             local_node_state: local_node_state.clone(),
@@ -358,17 +429,20 @@ impl NeoSystem {
             fast_sync_mode: Arc::new(AtomicBool::new(false)),
         });
 
-        if state_service_enabled {
-            if state_store.is_some() {
-                let handlers = crate::state_service::commit_handlers::StateServiceCommitHandlers::new(
+        let state_commit_handlers = if state_service_enabled && state_store.is_some() {
+            let handlers = Arc::new(
+                crate::state_service::commit_handlers::StateServiceCommitHandlers::new(
                     store_cache_for_hydration.clone(),
-                    true, // state_root_enabled
-                ).map_err(|e| CoreError::invalid_operation(&e.message))?;
-                let handlers = Arc::new(handlers);
-                context.register_committing_handler(handlers.clone())?;
-                context.register_committed_handler(handlers)?;
-            }
-        }
+                    true,
+                )
+                .map_err(|e| CoreError::invalid_operation(&e.message))?,
+            );
+            context.register_committing_handler(handlers.clone())?;
+            context.register_committed_handler(handlers.clone())?;
+            Some(handlers)
+        } else {
+            None
+        };
 
         super::system_context::attach_system_context(context.clone());
         configure_logging_hook(&context);
@@ -398,7 +472,12 @@ impl NeoSystem {
             store,
             ledger,
             genesis_block: genesis_block.clone(),
+            native_services,
+            state_commit_handlers,
             context,
+            execution_mode: AtomicU8::new(0),
+            execution_stats: Arc::new(super::ExecutionStats::default()),
+            native_method_cache: Arc::new(Mutex::new(Default::default())),
             self_ref: Mutex::new(Weak::new()),
         });
 
@@ -407,6 +486,12 @@ impl NeoSystem {
         {
             let mut weak_guard = system.self_ref.lock();
             *weak_guard = Arc::downgrade(&system);
+        }
+
+        if let Some(handlers) = &system.state_commit_handlers {
+            handlers
+                .recover_from_storage()
+                .map_err(|e| CoreError::invalid_operation(&e.message))?;
         }
 
         initialise_plugins(&system)?;
@@ -430,7 +515,7 @@ impl NeoSystem {
         if !ledger_contract.contains_block(&store_cache, &genesis_hash) {
             tracing::info!(target: "neo", "persisting genesis block to initialize state");
             self.persist_block((*self.genesis_block).clone())
-                .map_err(|e| CoreError::invalid_operation(e))?;
+                .map_err(CoreError::invalid_operation)?;
         }
         Ok(())
     }
@@ -453,6 +538,15 @@ impl NeoSystem {
     /// Runtime configuration reference.
     pub fn settings(&self) -> &ProtocolSettings {
         &self.settings
+    }
+
+    /// Returns the state-root commit handler when state tracking is enabled.
+    /// The same instance is registered in the block persistence pipeline and
+    /// has recovered its persisted MPT baseline before this system is returned.
+    pub fn state_commit_handlers(
+        &self,
+    ) -> Option<Arc<crate::state_service::StateServiceCommitHandlers>> {
+        self.state_commit_handlers.clone()
     }
 
     /// Typed ledger view.
@@ -597,7 +691,11 @@ impl NeoSystem {
         ExtensionsUtility::set_logging(None);
         timeouts::log_stats();
         self.tx_router.abort();
-        self.actor_system.shutdown().await.map_err(to_core_error)
+        let result = self.actor_system.shutdown().await.map_err(to_core_error);
+        self.context.local_node_state.clear_system_context();
+        let context: Arc<dyn SystemContext> = self.context.clone();
+        super::system_context::clear_system_context(&context);
+        result
     }
 }
 

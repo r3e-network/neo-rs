@@ -37,7 +37,7 @@ impl<T: Ord> PolicySelector<T> {
 }
 
 /// Integer-only fee and quota controls.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct PolicyLimits {
     /// Maximum integer fee units accepted per request.
     pub max_fee_units: u64,
@@ -45,16 +45,6 @@ pub struct PolicyLimits {
     pub quota_limit_units: u64,
     /// Quota window duration in milliseconds.
     pub quota_window_ms: i64,
-}
-
-impl Default for PolicyLimits {
-    fn default() -> Self {
-        Self {
-            max_fee_units: 0,
-            quota_limit_units: 0,
-            quota_window_ms: 0,
-        }
-    }
 }
 
 /// Versioned signing policy. Empty allow sets intentionally deny all requests.

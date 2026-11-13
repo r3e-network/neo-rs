@@ -76,9 +76,7 @@ fn memory_store_find_forward() {
     cache.commit();
 
     let prefix = StorageKey::new(4, vec![]);
-    let results: Vec<_> = store
-        .find(Some(&prefix), SeekDirection::Forward)
-        .collect();
+    let results: Vec<_> = store.find(Some(&prefix), SeekDirection::Forward).collect();
 
     assert_eq!(results.len(), 5);
 
@@ -103,9 +101,7 @@ fn memory_store_find_backward() {
     cache.commit();
 
     let prefix = StorageKey::new(5, vec![]);
-    let results: Vec<_> = store
-        .find(Some(&prefix), SeekDirection::Backward)
-        .collect();
+    let results: Vec<_> = store.find(Some(&prefix), SeekDirection::Backward).collect();
 
     assert_eq!(results.len(), 5);
 
@@ -182,9 +178,7 @@ fn memory_store_multiple_keys_same_contract() {
     cache.commit();
 
     let prefix = StorageKey::new(contract_id, vec![]);
-    let results: Vec<_> = store
-        .find(Some(&prefix), SeekDirection::Forward)
-        .collect();
+    let results: Vec<_> = store.find(Some(&prefix), SeekDirection::Forward).collect();
 
     assert_eq!(results.len(), 10);
 }
@@ -296,9 +290,7 @@ fn memory_store_batch_operations() {
 
     // Verify all entries
     let prefix = StorageKey::new(11, vec![]);
-    let results: Vec<_> = store
-        .find(Some(&prefix), SeekDirection::Forward)
-        .collect();
+    let results: Vec<_> = store.find(Some(&prefix), SeekDirection::Forward).collect();
 
     assert_eq!(results.len(), 100);
 }

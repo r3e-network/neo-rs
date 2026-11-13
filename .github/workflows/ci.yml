@@ -142,15 +142,17 @@ jobs:
       uses: Swatinem/rust-cache@v2
       with:
         shared-key: ci-runtime
-    # F-NEW-3 root cause: integration tests behind `--features runtime` (and
-    # the neo-tests consensus integration crate) never ran in CI, letting a
-    # C#-contradicting assertion live for 40 days. This lane executes them.
-    - name: Run neo-core runtime-gated tests
-      run: cargo nextest run -p neo-core --features runtime --no-fail-fast
+    # Keep runtime and integration surfaces explicit after the neo-core
+    # decomposition. The workspace lane covers defaults; this lane proves the
+    # state-verifier feature and integration packages independently.
+    - name: Run neo-system state-verifier tests
+      run: cargo nextest run -p neo-system --all-targets --features state-verifier --no-fail-fast
     - name: Run consensus integration tests
       run: cargo nextest run -p neo-tests --no-fail-fast
     - name: Run neo-rpc server tests
-      run: cargo nextest run -p neo-rpc --features server --no-fail-fast
+      run: cargo nextest run -p neo-rpc --all-targets --features server --no-fail-fast
+    - name: Run independent state-validator tests
+      run: cargo nextest run -p neo-validator --all-targets --no-fail-fast
   fuzz-smoke:
     name: Fuzz (libFuzzer smoke)
     runs-on: ubuntu-latest
@@ -247,9 +249,9 @@ jobs:
     # R21: the full-node feature set (RocksDB provider included) must stay
     # compilable and tested; the default-feature test job never builds it.
     - name: Check neo-node with full features
-      run: cargo check --locked -p neo-node --features full
-    - name: Test neo-core with full features
-      run: cargo test --locked -p neo-core --features full --lib
+      run: cargo check --locked -p neo-node --all-targets --features full
+    - name: Test neo-node with full features
+      run: cargo test --locked -p neo-node --features full --no-fail-fast
   stable-forward:
     name: Forward compatibility (latest stable)
     runs-on: ubuntu-latest
@@ -285,12 +287,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Review §4.3.3: optional production capabilities must stay
+        # Optional production capabilities and feature interactions must stay
         # compilable; default-feature CI alone never builds them.
         features:
-        - "neo-node --features tee"
-        - "neo-node --features hsm"
-        - "neo-node --features full,tee,hsm"
+        - "neo-node --all-targets --no-default-features --features tee"
+        - "neo-node --all-targets --no-default-features --features tee-sgx"
+        - "neo-node --all-targets --no-default-features --features hsm"
+        - "neo-node --all-targets --no-default-features --features hsm-ledger"
+        - "neo-node --all-targets --no-default-features --features hsm-pkcs11"
+        - "neo-node --all-targets --no-default-features --features full"
+        - "neo-node --all-targets --no-default-features --features full,tee-sgx,hsm-ledger,hsm-pkcs11"
+        - "neo-rpc --all-targets --no-default-features --features client"
+        - "neo-rpc --all-targets --no-default-features --features server"
+        - "neo-rpc --all-targets --no-default-features --features jsonrpsee-server"
+        - "neo-system --all-targets --no-default-features --features state-verifier"
+        - "neo-system --all-targets --no-default-features --features full"
+        - "neo-storage --all-targets --no-default-features --features rocksdb"
+        - "neo-oracle --all-targets --no-default-features --features neofs-grpc"
     steps:
     - uses: actions/checkout@v4
     - name: Reclaim runner disk space

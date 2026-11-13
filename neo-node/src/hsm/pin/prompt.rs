@@ -1,6 +1,6 @@
 //! Interactive PIN prompt using rpassword
 
-use crate::error::{HsmError, HsmResult};
+use crate::hsm::error::{HsmError, HsmResult};
 use std::io::{self, Write};
 use zeroize::Zeroizing;
 

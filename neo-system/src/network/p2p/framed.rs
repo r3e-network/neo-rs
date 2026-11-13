@@ -26,7 +26,9 @@ where
 {
     timeout(timeout_duration, writer.write_all(data))
         .await
-        .map_err(|_| NetworkError::Timeout { operation: "write frame".to_string() })?
+        .map_err(|_| NetworkError::Timeout {
+            operation: "write frame".to_string(),
+        })?
         .map_err(|e| NetworkError::ConnectionError(format!("Failed to write frame: {e}")))
 }
 
@@ -93,7 +95,9 @@ where
         }
     })
     .await
-    .map_err(|_| NetworkError::Timeout { operation: "vectored write".to_string() })?
+    .map_err(|_| NetworkError::Timeout {
+        operation: "vectored write".to_string(),
+    })?
 }
 
 /// Runtime framing configuration to keep read behaviour consistent across the stack.
@@ -240,7 +244,9 @@ impl FrameReader {
 
             let bytes_read = timeout(timeout_duration, stream.read_buf(&mut self.buffer))
                 .await
-                .map_err(|_| NetworkError::Timeout { operation: "read frame".to_string() })?
+                .map_err(|_| NetworkError::Timeout {
+                    operation: "read frame".to_string(),
+                })?
                 .map_err(|err| {
                     NetworkError::ConnectionError(format!("Failed to read frame: {err}"))
                 })?;
@@ -376,7 +382,9 @@ where
         let buffered = write_buffer.take();
         timeout(cfg.write_timeout, writer.write_all(&buffered))
             .await
-            .map_err(|_| NetworkError::Timeout { operation: "flush buffer".to_string() })?
+            .map_err(|_| NetworkError::Timeout {
+                operation: "flush buffer".to_string(),
+            })?
             .map_err(|e| NetworkError::ConnectionError(format!("Failed to flush buffer: {e}")))?;
     }
     Ok(())

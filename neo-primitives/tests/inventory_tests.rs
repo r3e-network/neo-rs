@@ -1,4 +1,4 @@
-use neo_primitives::{InventoryType, Inventory, SerializablePayload, UInt256};
+use neo_primitives::{Inventory, InventoryType, SerializablePayload, UInt256};
 use std::sync::Arc;
 
 // Mock inventory implementation for testing
@@ -13,7 +13,7 @@ impl SerializablePayload for MockInventory {
     }
 
     fn hash(&self) -> UInt256 {
-        self.hash.clone()
+        self.hash
     }
 
     fn witness_count(&self) -> usize {
@@ -35,7 +35,7 @@ impl Inventory for MockInventory {
     }
 
     fn inventory_hash(&self) -> UInt256 {
-        self.hash.clone()
+        self.hash
     }
 }
 
@@ -54,7 +54,7 @@ fn inventory_hash_returns_correct_hash() {
     let hash = UInt256::from_bytes(&[1u8; 32]).unwrap();
     let inv = MockInventory {
         inv_type: InventoryType::Transaction,
-        hash: hash.clone(),
+        hash,
     };
 
     assert_eq!(inv.inventory_hash(), hash);
@@ -65,7 +65,7 @@ fn inventory_hash_defaults_to_serializable_payload_hash() {
     let hash = UInt256::from_bytes(&[2u8; 32]).unwrap();
     let inv = MockInventory {
         inv_type: InventoryType::Block,
-        hash: hash.clone(),
+        hash,
     };
 
     // Default implementation should call self.hash()

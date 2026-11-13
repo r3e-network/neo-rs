@@ -66,11 +66,5 @@ scrypt = "0.11"
 chrono = { workspace = true }
 tempfile = { workspace = true }
 
-[features]
-# Aggregate gate so `neo-wallets` participates in the workspace-wide
-# `--features full` build and the per-crate acceptance check. The crate has no
-# optional dependencies, so this enables no additional functionality.
-full = []
-
 [lints]
 workspace = true

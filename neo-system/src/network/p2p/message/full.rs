@@ -186,7 +186,8 @@ impl Message {
         };
 
         // Calculate exact size needed to avoid reallocations
-        let total_size = 1 + 1 + neo_io_crate::var_int::encoded_len(payload.len() as u64) + payload.len();
+        let total_size =
+            1 + 1 + neo_io_crate::var_int::encoded_len(payload.len() as u64) + payload.len();
         let mut writer = BinaryWriter::with_capacity(total_size);
 
         writer.write_u8(flags.to_byte())?;
@@ -214,7 +215,8 @@ impl Message {
         };
 
         // Reserve capacity to avoid reallocations
-        let required = 1 + 1 + neo_io_crate::var_int::encoded_len(payload.len() as u64) + payload.len();
+        let required =
+            1 + 1 + neo_io_crate::var_int::encoded_len(payload.len() as u64) + payload.len();
         buffer.reserve(required);
 
         buffer.push(flags.to_byte());
@@ -233,9 +235,11 @@ impl Message {
 
         if self.is_compressed() {
             let decompressed =
-                neo_io_crate::decompress_lz4(&self.payload_compressed, PAYLOAD_MAX_SIZE).map_err(|err| {
-                    NetworkError::InvalidMessage(format!("Failed to decompress payload: {err}"))
-                })?;
+                neo_io_crate::decompress_lz4(&self.payload_compressed, PAYLOAD_MAX_SIZE).map_err(
+                    |err| {
+                        NetworkError::InvalidMessage(format!("Failed to decompress payload: {err}"))
+                    },
+                )?;
             self.payload_raw = decompressed;
         } else {
             self.payload_raw.clone_from(&self.payload_compressed);
@@ -246,7 +250,9 @@ impl Message {
 
     /// Get payload size (matches C# `Size` property).
     pub fn size(&self) -> usize {
-        1 + 1 + neo_io_crate::var_int::encoded_len(self.payload_compressed.len() as u64) + self.payload_compressed.len()
+        1 + 1
+            + neo_io_crate::var_int::encoded_len(self.payload_compressed.len() as u64)
+            + self.payload_compressed.len()
     }
 
     /// Attempts to deserialize the payload into a strongly typed representation.

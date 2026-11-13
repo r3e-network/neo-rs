@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
-use tracing::info;
+
 #[derive(Default)]
 struct NativeOnPersistPerfStats {
     blocks: AtomicU64,
@@ -19,6 +19,10 @@ fn native_on_persist_perf_stats() -> &'static NativeOnPersistPerfStats {
 fn native_on_persist_perf_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| env_flag_enabled("NEO_PERSIST_PROFILE", false))
+}
+fn native_fee_cache_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var_os("NEO_RS_DISABLE_NATIVE_FEE_CACHE").is_none())
 }
 fn duration_to_u64_ns(duration: std::time::Duration) -> u64 {
     duration.as_nanos().min(u128::from(u64::MAX)) as u64
@@ -58,8 +62,8 @@ impl ApplicationEngine {
             .ok_or_else(|| Error::invalid_operation("Fee addition overflow"))?;
         self.fee_consumed = total;
         self.gas_consumed = total;
-        if Self::should_trace_block(self.current_block_index())
-            && self.fee_amount.saturating_sub(total) < 1_000_000 * FEE_FACTOR
+        if self.fee_amount.saturating_sub(total) < 1_000_000 * FEE_FACTOR
+            && Self::should_trace_block(self.current_block_index())
         {
             let (ip, opcode) = self
                 .vm_engine
@@ -224,8 +228,85 @@ impl ApplicationEngine {
         }
         Ok(())
     }
+    pub(crate) fn invalidate_native_fee_cache(&mut self) {
+        self.native_fee_cache_dirty = true;
+        self.native_fee_whitelist.clear();
+        self.native_contract_cache.lock().invalidate_fee_whitelist();
+    }
+
+    fn whitelisted_native_fee(
+        &mut self,
+        contract_hash: UInt160,
+        method: &str,
+        argument_count: usize,
+    ) -> Result<Option<i64>> {
+        let parameter_count = argument_count as u32;
+        if !native_fee_cache_enabled() {
+            return self.native_state_reader.whitelisted_fee(
+                self.snapshot_cache.as_ref(),
+                &contract_hash,
+                method,
+                parameter_count,
+            );
+        }
+        if self.native_fee_cache_dirty {
+            if let Some(cached) = self
+                .native_fee_whitelist
+                .get(&(contract_hash, parameter_count))
+                .and_then(|methods| methods.get(method))
+                .copied()
+            {
+                return Ok(cached);
+            }
+        } else if let Some(cached) = self.native_contract_cache.lock().whitelisted_fee(
+            contract_hash,
+            method,
+            parameter_count,
+        ) {
+            return Ok(cached);
+        }
+        let fee = self.native_state_reader.whitelisted_fee(
+            self.snapshot_cache.as_ref(),
+            &contract_hash,
+            method,
+            parameter_count,
+        )?;
+        if self.native_fee_cache_dirty {
+            self.native_fee_whitelist
+                .entry((contract_hash, parameter_count))
+                .or_default()
+                .insert(method.to_owned(), fee);
+        } else {
+            self.native_contract_cache.lock().cache_whitelisted_fee(
+                contract_hash,
+                method,
+                parameter_count,
+                fee,
+            );
+        }
+        Ok(fee)
+    }
+
     /// Calls a native contract method.
     pub fn call_native_contract(
+        &mut self,
+        contract_hash: UInt160,
+        method: &str,
+        args: &[Vec<u8>],
+    ) -> Result<Vec<u8>> {
+        let profiler = self.profiler.clone();
+        let started = profiler.as_ref().map(|_| Instant::now());
+        let argument_count = profiler.as_ref().map(|_| args.len());
+        let result = self.call_native_contract_inner(contract_hash, method, args);
+        if let (Some(profiler), Some(started), Some(argument_count)) =
+            (profiler, started, argument_count)
+        {
+            profiler.record_contract_call(contract_hash, method, argument_count, started.elapsed());
+        }
+        result
+    }
+
+    fn call_native_contract_inner(
         &mut self,
         contract_hash: UInt160,
         method: &str,
@@ -247,10 +328,12 @@ impl ApplicationEngine {
         let cache_arc = self.native_contract_cache();
         let method_meta = {
             let mut cache = cache_arc.lock();
-            cache
-                .get_or_build(native.as_ref())
-                .get_method(method, args.len(), &self.protocol_settings, block_height)?
-                .cloned()
+            cache.get_or_build(native.as_ref()).get_method_shared(
+                method,
+                args.len(),
+                &self.protocol_settings,
+                block_height,
+            )?
         }
         .ok_or_else(|| {
             Error::invalid_operation(format!(
@@ -275,24 +358,12 @@ impl ApplicationEngine {
                 self.call_flags, required_flags, method
             )));
         }
-        let mut is_whitelisted = false;
-        if self
+        let is_whitelisted = self
             .protocol_settings
             .is_hardfork_enabled(Hardfork::HfFaun, block_height)
-        {
-            if self
-                .native_state_reader
-                .whitelisted_fee(
-                    self.snapshot_cache.as_ref(),
-                    &contract_hash,
-                    method,
-                    args.len() as u32,
-                )?
-                .is_some()
-            {
-                is_whitelisted = true;
-            }
-        }
+            && self
+                .whitelisted_native_fee(contract_hash, method, args.len())?
+                .is_some();
         if Self::should_trace_block(block_height)
             && self.fee_amount.saturating_sub(self.fee_consumed) < 1_000_000 * FEE_FACTOR
         {
@@ -322,6 +393,11 @@ impl ApplicationEngine {
                 self.add_fee_datoshi(storage_fee)?;
             }
         }
+        let changes_fee_whitelist =
+            contract_hash == self.policy_hash && method == "setWhitelistFeeContract";
+        if changes_fee_whitelist {
+            self.invalidate_native_fee_cache();
+        }
         let result = native.invoke(self, method, args).map_err(|err| {
             Error::native_contract(format!(
                 "{}({}) method `{}` failed: {}",
@@ -330,8 +406,11 @@ impl ApplicationEngine {
                 method,
                 err
             ))
-        })?;
-        Ok(result)
+        });
+        if changes_fee_whitelist {
+            self.invalidate_native_fee_cache();
+        }
+        result
     }
     /// Runs `onPersist` for every active native contract
     /// (`System.Contract.NativeOnPersist`); only valid under the OnPersist trigger.
@@ -384,12 +463,7 @@ impl ApplicationEngine {
                     .map(|(name, avg_ms)| format!("{name}={avg_ms:.3}ms"))
                     .collect::<Vec<_>>()
                     .join(", ");
-                info!(
-                    target: "neo",
-                    blocks,
-                    top = %summary,
-                    "native on-persist contract profile"
-                );
+                eprintln!("native on-persist contract profile blocks={blocks} top={summary}");
             }
         }
         Ok(())

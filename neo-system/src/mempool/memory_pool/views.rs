@@ -1,6 +1,6 @@
 use super::MemoryPool;
 #[cfg(test)]
-use crate::pool_item::PoolItem;
+use crate::mempool::pool_item::PoolItem;
 use neo_primitives::{UInt160, UInt256};
 use neo_protocol::payloads::Transaction;
 use std::sync::Arc;

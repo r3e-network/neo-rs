@@ -1,6 +1,6 @@
 //! Comprehensive tests for BIP-32 cryptographic primitives
 
-use neo_crypto::{bip32::Bip32Crypto, ECCurve};
+use neo_crypto::{ECCurve, bip32::Bip32Crypto};
 
 #[test]
 fn test_hmac_sha512_basic() {
@@ -100,7 +100,8 @@ fn test_add_private_keys_secp256r1() {
     let left = [1u8; 32];
     let right = [2u8; 32];
 
-    let result = Bip32Crypto::add_private_keys_mod_order(&left, &right, ECCurve::Secp256r1).unwrap();
+    let result =
+        Bip32Crypto::add_private_keys_mod_order(&left, &right, ECCurve::Secp256r1).unwrap();
     assert_eq!(result.len(), 32);
     assert_ne!(result, [0u8; 32]);
 }
@@ -110,7 +111,8 @@ fn test_add_private_keys_secp256k1() {
     let left = [1u8; 32];
     let right = [2u8; 32];
 
-    let result = Bip32Crypto::add_private_keys_mod_order(&left, &right, ECCurve::Secp256k1).unwrap();
+    let result =
+        Bip32Crypto::add_private_keys_mod_order(&left, &right, ECCurve::Secp256k1).unwrap();
     assert_eq!(result.len(), 32);
     assert_ne!(result, [0u8; 32]);
 }
@@ -169,7 +171,8 @@ fn test_add_private_keys_small_values() {
     let mut small2 = [0u8; 32];
     small2[31] = 2; // Value = 2
 
-    let result = Bip32Crypto::add_private_keys_mod_order(&small1, &small2, ECCurve::Secp256r1).unwrap();
+    let result =
+        Bip32Crypto::add_private_keys_mod_order(&small1, &small2, ECCurve::Secp256r1).unwrap();
 
     let mut expected = [0u8; 32];
     expected[31] = 3; // Value = 3
@@ -252,11 +255,9 @@ fn test_add_private_keys_sequential() {
         let mut inc = increment;
         inc[31] = i;
 
-        accumulator = Bip32Crypto::add_private_keys_mod_order(
-            &inc,
-            &accumulator,
-            ECCurve::Secp256r1
-        ).unwrap();
+        accumulator =
+            Bip32Crypto::add_private_keys_mod_order(&inc, &accumulator, ECCurve::Secp256r1)
+                .unwrap();
     }
 
     // Should have accumulated: 10 + 1 + 2 + 3 + 4 = 20

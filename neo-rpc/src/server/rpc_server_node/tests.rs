@@ -2,12 +2,11 @@ use super::*;
 use crate::client::models::RpcPeers;
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_server_settings::RpcServerConfig;
-use neo_ledger::TransactionVerificationContext;
-use neo_wallets::KeyPair;
-use neo_ledger::{TransactionExt, WitnessData};
 use neo_io::BinaryWriter;
 use neo_io::SerializableExtensions as SerializableExt;
 use neo_json::JToken;
+use neo_ledger::TransactionVerificationContext;
+use neo_ledger::verify_transaction;
 use neo_native_contracts::native::GasToken;
 use neo_native_contracts::native::LedgerContract;
 use neo_native_contracts::native::NativeContract;
@@ -29,7 +28,7 @@ use neo_protocol::payloads::oracle_response::{MAX_RESULT_SIZE, OracleResponse};
 use neo_protocol::payloads::oracle_response_code::OracleResponseCode;
 use neo_protocol::payloads::transaction::Transaction;
 use neo_protocol::payloads::{Block, Header};
-use neo_protocol::witness::Witness;
+use neo_protocol::witness::{Witness, WitnessData};
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::contract::Contract;
 use neo_storage::persistence::StoreCache;
@@ -39,6 +38,7 @@ use neo_system::NeoSystem;
 use neo_vm::OpCode;
 use neo_vm::ScriptBuilder;
 use neo_vm::VmState as VMState;
+use neo_wallets::KeyPair;
 use num_bigint::BigInt;
 use std::sync::Arc;
 
@@ -893,7 +893,7 @@ async fn submit_block_accepts_valid_block() {
         vec![OpCode::PUSH1.byte()],
     );
     let snapshot = store.data_cache();
-    let verification = TransactionExt::verify(
+    let verification = verify_transaction(
         &tx,
         &settings,
         snapshot,

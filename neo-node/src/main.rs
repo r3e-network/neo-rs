@@ -4,27 +4,16 @@
 //! and (optionally) exposes a JSON-RPC server for external clients.
 
 #![warn(missing_docs)]
+// The binary test harness replaces `main`, so the production-only call graph is
+// intentionally unreachable there. Integration tests exercise that graph.
+#![cfg_attr(test, allow(dead_code, unused_imports, unused_variables, unused_mut))]
 
-// Modules currently removed/refactored:
-// mod action_store;
-// mod ai_agent;
-// mod consensus;
-// mod pkcs11;
-// mod probe_containment;
-// mod probe_controller;
-// mod remote_signer;
-// mod signing_provider;
-
+mod action_store;
+mod ai_agent;
 mod cli;
 mod config;
+mod consensus;
 mod health;
-#[cfg(feature = "hsm")]
-mod hsm;
-#[cfg(feature = "hsm")]
-mod hsm_integration;
-#[cfg(feature = "hsm")]
-mod hsm_wallet;
-mod migration;
 #[cfg(feature = "hsm")]
 mod hsm;
 #[cfg(feature = "hsm")]
@@ -33,6 +22,7 @@ mod hsm_integration;
 mod hsm_wallet;
 #[cfg(feature = "full")]
 mod import_acc;
+mod migration;
 #[cfg(not(feature = "full"))]
 #[allow(missing_docs)]
 mod import_acc {
@@ -64,15 +54,13 @@ mod import_acc {
 mod logging;
 mod metrics;
 // mod pkcs11;
-// mod probe_containment;
-// mod probe_controller;
-// mod remote_signer;
+mod probe_containment;
+mod probe_controller;
+mod remote_signer;
 mod rpc_consensus;
 mod services;
-// mod signing_provider;
+mod signing_provider;
 mod startup;
-#[cfg(feature = "tee")]
-mod tee;
 #[cfg(feature = "tee")]
 mod tee_integration;
 #[cfg(feature = "tee")]
@@ -133,10 +121,10 @@ fn set_env_var<K: AsRef<std::ffi::OsStr>, V: AsRef<std::ffi::OsStr>>(key: K, val
 mod tests {
     use super::*;
     use clap::Parser;
-    use neo_wallets::{Wallet as CoreWallet, WalletProvider};
     use neo_protocol::ProtocolSettings;
     use neo_system::NeoSystem;
     use neo_system::i_event_handlers::WalletChangedHandler;
+    use neo_wallets::{Wallet as CoreWallet, WalletProvider};
     use std::any::Any;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};

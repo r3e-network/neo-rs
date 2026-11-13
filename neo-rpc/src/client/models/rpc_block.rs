@@ -10,10 +10,10 @@
 // modifications are permitted.
 
 use super::super::utility::insert_optional_string;
-use neo_protocol::ProtocolSettings;
-use neo_ledger::Block;
 use neo_json::JObject;
+use neo_ledger::Block;
 use neo_primitives::UInt256;
+use neo_protocol::ProtocolSettings;
 use serde::{Deserialize, Serialize};
 
 /// RPC block information matching C# `RpcBlock`
@@ -82,7 +82,7 @@ mod tests {
             return;
         };
         let settings = ProtocolSettings::default_settings();
-        let parsed = RpcBlock::from_json(&expected, &settings).expect("parse");
+        let mut parsed = RpcBlock::from_json(&expected, &settings).expect("parse");
         let actual = parsed.to_json(&settings);
         assert_eq!(expected.to_string(), actual.to_string());
     }

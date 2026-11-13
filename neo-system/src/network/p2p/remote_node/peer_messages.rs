@@ -2,6 +2,7 @@
 
 use super::RemoteNode;
 use crate::blockchain::BlockchainCommand;
+use crate::network::p2p::MessageCommand;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::p2p::payloads::{
     addr_payload::AddrPayload,
@@ -12,7 +13,6 @@ use crate::network::p2p::payloads::{
 };
 use crate::network::p2p::peer::PeerCommand;
 use neo_actors::{ActorContext, ActorResult};
-use crate::network::p2p::MessageCommand;
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -105,13 +105,17 @@ impl RemoteNode {
                 .blockchain
                 .tell_from_async(
                     BlockchainCommand::Headers(
-                        payload.headers
+                        payload
+                            .headers
                             .into_iter()
                             .map(|h| {
                                 let block_header: neo_protocol::execution::BlockHeader = h.into();
-                                Arc::new(neo_protocol::execution::Block::new(block_header, Vec::new()))
+                                Arc::new(neo_protocol::execution::Block::new(
+                                    block_header,
+                                    Vec::new(),
+                                ))
                             })
-                            .collect()
+                            .collect(),
                     ),
                     Some(ctx.self_ref()),
                 )
@@ -166,8 +170,8 @@ fn collect_reachable_endpoints(addresses: Vec<NetworkAddressWithTime>) -> Vec<So
 #[cfg(test)]
 mod tests {
     use super::{collect_reachable_endpoints, normalize_request};
-    use crate::network::p2p::payloads::node_capability::tcp_server;
     use crate::network::p2p::payloads::network_address_with_time::NetworkAddressWithTime;
+    use crate::network::p2p::payloads::node_capability::tcp_server;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
     fn address(ip: [u8; 4], port: u16) -> NetworkAddressWithTime {

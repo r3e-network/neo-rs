@@ -1,5 +1,6 @@
 use super::error::{MptError, MptResult};
 use super::node::Node;
+use super::profile::{MptProfile, MptProfileStage, MptProfileTimer};
 use lru::LruCache;
 use neo_io::{MemoryReader, Serializable};
 use neo_primitives::UINT256_SIZE;
@@ -29,6 +30,7 @@ const DEFAULT_NODE_CACHE_CAPACITY: usize = 1_000_000; // Increased from 500K
 /// - Zero-deserialization on cache hits (returns Arc<Node> directly)
 pub struct GlobalNodeCache {
     inner: RwLock<LruCache<UInt256, Arc<Node>>>,
+    capacity: NonZero<usize>,
     hits: AtomicU64,
     misses: AtomicU64,
 }
@@ -45,6 +47,7 @@ impl GlobalNodeCache {
     pub fn with_capacity(capacity: NonZero<usize>) -> Self {
         Self {
             inner: RwLock::new(LruCache::new(capacity)),
+            capacity,
             hits: AtomicU64::new(0),
             misses: AtomicU64::new(0),
         }
@@ -109,6 +112,12 @@ impl GlobalNodeCache {
         self.inner.read().len()
     }
 
+    /// Returns the configured maximum number of nodes.
+    #[must_use]
+    pub fn capacity(&self) -> usize {
+        self.capacity.get()
+    }
+
     /// Returns `true` when the cache holds no nodes.
     #[must_use]
     pub fn is_empty(&self) -> bool {
@@ -140,6 +149,29 @@ pub trait MptStoreSnapshot: Send + Sync {
 
     /// Persists the serialized node for the supplied key.
     fn put(&self, key: Vec<u8>, value: Vec<u8>) -> MptResult<()>;
+
+    /// Persists a node, optionally using the cache's prior resolution to prove
+    /// that the key was absent from the persistent store.
+    ///
+    /// Implementations that cannot use this information retain the original
+    /// behavior. Implementations that use the hint must still reject conflicts
+    /// already visible in their pending snapshot.
+    fn put_with_hint(
+        &self,
+        key: Vec<u8>,
+        value: Vec<u8>,
+        _known_absent_in_store: bool,
+    ) -> MptResult<()> {
+        self.put(key, value)
+    }
+
+    /// Persists a content-addressed node for a full-state trie. Historical
+    /// nodes are never reference-count pruned in this mode, so stores may
+    /// upsert the node without first reading its unused reference count.
+    /// The node body and its content hash remain unchanged.
+    fn put_full_state(&self, key: Vec<u8>, value: Vec<u8>) -> MptResult<()> {
+        self.put_with_hint(key, value, true)
+    }
 
     /// Removes the value associated with the supplied key.
     fn delete(&self, key: Vec<u8>) -> MptResult<()>;
@@ -176,6 +208,13 @@ where
     entries: HashMap<UInt256, MptTrackable>,
     use_global_cache: bool,
     node_cache: Option<Arc<GlobalNodeCache>>,
+    full_state: bool,
+    profile: Option<Arc<MptProfile>>,
+}
+
+fn fast_full_state_commit_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var_os("NEO_RS_DISABLE_FULL_STATE_FAST_COMMIT").is_none())
 }
 
 impl<S> MptCache<S>
@@ -202,6 +241,8 @@ where
             entries: HashMap::new(),
             use_global_cache,
             node_cache: None,
+            full_state: false,
+            profile: None,
         }
     }
 
@@ -217,7 +258,21 @@ where
             entries: HashMap::new(),
             use_global_cache: false,
             node_cache,
+            full_state: false,
+            profile: None,
         }
+    }
+
+    pub(crate) fn set_full_state(&mut self, full_state: bool) {
+        self.full_state = full_state;
+    }
+
+    fn use_fast_full_state_commit(&self) -> bool {
+        self.full_state && fast_full_state_commit_enabled()
+    }
+
+    pub(crate) fn set_profile(&mut self, profile: Option<Arc<MptProfile>>) {
+        self.profile = profile;
     }
 
     /// Resolves the node identified by the supplied hash if present either in the
@@ -247,7 +302,9 @@ where
     ///
     /// When `known_absent_in_store` is `true` (because at least one child of this node has
     /// `initial_ref == 0`), a vacant entry in `self.entries` skips querying the underlying
-    /// persistent store.
+    /// persistent store. Full-state mode also skips this lookup: its reference counts are
+    /// never used to prune history, and [`MptStoreSnapshot::put_full_state`] upserts the
+    /// content-addressed body without claiming that the node was previously absent.
     pub(crate) fn put_node_with_hint(
         &mut self,
         mut node: Node,
@@ -256,7 +313,7 @@ where
         node.clear_dirty();
         let hash = node.try_hash()?;
 
-        if known_absent_in_store {
+        if known_absent_in_store || self.use_fast_full_state_commit() {
             return match self.entries.entry(hash) {
                 Entry::Occupied(occupied) => {
                     let entry = occupied.into_mut();
@@ -355,14 +412,50 @@ where
                         .node
                         .as_ref()
                         .ok_or_else(|| MptError::invalid("cache entry missing node"))?;
-                    let data = node.stored_bytes()?;
-                    self.store.put(self.key(hash), data)?;
-                    if let Some(cache) = active_cache {
+                    let data = {
+                        let _timer = MptProfileTimer::new(
+                            self.profile.as_deref(),
+                            MptProfileStage::NodeEncode,
+                        );
+                        node.stored_bytes()?
+                    };
+                    {
+                        let _timer = MptProfileTimer::new(
+                            self.profile.as_deref(),
+                            MptProfileStage::NodeWrite,
+                        );
+                        if self.use_fast_full_state_commit() {
+                            self.store.put_full_state(self.key(hash), data)?;
+                        } else {
+                            self.store.put_with_hint(
+                                self.key(hash),
+                                data,
+                                entry.initial_ref == 0,
+                            )?;
+                        }
+                    }
+                    // Full-state nodes are content addressed and remain available from
+                    // the persisted store or the structurally shared warm root. Populate
+                    // the compact LRU on demand instead of churning it for every commit.
+                    // Reference-counted tries still refresh their cached reference here.
+                    if !self.use_fast_full_state_commit()
+                        && let Some(cache) = active_cache
+                    {
+                        let _timer = MptProfileTimer::new(
+                            self.profile.as_deref(),
+                            MptProfileStage::NodeCache,
+                        );
                         cache.put(*hash, Arc::new(node.to_cached_node(*hash)));
                     }
                 }
                 TrackState::Deleted => {
-                    self.store.delete(self.key(hash))?;
+                    {
+                        let _timer = MptProfileTimer::new(
+                            self.profile.as_deref(),
+                            MptProfileStage::NodeWrite,
+                        );
+                        self.store.delete(self.key(hash))?;
+                    }
                     if let Some(cache) = active_cache {
                         cache.remove(hash);
                     }
@@ -378,6 +471,7 @@ where
         let prefix = self.prefix;
         let use_global_cache = self.use_global_cache;
         let node_cache = self.node_cache.clone();
+        let profile = self.profile.clone();
 
         match self.entries.entry(*hash) {
             Entry::Occupied(entry) => Ok(entry.into_mut()),
@@ -389,7 +483,13 @@ where
                 } else {
                     None
                 };
-                let node = Self::load_from_store_snapshot(&store, prefix, hash, active_cache)?;
+                let node = Self::load_from_store_snapshot(
+                    &store,
+                    prefix,
+                    hash,
+                    active_cache,
+                    profile.as_deref(),
+                )?;
                 Ok(entry.insert(MptTrackable::new(node)))
             }
         }
@@ -400,31 +500,50 @@ where
         prefix: u8,
         hash: &UInt256,
         active_cache: Option<&GlobalNodeCache>,
+        profile: Option<&MptProfile>,
     ) -> MptResult<Option<Arc<Node>>> {
         let Some(cache) = active_cache else {
             let key = Self::key_for(prefix, hash);
-            let Some(bytes) = store.try_get(&key)? else {
+            let bytes = {
+                let _timer = MptProfileTimer::new(profile, MptProfileStage::NodeRead);
+                store.try_get(&key)?
+            };
+            let Some(bytes) = bytes else {
                 return Ok(None);
             };
-            let mut reader = MemoryReader::new(&bytes);
-            let node = Node::deserialize(&mut reader).map_err(MptError::from)?;
+            let node = {
+                let _timer = MptProfileTimer::new(profile, MptProfileStage::NodeDeserialize);
+                let mut reader = MemoryReader::new(&bytes);
+                Node::deserialize(&mut reader).map_err(MptError::from)?
+            };
             node.set_cached_hash(*hash);
             return Ok(Some(Arc::new(node)));
         };
 
         // The store key is built only after a miss. A hit returns the cached
         // Arc itself; the caller detaches a node when it needs to mutate one.
-        if let Some(cached_arc) = cache.get(hash) {
+        let cached = {
+            let _timer = MptProfileTimer::new(profile, MptProfileStage::NodeCache);
+            cache.get(hash)
+        };
+        if let Some(cached_arc) = cached {
             return Ok(Some(cached_arc));
         }
 
         let key = Self::key_for(prefix, hash);
-        let Some(bytes) = store.try_get(&key)? else {
+        let bytes = {
+            let _timer = MptProfileTimer::new(profile, MptProfileStage::NodeRead);
+            store.try_get(&key)?
+        };
+        let Some(bytes) = bytes else {
             return Ok(None);
         };
 
-        let mut reader = MemoryReader::new(&bytes);
-        let node = Node::deserialize(&mut reader).map_err(MptError::from)?;
+        let node = {
+            let _timer = MptProfileTimer::new(profile, MptProfileStage::NodeDeserialize);
+            let mut reader = MemoryReader::new(&bytes);
+            Node::deserialize(&mut reader).map_err(MptError::from)?
+        };
         node.set_cached_hash(*hash);
         let node_arc = Arc::new(node);
         cache.put(*hash, Arc::clone(&node_arc));
@@ -438,7 +557,7 @@ where
     fn key_for(prefix: u8, hash: &UInt256) -> Vec<u8> {
         let mut buffer = Vec::with_capacity(1 + UINT256_SIZE);
         buffer.push(prefix);
-        buffer.extend_from_slice(&hash.to_bytes());
+        buffer.extend_from_slice(hash.as_ref());
         buffer
     }
 }
@@ -526,39 +645,19 @@ mod tests {
 
         #[test]
         fn test_cache_capacity_and_eviction() {
-            const CAPACITY: usize = 100;
-            let cache = GlobalNodeCache::test_new();
+            let cache = GlobalNodeCache::with_capacity(NonZero::new(2).unwrap());
+            let first = UInt256::from([1u8; 32]);
+            let second = UInt256::from([2u8; 32]);
+            let third = UInt256::from([3u8; 32]);
 
-            // Fill cache with entries
-            for i in 0..CAPACITY {
-                let hash = UInt256::from([i as u8; 32]);
-                let node = Arc::new(Node::new());
-                cache.put(hash, node);
-            }
+            cache.put(first, Arc::new(Node::new()));
+            cache.put(second, Arc::new(Node::new()));
+            cache.put(third, Arc::new(Node::new()));
 
-            assert_eq!(cache.inner.read().len(), CAPACITY);
-
-            // Add one more - should evict oldest LRU entry
-            let overflow_hash = UInt256::from([255u8; 32]);
-            let overflow_node = Arc::new(Node::new());
-            cache.put(overflow_hash, overflow_node);
-
-            // May have 100 or 101 depending on timing, both acceptable
-            let len = cache.inner.read().len();
-            assert!(
-                len == CAPACITY || len == CAPACITY + 1,
-                "Expected {} or {}, got {}",
-                CAPACITY,
-                CAPACITY + 1,
-                len
-            );
-
-            // Oldest entry should be evicted
-            let old_hash = UInt256::from([0u8; 32]);
-            let evicted = cache.get(&old_hash).is_none();
-            if !evicted {
-                eprintln!("Cache didn't evict oldest entry yet - may need warmup cycle");
-            }
+            assert_eq!(cache.len(), 2);
+            assert!(cache.get(&first).is_none());
+            assert!(cache.get(&second).is_some());
+            assert!(cache.get(&third).is_some());
         }
 
         #[test]

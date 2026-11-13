@@ -48,7 +48,7 @@ fn classify(name: &str, relative_manifest: &Path, package: &Value) -> Result<Mem
         "neo-p2p" | "neo-consensus" | "neo-rpc" | "neo-telemetry" | "neo-tee" | "neo-hsm"
         | "neo-ai-agent" | "neo-probe" | "neo-mempool" | "neo-oracle"
         | "neo-state-service" | "neo-wallets" | "neo-system" => Some(Services),
-        "neo-node" | "neo-signer-server" => Some(Assembly),
+        "neo-node" | "neo-signer-server" | "neo-validator" => Some(Assembly),
         _ => None,
     };
     if let Some(layer) = production {
@@ -156,13 +156,25 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("neo-node", "neo-ledger"),
     ("neo-node", "neo-mempool"),
     ("neo-node", "neo-smart-contract"),
-    ("neo-node", "neo-wallets"),
     ("neo-node", "neo-config"),
     ("neo-node", "neo-json"),
+    // Validator is an assembly binary: it composes the canonical execution and
+    // storage owners directly and must not introduce a parallel state model.
+    ("neo-validator", "neo-crypto"),
+    ("neo-validator", "neo-io"),
+    ("neo-validator", "neo-ledger"),
+    ("neo-validator", "neo-native-contracts"),
+    ("neo-validator", "neo-primitives"),
+    ("neo-validator", "neo-protocol"),
+    ("neo-validator", "neo-storage"),
+    ("neo-validator", "neo-system"),
+    ("neo-validator", "neo-vm"),
+    ("neo-signer-server", "neo-crypto"),
+    ("neo-signer-server", "neo-tee"),
+    ("neo-signer-server", "neo-wallets"),
     ("neo-rpc", "neo-native-contracts"),
     ("neo-rpc", "neo-state-service"),
     ("neo-rpc", "neo-smart-contract"),
-    ("neo-rpc", "neo-wallets"),
     ("neo-rpc", "neo-mempool"),
     ("neo-rpc", "neo-oracle"),
     // Native implementations may use the engine, never the reverse direction.
@@ -171,6 +183,7 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     // against locked `cargo metadata` declarations; downward edges only.
     ("neo-protocol", "neo-io"),
     ("neo-protocol", "neo-vm"),
+    ("neo-ledger", "neo-actors"),
     ("neo-ledger", "neo-crypto"),
     ("neo-ledger", "neo-io"),
     ("neo-ledger", "neo-native-contracts"),
@@ -195,8 +208,6 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     // Test-only edge (kind dev): wallet fixtures are exercised in tests.
     ("neo-native-contracts", "neo-wallets"),
     // Decomposed service crates, same metadata-verified review.
-    ("neo-wallets", "neo-crypto"),
-    ("neo-wallets", "neo-primitives"),
     ("neo-mempool", "neo-primitives"),
     // Test-only edge (kind dev): mempool tests build VM scripts directly.
     ("neo-mempool", "neo-vm"),
@@ -213,6 +224,7 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("neo-oracle", "neo-primitives"),
     ("neo-oracle", "neo-protocol"),
     // Oracle builds request scripts and signs callbacks; reviewed edges.
+    ("neo-oracle", "neo-smart-contract"),
     ("neo-oracle", "neo-vm"),
     ("neo-oracle", "neo-wallets"),
     ("neo-state-service", "neo-crypto"),
@@ -236,7 +248,10 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("neo-wallets", "neo-smart-contract"),
     ("neo-wallets", "neo-storage"),
     ("neo-wallets", "neo-vm"),
+    ("neo-system", "neo-crypto"),
     ("neo-system", "neo-ledger"),
+    ("neo-system", "neo-native-contracts"),
+    ("neo-system", "neo-storage"),
     // Task W3-C2: the moved converters (and NeoSystem unit tests) build
     // execution payload types directly.
     ("neo-system", "neo-protocol"),
@@ -464,18 +479,12 @@ impl WorkspaceGraph {
             .collect()
     }
 
-    fn validate_edges(
-        &self,
-        allowed: &[(&str, &str)],
-    ) -> Result<(), String> {
+    fn validate_edges(&self, allowed: &[(&str, &str)]) -> Result<(), String> {
         for edge in &self.edges {
             let from = &self.members[&edge.from];
             let to = &self.members[&edge.to];
             let pair = (from.name.as_str(), to.name.as_str());
-            if from.kind.is_production()
-                && (!to.kind.is_production()
-                    || !allowed.contains(&pair))
-            {
+            if from.kind.is_production() && (!to.kind.is_production() || !allowed.contains(&pair)) {
                 return Err(format!(
                     "Forbidden dependency {} -> {} (alias {}, kind {}, optional {}, target {:?})",
                     from.name, to.name, edge.alias, edge.kind, edge.optional, edge.target
@@ -590,20 +599,14 @@ fn test_storage_to_io_is_an_exact_one_way_neutral_edge() {
         "neo-io",
         fixture_dependency("neo-io", "neo-io"),
     );
-    graph
-        .validate_edges(ALLOWED_EDGES)
-        .unwrap();
+    graph.validate_edges(ALLOWED_EDGES).unwrap();
     for (from, to) in [
         ("neo-io", "neo-storage"),
         ("neo-storage", "neo-crypto"),
         ("neo-storage", "neo-vm"),
     ] {
         let graph = fixture_pair(from, to, fixture_dependency(to, to));
-        assert!(
-            graph
-                .validate_edges(ALLOWED_EDGES)
-                .is_err()
-        );
+        assert!(graph.validate_edges(ALLOWED_EDGES).is_err());
     }
 }
 
@@ -616,12 +619,11 @@ fn manifest_assignment(relative: &str, section: &str, key: &str) -> String {
         let line = line.split('#').next().unwrap().trim();
         if line.starts_with('[') {
             active = line == section;
-        } else if active {
-            if let Some((name, value)) = line.split_once('=') {
-                if name.trim() == key {
-                    values.push(value.trim().to_owned());
-                }
-            }
+        } else if active
+            && let Some((name, value)) = line.split_once('=')
+            && name.trim() == key
+        {
+            values.push(value.trim().to_owned());
         }
     }
     assert_eq!(values.len(), 1, "{relative}: expected one {section} {key}");
@@ -629,13 +631,9 @@ fn manifest_assignment(relative: &str, section: &str, key: &str) -> String {
 }
 
 #[test]
-fn test_rocksdb_features_are_opt_in_and_core_forwards_to_the_storage_owner() {
+fn test_rocksdb_features_are_opt_in_at_the_storage_owner() {
     assert_eq!(
         manifest_assignment("neo-storage/Cargo.toml", "[features]", "default"),
-        "[]"
-    );
-    assert_eq!(
-        manifest_assignment("neo-core/Cargo.toml", "[features]", "default"),
         "[]"
     );
     assert_eq!(
@@ -643,82 +641,41 @@ fn test_rocksdb_features_are_opt_in_and_core_forwards_to_the_storage_owner() {
         "[\"dep:rocksdb\"]"
     );
     assert_eq!(
-        manifest_assignment("neo-core/Cargo.toml", "[features]", "rocksdb"),
-        "[\"dep:rocksdb\", \"neo-storage/rocksdb\"]"
-    );
-    assert_eq!(
         manifest_assignment("tests/Cargo.toml", "[features]", "default"),
         "[]"
     );
     assert_eq!(
-        manifest_assignment("tests/Cargo.toml", "[features]", "rocksdb"),
-        "[\"neo-core/rocksdb\"]"
+        manifest_assignment("neo-storage/Cargo.toml", "[dependencies]", "rocksdb"),
+        "{ workspace = true, optional = true }"
     );
-    for relative in ["neo-storage/Cargo.toml", "neo-core/Cargo.toml"] {
-        assert_eq!(
-            manifest_assignment(relative, "[dependencies]", "rocksdb"),
-            "{ workspace = true, optional = true }"
-        );
-    }
+    assert_eq!(
+        manifest_assignment("neo-node/Cargo.toml", "[features]", "full"),
+        "[\"neo-storage/rocksdb\"]"
+    );
+    assert_eq!(
+        manifest_assignment("neo-validator/Cargo.toml", "[features]", "rocksdb"),
+        "[\"neo-storage/rocksdb\"]"
+    );
     assert_eq!(
         manifest_assignment("neo-storage/Cargo.toml", "[dependencies]", "neo-io"),
         "{ workspace = true }"
     );
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    for relative in [
-        "neo-storage/src/persistence/providers/mod.rs",
-        "neo-core/src/persistence/providers.rs",
-    ] {
-        let source = std::fs::read_to_string(root.join(relative)).unwrap();
-        let compact: String = source
-            .lines()
-            .filter(|line| !line.trim_start().starts_with("//"))
-            .flat_map(|line| line.chars().filter(|c| !c.is_whitespace()))
-            .collect();
-        assert!(
-            compact.contains("#[cfg(feature=\"rocksdb\")]pubmodrocksdb;"),
-            "{relative}: provider module must be opt-in"
-        );
-        assert!(
-            compact.contains("#[cfg(feature=\"rocksdb\")]pubuserocksdb::RocksDBStoreProvider;"),
-            "{relative}: provider export must be opt-in"
-        );
-    }
-}
-
-#[cfg(feature = "rocksdb")]
-#[test]
-fn test_core_rocksdb_forwarding_compiles_the_real_storage_types_and_legacy_signatures() {
-    use neo_storage::providers::rocksdb::{RocksDbSnapshot, RocksDbStore};
-    use neo_storage::write_batch_buffer::{AutoFlushBatchBuffer, WriteBatchBuffer};
-    use neo_storage::persistence::providers::rocksdb as raw;
-    use neo_storage::persistence::write_batch_buffer as raw_batch;
-    use std::any::TypeId;
-
-    // Only the core feature is enabled by this test crate; these raw types
-    // cannot compile unless core really forwards the feature to neo-storage.
-    assert_ne!(
-        TypeId::of::<RocksDbStore>(),
-        TypeId::of::<raw::RocksDbStore>()
+    let relative = "neo-storage/src/persistence/providers/mod.rs";
+    let source = std::fs::read_to_string(root.join(relative)).unwrap();
+    let compact: String = source
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .flat_map(|line| line.chars().filter(|c| !c.is_whitespace()))
+        .collect();
+    assert!(
+        compact.contains("#[cfg(feature=\"rocksdb\")]pubmodrocksdb;"),
+        "{relative}: provider module must be opt-in"
     );
-    assert_eq!(
-        TypeId::of::<RocksDbSnapshot>(),
-        TypeId::of::<raw::RocksDbSnapshot>()
+    assert!(
+        compact.contains("#[cfg(feature=\"rocksdb\")]pubuserocksdb::RocksDBStoreProvider;"),
+        "{relative}: provider export must be opt-in"
     );
-    assert_eq!(
-        TypeId::of::<neo_core::persistence::WriteBatchConfig>(),
-        TypeId::of::<raw_batch::WriteBatchConfig>()
-    );
-    let _: fn(&RocksDbStore) -> neo_core::CoreResult<()> = RocksDbStore::flush_batch_writes;
-    let _: fn(&raw::RocksDbStore) -> neo_storage::StorageResult<()> =
-        raw::RocksDbStore::flush_batch_writes;
-    let _: fn(&WriteBatchBuffer) -> neo_core::CoreResult<()> = WriteBatchBuffer::flush;
-    let _: fn(&raw_batch::WriteBatchBuffer) -> neo_storage::StorageResult<()> =
-        raw_batch::WriteBatchBuffer::flush;
-    let _: fn(&AutoFlushBatchBuffer) -> &WriteBatchBuffer = AutoFlushBatchBuffer::inner;
-    fn is_provider<T: neo_storage::persistence::StoreProvider>() {}
-    is_provider::<neo_core::persistence::providers::RocksDBStoreProvider>();
-    is_provider::<neo_storage::persistence::providers::RocksDBStoreProvider>();
 }
 
 #[test]
@@ -745,9 +702,7 @@ fn test_crypto_only_depends_on_layer_0() {
 fn test_no_upward_dependencies() {
     // Preserves the original guard's intent, strengthened to explicit edges,
     // exact member classification, all declarations, and no missing-crate skips.
-    workspace_graph()
-        .validate_edges(ALLOWED_EDGES)
-        .unwrap();
+    workspace_graph().validate_edges(ALLOWED_EDGES).unwrap();
 }
 
 #[test]
@@ -806,9 +761,7 @@ fn test_metadata_alias_uses_package_identity_not_dependency_key() {
     .unwrap();
     assert_eq!(graph.dependencies("neo-vm"), ["neo-io"]);
     assert_eq!(graph.edges[0].alias, "neo_io_crate");
-    graph
-        .validate_edges(ALLOWED_EDGES)
-        .unwrap();
+    graph.validate_edges(ALLOWED_EDGES).unwrap();
     let mut illegal = fixture_dependency("neo-node", "neo-node");
     illegal["rename"] = serde_json::json!("innocent_alias");
     let graph = fixture_pair("neo-vm", "neo-node", illegal);
@@ -897,9 +850,7 @@ fn test_metadata_combined_alias_build_optional_target_declaration_is_retained() 
     dep["target"] = serde_json::json!("cfg(any())");
     let graph = fixture_pair("neo-vm", "neo-node", dep);
     assert_eq!(graph.edges.len(), 1);
-    let error = graph
-        .validate_edges(ALLOWED_EDGES)
-        .unwrap_err();
+    let error = graph.validate_edges(ALLOWED_EDGES).unwrap_err();
     for detail in ["hidden_node", "kind build", "optional true", "cfg(any())"] {
         assert!(error.contains(detail));
     }
@@ -909,8 +860,7 @@ fn test_metadata_combined_alias_build_optional_target_declaration_is_retained() 
 fn test_metadata_nested_members_and_signer_server_are_classified() {
     let mut tool = fixture_package("validation-diff", "tools/validation-diff");
     tool["publish"] = Value::Null;
-    tool["dependencies"] =
-        serde_json::json!([fixture_dependency("neo-primitives", "primitives")]);
+    tool["dependencies"] = serde_json::json!([fixture_dependency("neo-primitives", "primitives")]);
     let graph = WorkspaceGraph::from_metadata(&fixture_metadata(vec![
         tool,
         fixture_package("state-root-diff", "tools/state-root-diff"),
@@ -928,9 +878,7 @@ fn test_metadata_nested_members_and_signer_server_are_classified() {
         MemberKind::Production(Layer::Assembly)
     );
     assert_eq!(graph.dependencies("validation-diff"), ["neo-primitives"]);
-    graph
-        .validate_edges(ALLOWED_EDGES)
-        .unwrap();
+    graph.validate_edges(ALLOWED_EDGES).unwrap();
 }
 
 #[test]
@@ -1025,9 +973,7 @@ fn test_metadata_registry_dependencies_may_omit_path_but_local_paths_cannot() {
     package["dependencies"] = serde_json::json!([external]);
     let graph = WorkspaceGraph::from_metadata(&fixture_metadata(vec![package.clone()])).unwrap();
     assert!(graph.edges.is_empty());
-    graph
-        .validate_edges(ALLOWED_EDGES)
-        .unwrap();
+    graph.validate_edges(ALLOWED_EDGES).unwrap();
     package["dependencies"][0]["source"] = Value::Null;
     assert!(WorkspaceGraph::from_metadata(&fixture_metadata(vec![package])).is_err());
 }
@@ -1107,9 +1053,7 @@ fn test_illegal_same_layer_edge_is_not_granted_by_layer_order() {
         "neo-io",
         fixture_dependency("neo-io", "neo-io"),
     );
-    allowed
-        .validate_edges(ALLOWED_EDGES)
-        .unwrap();
+    allowed.validate_edges(ALLOWED_EDGES).unwrap();
 }
 
 #[test]
@@ -1138,9 +1082,7 @@ fn test_native_to_smart_contract_is_one_way_and_other_reverse_edges_fail() {
         "neo-smart-contract",
         fixture_dependency("neo-smart-contract", "neo-smart-contract"),
     );
-    graph
-        .validate_edges(ALLOWED_EDGES)
-        .unwrap();
+    graph.validate_edges(ALLOWED_EDGES).unwrap();
     for (from, to) in [
         ("neo-smart-contract", "neo-native-contracts"),
         ("neo-ledger", "neo-mempool"),
@@ -1151,9 +1093,7 @@ fn test_native_to_smart_contract_is_one_way_and_other_reverse_edges_fail() {
     ] {
         let graph = fixture_pair(from, to, fixture_dependency(to, to));
         assert!(
-            graph
-                .validate_edges(ALLOWED_EDGES)
-                .is_err(),
+            graph.validate_edges(ALLOWED_EDGES).is_err(),
             "Reverse edge escaped: {from} -> {to}"
         );
     }
@@ -1168,11 +1108,7 @@ fn test_production_cannot_depend_on_nonproduction_members() {
         fixture_package("neo-tests", "tests"),
     ]))
     .unwrap();
-    assert!(
-        graph
-            .validate_edges(ALLOWED_EDGES)
-            .is_err()
-    );
+    assert!(graph.validate_edges(ALLOWED_EDGES).is_err());
 }
 
 #[test]
@@ -1209,9 +1145,7 @@ fn test_static_policy_is_acyclic() {
     }
     let graph =
         WorkspaceGraph::from_metadata(&fixture_metadata(packages.into_values().collect())).unwrap();
-    graph
-        .validate_edges(ALLOWED_EDGES)
-        .unwrap();
+    graph.validate_edges(ALLOWED_EDGES).unwrap();
 }
 
 // ============================================================================

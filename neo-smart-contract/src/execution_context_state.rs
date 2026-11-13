@@ -218,9 +218,6 @@ mod tests {
         let cache = Arc::new(DataCache::new(false));
         state.snapshot_cache = Some(Arc::clone(&cache));
 
-        assert!(Arc::ptr_eq(
-            state.snapshot_cache.as_ref().unwrap(),
-            &cache
-        ));
+        assert!(Arc::ptr_eq(state.snapshot_cache.as_ref().unwrap(), &cache));
     }
 }

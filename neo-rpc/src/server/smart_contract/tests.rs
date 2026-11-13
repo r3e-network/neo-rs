@@ -1,19 +1,16 @@
 use super::*;
 use crate::server::rpc_server_settings::RpcServerConfig;
-use neo_smart_contract::StorageItemExt;
-use neo_smart_contract::helper::Helper as ContractHelper;
-use neo_wallets::helper::Helper as WalletHelper;
-use neo_wallets::wallet::{Wallet, WalletError, WalletResult};
-use neo_wallets::{KeyPair, StandardWalletAccount, WalletAccount};
 use neo_native_contracts::native::{ContractManagement, CryptoLib, NativeContract, NeoToken};
 use neo_primitives::{ContractParameterType, FindOptions, TriggerType, UInt160, WitnessScope};
 use neo_protocol::ProtocolSettings;
 use neo_protocol::payloads::Signer;
 use neo_protocol::payloads::transaction::Transaction;
 use neo_protocol::witness::Witness;
+use neo_smart_contract::StorageItemExt;
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::contract::Contract;
 use neo_smart_contract::contract_state::{ContractState, NefFile};
+use neo_smart_contract::helper::Helper as ContractHelper;
 use neo_smart_contract::iterators::{IteratorInterop, StorageIterator};
 use neo_smart_contract::manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
@@ -21,6 +18,9 @@ use neo_smart_contract::manifest::{
 use neo_storage::persistence::transaction::apply_tracked_items;
 use neo_storage::{StorageItem, StorageKey};
 use neo_system::NeoSystem;
+use neo_wallets::helper::Helper as WalletHelper;
+use neo_wallets::wallet::{Wallet, WalletError, WalletResult};
+use neo_wallets::{KeyPair, StandardWalletAccount, WalletAccount};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_vm::stack_item::InteropInterface as VmInteropInterface;
@@ -131,11 +131,7 @@ impl Wallet for TestWallet {
         Err(WalletError::Other("not supported".to_string()))
     }
 
-    fn import_nep2(
-        &self,
-        _nep2: &str,
-        _password: &str,
-    ) -> WalletResult<Arc<dyn WalletAccount>> {
+    fn import_nep2(&self, _nep2: &str, _password: &str) -> WalletResult<Arc<dyn WalletAccount>> {
         Err(WalletError::Other("not supported".to_string()))
     }
 
@@ -154,8 +150,6 @@ impl Wallet for TestWallet {
     }
 
     fn save(&self) -> WalletResult<()> {
-        Err(WalletError::Other("not supported".to_string()))
-    }
         Err(WalletError::Other("not supported".to_string()))
     }
 }

@@ -386,7 +386,9 @@ fn storage_find_handler(
         .map_err(|e| map_storage_error("System.Storage.Find", e))?;
     Ok(())
 }
-pub(crate) fn register_storage_interops(engine: &mut ApplicationEngine) -> VmResult<()> {
+pub(crate) fn register_storage_interops(
+    engine: &mut dyn super::state::InteropRegistration,
+) -> VmResult<()> {
     engine.register_host_service(
         "System.Storage.GetContext",
         1 << 4,

@@ -86,7 +86,8 @@ fn find_options_validate_pick_field1_with_deserialize_succeeds() {
 
 #[test]
 fn find_options_validate_pick_field0_and_pick_field1_fails() {
-    let options = FindOptions::PickField0 | FindOptions::PickField1 | FindOptions::DeserializeValues;
+    let options =
+        FindOptions::PickField0 | FindOptions::PickField1 | FindOptions::DeserializeValues;
     let result = options.validate();
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("PickField0 and PickField1"));
@@ -153,7 +154,7 @@ fn find_options_is_empty() {
 #[test]
 fn find_options_clone_and_copy() {
     let options = FindOptions::KeysOnly;
-    let cloned = options.clone();
+    let cloned = options;
     let copied = options;
     assert_eq!(options, cloned);
     assert_eq!(options, copied);

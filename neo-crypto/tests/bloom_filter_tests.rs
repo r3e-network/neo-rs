@@ -14,7 +14,12 @@ fn test_bloom_filter_new() {
 fn test_bloom_filter_zero_hash_functions() {
     let result = BloomFilter::new(1024, 0, 123);
     assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("hash function count"));
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("hash function count")
+    );
 }
 
 #[test]
@@ -123,8 +128,8 @@ fn test_bloom_filter_different_tweaks() {
     filter2.add(element);
 
     // Different tweaks should result in different bit patterns
-    let bits1 = filter1.bits();
-    let bits2 = filter2.bits();
+    let _bits1 = filter1.bits();
+    let _bits2 = filter2.bits();
 
     // They should both find the element
     assert!(filter1.check(element));

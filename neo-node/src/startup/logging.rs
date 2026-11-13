@@ -6,6 +6,7 @@ use crate::config::NodeConfig;
 // use neo_system::state_service::metrics::state_root_ingest_stats; // Removed with neo-telemetry
 use neo_system::NeoSystem;
 use std::sync::Arc;
+use sysinfo::{DiskExt, System, SystemExt};
 use tokio::sync::RwLock;
 use tracing::{error, info};
 
@@ -104,32 +105,62 @@ pub(crate) fn spawn_metrics_pump(
             }
 
             let peer_count = metrics_system.peer_count().await.unwrap_or(0);
-            let mempool_size = metrics_system.mempool().lock().count() as u32;
+            let (mempool_verified, mempool_unverified) = {
+                // Bind the Arc before locking: the guard must not outlive the
+                // temporary returned by `mempool()`.
+                let pool = metrics_system.mempool();
+                let pool = pool.lock();
+                (pool.verified_count(), pool.unverified_count())
+            };
+            let mempool_size = (mempool_verified + mempool_unverified) as u32;
 
+            // Ingest the real P2P timeout counters instead of dropping the
+            // snapshot that was previously computed and discarded.
             let timeouts = neo_system::network::p2p::timeouts::stats();
+            crate::metrics::update_timeout_metrics(
+                peer_count,
+                timeouts.handshake + timeouts.read + timeouts.write,
+            );
 
-            let (state_local_root, state_validated_root) = match metrics_system.state_store() {
-                Ok(Some(store)) => (Some(store.local_root_index()), Some(store.validated_root_index())),
-                _ => (None, None),
-            };
-            let state_validated_lag = match (state_local_root, state_validated_root) {
-                (Some(local), Some(validated)) => Some(local.saturating_sub(validated)),
-                _ => None,
-            };
+            if let Some(storage_path) = metrics_storage_path.as_deref() {
+                let storage_path = std::fs::canonicalize(storage_path)
+                    .unwrap_or_else(|_| std::path::PathBuf::from(storage_path));
+                let mut system = System::new();
+                system.refresh_disks_list();
+                if let Some(disk) = system
+                    .disks()
+                    .iter()
+                    .filter(|disk| storage_path.starts_with(disk.mount_point()))
+                    .max_by_key(|disk| disk.mount_point().as_os_str().len())
+                {
+                    const BYTES_PER_GB: f64 = 1024.0 * 1024.0 * 1024.0;
+                    crate::metrics::update_storage_metrics(
+                        disk.available_space() as f64 / BYTES_PER_GB,
+                        disk.total_space() as f64 / BYTES_PER_GB,
+                    );
+                }
+            }
 
-            // Ingest stats removed with neo-telemetry
-            // let ingest = state_root_ingest_stats();
+            // State-service metrics (root indexes, ingest stats) were removed
+            // together with neo-telemetry; there is no collection pipeline for
+            // them in this build, so nothing is reported rather than
+            // fabricating values.
 
-            // TODO: Fix argument mismatch - update_node_metrics signature changed
+            // Honest metrics: every reported value is backed by a real data
+            // source. No verified-height tracker exists in this build, so the
+            // `neo_verified_height` gauge stays at its not-collected initial
+            // value instead of echoing `block_height`, which would fabricate
+            // full verification at the chain tip.
+            const VERIFIED_HEIGHT_NOT_COLLECTED: u32 = 0;
             crate::metrics::update_node_metrics(
                 block_height,
                 header_height,
-                block_height, // verified_height placeholder
-                mempool_size as usize, // mempool_verified
-                0, // mempool_unverified placeholder
+                VERIFIED_HEIGHT_NOT_COLLECTED,
+                mempool_verified,
+                mempool_unverified,
                 peer_count as usize,
-                None, // timeout_stats
-                None, // state_service
+                None, // timeout stats ingested via update_timeout_metrics above
+                None, // state-service metrics not collected (removed with neo-telemetry)
             );
 
             {

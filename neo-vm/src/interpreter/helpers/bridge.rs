@@ -143,6 +143,20 @@ pub(crate) fn invoke_syscall<H: SyscallProvider>(
     ids: &mut CompoundIds,
 ) -> Result<(), String> {
     let arg_count = crate::syscall_arg_count(api).min(stack.len());
+    if host.needs_full_stack() {
+        return invoke_full_stack_syscall(
+            host,
+            api,
+            ip,
+            stack,
+            args,
+            locals,
+            static_fields,
+            consumed_mutations,
+            ids,
+            arg_count,
+        );
+    }
     let keep = stack.len() - arg_count;
 
     let mut abi_args: Vec<crate::StackValue> = Vec::with_capacity(arg_count.min(64));
@@ -189,6 +203,96 @@ pub(crate) fn invoke_syscall<H: SyscallProvider>(
                     .restore_stack_best_effort(stack, stack.len().max(POST_SYSCALL_STACK_HEADROOM));
             }
             core::mem::forget(abi_args);
+            Err(e)
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn invoke_full_stack_syscall<H: SyscallProvider>(
+    host: &mut H,
+    api: u32,
+    ip: usize,
+    stack: &mut Vec<StackValue>,
+    args: &mut Vec<StackValue>,
+    locals: &mut Vec<StackValue>,
+    static_fields: &mut Vec<StackValue>,
+    consumed_mutations: &mut Vec<StackValue>,
+    ids: &mut CompoundIds,
+    argument_count: usize,
+) -> Result<(), String> {
+    let mut abi_stack = to_abi_stack(stack);
+    let retained =
+        RetainedHostState::capture(stack, args, locals, static_fields, consumed_mutations)?;
+    match host.syscall_with_full_stack(api, ip, &mut abi_stack, argument_count) {
+        Ok(()) => {
+            stabilize_allocator_after_host_call();
+            if retained.has_stack() {
+                retained.restore_non_stack(consumed_mutations, locals, args, static_fields)?;
+                retained.restore_stack(stack, stack.len().max(POST_SYSCALL_STACK_HEADROOM))?;
+            }
+
+            let mut imported_stack =
+                Vec::with_capacity(abi_stack.len().max(POST_SYSCALL_STACK_HEADROOM));
+            for item in abi_stack {
+                let imported = ids.import_abi(item);
+                let stabilized = if cfg!(target_arch = "riscv32")
+                    && matches!(
+                        imported,
+                        StackValue::Array(..)
+                            | StackValue::Struct(..)
+                            | StackValue::Map(..)
+                            | StackValue::Buffer(..)
+                    ) {
+                    ids.deep_clone(&imported)
+                } else {
+                    imported
+                };
+                imported_stack.push(stabilized);
+            }
+            let shared_prefix = stack
+                .iter()
+                .zip(imported_stack.iter())
+                .take_while(|(left, right)| structurally_equal(left, right))
+                .count();
+            #[cfg(target_arch = "riscv32")]
+            {
+                let mut preserved_stack = core::mem::take(stack);
+                let mut next_stack =
+                    Vec::with_capacity(imported_stack.len().max(POST_SYSCALL_STACK_HEADROOM));
+
+                if shared_prefix > 0 {
+                    let discarded_preserved = preserved_stack.split_off(shared_prefix);
+                    next_stack.append(&mut preserved_stack);
+                    core::mem::forget(discarded_preserved);
+                } else {
+                    core::mem::forget(preserved_stack);
+                }
+
+                let mut imported_suffix = imported_stack.split_off(shared_prefix);
+                next_stack.append(&mut imported_suffix);
+                core::mem::forget(imported_stack);
+                *stack = next_stack;
+            }
+            #[cfg(not(target_arch = "riscv32"))]
+            {
+                imported_stack[..shared_prefix].clone_from_slice(&stack[..shared_prefix]);
+                *stack = imported_stack;
+            }
+            Ok(())
+        }
+        Err(e) => {
+            if retained.has_stack() {
+                retained.restore_non_stack_best_effort(
+                    consumed_mutations,
+                    locals,
+                    args,
+                    static_fields,
+                );
+                retained
+                    .restore_stack_best_effort(stack, stack.len().max(POST_SYSCALL_STACK_HEADROOM));
+            }
+            core::mem::forget(abi_stack);
             Err(e)
         }
     }

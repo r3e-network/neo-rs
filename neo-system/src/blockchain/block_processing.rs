@@ -70,7 +70,12 @@ impl Blockchain {
             if block_index == header_height + 1 {
                 // Convert to payload block for validation
                 let payload_block = block.to_payload_block();
-                if !neo_ledger::verify_block_with_cache(&payload_block, settings.as_ref(), &store_cache, &header_cache) {
+                if !neo_ledger::verify_block_with_cache(
+                    &payload_block,
+                    settings.as_ref(),
+                    &store_cache,
+                    &header_cache,
+                ) {
                     tracing::warn!(
                         target: "neo",
                         index = block_index,
@@ -220,7 +225,7 @@ impl Blockchain {
 
         self._block_cache_unverified
             .entry(index)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(block);
         self._unverified_cache_bytes
             .fetch_add(cost, Ordering::Relaxed);
@@ -511,9 +516,9 @@ impl Blockchain {
         settings: &ProtocolSettings,
         snapshot: &DataCache,
     ) -> std::collections::HashSet<UInt160> {
-        use neo_smart_contract::Contract;
         use neo_native_contracts::helpers::NativeHelpers;
         use neo_native_contracts::{NeoToken, Role, RoleManagement};
+        use neo_smart_contract::Contract;
 
         let current_height = LedgerContract::new().current_index(snapshot).unwrap_or(0);
         let mut whitelist = std::collections::HashSet::new();

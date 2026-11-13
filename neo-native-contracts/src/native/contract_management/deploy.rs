@@ -180,6 +180,7 @@ impl ContractManagement {
             contract_hash_bytes.as_ref(),
         )?;
         engine.put_storage_item(&context, &Self::next_id_key(), &next_id_bytes)?;
+        engine.put_contract_cache(contract_hash, contract.clone());
 
         // Call contract's _deploy method if it exists
         if contract

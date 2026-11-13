@@ -9,12 +9,11 @@
 //! * Account handles returned from the [`Wallet`] trait are clones/snapshots;
 //!   mutation flows through the wallet under an internal lock.
 
-use crate::account::{Contract, StandardWalletAccount, WalletAccount, Witness};
+use crate::account::{Contract, StandardWalletAccount, WalletAccount};
 use crate::helper::Helper;
 use crate::key_pair::KeyPair;
 use crate::nep2::ScryptParameters;
 use crate::wallet::{Version, Wallet, WalletError, WalletFactory, WalletResult};
-use async_trait::async_trait;
 use neo_primitives::{ContractParameterType, UInt160};
 use neo_protocol::ProtocolSettings;
 use serde::{Deserialize, Serialize};
@@ -192,7 +191,11 @@ impl Nep6Wallet {
     ///
     /// Returns [`WalletError::WalletFileNotFound`], [`WalletError::InvalidWalletFormat`],
     /// or [`WalletError::InvalidPassword`].
-    pub fn from_file(path: &str, password: &str, settings: Arc<ProtocolSettings>) -> WalletResult<Self> {
+    pub fn from_file(
+        path: &str,
+        password: &str,
+        settings: Arc<ProtocolSettings>,
+    ) -> WalletResult<Self> {
         if !std::path::Path::new(path).exists() {
             return Err(WalletError::WalletFileNotFound(path.to_string()));
         }
@@ -203,9 +206,13 @@ impl Nep6Wallet {
         let version = parse_version(&file.version);
         let mut accounts = HashMap::new();
         for account_file in &file.accounts {
-            let account = build_account(account_file, &settings)?;
-            // Verify the password against encrypted accounts.
-            if account.inner.nep2_key().is_some() && !account.inner.verify_password(password)? {
+            let mut account = build_account(account_file, &settings)?;
+            // Opening with a password authenticates and unlocks this wallet
+            // session. Keep the decrypted key in the account instead of
+            // validating it and immediately discarding it: dumpprivkey,
+            // importprivkey and transaction signing all operate on the opened
+            // session, while `lock` still clears the key material explicitly.
+            if account.inner.nep2_key().is_some() && !account.inner.unlock(password)? {
                 return Err(WalletError::InvalidPassword);
             }
             accounts.insert(account.inner.script_hash(), account);
@@ -267,9 +274,14 @@ impl Nep6Wallet {
         key_pair: KeyPair,
         nep2_key: Option<String>,
     ) -> WalletResult<Nep6Account> {
+        // A key-backed NEP-6 account needs its canonical single-signature
+        // contract for fee calculation, witness construction and persistence.
+        // Leaving it as `None` makes the account usable for WIF export but
+        // unusable for transfers after it is reopened.
+        let contract = Contract::create_signature_contract(key_pair.get_public_key_point()?);
         let inner = StandardWalletAccount::new_with_key(
             key_pair,
-            None,
+            Some(contract),
             self.protocol_settings.clone(),
             nep2_key,
         );
@@ -554,8 +566,10 @@ fn contract_from_file(file: &Nep6ContractFile) -> WalletResult<Contract> {
         .map_err(|e| WalletError::Other(format!("bad script hex: {e}")))?;
 
     // Convert NEP-6 parameter names to ContractParameterType
-    let parameter_list = file.parameters.iter().map(|p| {
-        match p.param_type.as_str() {
+    let parameter_list = file
+        .parameters
+        .iter()
+        .map(|p| match p.param_type.as_str() {
             "Signature" => ContractParameterType::Signature,
             "Boolean" => ContractParameterType::Boolean,
             "Integer" => ContractParameterType::Integer,
@@ -568,8 +582,8 @@ fn contract_from_file(file: &Nep6ContractFile) -> WalletResult<Contract> {
             "Map" => ContractParameterType::Map,
             "InteropInterface" => ContractParameterType::InteropInterface,
             _ => ContractParameterType::Any,
-        }
-    }).collect();
+        })
+        .collect();
 
     Ok(Contract::create(parameter_list, script))
 }
@@ -673,6 +687,12 @@ mod tests {
         let reopened = Nep6Wallet::open(&path_str, "pw", settings()).unwrap();
         assert!(reopened.contains(&hash));
         assert_eq!(reopened.name(), "rt");
+        assert_eq!(
+            reopened.get_account(&hash).unwrap().export_wif().unwrap(),
+            key.to_wif()
+        );
+        reopened.lock();
+        assert!(reopened.get_account(&hash).unwrap().export_wif().is_err());
         assert!(Nep6Wallet::open(&path_str, "wrong", settings()).is_err());
 
         let _ = fs::remove_file(&path);

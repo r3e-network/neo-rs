@@ -51,7 +51,7 @@ impl NativeContract for LedgerContract {
     }
 
     fn methods(&self) -> &[NativeMethod] {
-        &self.methods
+        self.methods
     }
 
     fn invoke(
@@ -353,7 +353,7 @@ impl LedgerContract {
                 .transaction()
                 .signers()
                 .iter()
-                .map(|signer| signer_to_stack_item(signer))
+                .map(signer_to_stack_item)
                 .collect::<std::result::Result<Vec<_>, _>>()?;
             StackItem::from_array(items)
         } else {

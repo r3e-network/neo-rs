@@ -11,14 +11,14 @@
 //! (`StoreCache`, `ProtocolSettings`, `ApplicationEngine`, `LogEventArgs`,
 //! `NotifyEventArgs`) are resolved through `neo-core`'s public surface.
 
-use neo_storage::persistence::StoreCache;
-use neo_smart_contract::ApplicationEngine;
 use neo_primitives::UInt256;
 use neo_protocol::protocol_settings::ProtocolSettings;
+use neo_smart_contract::ApplicationEngine;
+use neo_storage::persistence::StoreCache;
 use std::sync::Arc;
 
 // Re-export mempool services
-pub use crate::mempool::services::{MempoolService, LockedMempoolService};
+pub use crate::mempool::services::{LockedMempoolService, MempoolService};
 
 // Re-export network services
 pub use crate::network::p2p::services::PeerManagerService;
@@ -32,6 +32,19 @@ pub trait LedgerService: Send + Sync {
 pub trait StateStoreService: Send + Sync {
     fn on_new_state_root(&self, state_root: crate::state_service::StateRoot) -> bool;
 
+    /// Stages local-root progress in the block's atomic precommit snapshot.
+    fn stage_local_root(
+        &self,
+        state_root: &crate::state_service::StateRoot,
+        snapshot: &neo_storage::persistence::DataCache,
+    ) -> bool;
+
+    /// Finishes a staged root after the block transaction commits successfully.
+    fn on_local_root_committed(&self, state_root: &crate::state_service::StateRoot) -> bool;
+
+    /// Discards a staged marker when the surrounding block transaction rolls back.
+    fn discard_staged_local_root(&self, index: u32);
+
     /// Get the current local root index
     fn local_root_index(&self) -> u64;
 
@@ -39,7 +52,10 @@ pub trait StateStoreService: Send + Sync {
     fn validated_root_index(&self) -> u64;
 
     /// Set a fetcher for reference state roots
-    fn set_reference_root_fetcher(&self, fetcher: Arc<dyn Fn(u32) -> Option<UInt256> + Send + Sync>);
+    fn set_reference_root_fetcher(
+        &self,
+        fetcher: Arc<dyn Fn(u32) -> Option<UInt256> + Send + Sync>,
+    );
 
     /// Flush pending state changes to storage
     fn flush(&self);

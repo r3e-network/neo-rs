@@ -36,8 +36,8 @@ use neo_actors::{
     Actor, ActorContext, ActorRef, ActorResult, EventStreamHandle, Props, ScheduleHandle,
     Terminated,
 };
-use neo_ledger::{PersistCompleted, PersistFailed, RelayResult};
 use neo_io_crate::HashSetCache;
+use neo_ledger::{PersistCompleted, PersistFailed};
 use neo_primitives::UInt256;
 use scheduling::TaskCounter;
 use std::any::Any;
@@ -131,6 +131,12 @@ pub struct TaskManager {
     global_index_tasks: TaskCounter<u32>,
     timer_interval: Duration,
     task_timeout: Duration,
+}
+
+impl Default for TaskManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TaskManager {

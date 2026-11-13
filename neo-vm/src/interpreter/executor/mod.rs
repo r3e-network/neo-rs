@@ -67,6 +67,7 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
     let mut consumed_mutations: Vec<StackValue> = Vec::with_capacity(16);
     let mut pending_error: Option<PendingException> = None;
     let mut previous_opcode_was_callt = false;
+    let semantics = host.semantics();
 
     macro_rules! apply_dispatch {
         ($dispatch:expr) => {
@@ -354,7 +355,7 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
             INVERT | AND | OR | XOR | NUMEQUAL | NUMNOTEQUAL | EQUAL | NOTEQUAL | LT | LE | GT
             | GE | SIGN | ABS | NEGATE | ADD | INC | SUB | POW | SQRT | MODMUL | MODPOW | SHL
             | SHR | NOT => {
-                apply_dispatch!(numeric_ops::execute(opcode, &mut stack)?);
+                apply_dispatch!(numeric_ops::execute(opcode, &mut stack, semantics)?);
             }
             PACKMAP | PACKSTRUCT | PACK | UNPACK | NEWARRAY0 | NEWARRAY | NEWARRAY_T
             | NEWSTRUCT0 | NEWSTRUCT | NEWMAP | SIZE | HASKEY | KEYS | VALUES | APPEND
@@ -371,6 +372,7 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
                     &mut consumed_mutations,
                     &mut try_frames,
                     &mut pending_error,
+                    semantics,
                 )?);
             }
             // EXCEPTION HANDLING OPCODES
@@ -392,7 +394,7 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
                 continue;
             }
             MUL | DIV | MOD | DEC | BOOLAND | BOOLOR | NZ | MIN | MAX | WITHIN => {
-                apply_dispatch!(numeric_ops::execute(opcode, &mut stack)?);
+                apply_dispatch!(numeric_ops::execute(opcode, &mut stack, semantics)?);
             }
             RIGHT | SUBSTR | MEMCPY => {
                 apply_dispatch!(byte_ops::execute(
@@ -418,6 +420,7 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
                     &mut consumed_mutations,
                     &mut try_frames,
                     &mut pending_error,
+                    semantics,
                 )?);
             }
             NIP | OVER | PICK | ROT | ROLL | REVERSE3 | REVERSE4 | REVERSEN | TUCK | XDROP => {

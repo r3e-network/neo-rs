@@ -1,34 +1,41 @@
 //! State verification utilities for the Neo blockchain.
 //!
-//! This module provides functionality for verifying blockchain state integrity,
-//! including Merkle proof verification and state root validation.
-//!
-//! # Components
-//!
-//! - [`verify_merkle_proof`]: MPT proof verification for state data
-//! - [`verify_state_root`]: State root validation at a given height
-//! - [`StateServiceVerification`]: Wallet change handler for automatic state root verification
-//!
-//! # Implementation References
-//!
-//! - C# Neo: `Neo.Cryptography.MPTTrie.Trie.VerifyProof`
-//! - C# Neo: `Neo.Plugins.StateService.StateRoot.Verify`
-//! - C# Neo: `Neo.Plugins.StateService.Verifier` (wallet changed handler)
+//! State roots are loaded from the same records written by the state-service
+//! commit handlers. Verification fails closed when a root is absent, belongs to
+//! a future height, differs from the expected hash, or carries an invalid
+//! validator witness.
 
-use neo_crypto::mpt_trie::{Trie, MptStoreSnapshot, MptResult};
+use neo_crypto::mpt_trie::{MptResult, MptStoreSnapshot, Trie};
 use neo_primitives::UInt256;
+use neo_protocol::protocol_settings::ProtocolSettings;
+use neo_storage::persistence::store::Store;
+use neo_storage::persistence::{DataCache, SeekDirection, StoreCache};
+use neo_storage::types::StorageKey;
 use neo_wallets::signing::TrustedSignerClient;
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::NeoSystem;
 use crate::i_event_handlers::WalletChangedHandler;
+use crate::state_service::StateRoot;
+use crate::state_service::commit_handlers::{
+    PREFIX_STATE_ROOT, STATE_ROOT_STORAGE_ID, deserialize_state_root_record, state_root_record_key,
+};
 
 /// Error type for state verification operations.
 #[derive(Debug, Clone)]
 pub struct StateVerificationError {
     pub message: String,
+}
+
+impl StateVerificationError {
+    fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
 }
 
 impl std::fmt::Display for StateVerificationError {
@@ -39,38 +46,15 @@ impl std::fmt::Display for StateVerificationError {
 
 impl std::error::Error for StateVerificationError {}
 
-/// Verifies a Merkle proof for state data using MPT (Merkle Patricia Tree).
+/// Verifies that an MPT inclusion proof resolves `key` beneath `root`.
 ///
-/// This function verifies that a given key/value pair exists in the MPT with
-/// the specified root hash by walking through the provided proof nodes.
-///
-/// # Algorithm
-///
-/// 1. Constructs an in-memory MPT from the proof nodes
-/// 2. Attempts to retrieve the value for the given key
-/// 3. Returns true if the value exists and the proof path is valid
-///
-/// # Arguments
-///
-/// * `root` - The expected Merkle root hash
-/// * `key` - The key being verified (will be used as the path in the trie)
-/// * `proof` - The Merkle proof data (serialized trie nodes)
-///
-/// # Returns
-///
-/// `true` if the proof is valid and the key exists in the trie with the given root,
-/// `false` otherwise
-///
-/// # Implementation Reference
-///
-/// Mirrors C# Neo `Trie.VerifyProof(UInt256 root, byte[] key, HashSet<byte[]> proof)`
-/// from `Neo.Cryptography.MPTTrie.Trie`
+/// The proof nodes are loaded into an isolated store and checked by the same
+/// MPT verifier used for state proofs. Malformed nodes, a broken hash chain,
+/// and a missing key all return `false`.
+#[must_use]
 pub fn verify_merkle_proof(root: &UInt256, key: &[u8], proof: &[Vec<u8>]) -> bool {
-    // Convert proof array to HashSet as required by Trie::verify_proof
     let proof_set: HashSet<Vec<u8>> = proof.iter().cloned().collect();
 
-    // Define an in-memory store for the proof verification
-    // This mirrors the ProofStore used in Trie::verify_proof
     #[derive(Default)]
     struct ProofStore {
         data: Mutex<HashMap<Vec<u8>, Vec<u8>>>,
@@ -92,194 +76,168 @@ pub fn verify_merkle_proof(root: &UInt256, key: &[u8], proof: &[Vec<u8>]) -> boo
         }
     }
 
-    // Use the MPT Trie::verify_proof static method to validate the proof
-    // This internally:
-    // 1. Creates an in-memory proof store from the proof nodes
-    // 2. Reconstructs the trie path from root to the key
-    // 3. Verifies the hash chain matches the expected root
-    // 4. Returns the value if found, or error if proof is invalid
-    match Trie::<ProofStore>::verify_proof(*root, key, &proof_set) {
-        Ok(_value) => {
-            // Proof is valid - the key exists in the trie with the correct root
-            true
-        }
-        Err(_) => {
-            // Proof verification failed - either:
-            // - The proof nodes are invalid
-            // - The proof path doesn't lead to the root
-            // - The key doesn't exist in the trie
-            // - The hash chain is broken
-            false
-        }
+    Trie::<ProofStore>::verify_proof(*root, key, &proof_set).is_ok()
+}
+
+/// Read-side abstraction over persisted state roots and their verification
+/// context.
+///
+/// `current_index` is the highest valid persisted root index, not the best
+/// header height. This prevents a header-syncing node from treating a state
+/// root that has not been persisted yet as verified.
+pub trait StateRootSource {
+    /// Loads the state-root record at `index`, returning `None` when it is
+    /// missing or malformed.
+    fn state_root_at(&self, index: u32) -> Option<StateRoot>;
+
+    /// Returns the highest valid persisted state-root index.
+    fn current_index(&self) -> Option<u32>;
+
+    /// Protocol settings used for network-bound witness verification.
+    fn protocol_settings(&self) -> &ProtocolSettings;
+
+    /// Returns a storage snapshot used to resolve state-validator designations.
+    fn verification_snapshot(&self) -> DataCache;
+}
+
+/// Production [`StateRootSource`] backed by the node's primary store.
+pub struct StoreStateRootSource {
+    store: Arc<dyn Store>,
+    settings: ProtocolSettings,
+}
+
+impl StoreStateRootSource {
+    /// Creates a source over the canonical state-root storage layout.
+    #[must_use]
+    pub fn new(store: Arc<dyn Store>, settings: ProtocolSettings) -> Self {
+        Self { store, settings }
     }
 }
 
-/// Verifies the state root for a given block height.
-///
-/// This function validates that the computed state root at a specific block height
-/// matches the expected root hash. In a production system, this would query the
-/// state service to retrieve the persisted state root and compare it.
-///
-/// # Current Implementation
-///
-/// Due to the asynchronous nature of the blockchain actor and state service,
-/// this function currently performs basic validation:
-/// 1. Checks that the height is reasonable (not in the future)
-/// 2. Validates the root hash is non-zero
-///
-/// # Future Enhancement
-///
-/// A complete implementation requires:
-/// 1. Access to the blockchain actor to query the current height
-/// 2. Access to the state service to retrieve the persisted state root
-/// 3. Comparison of the expected root with the computed/persisted root
-/// 4. Witness verification for the state root signatures
-///
-/// # Arguments
-///
-/// * `height` - The block height to verify
-/// * `expected_root` - The expected state root hash
-///
-/// # Returns
-///
-/// `Ok(())` if verification succeeds, error otherwise
-///
-/// # Implementation Reference
-///
-/// Mirrors C# Neo StateService state root verification logic:
-/// - `Neo.Plugins.StateService.StateRoot.Verify`
-/// - `Neo.Plugins.StateService.StatePlugin.OnStateRoot`
-pub fn verify_state_root(height: u32, expected_root: &UInt256) -> Result<(), StateVerificationError> {
-    // Basic validation: reject zero hash (invalid state root)
-    if expected_root.is_zero() {
-        return Err(StateVerificationError {
-            message: format!("Invalid state root: zero hash at height {}", height),
-        });
+impl StateRootSource for StoreStateRootSource {
+    fn state_root_at(&self, index: u32) -> Option<StateRoot> {
+        self.store
+            .try_get(&state_root_record_key(index))
+            .and_then(|item| deserialize_state_root_record(index, item.value()))
     }
 
-    // In a full implementation, we would:
-    // 1. Query the blockchain actor for current block height
-    //    let current_height = blockchain.current_height();
-    //    if height > current_height {
-    //        return Err(StateVerificationError {
-    //            message: format!("Height {} exceeds current height {}", height, current_height),
-    //        });
-    //    }
-    //
-    // 2. Query the state service for the persisted state root at this height
-    //    let state_root = state_service.get_state_root(height)
-    //        .ok_or_else(|| StateVerificationError {
-    //            message: format!("No state root found at height {}", height),
-    //        })?;
-    //
-    // 3. Compare the root hashes
-    //    if state_root.root_hash != *expected_root {
-    //        return Err(StateVerificationError {
-    //            message: format!(
-    //                "State root mismatch at height {}: expected {}, got {}",
-    //                height, expected_root, state_root.root_hash
-    //            ),
-    //        });
-    //    }
-    //
-    // 4. Verify the state root witness signatures
-    //    if !state_root.verify(&protocol_settings, &snapshot) {
-    //        return Err(StateVerificationError {
-    //            message: format!("State root signature verification failed at height {}", height),
-    //        });
-    //    }
+    fn current_index(&self) -> Option<u32> {
+        let prefix = StorageKey::new(STATE_ROOT_STORAGE_ID, vec![PREFIX_STATE_ROOT]);
+        let mut highest = None;
+        for (key, item) in self.store.find(Some(&prefix), SeekDirection::Forward) {
+            let raw = key.key();
+            if raw.len() != 5 || raw[0] != PREFIX_STATE_ROOT {
+                continue;
+            }
+            let index = u32::from_be_bytes([raw[1], raw[2], raw[3], raw[4]]);
+            if deserialize_state_root_record(index, item.value()).is_some()
+                && highest.is_none_or(|current| index > current)
+            {
+                highest = Some(index);
+            }
+        }
+        highest
+    }
 
-    // For now, accept the verification if basic checks pass
-    // The caller is responsible for ensuring the expected_root is correct
+    fn protocol_settings(&self) -> &ProtocolSettings {
+        &self.settings
+    }
+
+    fn verification_snapshot(&self) -> DataCache {
+        StoreCache::new_from_store(self.store.clone(), true)
+            .data_cache()
+            .clone_cache()
+    }
+}
+
+/// Verifies a persisted state root at `height` against `expected_root`.
+///
+/// An unsigned local record is verified by exact hash equality. A record that
+/// carries a witness additionally has to pass the designated state-validator
+/// quorum and signature checks in [`StateRoot::verify`].
+pub fn verify_state_root(
+    source: &dyn StateRootSource,
+    height: u32,
+    expected_root: &UInt256,
+) -> Result<(), StateVerificationError> {
+    if expected_root.is_zero() {
+        return Err(StateVerificationError::new(format!(
+            "invalid state root: zero hash at height {height}"
+        )));
+    }
+
+    let current_index = source.current_index().ok_or_else(|| {
+        StateVerificationError::new("no valid persisted state roots are available")
+    })?;
+    if height > current_index {
+        return Err(StateVerificationError::new(format!(
+            "state root height {height} exceeds current persisted height {current_index}"
+        )));
+    }
+
+    let state_root = source.state_root_at(height).ok_or_else(|| {
+        StateVerificationError::new(format!("no valid state root found at height {height}"))
+    })?;
+    if state_root.root_hash != *expected_root {
+        return Err(StateVerificationError::new(format!(
+            "state root mismatch at height {height}: expected {expected_root}, got {}",
+            state_root.root_hash
+        )));
+    }
+
+    if state_root.witness.is_some()
+        && !state_root.verify(source.protocol_settings(), &source.verification_snapshot())
+    {
+        return Err(StateVerificationError::new(format!(
+            "state root witness verification failed at height {height}"
+        )));
+    }
+
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_verify_merkle_proof_empty_proof() {
-        let root = UInt256::zero();
-        let key = b"test_key";
-        let proof = vec![];
-
-        // Empty proof should fail
-        assert!(!verify_merkle_proof(&root, key, &proof));
-    }
-
-    #[test]
-    fn test_verify_merkle_proof_invalid_proof() {
-        let root = UInt256::from([1u8; 32]);
-        let key = b"test_key";
-        let proof = vec![vec![1, 2, 3]];
-
-        // Invalid proof data should fail
-        assert!(!verify_merkle_proof(&root, key, &proof));
-    }
-
-    #[test]
-    fn test_verify_state_root_zero_hash() {
-        let root = UInt256::zero();
-
-        // Zero hash should be rejected
-        let result = verify_state_root(0, &root);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().message.contains("zero hash"));
-    }
-
-    #[test]
-    fn test_verify_state_root_valid_hash() {
-        let root = UInt256::from([1u8; 32]);
-
-        // Non-zero hash passes basic validation
-        let result = verify_state_root(100, &root);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_state_verification_error_display() {
-        let error = StateVerificationError {
-            message: "test error".to_string(),
-        };
-        assert_eq!(error.to_string(), "State verification error: test error");
-    }
-}
-
-/// State root verification handler that responds to wallet changes.
+/// Gates state-root verification on wallet availability.
 ///
-/// When a wallet is loaded or changed, this handler automatically starts
-/// verifying state roots using the wallet's signing capabilities. This enables
-/// the node to participate in state root witness validation.
-///
-/// # Behavior
-///
-/// - On wallet open: Initiates state root verification if the wallet contains
-///   validator accounts
-/// - On wallet close: Stops state root verification
-///
-/// # Implementation Reference
-///
-/// Mirrors C# Neo `Neo.Plugins.StateService.Verifier` which implements
-/// `IWalletChangedHandler` to manage state root signing/verification based
-/// on wallet availability.
+/// Constructing this service requires the startup-bound trusted signer. The
+/// wallet-changed callback controls whether verification is armed; calls made
+/// while no wallet is available are rejected instead of being reported as
+/// successful.
 pub struct StateServiceVerification {
-    /// Reference to the NeoSystem for accessing state service and blockchain.
     system: Arc<NeoSystem>,
-
-    /// Unified signer for state root verification operations.
-    signer: TrustedSignerClient,
+    armed: AtomicBool,
+    _signer: TrustedSignerClient,
 }
 
 impl StateServiceVerification {
-    /// Creates a new state service verification handler.
-    ///
-    /// # Arguments
-    ///
-    /// * `system` - The NeoSystem instance
-    /// * `signer` - Trusted signer client for verification operations
+    /// Creates a disabled verification handler. A wallet-open callback arms it.
+    #[must_use]
     pub fn new(system: Arc<NeoSystem>, signer: TrustedSignerClient) -> Self {
-        Self { system, signer }
+        Self {
+            system,
+            armed: AtomicBool::new(false),
+            _signer: signer,
+        }
+    }
+
+    /// Returns whether wallet-backed state-root verification is enabled.
+    #[must_use]
+    pub fn is_armed(&self) -> bool {
+        self.armed.load(Ordering::Acquire)
+    }
+
+    /// Verifies a root from the node's primary store while the service is armed.
+    pub fn verify_root(
+        &self,
+        height: u32,
+        expected_root: &UInt256,
+    ) -> Result<(), StateVerificationError> {
+        if !self.is_armed() {
+            return Err(StateVerificationError::new(
+                "state root verification is not armed because no wallet is available",
+            ));
+        }
+        let source = StoreStateRootSource::new(self.system.store(), self.system.settings().clone());
+        verify_state_root(&source, height, expected_root)
     }
 }
 
@@ -289,27 +247,254 @@ impl WalletChangedHandler for StateServiceVerification {
         _sender: &dyn std::any::Any,
         wallet: Option<Arc<dyn neo_wallets::Wallet>>,
     ) {
-        if let Some(_wallet) = wallet {
-            // Wallet opened: Start state root verification
-            // In a full implementation, this would:
-            // 1. Check if wallet contains validator accounts
-            // 2. Register for state root events from the state service
-            // 3. Verify incoming state roots against wallet signatures
-            // 4. Sign state roots if this node is a validator
-            //
-            // For now, we log the event. The actual state root verification
-            // is handled by the state service commit handlers in the
-            // blockchain persistence pipeline.
-            tracing::info!(
-                target: "neo::state",
-                "state root verification enabled with wallet"
-            );
-        } else {
-            // Wallet closed: Stop state root verification
-            tracing::info!(
-                target: "neo::state",
-                "state root verification disabled (no wallet)"
-            );
+        let armed = wallet.is_some();
+        self.armed.store(armed, Ordering::Release);
+        tracing::info!(
+            target: "neo::state",
+            armed,
+            "state root verification wallet availability changed"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state_service::commit_handlers::serialize_state_root_record;
+    use neo_native_contracts::{NativeContract, Role, role_management::RoleManagement};
+    use neo_protocol::witness::Witness;
+    use neo_smart_contract::Contract;
+    use neo_storage::StorageItem;
+    use neo_storage::persistence::providers::memory_store::MemoryStore;
+    use neo_vm::OpCode;
+    use neo_wallets::signing::{
+        AuthenticatedContext, FrozenSignIntent, SIGNING_SCHEMA_VERSION, SignRequest, SignResponse,
+        SignResult, SignerService, SigningKeyResolver,
+    };
+    use neo_wallets::{KeyPair, Nep6Wallet};
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::time::Duration;
+
+    fn empty_store() -> Arc<dyn Store> {
+        Arc::new(MemoryStore::new())
+    }
+
+    fn persist_bytes(store: &Arc<dyn Store>, key: StorageKey, value: Vec<u8>) {
+        let mut cache = StoreCache::new_from_store(store.clone(), false);
+        cache
+            .data_cache()
+            .try_add(key, StorageItem::from_bytes(value))
+            .expect("stage storage record");
+        cache.try_commit().expect("commit storage record");
+    }
+
+    fn persist_root(store: &Arc<dyn Store>, root: &StateRoot) {
+        persist_bytes(
+            store,
+            state_root_record_key(root.index),
+            serialize_state_root_record(root),
+        );
+    }
+
+    fn unsigned_root(index: u32, byte: u8) -> StateRoot {
+        StateRoot::new_current(index, UInt256::from([byte; 32]))
+    }
+
+    #[test]
+    fn test_verify_merkle_proof_empty_proof() {
+        assert!(!verify_merkle_proof(&UInt256::zero(), b"test_key", &[]));
+    }
+
+    #[test]
+    fn test_verify_merkle_proof_invalid_proof() {
+        assert!(!verify_merkle_proof(
+            &UInt256::from([1u8; 32]),
+            b"test_key",
+            &[vec![1, 2, 3]],
+        ));
+    }
+
+    #[test]
+    fn test_verify_state_root_zero_hash() {
+        let store = empty_store();
+        let source = StoreStateRootSource::new(store, ProtocolSettings::default());
+        let error = verify_state_root(&source, 0, &UInt256::zero()).unwrap_err();
+        assert!(error.message.contains("zero hash"));
+    }
+
+    #[test]
+    fn test_verify_state_root_accepts_matching_persisted_root() {
+        let store = empty_store();
+        let root = unsigned_root(7, 1);
+        persist_root(&store, &root);
+        let source = StoreStateRootSource::new(store, ProtocolSettings::default());
+
+        assert_eq!(source.current_index(), Some(7));
+        verify_state_root(&source, 7, &root.root_hash).expect("matching root should verify");
+    }
+
+    #[test]
+    fn test_verify_state_root_rejects_future_missing_and_mismatched_roots() {
+        let store = empty_store();
+        let root = unsigned_root(3, 2);
+        persist_root(&store, &root);
+        let source = StoreStateRootSource::new(store.clone(), ProtocolSettings::default());
+
+        let future = verify_state_root(&source, 4, &UInt256::from([3u8; 32])).unwrap_err();
+        assert!(future.message.contains("exceeds current persisted height"));
+
+        let missing = verify_state_root(&source, 2, &UInt256::from([3u8; 32])).unwrap_err();
+        assert!(missing.message.contains("no valid state root"));
+
+        let mismatch = verify_state_root(&source, 3, &UInt256::from([3u8; 32])).unwrap_err();
+        assert!(mismatch.message.contains("state root mismatch"));
+
+        let empty = StoreStateRootSource::new(empty_store(), ProtocolSettings::default());
+        let absent = verify_state_root(&empty, 0, &UInt256::from([3u8; 32])).unwrap_err();
+        assert!(absent.message.contains("no valid persisted state roots"));
+    }
+
+    #[test]
+    fn test_store_source_ignores_malformed_records() {
+        let store = empty_store();
+        let root = unsigned_root(2, 4);
+        persist_root(&store, &root);
+        persist_bytes(&store, state_root_record_key(9), vec![1, 2, 3]);
+        let source = StoreStateRootSource::new(store, ProtocolSettings::default());
+
+        assert_eq!(source.current_index(), Some(2));
+        assert!(source.state_root_at(9).is_none());
+        verify_state_root(&source, 2, &root.root_hash).expect("valid lower root remains usable");
+    }
+
+    #[test]
+    fn test_verify_state_root_rejects_invalid_witness() {
+        let store = empty_store();
+        let mut root = unsigned_root(4, 5);
+        root.witness = Some(Witness::new_with_scripts(vec![1], vec![2]));
+        persist_root(&store, &root);
+        let source = StoreStateRootSource::new(store, ProtocolSettings::default());
+
+        let error = verify_state_root(&source, 4, &root.root_hash).unwrap_err();
+        assert!(error.message.contains("witness verification failed"));
+    }
+
+    #[test]
+    fn test_verify_state_root_accepts_valid_validator_witness() {
+        let store = empty_store();
+        let mut settings = ProtocolSettings::mainnet();
+        let keypair = KeyPair::generate().expect("validator keypair");
+        let validator = keypair
+            .get_public_key_point()
+            .expect("validator public key");
+        settings.standby_committee = vec![validator.clone()];
+        settings.validators_count = 1;
+        settings.network = 0x42_4242;
+        let height: u32 = 5;
+
+        let mut designation_key = vec![Role::StateValidator as u8];
+        designation_key.extend_from_slice(&height.to_be_bytes());
+        persist_bytes(
+            &store,
+            StorageKey::new(RoleManagement::new().id(), designation_key),
+            crate::state_service::test_support::serialize_role_public_keys(std::slice::from_ref(
+                &validator,
+            )),
+        );
+
+        let mut root = unsigned_root(height, 6);
+        let hash = root.hash();
+        let mut sign_data = Vec::with_capacity(4 + hash.to_bytes().len());
+        sign_data.extend_from_slice(&settings.network.to_le_bytes());
+        sign_data.extend_from_slice(&hash.to_array());
+        let signature = keypair.sign(&sign_data).expect("sign state root");
+        let mut invocation = Vec::with_capacity(signature.len() + 2);
+        invocation.push(OpCode::PUSHDATA1.byte());
+        invocation.push(signature.len() as u8);
+        invocation.extend_from_slice(&signature);
+        root.witness = Some(Witness::new_with_scripts(
+            invocation,
+            Contract::create_multi_sig_redeem_script(1, &[validator]),
+        ));
+        persist_root(&store, &root);
+        let source = StoreStateRootSource::new(store, settings);
+
+        verify_state_root(&source, height, &root.root_hash)
+            .expect("designated validator witness should verify");
+    }
+
+    #[test]
+    fn test_state_verification_error_display() {
+        let error = StateVerificationError::new("test error");
+        assert_eq!(error.to_string(), "State verification error: test error");
+    }
+
+    struct RejectingSigner;
+
+    #[async_trait::async_trait]
+    impl SignerService for RejectingSigner {
+        async fn sign(
+            &self,
+            _request: SignRequest,
+            _context: AuthenticatedContext,
+        ) -> SignResult<SignResponse> {
+            unreachable!("root verification must not request a signature")
         }
+
+        async fn resume_or_start(
+            &self,
+            _operation_id: &str,
+            _frozen_intent: FrozenSignIntent,
+            _context: AuthenticatedContext,
+            _request_timeout: Duration,
+        ) -> SignResult<SignResponse> {
+            unreachable!("root verification must not start a signing operation")
+        }
+    }
+
+    fn trusted_signer() -> TrustedSignerClient {
+        TrustedSignerClient::new(
+            Arc::new(RejectingSigner),
+            "test-provider",
+            "test-policy",
+            Duration::from_secs(1),
+            AuthenticatedContext {
+                schema_version: SIGNING_SCHEMA_VERSION,
+                principal: "state-verifier-test".to_string(),
+                tenant: "state-verifier-test".to_string(),
+                authentication_method: "test".to_string(),
+                scopes: BTreeSet::new(),
+                claims: BTreeMap::new(),
+            },
+            Arc::new(SigningKeyResolver::default()),
+        )
+        .expect("trusted signer")
+    }
+
+    #[tokio::test]
+    async fn test_wallet_callback_controls_verification_call_chain() {
+        let settings = ProtocolSettings::default();
+        let system = NeoSystem::new(settings.clone(), None, None).expect("neo system");
+        let verification = StateServiceVerification::new(system.clone(), trusted_signer());
+        let root = unsigned_root(9, 7);
+        persist_root(&system.store(), &root);
+
+        let disabled = verification.verify_root(9, &root.root_hash).unwrap_err();
+        assert!(disabled.message.contains("not armed"));
+
+        let wallet: Arc<dyn neo_wallets::Wallet> = Arc::new(Nep6Wallet::create(
+            Some("state-verifier".to_string()),
+            None,
+            Arc::new(settings),
+        ));
+        verification.wallet_provider_wallet_changed_handler(&(), Some(wallet));
+        assert!(verification.is_armed());
+        verification
+            .verify_root(9, &root.root_hash)
+            .expect("armed verification should read the persisted root");
+
+        verification.wallet_provider_wallet_changed_handler(&(), None);
+        assert!(!verification.is_armed());
+        assert!(verification.verify_root(9, &root.root_hash).is_err());
     }
 }

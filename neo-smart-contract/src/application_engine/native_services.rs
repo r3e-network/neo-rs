@@ -62,6 +62,7 @@ pub trait EngineEventObserver: Send + Sync {
 }
 
 /// Native services moved into each engine at construction.
+#[derive(Clone)]
 pub struct EngineNativeServices {
     /// The ordered registry owned by this engine.
     pub registry: NativeRegistry,
@@ -78,6 +79,7 @@ pub struct EngineNativeServices {
 }
 
 /// Ordered native interface container, without standard contract construction.
+#[derive(Clone)]
 pub struct NativeRegistry {
     contracts: IndexMap<UInt160, Arc<dyn NativeContract>>,
 }
@@ -226,14 +228,14 @@ mod tests {
     }
 
     struct SnapshotResolver {
-        snapshot: Arc<DataCache>,
+        snapshot: Mutex<Arc<DataCache>>,
         hash: UInt160,
         calls: AtomicUsize,
     }
 
     impl WitnessHashResolver for SnapshotResolver {
         fn resolve(&self, verifiable: &dyn Verifiable, snapshot: &DataCache) -> Vec<UInt160> {
-            assert!(std::ptr::eq(snapshot, self.snapshot.as_ref()));
+            assert!(std::ptr::eq(snapshot, self.snapshot.lock().as_ref()));
             assert!(verifiable.as_any().is::<HashContainer>());
             self.calls.fetch_add(1, Ordering::SeqCst);
             vec![self.hash]
@@ -315,7 +317,7 @@ mod tests {
                 height_reads: AtomicUsize::new(0),
             }),
             Arc::new(SnapshotResolver {
-                snapshot: Arc::clone(snapshot),
+                snapshot: Mutex::new(Arc::clone(snapshot)),
                 hash: UInt160::from_bytes(&[0x42; 20]).expect("hash"),
                 calls: AtomicUsize::new(0),
             }),
@@ -378,6 +380,9 @@ mod tests {
                 None,
             )
             .expect("load witness context");
+        let context_snapshot = engine.snapshot_cache();
+        assert!(!Arc::ptr_eq(&context_snapshot, &snapshot));
+        *resolver.snapshot.lock() = context_snapshot;
         assert!(
             engine
                 .check_witness_hash(&resolver.hash)

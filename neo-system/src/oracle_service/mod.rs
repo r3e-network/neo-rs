@@ -7,19 +7,18 @@
 //! the historical neo-core API for consumers (neo-node startup, neo-rpc).
 //!
 //! The NeoFS transport (REST + gRPC, bearer auth, request signing and response
-//! verification) is owned by the `neo-oracle` crate. It is not re-exported
-//! here because `neofs:` oracle requests fail closed in the engine until the
-//! dedicated NeoFS signer algorithms land, so neo-core carries no NeoFS code.
+//! verification) is owned by the `neo-oracle` crate. The host wallet adapter
+//! supplies only real unlocked Oracle keys; unavailable hardware/remote key
+//! export remains fail-closed.
 
 mod adapters;
-mod signing_stubs;
 
 pub mod service;
 pub mod settings;
 
+pub use neo_wallets::signing::{
+    FrozenSignIntent, KeyRef, ProtocolContext, SIGNING_SCHEMA_VERSION, SignError as SigningError,
+    SignPayload, SignPurpose, SignResponse, TrustedSignerClient,
+};
 pub use service::{OracleService, OracleServiceError, OracleStatus};
 pub use settings::OracleServiceSettings;
-pub use signing_stubs::{
-    FrozenSignIntent, KeyRef, ProtocolContext, SignPayload, SignPurpose, SignResponse,
-    SigningError, TrustedSignerClient, SIGNING_SCHEMA_VERSION,
-};

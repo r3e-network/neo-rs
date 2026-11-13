@@ -18,7 +18,11 @@ fn rpc_exception_with_data_creates_with_data() {
 
 #[test]
 fn rpc_exception_from_parts_with_some_data() {
-    let exc = RpcException::from_parts(-32602, "Invalid params", Some("param x is missing".to_string()));
+    let exc = RpcException::from_parts(
+        -32602,
+        "Invalid params",
+        Some("param x is missing".to_string()),
+    );
     assert_eq!(exc.code(), -32602);
     assert_eq!(exc.message(), "Invalid params");
     assert_eq!(exc.data(), Some("param x is missing"));

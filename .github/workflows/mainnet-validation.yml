@@ -3,35 +3,23 @@ name: MainNet validation
 permissions:
   contents: read
 
-# These checks need the local MainNet chain and state-root backups (multi-GB),
-# so they only run on a self-hosted runner labelled `neo-mainnet-data`.
-# GitHub-hosted runners do not have the data and will fail fast in the
-# "Check validation data" step.
+# This bounded differential job needs pre-downloaded RPC blocks and matching C#
+# state-root output. It replaces the removed neo-core RocksDB repro tests with
+# the canonical state-root-diff execution pipeline. It does not claim raw
+# RocksDB integrity validation or an unbounded full-chain replay.
 on:
   workflow_dispatch:
     inputs:
-      chain_db:
-        description: Path to the MainNet chain RocksDB directory
+      blocks_file:
+        description: Genesis-to-tip RPC block JSON produced by block_downloader.py
         required: true
-        default: data/mainnet-protocol-consistency
-      state_root_db:
-        description: Path to the MainNet state-root RocksDB directory
+        default: data/mainnet-blocks.json
+      csharp_state_roots:
+        description: Matching C# state-root JSON for the same contiguous blocks
         required: true
-        default: data/Plugins/StateService/StateRoot
-      replay_state_root_db:
-        description: Path to the state-root RocksDB directory used for execution replay
-        required: true
-        default: data/mainnet-protocol-consistency/StateRoot
-      max_state_root_height:
-        description: Highest state-root height to compare
-        required: true
-        default: "1465790"
-      replay_start:
-        description: First MainNet block height to replay (inclusive)
-        required: true
-        default: "1"
-      replay_end:
-        description: Last MainNet block height to replay (inclusive)
+        default: data/csharp-state-roots.json
+      expected_end_height:
+        description: Required final height; the input must start at genesis
         required: true
         default: "1000"
 
@@ -41,7 +29,7 @@ concurrency:
 
 jobs:
   replay-and-roots:
-    name: MainNet replay, state roots, chain integrity
+    name: MainNet replay and C# state-root differential
     runs-on: [self-hosted, neo-mainnet-data]
     timeout-minutes: 180
     steps:
@@ -54,7 +42,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential clang cmake libbz2-dev libclang-dev liblz4-dev \
             librocksdb-dev libsnappy-dev libssl-dev libzstd-dev pkg-config \
-            zlib1g-dev
+            python3 python3-venv zlib1g-dev
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
@@ -64,58 +52,74 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Check validation data
+      - name: Check bounded validation data
         env:
-          CHAIN_DB: ${{ inputs.chain_db }}
-          STATE_ROOT_DB: ${{ inputs.state_root_db }}
-          REPLAY_STATE_ROOT_DB: ${{ inputs.replay_state_root_db }}
+          BLOCKS_FILE: ${{ inputs.blocks_file }}
+          CSHARP_STATE_ROOTS: ${{ inputs.csharp_state_roots }}
+          EXPECTED_END_HEIGHT: ${{ inputs.expected_end_height }}
         run: |
-          test -d "$CHAIN_DB" || { echo "missing chain DB: $CHAIN_DB"; exit 1; }
-          test -d "$STATE_ROOT_DB" || { echo "missing state-root DB: $STATE_ROOT_DB"; exit 1; }
-          test -d "$REPLAY_STATE_ROOT_DB" || { echo "missing replay state-root DB: $REPLAY_STATE_ROOT_DB"; exit 1; }
-          test -f data/reference_stateroots.jsonl || {
-            echo "missing data/reference_stateroots.jsonl"; exit 1;
-          }
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
 
-      - name: Build validation tests
-        run: cargo test -p neo-core --features rocksdb --no-run
+          end = int(os.environ["EXPECTED_END_HEIGHT"])
+          if end < 0:
+              raise SystemExit("expected end height must be non-negative")
+          blocks_path = Path(os.environ["BLOCKS_FILE"])
+          csharp_path = Path(os.environ["CSHARP_STATE_ROOTS"])
+          if not blocks_path.is_file():
+              raise SystemExit(f"missing block fixture: {blocks_path}")
+          if not csharp_path.is_file():
+              raise SystemExit(f"missing C# state roots: {csharp_path}")
 
-      - name: Contiguous stored-chain integrity
+          blocks_file = json.loads(blocks_path.read_text(encoding="utf-8"))
+          if blocks_file.get("network", "").lower() != "mainnet":
+              raise SystemExit("block fixture network must be mainnet")
+          if blocks_file.get("start_height") != 0 or blocks_file.get("end_height") != end:
+              raise SystemExit(f"block fixture must cover exactly 0..{end}")
+          blocks = blocks_file.get("blocks", [])
+          if blocks_file.get("block_count") != end + 1 or len(blocks) != end + 1:
+              raise SystemExit("block count does not match the requested range")
+          if [block.get("height") for block in blocks] != list(range(end + 1)):
+              raise SystemExit("block fixture is not contiguous from genesis")
+
+          csharp_file = json.loads(csharp_path.read_text(encoding="utf-8"))
+          csharp_roots = {root.get("height"): root for root in csharp_file.get("state_roots", [])}
+          for block in blocks:
+              height = block["height"]
+              reference = csharp_roots.get(height)
+              if reference is None:
+                  raise SystemExit(f"C# state root is missing at height {height}")
+              if reference.get("block_hash", "").lower() != block.get("hash", "").lower():
+                  raise SystemExit(f"C#/RPC block hash mismatch at height {height}")
+          PY
+
+      - name: Build canonical state-root replay tool
+        run: cargo build --locked -p state-root-diff
+
+      - name: Replay all supplied blocks from genesis
         env:
-          NEO_CHAIN_DB_PATH: ${{ inputs.chain_db }}
+          BLOCKS_FILE: ${{ inputs.blocks_file }}
         run: |
-          cargo test -p neo-core --features rocksdb \
-            --test mainnet_chain_integrity -- --ignored --nocapture
+          mkdir -p reports/mainnet
+          cargo run --locked -p state-root-diff -- \
+            "$BLOCKS_FILE" reports/mainnet/rust-state-roots.json
 
-      - name: MainNet block replay fixtures
+      - name: Compare every Rust and C# state root
         env:
-          NEO_REPRO_DB_PATH: ${{ inputs.state_root_db }}
-          # A reproducer whose height is absent from the store runs zero
-          # assertions and still reports `ok`. This job exists to catch state-root
-          # divergences, so a missing fixture has to fail here.
-          NEO_REPRO_REQUIRE_DATA: "1"
+          CSHARP_STATE_ROOTS: ${{ inputs.csharp_state_roots }}
         run: |
-          for test in $(ls neo-core/tests/mainnet_block_*_repro.rs | \
-              xargs -n1 basename | sed 's/\.rs$//'); do
-            echo "::group::$test"
-            cargo test -p neo-core --features rocksdb --test "$test" -- --ignored
-            echo "::endgroup::"
-          done
+          python3 tools/state-root-diff/diff_state_roots.py \
+            reports/mainnet/rust-state-roots.json \
+            "$CSHARP_STATE_ROOTS" \
+            reports/mainnet/state-root-differential.md
 
-      - name: From-genesis execution replay
-        env:
-          NEO_CHAIN_DB_PATH: ${{ inputs.chain_db }}
-          NEO_STATE_ROOT_DB_PATH: ${{ inputs.replay_state_root_db }}
-          NEO_EMPTY_REPLAY_START: ${{ inputs.replay_start }}
-          NEO_EMPTY_REPLAY_END: ${{ inputs.replay_end }}
-        run: |
-          cargo test -p neo-core --features rocksdb \
-            --test mainnet_contiguous_replay -- --ignored --nocapture
-
-      - name: Bulk C# state-root differential
-        env:
-          NEO_BULK_ROOT_DB_PATH: ${{ inputs.state_root_db }}
-          NEO_BULK_ROOT_MAX_HEIGHT: ${{ inputs.max_state_root_height }}
-        run: |
-          cargo test -p neo-core --features rocksdb \
-            --test mainnet_state_roots_vs_csharp -- --ignored --nocapture
+      - name: Upload differential evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mainnet-state-root-differential-${{ inputs.expected_end_height }}
+          path: reports/mainnet/
+          if-no-files-found: error
+          retention-days: 14

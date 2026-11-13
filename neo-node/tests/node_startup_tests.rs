@@ -3,8 +3,18 @@
 use anyhow::Result;
 use neo_protocol::ProtocolSettings;
 use neo_system::NeoSystem;
-use std::sync::Arc;
+use neo_system::network::p2p::ChannelsConfig;
 use tempfile::TempDir;
+
+/// Channels configuration that keeps the P2P layer dormant in tests.
+fn offline_channels_config() -> ChannelsConfig {
+    ChannelsConfig {
+        tcp: None,
+        min_desired_connections: 0,
+        max_connections: 0,
+        ..Default::default()
+    }
+}
 
 #[tokio::test]
 async fn test_node_system_initialization() -> Result<()> {
@@ -13,17 +23,18 @@ async fn test_node_system_initialization() -> Result<()> {
     let system = NeoSystem::new(protocol_settings.clone(), None, None)?;
 
     // Verify system is initialized
-    assert_eq!(system.protocol_settings().network, protocol_settings.network);
-    assert!(system.blockchain().is_some());
-    assert!(system.mempool().lock().get_all_verified().is_empty());
+    assert_eq!(system.settings().network, protocol_settings.network);
+    assert_eq!(system.context().genesis_block().index(), 0);
+    assert!(
+        system
+            .mempool()
+            .lock()
+            .verified_transactions_vec()
+            .is_empty()
+    );
 
     // Verify height starts at 0
-    let height = system
-        .blockchain()
-        .as_ref()
-        .unwrap()
-        .height()
-        .unwrap_or(0);
+    let height = system.current_block_index();
     assert_eq!(height, 0, "New system should start at genesis");
 
     system.shutdown().await?;
@@ -36,11 +47,15 @@ async fn test_node_system_with_storage() -> Result<()> {
     let storage_path = temp_dir.path().to_str().unwrap();
 
     let protocol_settings = ProtocolSettings::default();
-    let system = NeoSystem::new(protocol_settings.clone(), Some(storage_path), None)?;
+    let system = NeoSystem::new(
+        protocol_settings.clone(),
+        None,
+        Some(storage_path.to_string()),
+    )?;
 
     // Verify storage is accessible
-    assert!(system.blockchain().is_some());
-    assert!(system.store_cache().is_commit_mode());
+    assert_eq!(system.context().genesis_block().index(), 0);
+    assert!(!system.store_cache().data_cache().is_read_only());
 
     system.shutdown().await?;
     Ok(())
@@ -52,13 +67,13 @@ async fn test_node_mempool_initialization() -> Result<()> {
     let system = NeoSystem::new(protocol_settings.clone(), None, None)?;
 
     let mempool = system.mempool();
-    let pool = mempool.lock();
+    {
+        let pool = mempool.lock();
 
-    // Verify mempool starts empty
-    assert_eq!(pool.get_all_verified().len(), 0);
-    assert_eq!(pool.verified_count(), 0);
-
-    drop(pool);
+        // Verify mempool starts empty
+        assert_eq!(pool.verified_transactions_vec().len(), 0);
+        assert_eq!(pool.verified_count(), 0);
+    }
     system.shutdown().await?;
     Ok(())
 }
@@ -72,8 +87,8 @@ async fn test_multiple_system_instances() -> Result<()> {
     let system2 = NeoSystem::new(protocol_settings.clone(), None, None)?;
 
     // Both systems should be independent
-    assert!(system1.blockchain().is_some());
-    assert!(system2.blockchain().is_some());
+    assert_eq!(system1.context().genesis_block().index(), 0);
+    assert_eq!(system2.context().genesis_block().index(), 0);
 
     system1.shutdown().await?;
     system2.shutdown().await?;
@@ -85,11 +100,14 @@ async fn test_system_shutdown_graceful() -> Result<()> {
     let protocol_settings = ProtocolSettings::default();
     let system = NeoSystem::new(protocol_settings, None, None)?;
 
+    // Keep a second handle: `shutdown` consumes the Arc.
+    let second_handle = system.clone();
+
     // Verify shutdown completes without error
     system.shutdown().await?;
 
     // Shutdown should be idempotent
-    system.shutdown().await?;
+    second_handle.shutdown().await?;
     Ok(())
 }
 
@@ -101,7 +119,7 @@ async fn test_protocol_settings_validation() -> Result<()> {
     protocol_settings.network = 0x334F454E; // NEO3 mainnet
     let system = NeoSystem::new(protocol_settings.clone(), None, None)?;
 
-    assert_eq!(system.protocol_settings().network, 0x334F454E);
+    assert_eq!(system.settings().network, 0x334F454E);
 
     system.shutdown().await?;
     Ok(())
@@ -114,8 +132,8 @@ async fn test_store_cache_initialization() -> Result<()> {
 
     let store_cache = system.store_cache();
 
-    // Verify store cache is accessible
-    assert!(store_cache.is_commit_mode());
+    // Verify store cache is accessible and writable (commit mode)
+    assert!(!store_cache.data_cache().is_read_only());
 
     // Verify data cache is accessible
     let _data_cache = store_cache.data_cache();
@@ -129,23 +147,21 @@ async fn test_blockchain_height_tracking() -> Result<()> {
     let protocol_settings = ProtocolSettings::default();
     let system = NeoSystem::new(protocol_settings, None, None)?;
 
-    let blockchain = system.blockchain().as_ref().unwrap();
-
     // Genesis block should exist
-    let height = blockchain.height()?;
+    let height = system.current_block_index();
     assert_eq!(height, 0);
 
     system.shutdown().await?;
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_system_start_services() -> Result<()> {
     let protocol_settings = ProtocolSettings::default();
-    let system = Arc::new(NeoSystem::new(protocol_settings, None, None)?);
+    let system = NeoSystem::new(protocol_settings, None, None)?;
 
     // Start system services
-    system.start_node(&None)?;
+    system.start_node(offline_channels_config())?;
 
     // Give services time to initialize
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -154,17 +170,21 @@ async fn test_system_start_services() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_concurrent_system_operations() -> Result<()> {
     let protocol_settings = ProtocolSettings::default();
-    let system = Arc::new(NeoSystem::new(protocol_settings, None, None)?);
+    let system = NeoSystem::new(protocol_settings, None, None)?;
 
     // Spawn multiple tasks accessing the system
     let handles: Vec<_> = (0..5)
         .map(|_| {
             let system_clone = system.clone();
             tokio::spawn(async move {
-                let _mempool = system_clone.mempool().lock();
+                // Never hold the mempool lock across an await point.
+                {
+                    let mempool = system_clone.mempool();
+                    let _pool = mempool.lock();
+                }
                 tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
             })
         })

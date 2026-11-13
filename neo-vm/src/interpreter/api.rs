@@ -6,6 +6,33 @@ mod no_syscalls;
 
 use no_syscalls::NoSyscalls;
 
+/// Hardfork-dependent opcode semantics used by the lightweight interpreter.
+///
+/// The default matches current Neo N3 (post-Gorgon). Replay hosts select the
+/// historical rules from their canonical engine limits without changing the
+/// public interpreter entry points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InterpreterSemantics {
+    /// Whether SHL/SHR convert the operand to Integer when the shift is zero.
+    pub zero_shift_converts_to_integer: bool,
+    /// Whether HASKEY omits the post-Gorgon MaxItemSize index bound.
+    pub pre_gorgon_collection_semantics: bool,
+}
+
+impl InterpreterSemantics {
+    /// Current Neo N3 opcode semantics.
+    pub const DEFAULT: Self = Self {
+        zero_shift_converts_to_integer: true,
+        pre_gorgon_collection_semantics: false,
+    };
+}
+
+impl Default for InterpreterSemantics {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
 /// Interprets a script without host syscalls.
 pub fn interpret(script: &[u8]) -> Result<ExecutionResult, String> {
     let mut host = NoSyscalls;
@@ -14,6 +41,11 @@ pub fn interpret(script: &[u8]) -> Result<ExecutionResult, String> {
 
 /// Host callbacks used by the NeoVM interpreter.
 pub trait SyscallProvider {
+    /// Select hardfork-dependent opcode semantics for this execution.
+    fn semantics(&self) -> InterpreterSemantics {
+        InterpreterSemantics::DEFAULT
+    }
+
     /// Observe an instruction before execution.
     fn on_instruction(&mut self, _opcode: u8) -> Result<(), String> {
         Ok(())
@@ -26,6 +58,29 @@ pub trait SyscallProvider {
         ip: usize,
         stack: &mut Vec<AbiStackValue>,
     ) -> Result<(), String>;
+
+    /// Whether this host needs the complete evaluation stack at syscall
+    /// boundaries. Hosts that only consume their declared arguments keep the
+    /// cheaper legacy conversion path.
+    fn needs_full_stack(&self) -> bool {
+        false
+    }
+
+    /// Handle a syscall with the complete bottom-to-top evaluation stack.
+    /// `argument_count` identifies the tail consumed by this syscall.
+    fn syscall_with_full_stack(
+        &mut self,
+        api: u32,
+        ip: usize,
+        stack: &mut Vec<AbiStackValue>,
+        argument_count: usize,
+    ) -> Result<(), String> {
+        let keep = stack.len().saturating_sub(argument_count);
+        let mut arguments = stack.split_off(keep);
+        let result = self.syscall(api, ip, &mut arguments);
+        stack.extend(arguments);
+        result
+    }
 
     /// Notify the host that static initialization completed.
     fn initializer_complete(&mut self, _ip: usize) -> Result<(), String> {

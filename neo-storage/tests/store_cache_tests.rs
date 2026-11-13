@@ -38,10 +38,7 @@ fn store_cache_update_existing_value() {
     cache2.update(key.clone(), value2.clone());
     cache2.commit();
 
-    let reader = StoreCache::new_from_store(
-        provider.get_store("").expect("store"),
-        false,
-    );
+    let reader = StoreCache::new_from_store(provider.get_store("").expect("store"), false);
     let _result = reader.try_get(&key);
     // Note: Memory store creates independent instances, so this tests the update logic
     assert!(cache2.get(&key).is_some());
@@ -278,7 +275,10 @@ fn store_cache_snapshot_based_cache() {
     let snapshot_cache = StoreCache::new_from_snapshot(snapshot);
 
     assert_eq!(
-        snapshot_cache.get(&key).expect("value in snapshot").to_value(),
+        snapshot_cache
+            .get(&key)
+            .expect("value in snapshot")
+            .to_value(),
         value.to_value()
     );
 }

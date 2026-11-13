@@ -41,7 +41,7 @@ impl NativeContract for Notary {
     }
 
     fn methods(&self) -> &[NativeMethod] {
-        &self.methods
+        self.methods
     }
 
     fn active_in(&self) -> Option<Hardfork> {

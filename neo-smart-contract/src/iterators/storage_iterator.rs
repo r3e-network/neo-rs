@@ -156,7 +156,6 @@ impl Iter for StorageIterator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use num_bigint::BigInt;
 
     fn create_test_items(count: usize) -> Vec<(StorageKey, StorageItem)> {
         (0..count)

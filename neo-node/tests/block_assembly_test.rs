@@ -1,9 +1,28 @@
 //! Integration test for block assembly logic
 
-use neo_consensus::BlockData;
+use neo_crypto::ECPoint;
 use neo_crypto::{ECCurve, ecc::generate_keypair};
+use neo_primitives::UInt256;
 use neo_protocol::payloads::Block;
 use neo_vm::OpCode;
+
+/// Consensus block data consumed by the assembly workflow.
+///
+/// The former `neo_consensus::BlockData` type no longer exists in the
+/// workspace (there is no `neo-consensus` crate anymore); this local fixture
+/// preserves the same shape so the assembly workflow below is unchanged.
+struct BlockData {
+    block_index: u32,
+    timestamp: u64,
+    nonce: u64,
+    primary_index: u8,
+    /// Kept for parity with the consensus fixture shape; not consumed here.
+    #[allow(dead_code)]
+    transaction_hashes: Vec<UInt256>,
+    signatures: Vec<(u8, Vec<u8>)>,
+    validator_pubkeys: Vec<ECPoint>,
+    required_signatures: usize,
+}
 
 #[tokio::test]
 async fn test_complete_block_assembly_workflow() {
@@ -33,7 +52,6 @@ async fn test_complete_block_assembly_workflow() {
         signatures,
         validator_pubkeys,
         required_signatures: 3,
-        commit_persistence: None,
     };
 
     // Assemble block (simulating validator service logic)

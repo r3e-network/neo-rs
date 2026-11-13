@@ -22,11 +22,13 @@ neo-crypto = { workspace = true }
 # Layer 2 - Protocol
 neo-protocol = { workspace = true }
 neo-smart-contract = { workspace = true }
+neo-native-contracts = { workspace = true }
 
 # Layer 4 - Services
 neo-rpc = { workspace = true }
 neo-vm = { workspace = true }
 neo-system = { workspace = true }
+neo-consensus = { workspace = true }
 
 # Utilities
 num-bigint = { workspace = true }
@@ -47,10 +49,6 @@ criterion = { workspace = true, features = ["html_reports"] }
 [[test]]
 name = "layer_boundary_tests"
 path = "tests/layer_boundary_tests.rs"
-
-[[test]]
-name = "consensus_integration_tests"
-path = "tests/consensus_integration_tests.rs"
 
 [[test]]
 name = "state_integration_tests"

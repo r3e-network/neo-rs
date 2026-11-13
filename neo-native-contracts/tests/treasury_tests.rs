@@ -1,10 +1,10 @@
 //! Integration tests for Treasury native contract.
 
-use neo_native_contracts::{TreasuryContract, NativeContract};
+use neo_native_contracts::{NativeContract, TreasuryContract};
+use neo_protocol::execution::Block;
 use neo_protocol::{Hardfork, ProtocolSettings};
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_storage::persistence::DataCache;
-use neo_protocol::execution::Block;
 use std::sync::Arc;
 
 fn make_test_settings() -> ProtocolSettings {
@@ -13,15 +13,15 @@ fn make_test_settings() -> ProtocolSettings {
 
 fn make_test_block(index: u32) -> Block {
     let header = neo_protocol::execution::BlockHeader::new(
-        0,                          // version
+        0,                               // version
         neo_primitives::UInt256::zero(), // previous_hash
         neo_primitives::UInt256::zero(), // merkle_root
-        1468595301000,              // timestamp
-        0,                          // nonce
-        index,                      // index
-        0,                          // primary_index
+        1468595301000,                   // timestamp
+        0,                               // nonce
+        index,                           // index
+        0,                               // primary_index
         neo_primitives::UInt160::zero(), // next_consensus
-        vec![],                     // witnesses
+        vec![],                          // witnesses
     );
     Block::new(header, vec![])
 }
@@ -34,12 +34,15 @@ fn make_test_engine(snapshot: Arc<DataCache>) -> ApplicationEngine {
         neo_primitives::trigger_type::TriggerType::Application,
         None,
         snapshot,
-        Some(neo_protocol::execution::conversions::convert_ledger_block(block)),
+        Some(neo_protocol::execution::conversions::convert_ledger_block(
+            block,
+        )),
         settings,
         i64::MAX,
         None,
         neo_native_contracts::composition::default_native_services(),
-    ).expect("create engine")
+    )
+    .expect("create engine")
 }
 
 #[test]
@@ -106,11 +109,7 @@ fn treasury_accepts_nep17_payment() {
     let snapshot = Arc::new(DataCache::new(false));
     let mut engine = make_test_engine(snapshot);
 
-    let result = treasury.invoke(
-        &mut engine,
-        "onNEP17Payment",
-        &[],
-    );
+    let result = treasury.invoke(&mut engine, "onNEP17Payment", &[]);
 
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), Vec::<u8>::new());
@@ -122,11 +121,7 @@ fn treasury_accepts_nep11_payment() {
     let snapshot = Arc::new(DataCache::new(false));
     let mut engine = make_test_engine(snapshot);
 
-    let result = treasury.invoke(
-        &mut engine,
-        "onNEP11Payment",
-        &[],
-    );
+    let result = treasury.invoke(&mut engine, "onNEP11Payment", &[]);
 
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), Vec::<u8>::new());

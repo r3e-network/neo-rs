@@ -83,6 +83,12 @@ pub trait OracleWallet: Send + Sync {
     /// can sign for, filtered to only those in the designated oracle set.
     fn oracle_accounts(&self, designated_oracles: &[ECPoint]) -> Vec<(UInt160, ECPoint)>;
 
+    /// Returns the decrypted key for NeoFS protocols that require their
+    /// dedicated SHA-512/WalletConnect signature profiles. Watch-only, locked,
+    /// hardware and remote accounts return `None`; callers must fail closed
+    /// rather than generating or selecting another key.
+    fn oracle_key(&self, account: &UInt160) -> Option<neo_wallets::KeyPair>;
+
     /// Returns true if the wallet has at least one unlocked oracle account
     /// in the designated set.
     fn has_oracle_account(&self, designated_oracles: &[ECPoint]) -> bool {

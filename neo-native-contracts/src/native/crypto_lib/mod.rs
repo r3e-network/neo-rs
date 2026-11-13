@@ -239,7 +239,7 @@ impl NativeContract for CryptoLib {
     }
 
     fn methods(&self) -> &[NativeMethod] {
-        &self.methods
+        self.methods
     }
 
     fn invoke(

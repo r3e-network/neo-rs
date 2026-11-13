@@ -5,10 +5,10 @@
 
 //! Integration tests for the Neo Core module.
 
-use neo_protocol::builders::{SignerBuilder, TransactionBuilder, WitnessBuilder};
 use neo_primitives::BigDecimal;
 use neo_primitives::ContainsTransactionType;
 use neo_primitives::{UINT160_SIZE, UINT256_SIZE, UInt160, UInt256};
+use neo_protocol::builders::{SignerBuilder, TransactionBuilder, WitnessBuilder};
 use neo_protocol::hardfork::{Hardfork, HardforkManager};
 use neo_system::events::{EventHandler, EventManager};
 

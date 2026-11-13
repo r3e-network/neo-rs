@@ -126,25 +126,22 @@ impl SnapshotFactory for TestSnapshots {
     }
 }
 
+#[derive(Default)]
 struct TestWallet {
     accounts: Vec<(UInt160, ECPoint)>,
-}
-
-impl Default for TestWallet {
-    fn default() -> Self {
-        Self {
-            accounts: Vec::new(),
-        }
-    }
 }
 
 impl OracleWallet for TestWallet {
     fn oracle_accounts(&self, designated_oracles: &[ECPoint]) -> Vec<(UInt160, ECPoint)> {
         self.accounts
             .iter()
+            .filter(|&(_, key)| designated_oracles.contains(key))
             .cloned()
-            .filter(|(_, key)| designated_oracles.contains(key))
             .collect()
+    }
+
+    fn oracle_key(&self, _account: &UInt160) -> Option<neo_wallets::KeyPair> {
+        None
     }
 }
 
@@ -667,8 +664,8 @@ fn submit_oracle_response_requires_a_running_service() {
 }
 
 #[tokio::test]
-async fn process_url_rejects_unsupported_schemes_and_neofs() {
-    let service = service(
+async fn process_url_rejects_unsupported_schemes_and_dispatches_neofs() {
+    let service = self::service(
         test_settings(true),
         TestSnapshot::default(),
         Arc::new(TestRelay::default()),
@@ -683,10 +680,25 @@ async fn process_url_rejects_unsupported_schemes_and_neofs() {
     assert_eq!(code, OracleResponseCode::ProtocolNotSupported);
     assert_eq!(body, "Invalid Protocol:<http://example.com/data>");
 
-    // NeoFS fails closed until the dedicated signer algorithms land.
+    // NeoFS is dispatched to its protocol parser rather than rejected as an
+    // unsupported scheme. This malformed object identifier fails closed.
     let (code, body) = service.process_url("neofs://container/object").await;
-    assert_eq!(code, OracleResponseCode::ProtocolNotSupported);
-    assert_eq!(body, "Invalid Protocol:<neofs://container/object>");
+    assert_eq!(code, OracleResponseCode::Error);
+    assert!(body.is_empty());
+
+    let mut signing_settings = test_settings(true);
+    signing_settings.neofs_auto_sign_bearer = true;
+    signing_settings.neofs_bearer_token = Some("dG9rZW4=".to_string());
+    let signing_service = self::service(
+        signing_settings,
+        TestSnapshot::default(),
+        Arc::new(TestRelay::default()),
+    );
+    let (code, body) = signing_service
+        .process_url("neofs://container/object")
+        .await;
+    assert_eq!(code, OracleResponseCode::Error);
+    assert!(body.is_empty());
 
     let (code, body) = service.process_url("").await;
     assert_eq!(code, OracleResponseCode::Error);

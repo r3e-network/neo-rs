@@ -61,6 +61,12 @@ pub struct OracleNeoFsProtocol {
     client: reqwest::Client,
 }
 
+impl Default for OracleNeoFsProtocol {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OracleNeoFsProtocol {
     /// Builds a NeoFS client with the standard oracle user agent.
     pub fn new() -> Self {

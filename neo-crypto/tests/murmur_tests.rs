@@ -132,9 +132,21 @@ fn test_murmur128_single_byte() {
 fn test_murmur128_known_vectors() {
     // Test with known vectors from the test module
     let test_cases = vec![
-        (b"hello".as_slice(), 123u32, "0bc59d0ad25fde2982ed65af61227a0e"),
-        (b"world".as_slice(), 123u32, "3d3810fed480472bd214a14023bb407f"),
-        (b"hello world".as_slice(), 123u32, "e0a0632d4f51302c55e3b3e48d28795d"),
+        (
+            b"hello".as_slice(),
+            123u32,
+            "0bc59d0ad25fde2982ed65af61227a0e",
+        ),
+        (
+            b"world".as_slice(),
+            123u32,
+            "3d3810fed480472bd214a14023bb407f",
+        ),
+        (
+            b"hello world".as_slice(),
+            123u32,
+            "e0a0632d4f51302c55e3b3e48d28795d",
+        ),
     ];
 
     for (input, seed, expected) in test_cases {
@@ -203,13 +215,11 @@ fn test_murmur128_byte_order_sensitivity() {
 #[test]
 fn test_murmur32_consecutive_values() {
     let seed = 100;
-    let hashes: Vec<u32> = (0..10)
-        .map(|i| murmur32(&[i], seed))
-        .collect();
+    let hashes: Vec<u32> = (0..10).map(|i| murmur32(&[i], seed)).collect();
 
     // All hashes should be different
     for i in 0..hashes.len() {
-        for j in i+1..hashes.len() {
+        for j in i + 1..hashes.len() {
             assert_ne!(hashes[i], hashes[j]);
         }
     }
@@ -218,13 +228,11 @@ fn test_murmur32_consecutive_values() {
 #[test]
 fn test_murmur128_consecutive_values() {
     let seed = 100;
-    let hashes: Vec<[u8; 16]> = (0..10)
-        .map(|i| murmur128(&[i], seed))
-        .collect();
+    let hashes: Vec<[u8; 16]> = (0..10).map(|i| murmur128(&[i], seed)).collect();
 
     // All hashes should be different
     for i in 0..hashes.len() {
-        for j in i+1..hashes.len() {
+        for j in i + 1..hashes.len() {
             assert_ne!(hashes[i], hashes[j]);
         }
     }

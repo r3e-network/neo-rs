@@ -84,11 +84,21 @@ impl NeoToken {
         let key = StorageKey::create(Self::ID, Self::PREFIX_COMMITTEE);
         if let Some(item) = snapshot.try_get(&key) {
             let bytes = item.value_bytes();
+            if let Some(cache) = self.committee_decode_cache.read().as_ref()
+                && cache.encoded.as_slice() == bytes.as_ref()
+            {
+                return Ok(cache.committee.clone());
+            }
             if !bytes.is_empty()
                 && let Ok(stack_value) = BinarySerializer::deserialize_stack_value(&bytes)
                 && let Ok(values) = Self::decode_committee_with_votes_value(stack_value)
                 && !values.is_empty()
             {
+                let mut cache = self.committee_decode_cache.write();
+                *cache = Some(CommitteeDecodeCache {
+                    encoded: bytes.into_owned(),
+                    committee: values.clone(),
+                });
                 return Ok(values);
             }
         }
@@ -382,6 +392,7 @@ impl NeoToken {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_storage::persistence::DataCache;
 
     fn sample_committee_point() -> ECPoint {
         let encoded =
@@ -428,5 +439,104 @@ mod tests {
             .unwrap_err();
 
         assert!(err.starts_with("invalid committee public key:"));
+    }
+
+    fn snapshot_with_committee(committee: &[(ECPoint, BigInt)]) -> (DataCache, Vec<u8>) {
+        let snapshot = DataCache::new(false);
+        let encoded = NeoToken::encode_committee_with_votes(committee).expect("encode committee");
+        snapshot.add(
+            StorageKey::create(NeoToken::ID, NeoToken::PREFIX_COMMITTEE),
+            StorageItem::from_bytes(encoded.clone()),
+        );
+        (snapshot, encoded)
+    }
+
+    #[test]
+    fn committee_decode_cache_reuses_identical_bytes_and_invalidates_on_change() {
+        let settings = ProtocolSettings::mainnet();
+        let first = vec![(settings.standby_committee[0].clone(), BigInt::from(11))];
+        let second = vec![(settings.standby_committee[1].clone(), BigInt::from(22))];
+        let (snapshot, first_encoded) = snapshot_with_committee(&first);
+        let (_, second_encoded) = snapshot_with_committee(&second);
+        let token = NeoToken::new();
+        let key = StorageKey::create(NeoToken::ID, NeoToken::PREFIX_COMMITTEE);
+
+        assert_eq!(
+            token
+                .committee_from_cache_with_votes(&snapshot, &settings)
+                .expect("first decode"),
+            first
+        );
+        assert_eq!(
+            token
+                .committee_decode_cache
+                .read()
+                .as_ref()
+                .unwrap()
+                .encoded,
+            first_encoded
+        );
+        assert_eq!(
+            token
+                .committee_from_cache_with_votes(&snapshot, &settings)
+                .expect("cached decode"),
+            first
+        );
+
+        snapshot.update(key, StorageItem::from_bytes(second_encoded.clone()));
+        assert_eq!(
+            token
+                .committee_from_cache_with_votes(&snapshot, &settings)
+                .expect("changed decode"),
+            second
+        );
+        assert_eq!(
+            token
+                .committee_decode_cache
+                .read()
+                .as_ref()
+                .unwrap()
+                .encoded,
+            second_encoded
+        );
+    }
+
+    #[test]
+    fn committee_decode_cache_is_safe_across_independent_snapshots() {
+        let mainnet = ProtocolSettings::mainnet();
+        let testnet = ProtocolSettings::testnet();
+        let committee = vec![(mainnet.standby_committee[0].clone(), BigInt::from(37))];
+        let (first_snapshot, encoded) = snapshot_with_committee(&committee);
+        let (second_snapshot, second_encoded) = snapshot_with_committee(&committee);
+        assert_eq!(encoded, second_encoded);
+
+        // Deliberately vary unrelated chain state. The cache may reuse only the
+        // pure decode result because the complete committee value is identical.
+        second_snapshot.add(
+            StorageKey::create(NeoToken::ID, NeoToken::PREFIX_VOTERS_COUNT),
+            StorageItem::from_bytes(vec![1]),
+        );
+        let token = NeoToken::new();
+        assert_eq!(
+            token
+                .committee_from_cache_with_votes(&first_snapshot, &mainnet)
+                .expect("mainnet decode"),
+            committee
+        );
+        assert_eq!(
+            token
+                .committee_from_cache_with_votes(&second_snapshot, &testnet)
+                .expect("independent snapshot decode"),
+            committee
+        );
+        assert_eq!(
+            token
+                .committee_decode_cache
+                .read()
+                .as_ref()
+                .unwrap()
+                .encoded,
+            encoded
+        );
     }
 }

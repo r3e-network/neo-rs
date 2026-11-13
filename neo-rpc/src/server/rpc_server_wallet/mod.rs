@@ -2,12 +2,6 @@
 
 #[cfg(test)]
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_smart_contract::helper::Helper as ContractHelper;
-use neo_wallets::helper::Helper as WalletHelper;
-use neo_wallets::{
-    Helper, KeyPair, Nep6Wallet, TransferOutput, Wallet as CoreWallet,
-    WalletAccount, WalletError, WalletResult,
-};
 use neo_crypto::{ECCurve, ECPoint};
 use neo_io::Serializable;
 use neo_native_contracts::native::{
@@ -22,15 +16,21 @@ use neo_protocol::payloads::conflicts::Conflicts;
 use neo_protocol::payloads::transaction::Transaction;
 use neo_protocol::payloads::transaction_attribute::TransactionAttribute;
 use neo_protocol::witness::Witness;
-use neo_wallets::signing::{
-    FrozenSignIntent, ProtocolContext, SIGNING_SCHEMA_VERSION, SignPayload, SignPurpose,
-    SignResponse,
-};
 use neo_smart_contract::application_engine::ApplicationEngine;
+use neo_smart_contract::helper::Helper as ContractHelper;
 use neo_storage::persistence::DataCache;
 use neo_vm::OpCode;
 use neo_vm::ScriptBuilder;
 use neo_vm::VmState as VMState;
+use neo_wallets::helper::Helper as WalletHelper;
+use neo_wallets::signing::{
+    FrozenSignIntent, ProtocolContext, SIGNING_SCHEMA_VERSION, SignPayload, SignPurpose,
+    SignResponse,
+};
+use neo_wallets::{
+    Helper, KeyPair, Nep6Wallet, TransferOutput, Wallet as CoreWallet, WalletAccount, WalletError,
+    WalletResult,
+};
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 use serde_json::{Map, Value, json};
@@ -61,7 +61,7 @@ use crate::server::rpc_server::{RpcHandler, RpcServer, RpcSignerRuntime};
 /// Reference: neo-project/neo-modules RpcServer.Wallet.cs
 struct AssetDescriptor {
     decimals: u8,
-    symbol: String,
+    _symbol: String,
 }
 
 impl AssetDescriptor {
@@ -74,13 +74,13 @@ impl AssetDescriptor {
         if asset == NeoToken::new().hash() {
             return Ok(Self {
                 decimals: NeoToken::new().decimals(),
-                symbol: "NEO".to_string(),
+                _symbol: "NEO".to_string(),
             });
         }
         if asset == GasToken::new().hash() {
             return Ok(Self {
                 decimals: GasToken::new().decimals(),
-                symbol: "GAS".to_string(),
+                _symbol: "GAS".to_string(),
             });
         }
 
@@ -172,7 +172,10 @@ impl AssetDescriptor {
             return Err("symbol() returned empty string".to_string());
         }
 
-        Ok(Self { decimals, symbol })
+        Ok(Self {
+            decimals,
+            _symbol: symbol,
+        })
     }
 }
 
@@ -181,7 +184,7 @@ impl AssetDescriptor {
 /// This structure manages the process of collecting signatures from multiple parties
 /// for transactions that require multi-signature authorization.
 struct ContractParametersContext {
-    snapshot: Arc<DataCache>,
+    _snapshot: Arc<DataCache>,
     tx: Transaction,
     network: u32,
     type_name: Option<String>,
@@ -207,7 +210,7 @@ impl ContractParametersContext {
         type_name: Option<String>,
     ) -> Self {
         Self {
-            snapshot,
+            _snapshot: snapshot,
             tx,
             network,
             type_name,
@@ -244,11 +247,14 @@ impl ContractParametersContext {
             self.add_contract(contract.clone());
         }
 
-        let contract_sigs = self.signatures.get_mut(&script_hash)
+        let contract_sigs = self
+            .signatures
+            .get_mut(&script_hash)
             .ok_or_else(|| "Contract not found".to_string())?;
 
         // Add signature for this public key
-        let pk_bytes = public_key.encode_point(true)
+        let pk_bytes = public_key
+            .encode_point(true)
             .map_err(|e| format!("Failed to encode public key: {}", e))?;
         contract_sigs.signatures.insert(pk_bytes, signature);
 
@@ -286,21 +292,29 @@ impl ContractParametersContext {
     }
 
     fn to_json(&self) -> Value {
-        let items: Vec<Value> = self.signatures.iter().map(|(script_hash, contract_sigs)| {
-            let signatures_json: Vec<Value> = contract_sigs.signatures.iter()
-                .map(|(pk, sig)| json!({
-                    "publicKey": hex::encode(pk),
-                    "signature": hex::encode(sig)
-                }))
-                .collect();
+        let items: Vec<Value> = self
+            .signatures
+            .iter()
+            .map(|(script_hash, contract_sigs)| {
+                let signatures_json: Vec<Value> = contract_sigs
+                    .signatures
+                    .iter()
+                    .map(|(pk, sig)| {
+                        json!({
+                            "publicKey": hex::encode(pk),
+                            "signature": hex::encode(sig)
+                        })
+                    })
+                    .collect();
 
-            json!({
-                "scriptHash": script_hash.to_string(),
-                "required": contract_sigs.required,
-                "collected": contract_sigs.signatures.len(),
-                "signatures": signatures_json
+                json!({
+                    "scriptHash": script_hash.to_string(),
+                    "required": contract_sigs.required,
+                    "collected": contract_sigs.signatures.len(),
+                    "signatures": signatures_json
+                })
             })
-        }).collect();
+            .collect();
 
         json!({
             "type": self.type_name.as_deref().unwrap_or("Neo.Network.P2P.Payloads.Transaction"),
@@ -523,9 +537,10 @@ impl RpcServerWallet {
         let wallet = Self::require_wallet(server)?;
         let wallet_clone = Arc::clone(&wallet);
         let privkey_value = privkey;
-        let account = Self::await_wallet_future(Box::pin(async move {
-            wallet_clone.import_wif(&privkey_value)
-        }))?;
+        let account =
+            Self::await_wallet_future(Box::pin(
+                async move { wallet_clone.import_wif(&privkey_value) },
+            ))?;
         Self::save_wallet(&wallet)?;
         Ok(Self::account_to_json(&account))
     }
@@ -705,9 +720,8 @@ impl RpcServerWallet {
 
         let store = server.system().store_cache();
         let settings = Arc::new(server.system().settings().clone());
-        let descriptor_cache = |asset: &UInt160| {
-            AssetDescriptor::new(store.data_cache(), &settings, *asset)
-        };
+        let descriptor_cache =
+            |asset: &UInt160| AssetDescriptor::new(store.data_cache(), &settings, *asset);
 
         let transfers = outputs_array
             .iter()
@@ -1102,8 +1116,7 @@ impl RpcServerWallet {
         let store = server.system().store_cache();
         let settings = Arc::new(server.system().settings().clone());
         let descriptor =
-            AssetDescriptor::new(store.data_cache(), &settings, asset)
-                .map_err(invalid_params)?;
+            AssetDescriptor::new(store.data_cache(), &settings, asset).map_err(invalid_params)?;
         let (ok, value) = BigDecimal::try_parse(&amount, descriptor.decimals);
         if !ok || value.sign() <= 0 {
             return Err(invalid_params("Amount can't be negative."));
@@ -1169,7 +1182,7 @@ impl RpcServerWallet {
         };
         after_authorize();
         let current_snapshot = server.system().store_cache();
-        Self::validate_transaction_before_signing(server, &tx, &current_snapshot.data_cache())?;
+        Self::validate_transaction_before_signing(server, &tx, current_snapshot.data_cache())?;
         before_relay();
 
         match rpc_relay::with_relay_responder(server, |sender| {
@@ -1383,7 +1396,7 @@ impl RpcServerWallet {
                 {
                     let wallet_clone = Arc::clone(wallet);
                     Self::await_wallet_future(Box::pin(async move {
-                        wallet_clone.sign(&canonical_data, &signer_account).await
+                        wallet_clone.sign(&canonical_data, &signer_account)
                     }))?
                 }
             };
@@ -1403,7 +1416,9 @@ impl RpcServerWallet {
         }
         let witnesses = context.witnesses();
         if witnesses.is_empty() {
-            return Err(internal_error("Completed signature context has no witnesses".to_string()));
+            return Err(internal_error(
+                "Completed signature context has no witnesses".to_string(),
+            ));
         }
         Ok(WalletAuthorization::Signed(prepared.complete(witnesses)?))
     }
@@ -1460,7 +1475,9 @@ impl RpcServerWallet {
     }
 
     fn await_signer_future(
-        future: Pin<Box<dyn Future<Output = neo_wallets::signing::SignResult<SignResponse>> + Send>>,
+        future: Pin<
+            Box<dyn Future<Output = neo_wallets::signing::SignResult<SignResponse>> + Send>,
+        >,
     ) -> Result<SignResponse, RpcException> {
         let result = if let Ok(handle) = Handle::try_current() {
             match handle.runtime_flavor() {

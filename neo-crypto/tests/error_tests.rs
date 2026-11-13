@@ -20,7 +20,10 @@ fn test_invalid_key_error() {
 fn test_invalid_signature_error() {
     let err = CryptoError::invalid_signature("signature verification failed");
     assert!(matches!(err, CryptoError::InvalidSignature { .. }));
-    assert_eq!(err.to_string(), "Invalid signature: signature verification failed");
+    assert_eq!(
+        err.to_string(),
+        "Invalid signature: signature verification failed"
+    );
 }
 
 #[test]
@@ -79,8 +82,7 @@ fn test_crypto_error_partial_eq() {
 #[test]
 fn test_crypto_result_ok() {
     let result: CryptoResult<i32> = Ok(42);
-    assert!(result.is_ok());
-    assert_eq!(result.unwrap(), 42);
+    assert_eq!(result, Ok(42));
 }
 
 #[test]

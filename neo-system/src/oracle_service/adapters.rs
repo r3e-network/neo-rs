@@ -18,36 +18,35 @@
 //! - [`CoreSignatureVerifier`]: delegates to `ECPoint::verify_signature`.
 
 use crate::neo_system::NeoSystem;
-use crate::oracle_service::{
-    FrozenSignIntent, SignPurpose, SignPayload, ProtocolContext, TrustedSignerClient,
-    SIGNING_SCHEMA_VERSION,
-};
 use async_trait::async_trait;
-use neo_io_crate::Serializable;
 use neo_crypto::ECPoint;
-use neo_storage::persistence::{DataCache, StoreCache};
-use neo_primitives::{CallFlags, ContractBasicMethod};
+use neo_io_crate::serializable::helper::{
+    get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
+};
 use neo_native_contracts::native_contract::NativeContract;
 use neo_native_contracts::{
     ContractManagement, LedgerContract, OracleContract, PolicyContract, Role, RoleManagement,
-};
-use neo_smart_contract::{application_engine::ApplicationEngine, contract::Contract};
-use neo_primitives::{TriggerType, OracleResponseCode};
-use neo_protocol::payloads::Transaction;
-use neo_wallets::Wallet;
-use neo_io_crate::serializable::helper::{
-    get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
 };
 use neo_oracle::ports::{
     OracleSigner, OracleSnapshot, OracleWallet, ResponseTxBuilder, SignatureVerifier,
     SnapshotFactory, TxRelay,
 };
 use neo_oracle::{OracleRequest, OracleServiceError};
+use neo_primitives::{CallFlags, ContractBasicMethod};
+use neo_primitives::{OracleResponseCode, TriggerType};
 use neo_primitives::{UInt160, UInt256, WitnessScope};
-use neo_protocol::protocol_settings::ProtocolSettings;
+use neo_protocol::payloads::Transaction;
 use neo_protocol::payloads::{
-    OracleResponse, Signer, TransactionAttribute, Witness,
+    OracleResponse, Signer, TransactionAttribute, Witness, get_fixed_script,
     oracle_response::MAX_RESULT_SIZE,
+};
+use neo_protocol::protocol_settings::ProtocolSettings;
+use neo_smart_contract::{application_engine::ApplicationEngine, contract::Contract};
+use neo_storage::persistence::{DataCache, StoreCache};
+use neo_wallets::Wallet;
+use neo_wallets::signing::{
+    FrozenSignIntent, ProtocolContext, SIGNING_SCHEMA_VERSION, SignPayload, SignPurpose,
+    TrustedSignerClient,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
@@ -217,6 +216,12 @@ impl OracleWallet for CoreOracleWallet {
             })
             .collect()
     }
+
+    fn oracle_key(&self, account: &UInt160) -> Option<neo_wallets::KeyPair> {
+        self.wallet
+            .get_account(account)
+            .and_then(|account| (!account.is_locked()).then(|| account.get_key()).flatten())
+    }
 }
 
 /// Signer adapter replicating the reference `build_sign_intent` +
@@ -351,7 +356,7 @@ impl CoreResponseTxBuilder {
             Signer::new(oracle_sign_contract.script_hash(), WitnessScope::NONE),
         ]);
         tx.set_attributes(vec![TransactionAttribute::OracleResponse(response.clone())]);
-        tx.set_script(OracleResponse::get_fixed_script());
+        tx.set_script(get_fixed_script());
         tx.set_witnesses(vec![Witness::empty(), Witness::new()]);
 
         let witness_map: HashMap<UInt160, Witness> = vec![
@@ -405,7 +410,7 @@ impl CoreResponseTxBuilder {
             neo_smart_contract::helper::Helper::MAX_VERIFICATION_GAS,
             None,
             neo_native_contracts::engine_native_services_from_registry(
-                neo_native_contracts::default_native_services()
+                neo_native_contracts::default_native_services(),
             ),
         )
         .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
@@ -441,9 +446,7 @@ impl CoreResponseTxBuilder {
             .unwrap_or(PolicyContract::DEFAULT_EXEC_FEE_FACTOR)
             as i64;
         let multi_sig_cost =
-            neo_smart_contract::helper::Helper::multi_signature_contract_cost(
-                m as i32, n as i32,
-            );
+            neo_smart_contract::helper::Helper::multi_signature_contract_cost(m as i32, n as i32);
         let comp2 = exec_fee_factor * multi_sig_cost;
         tx.set_network_fee(tx.network_fee().saturating_add(comp2));
 

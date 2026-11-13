@@ -14,9 +14,9 @@
 //! - [`oracle_service`]: oracle service shell over the `neo-oracle` engine
 //! - [`state_service`]: state-root commit handlers wired into block persistence
 //! - [`services`]: the authoritative `SystemContext` trait
-//! - [`runtime`] / [`adapters`]: this crate's own lightweight actor runtime and
-//!   dispatch adapters (unrelated to the `neo_actors` node runtime, which the
-//!   moved actors bind to directly — task 215 / Wave D1-L1)
+//! - [`adapters`]: dispatch adapters bridging canonical service ports
+//!
+//! The single actor-runtime owner is the protocol-agnostic `neo-actors` crate.
 
 pub mod adapters;
 pub mod blockchain;
@@ -24,7 +24,6 @@ pub mod events;
 pub mod mempool;
 pub mod network;
 pub mod oracle_service;
-pub mod runtime;
 pub mod services;
 pub mod state_service;
 
@@ -50,8 +49,9 @@ pub use events::{EventHandler, EventManager, PluginEvent, broadcast_plugin_event
 pub use services::SystemContext;
 
 pub use neo_system::{
-    NeoSystem, NeoSystemBuilder, NeoSystemContext, ReadinessStatus, STATE_STORE_SERVICE,
-    ServiceRegistry, TRANSACTION_EXECUTION_OBSERVATION_RULE_VERSION,
+    ExecutionMode, ExecutionProfileSnapshot, ExecutionStats, NeoSystem, NeoSystemBuilder,
+    NeoSystemContext, ReadinessStatus, STATE_STORE_SERVICE, ServiceRegistry,
+    TRANSACTION_EXECUTION_OBSERVATION_RULE_VERSION,
     TRANSACTION_EXECUTION_OBSERVATION_SCHEMA_VERSION, TransactionExecutionExceptionCategory,
     TransactionExecutionObservation, TransactionExecutionSink, TransactionExecutionStage,
     TransactionRouterHandle,

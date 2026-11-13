@@ -87,7 +87,7 @@ fn call_flags_default_is_none() {
 #[test]
 fn call_flags_clone_and_copy() {
     let flags = CallFlags::READ_STATES;
-    let cloned = flags.clone();
+    let cloned = flags;
     let copied = flags;
     assert_eq!(flags, cloned);
     assert_eq!(flags, copied);

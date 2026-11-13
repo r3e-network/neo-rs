@@ -1,5 +1,111 @@
 use super::*;
 use crate::error::CoreResult;
+
+/// Registration surface shared by an application engine and the immutable
+/// default-registry builder. Keeping hardfork selection explicit prevents a
+/// Faun-only descriptor from leaking into pre-Faun engines.
+pub(crate) trait InteropRegistration {
+    fn register_host_service(
+        &mut self,
+        name: &str,
+        price: i64,
+        call_flags: CallFlags,
+        handler: InteropHandler,
+    ) -> VmResult<()>;
+
+    fn is_hardfork_enabled(&self, hardfork: Hardfork) -> bool;
+}
+
+struct DefaultInterops {
+    service: InteropService,
+    handlers: Arc<HashMap<u32, HostInteropHandler>>,
+}
+
+struct DefaultInteropBuilder {
+    service: InteropService,
+    handlers: HashMap<u32, HostInteropHandler>,
+    faun_enabled: bool,
+}
+
+impl InteropRegistration for DefaultInteropBuilder {
+    fn register_host_service(
+        &mut self,
+        name: &str,
+        price: i64,
+        call_flags: CallFlags,
+        handler: InteropHandler,
+    ) -> VmResult<()> {
+        let hash = self
+            .service
+            .register_host_descriptor(name, price, call_flags)?;
+        self.handlers.insert(
+            hash,
+            HostInteropHandler {
+                price,
+                required_call_flags: call_flags,
+                handler,
+            },
+        );
+        Ok(())
+    }
+
+    fn is_hardfork_enabled(&self, hardfork: Hardfork) -> bool {
+        hardfork == Hardfork::HfFaun && self.faun_enabled
+    }
+}
+
+impl InteropRegistration for ApplicationEngine {
+    fn register_host_service(
+        &mut self,
+        name: &str,
+        price: i64,
+        call_flags: CallFlags,
+        handler: InteropHandler,
+    ) -> VmResult<()> {
+        ApplicationEngine::register_host_service(self, name, price, call_flags, handler)
+    }
+
+    fn is_hardfork_enabled(&self, hardfork: Hardfork) -> bool {
+        ApplicationEngine::is_hardfork_enabled(self, hardfork)
+    }
+}
+
+static DEFAULT_INTEROPS: [OnceLock<Result<Arc<DefaultInterops>>>; 2] =
+    [OnceLock::new(), OnceLock::new()];
+
+fn default_interops(faun_enabled: bool) -> Result<Arc<DefaultInterops>> {
+    DEFAULT_INTEROPS[usize::from(faun_enabled)]
+        .get_or_init(|| build_default_interops(faun_enabled))
+        .clone()
+}
+
+fn build_default_interops(faun_enabled: bool) -> Result<Arc<DefaultInterops>> {
+    let mut builder = DefaultInteropBuilder {
+        service: InteropService::new(),
+        handlers: HashMap::new(),
+        faun_enabled,
+    };
+    register_default_interops(&mut builder)?;
+    Ok(Arc::new(DefaultInterops {
+        service: builder.service,
+        handlers: Arc::new(builder.handlers),
+    }))
+}
+
+fn register_default_interops(registry: &mut dyn InteropRegistration) -> Result<()> {
+    register_contract_interops(registry)
+        .map_err(|err| ApplicationEngine::map_vm_error("System.Contract", err))?;
+    register_runtime_interops(registry)
+        .map_err(|err| ApplicationEngine::map_vm_error("System.Runtime", err))?;
+    register_storage_interops(registry)
+        .map_err(|err| ApplicationEngine::map_vm_error("System.Storage", err))?;
+    register_iterator_interops(registry)
+        .map_err(|err| ApplicationEngine::map_vm_error("System.Iterator", err))?;
+    register_crypto_interops(registry)
+        .map_err(|err| ApplicationEngine::map_vm_error("System.Crypto", err))?;
+    Ok(())
+}
+
 impl ApplicationEngine {
     /// Creates a new application engine for the given trigger and script container.
     pub fn new(
@@ -53,7 +159,7 @@ impl ApplicationEngine {
             storage_price: native_services.default_storage_price,
             call_flags: CallFlags::ALL,
             vm_engine: VmEngineHost::new(engine),
-            interop_handlers: HashMap::new(),
+            interop_handlers: Arc::new(HashMap::new()),
             snapshot_cache,
             original_snapshot_cache,
             notifications: Vec::new(),
@@ -65,6 +171,10 @@ impl ApplicationEngine {
             policy_hash: native_services.policy_hash,
             native_contract_cache: Arc::new(Mutex::new(NativeContractsCache::default())),
             contracts: HashMap::new(),
+            contract_query_results: HashMap::new(),
+            native_fee_whitelist: HashMap::new(),
+            native_fee_cache_dirty: false,
+            parsed_contract_scripts: HashMap::new(),
             storage_iterators: HashMap::new(),
             next_iterator_id: 1,
             current_script_hash: None,
@@ -79,6 +189,7 @@ impl ApplicationEngine {
             fault_exception: None,
             states: HashMap::new(),
             event_observer: None,
+            profiler: None,
         };
         app.select_hardfork_vm_semantics();
 
@@ -93,7 +204,7 @@ impl ApplicationEngine {
         // pointer is attached at the entry points that actually execute the VM.
         app.register_native_contracts();
         app.refresh_policy_settings();
-        app.register_default_interops()?;
+        app.install_default_interops()?;
         // Ignore any fees incurred during engine initialization (native contract setup, policy reads).
         app.fee_consumed = 0;
         app.gas_consumed = 0;
@@ -172,7 +283,7 @@ impl ApplicationEngine {
             storage_price: native_services.default_storage_price,
             call_flags: CallFlags::ALL,
             vm_engine: VmEngineHost::new(engine),
-            interop_handlers: HashMap::new(),
+            interop_handlers: Arc::new(HashMap::new()),
             snapshot_cache,
             original_snapshot_cache,
             notifications: Vec::new(),
@@ -184,6 +295,10 @@ impl ApplicationEngine {
             policy_hash: native_services.policy_hash,
             native_contract_cache,
             contracts,
+            contract_query_results: HashMap::new(),
+            native_fee_whitelist: HashMap::new(),
+            native_fee_cache_dirty: false,
+            parsed_contract_scripts: HashMap::new(),
             storage_iterators: HashMap::new(),
             next_iterator_id: 1,
             current_script_hash: None,
@@ -198,6 +313,7 @@ impl ApplicationEngine {
             fault_exception: None,
             states: HashMap::new(),
             event_observer: None,
+            profiler: None,
         };
         // A05/R06: persist path must apply hardfork-dependent VM semantics
         // (e.g. Gorgon zero-shift typing), matching `new` / `new_with_shared_block`.
@@ -212,7 +328,7 @@ impl ApplicationEngine {
         // See the note in `new_with_shared_block`: attaching here would leave a
         // dangling pointer behind, because the engine moves when it is returned.
         app.refresh_policy_settings();
-        app.register_default_interops()?;
+        app.install_default_interops()?;
         // Ignore any fees incurred during engine initialization.
         app.fee_consumed = 0;
         app.gas_consumed = 0;
@@ -242,14 +358,12 @@ impl ApplicationEngine {
         // attach.
         unsafe { self.vm_engine.engine_mut().set_interop_host(host_ptr) };
     }
-    fn register_default_interops(&mut self) -> Result<()> {
-        register_contract_interops(self)
-            .map_err(|err| Self::map_vm_error("System.Contract", err))?;
-        register_runtime_interops(self).map_err(|err| Self::map_vm_error("System.Runtime", err))?;
-        register_storage_interops(self).map_err(|err| Self::map_vm_error("System.Storage", err))?;
-        register_iterator_interops(self)
-            .map_err(|err| Self::map_vm_error("System.Iterator", err))?;
-        register_crypto_interops(self).map_err(|err| Self::map_vm_error("System.Crypto", err))?;
+    fn install_default_interops(&mut self) -> Result<()> {
+        let shared = default_interops(self.is_hardfork_enabled(Hardfork::HfFaun))?;
+        self.vm_engine
+            .engine_mut()
+            .set_interop_service(shared.service.clone());
+        self.interop_handlers = Arc::clone(&shared.handlers);
         Ok(())
     }
     fn map_vm_error(context: &str, error: VmError) -> Error {
@@ -268,7 +382,7 @@ impl ApplicationEngine {
             .interop_service_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("Interop service not configured"))?;
         let hash = interop_service.register_host_descriptor(name, price, call_flags)?;
-        self.interop_handlers.insert(
+        Arc::make_mut(&mut self.interop_handlers).insert(
             hash,
             HostInteropHandler {
                 price,
@@ -317,16 +431,10 @@ impl ApplicationEngine {
             .and_then(|boxed| boxed.downcast::<T>().ok())
             .map(|boxed| *boxed)
     }
-    #[cfg(test)]
-    pub(crate) fn force_vm_state(&mut self, state: VMState) {
-        self.vm_engine.engine_mut().set_state(state);
-    }
-
     /// Native OnPersist and PostPersist do not enter the VM loop. The engine
     /// is constructed in `BREAK`, while C# `ApplicationEngine.Execute` records
     /// a successful native persist as `HALT`. Leave `FAULT` and an already
     /// halted engine unchanged.
-    #[cfg(feature = "runtime")]
     pub fn record_native_persist_success(&mut self) {
         if self.state() == VMState::BREAK {
             self.vm_engine.engine_mut().set_state(VMState::HALT);
@@ -548,6 +656,11 @@ impl ApplicationEngine {
     pub fn set_event_observer(&mut self, observer: Option<Arc<dyn EngineEventObserver>>) {
         self.event_observer = observer;
     }
+    /// Attaches an observability-only profiler. `None` keeps the normal path free
+    /// of per-syscall clock reads and aggregation.
+    pub fn set_profiler(&mut self, profiler: Option<Arc<dyn ApplicationEngineProfiler>>) {
+        self.profiler = profiler;
+    }
     /// Attaches the composition-specific chain adapter to this engine only.
     pub fn attach_chain_queries(&mut self, queries: Arc<dyn NativeChainQueries>) {
         self.chain_queries = Some(queries);
@@ -578,6 +691,18 @@ impl ApplicationEngine {
     /// Returns a shareable handle to the native-contract metadata cache.
     pub fn native_contract_cache_handle(&self) -> Arc<Mutex<NativeContractsCache>> {
         Arc::clone(&self.native_contract_cache)
+    }
+
+    /// Reuses immutable native ABI metadata across engines. Method activation
+    /// is still evaluated against each engine's settings and block height.
+    /// This must be called before any native dispatch on the new engine.
+    #[doc(hidden)]
+    pub fn with_native_contract_cache_handle(
+        mut self,
+        cache: Arc<Mutex<NativeContractsCache>>,
+    ) -> Self {
+        self.native_contract_cache = cache;
+        self
     }
     /// Returns a snapshot (clone) of the deployed contract states known to this engine.
     pub fn contracts_snapshot(&self) -> HashMap<UInt160, ContractState> {
@@ -640,5 +765,32 @@ impl ApplicationEngine {
     /// Returns true if there are any pending storage changes.
     pub fn has_pending_storage_changes(&self) -> bool {
         self.snapshot_cache.has_pending_changes()
+    }
+}
+
+#[cfg(test)]
+mod default_interop_tests {
+    use super::*;
+
+    #[test]
+    fn faun_and_pre_faun_default_registries_are_isolated() {
+        let pre_faun = default_interops(false).expect("pre-Faun registry");
+        let faun = default_interops(true).expect("Faun registry");
+        let common = b"System.Storage.Get";
+        assert_eq!(
+            pre_faun.service.get_price(common),
+            faun.service.get_price(common)
+        );
+
+        for name in [
+            &b"System.Storage.Local.Get"[..],
+            &b"System.Storage.Local.Put"[..],
+            &b"System.Storage.Local.Delete"[..],
+            &b"System.Storage.Local.Find"[..],
+        ] {
+            assert!(pre_faun.service.get_method(name).is_none());
+            assert!(faun.service.get_method(name).is_some());
+        }
+        assert_eq!(pre_faun.service.len() + 4, faun.service.len());
     }
 }

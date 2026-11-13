@@ -1,5 +1,6 @@
 //! Thin transactional wrapper over `StoreCache` for explicit commit semantics.
 
+use super::commit_profile::StoreCommitProfiler;
 use super::data_cache::{DataCacheConfig, DataCacheResult};
 use super::store::Store;
 use super::store_snapshot::StoreSnapshot;
@@ -43,6 +44,11 @@ impl StoreTransaction {
     /// Immutable access to the underlying cache.
     pub fn cache(&self) -> &StoreCache {
         &self.cache
+    }
+
+    /// Attaches an observation-only profiler to the transaction commit.
+    pub fn set_commit_profiler(&mut self, profiler: Option<Arc<dyn StoreCommitProfiler>>) {
+        self.cache.set_commit_profiler(profiler);
     }
 
     /// Commits the transaction.

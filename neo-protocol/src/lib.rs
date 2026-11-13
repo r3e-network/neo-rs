@@ -1,8 +1,8 @@
 //! Neo protocol settings, hardfork activation, and signing data.
 
-mod config;
 pub mod builders;
 pub mod call_flags;
+mod config;
 pub mod execution;
 pub mod hardfork;
 pub mod header_wire;

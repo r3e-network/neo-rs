@@ -4,14 +4,15 @@
 //! it exercises; `BlockchainCommand`/`Import` still come from `neo-core`.
 
 use neo_ledger::{BlockchainCommand, Import};
-use neo_system::network::p2p::helper::get_sign_data_vec;
-use neo_system::network::p2p::payloads::{block::Block, header::Header};
-use neo_wallets::KeyPair;
-use neo_protocol::payloads::{Signer, Transaction};
 use neo_primitives::{UInt160, UInt256, WitnessScope};
+use neo_protocol::payloads::{Signer, Transaction};
 use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_protocol::witness::Witness;
 use neo_system::NeoSystem;
+use neo_system::network::p2p::get_sign_data_vec;
+use neo_system::network::p2p::payloads::{block::Block, header::Header};
+use neo_wallets::KeyPair;
+use std::sync::Arc;
 use tokio::time::{Duration, sleep};
 
 fn build_unfunded_signed_transaction(
@@ -46,7 +47,7 @@ fn build_fee_burn_failure_block(system: &NeoSystem, settings: &ProtocolSettings)
     let tx = build_unfunded_signed_transaction(settings, &keypair);
 
     let mut block = Block::new();
-    let mut genesis = system.genesis_block().as_ref().clone();
+    let genesis = system.genesis_block().as_ref().clone();
     let prev_hash = genesis.hash();
 
     let mut header = Header::new();
@@ -69,7 +70,7 @@ async fn persist_block_reports_fee_burn_failure_for_unfunded_sender() {
     let system = NeoSystem::new(settings.clone(), None, None).expect("NeoSystem::new");
     let block = build_fee_burn_failure_block(&system, &settings);
 
-    let Err(err) = system.persist_block(block) else {
+    let Err(err) = system.persist_block(neo_protocol::execution::Block::from(&block)) else {
         panic!("persist should fail when sender cannot pay GAS fees")
     };
     let message = err.to_string();
@@ -87,8 +88,10 @@ async fn import_does_not_advance_height_when_persist_fails() {
     let blockchain = system.blockchain_actor();
     let block = build_fee_burn_failure_block(&system, &ProtocolSettings::mainnet());
 
+    let block = neo_protocol::execution::Block::from(&block);
     let import = Import {
-        blocks: vec![block],
+        block: Arc::new(block.clone()),
+        blocks: vec![Arc::new(block)],
         verify: false,
     };
 

@@ -1,0 +1,88 @@
+use crate::context::{ConsensusContext, ValidatorInfo};
+use crate::{ConsensusError, ConsensusResult, ConsensusSigner};
+use std::path::Path;
+use std::sync::Arc;
+
+use super::ConsensusService;
+
+impl ConsensusService {
+    /// Returns our validator index, or an error if we're not a validator.
+    /// This is a safe alternative to `my_index.unwrap()` for production code.
+    #[inline]
+    pub(super) fn my_index(&self) -> ConsensusResult<u8> {
+        self.context.my_index.ok_or(ConsensusError::NotValidator)
+    }
+
+    /// Returns the current context (for testing/debugging)
+    #[must_use]
+    pub const fn context(&self) -> &ConsensusContext {
+        &self.context
+    }
+
+    /// Records a transaction this validator rejected during proposal checking.
+    ///
+    /// The hash is included in this node's next `ChangeView(TxInvalid/
+    /// TxRejectedByPolicy)` so the network can converge on skipping it.
+    pub fn record_rejected_transaction(&mut self, hash: neo_primitives::UInt256) {
+        if let Some(index) = self.context.my_index {
+            self.context.record_rejected_hashes(index, &[hash]);
+        }
+    }
+
+    /// Updates the validator set and local validator index.
+    pub fn update_validators(&mut self, validators: Vec<ValidatorInfo>, my_index: Option<u8>) {
+        self.context.validators = validators;
+        self.context.my_index = my_index;
+    }
+
+    /// Sets the expected block time (in milliseconds) for timeout calculations.
+    pub fn set_expected_block_time(&mut self, expected_block_time_ms: u64) {
+        self.context.expected_block_time = expected_block_time_ms;
+    }
+
+    /// Sets the protocol limit for transactions in a proposed block.
+    pub fn set_max_transactions_per_block(&mut self, max_transactions: usize) {
+        self.context.max_transactions_per_block = max_transactions;
+    }
+
+    /// Supplies the parent block's timestamp so `PrepareRequest` timestamps can be
+    /// validated against it (C# compares against `context.PrevHeader.Timestamp`).
+    /// Leaving it at `0` disables the lower-bound check.
+    pub fn set_prev_timestamp(&mut self, prev_timestamp_ms: u64) {
+        self.context.prev_timestamp = prev_timestamp_ms;
+    }
+
+    /// Updates the test-only private key used by consensus unit tests.
+    #[cfg(test)]
+    pub fn set_private_key(&mut self, private_key: Vec<u8>) {
+        self.private_key = zeroize::Zeroizing::new(private_key);
+    }
+
+    /// Updates the signer used for consensus messages.
+    pub fn set_signer(&mut self, signer: Option<Arc<dyn ConsensusSigner>>) {
+        self.signer = signer;
+    }
+
+    /// Persists the current consensus context to disk for recovery.
+    pub fn save_context(&self, path: &Path) -> ConsensusResult<()> {
+        self.context.save(path)
+    }
+
+    /// Returns the network magic number this service is configured for.
+    #[must_use]
+    pub const fn network(&self) -> u32 {
+        self.network
+    }
+
+    /// Returns whether the service is running
+    #[must_use]
+    pub const fn is_running(&self) -> bool {
+        self.running
+    }
+
+    /// Returns whether a RecoveryMessage is currently being replayed.
+    #[must_use]
+    pub const fn is_recovering(&self) -> bool {
+        self.is_recovering
+    }
+}

@@ -1,7 +1,7 @@
 //! HSM Signer trait definition
 
-use crate::device::HsmDeviceInfo;
-use crate::error::{HsmError, HsmResult};
+use crate::hsm::device::HsmDeviceInfo;
+use crate::hsm::error::{HsmError, HsmResult};
 use async_trait::async_trait;
 use neo_crypto::{Base58, Crypto};
 use serde::{Deserialize, Serialize};
@@ -102,7 +102,7 @@ pub trait HsmSigner: Send + Sync {
         let keys = self.list_keys().await?;
         keys.first()
             .map(|k| k.key_id.clone())
-            .ok_or_else(|| crate::error::HsmError::KeyNotFound("No keys available".to_string()))
+            .ok_or_else(|| HsmError::KeyNotFound("No keys available".to_string()))
     }
 }
 

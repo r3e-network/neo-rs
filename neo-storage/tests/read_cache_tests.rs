@@ -176,10 +176,7 @@ fn read_cache_custom_config() {
 
     cache.put(key.clone(), value.clone(), 1);
 
-    assert_eq!(
-        cache.get(&key).unwrap().to_value(),
-        value.to_value()
-    );
+    assert_eq!(cache.get(&key).unwrap().to_value(), value.to_value());
 }
 
 #[test]
@@ -189,11 +186,7 @@ fn read_cache_invalidate_batch() {
     let keys: Vec<_> = (0..5).map(|i| StorageKey::new(10, vec![i])).collect();
 
     for (i, key) in keys.iter().enumerate() {
-        cache.put(
-            key.clone(),
-            StorageItem::from_bytes(vec![i as u8]),
-            1,
-        );
+        cache.put(key.clone(), StorageItem::from_bytes(vec![i as u8]), 1);
     }
 
     // Remove each key individually since there's no invalidate_batch method

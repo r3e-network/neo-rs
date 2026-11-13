@@ -97,6 +97,28 @@ mod mpt_tests {
     }
 
     #[test]
+    fn resolved_retention_stats_deduplicates_shared_subtrees_and_ignores_stubs() {
+        let shared = Arc::new(Node::new_leaf(vec![0x42; 32]));
+        let mut branch = Node::new_branch();
+        branch.children[1] = Arc::clone(&shared);
+        branch.children[2] = shared;
+        branch.children[3] = Arc::new(Node::new_hash(UInt256::zero()));
+
+        let (nodes, bytes) = branch.resolved_retention_stats();
+        assert_eq!(nodes, 2);
+        assert!(bytes >= 32);
+
+        let (duplicate_nodes, duplicate_bytes) = Node::new_branch().resolved_retention_stats();
+        assert_eq!(duplicate_nodes, 1);
+        assert!(duplicate_bytes > 0);
+        assert_eq!(
+            Node::new_hash(UInt256::zero()).resolved_retention_stats(),
+            (0, 0)
+        );
+        assert_eq!(Node::new().resolved_retention_stats(), (0, 0));
+    }
+
+    #[test]
     fn test_empty_serialize() {
         let node = Node::new();
         let data = node.to_array().unwrap();
@@ -1630,5 +1652,270 @@ mod mpt_tests {
             Some(expected),
             "MPT root must match the C# reference after branch collapse"
         );
+    }
+
+    struct HintRecordingStore {
+        data: Arc<Mutex<HashMap<Vec<u8>, Vec<u8>>>>,
+        writes: Arc<Mutex<Vec<(Vec<u8>, bool)>>>,
+        reads: std::sync::atomic::AtomicUsize,
+    }
+
+    impl HintRecordingStore {
+        fn new() -> Self {
+            Self {
+                data: Arc::new(Mutex::new(HashMap::new())),
+                writes: Arc::new(Mutex::new(Vec::new())),
+                reads: std::sync::atomic::AtomicUsize::new(0),
+            }
+        }
+    }
+
+    impl MptStoreSnapshot for HintRecordingStore {
+        fn try_get(&self, key: &[u8]) -> MptResult<Option<Vec<u8>>> {
+            self.reads
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Ok(self.data.lock().get(key).cloned())
+        }
+
+        fn put(&self, key: Vec<u8>, value: Vec<u8>) -> MptResult<()> {
+            self.data.lock().insert(key, value);
+            Ok(())
+        }
+
+        fn put_with_hint(
+            &self,
+            key: Vec<u8>,
+            value: Vec<u8>,
+            known_absent_in_store: bool,
+        ) -> MptResult<()> {
+            self.writes
+                .lock()
+                .push((key.clone(), known_absent_in_store));
+            self.put(key, value)
+        }
+
+        fn delete(&self, key: Vec<u8>) -> MptResult<()> {
+            self.data.lock().remove(&key);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn commit_hints_new_nodes_and_preserves_the_existing_node_fallback() {
+        let store = Arc::new(HintRecordingStore::new());
+        let leaf = Node::new_leaf(vec![1, 2, 3]);
+        let mut initial = MptCache::new(store.clone(), 0xf0);
+        initial.put_node(leaf.clone()).unwrap();
+        initial.commit().unwrap();
+        assert_eq!(
+            store.writes.lock().as_slice(),
+            &[(
+                {
+                    let mut key = vec![0xf0];
+                    key.extend_from_slice(&leaf.hash().to_bytes());
+                    key
+                },
+                true
+            )]
+        );
+
+        // A fresh cache must resolve the persisted reference count and retain
+        // the original put path rather than claiming that this node is absent.
+        store.writes.lock().clear();
+        let mut existing = MptCache::new(store.clone(), 0xf0);
+        existing.put_node(leaf).unwrap();
+        existing.commit().unwrap();
+        let existing_writes = store.writes.lock().clone();
+        assert_eq!(existing_writes.len(), 1);
+        assert!(!existing_writes[0].1);
+
+        store.writes.lock().clear();
+        let changes = [
+            (b"alpha".as_slice(), b"one".as_slice()),
+            (b"beta".as_slice(), b"two".as_slice()),
+            (b"gamma".as_slice(), b"three".as_slice()),
+        ];
+        let mut trie = Trie::new(store.clone(), None, true);
+        for (key, value) in changes {
+            trie.put(key, value).unwrap();
+        }
+        trie.commit().unwrap();
+        let trie_writes = store.writes.lock().clone();
+        assert!(!trie_writes.is_empty());
+        assert!(trie_writes.iter().all(|(_, hint)| *hint));
+    }
+
+    #[test]
+    fn branch_hash_preimage_matches_canonical_child_writer() {
+        let mut branch = Node::new_branch();
+        branch.set_child(0, Node::new_leaf(vec![1, 2, 3]));
+        branch.set_child(1, Node::new_hash(UInt256::from([7u8; 32])));
+        branch.set_child(
+            2,
+            Node::new_extension(vec![3, 4], Node::new_leaf(vec![5, 6])).unwrap(),
+        );
+        branch.set_child(3, Node::new_branch());
+
+        let actual = branch.to_array_without_reference().unwrap();
+        let mut writer = BinaryWriter::new();
+        writer.write_u8(NodeType::BranchNode.to_byte()).unwrap();
+        for child in &branch.children {
+            child.serialize_as_child(&mut writer).unwrap();
+        }
+        assert_eq!(actual, writer.into_bytes());
+    }
+
+    #[test]
+    fn full_state_commit_populates_node_cache_on_demand_only() {
+        let store = Arc::new(MockStore::new());
+        let cache = Arc::new(crate::mpt_trie::GlobalNodeCache::with_capacity(
+            std::num::NonZeroUsize::new(16).unwrap(),
+        ));
+        let mut initial =
+            Trie::new_with_node_cache(store.clone(), None, true, Some(Arc::clone(&cache)));
+        initial.put(b"alpha", b"one").unwrap();
+        initial.commit().unwrap();
+        assert_eq!(cache.len(), 0, "commit must not churn the compact LRU");
+
+        let root = initial.root_hash();
+        let mut reloaded =
+            Trie::new_with_node_cache(store.clone(), root, true, Some(Arc::clone(&cache)));
+        assert_eq!(reloaded.get(b"alpha").unwrap(), Some(b"one".to_vec()));
+        assert!(cache.len() > 0, "a cold read must populate the LRU");
+
+        let reference_counted_cache = Arc::new(crate::mpt_trie::GlobalNodeCache::with_capacity(
+            std::num::NonZeroUsize::new(16).unwrap(),
+        ));
+        let mut reference_counted = Trie::new_with_node_cache(
+            store,
+            None,
+            false,
+            Some(Arc::clone(&reference_counted_cache)),
+        );
+        reference_counted.put(b"alpha", b"one").unwrap();
+        reference_counted.commit().unwrap();
+        assert!(
+            reference_counted_cache.len() > 0,
+            "reference-counted tries must retain their existing cache refresh"
+        );
+    }
+
+    #[test]
+    fn full_state_commit_skips_reference_reads_and_preserves_historical_nodes() {
+        let store = Arc::new(HintRecordingStore::new());
+        let mut initial = Trie::new_with_node_cache(store.clone(), None, true, None);
+        initial.put(b"alpha", b"shared").unwrap();
+        initial.put(b"beta", b"shared").unwrap();
+        initial.put(b"gamma", b"other").unwrap();
+        initial.commit().unwrap();
+        assert_eq!(store.reads.load(std::sync::atomic::Ordering::Relaxed), 0);
+        let historical_root = initial.root_hash().unwrap();
+
+        let mut updated =
+            Trie::new_with_node_cache(store.clone(), Some(historical_root), true, None);
+        updated.put(b"alpha", b"updated").unwrap();
+        let update_reads = store.reads.load(std::sync::atomic::Ordering::Relaxed);
+        assert!(update_reads > 0, "resolving the modified path must read");
+        updated.commit().unwrap();
+        assert_eq!(
+            store.reads.load(std::sync::atomic::Ordering::Relaxed),
+            update_reads,
+            "commit must not re-read unused full-state reference counts"
+        );
+
+        let mut historical =
+            Trie::new_with_node_cache(store.clone(), Some(historical_root), true, None);
+        assert_eq!(historical.get(b"alpha").unwrap(), Some(b"shared".to_vec()));
+        assert_eq!(historical.get(b"beta").unwrap(), Some(b"shared".to_vec()));
+        let mut current = Trie::new_with_node_cache(store, updated.root_hash(), true, None);
+        assert_eq!(current.get(b"alpha").unwrap(), Some(b"updated".to_vec()));
+        assert_eq!(current.get(b"beta").unwrap(), Some(b"shared".to_vec()));
+    }
+
+    #[test]
+    fn serial_and_parallel_commit_match_across_restart_update_and_delete() {
+        for full_state in [false, true] {
+            let serial_store = Arc::new(MockStore::new());
+            let parallel_store = Arc::new(MockStore::new());
+            let mut serial_root = None;
+            let mut parallel_root = None;
+
+            for round in 0..3u8 {
+                let mut serial =
+                    Trie::new_with_node_cache(serial_store.clone(), serial_root, full_state, None);
+                let mut parallel = Trie::new_with_node_cache(
+                    parallel_store.clone(),
+                    parallel_root,
+                    full_state,
+                    None,
+                );
+                for index in 0..64u8 {
+                    let key = format!("contract/{index:02}");
+                    let value = vec![round, index, index.wrapping_mul(3)];
+                    serial.put(key.as_bytes(), &value).unwrap();
+                    parallel.put(key.as_bytes(), &value).unwrap();
+                }
+                if round > 0 {
+                    for index in (0..64u8).step_by(7) {
+                        let key = format!("contract/{index:02}");
+                        serial.delete(key.as_bytes()).unwrap();
+                        parallel.delete(key.as_bytes()).unwrap();
+                    }
+                }
+
+                serial.commit_with_parallelism(false).unwrap();
+                parallel.commit_with_parallelism(true).unwrap();
+                serial_root = serial.root_hash();
+                parallel_root = parallel.root_hash();
+                assert_eq!(serial_root, parallel_root, "full_state={full_state}");
+                assert_eq!(
+                    serial_store.get_data(),
+                    parallel_store.get_data(),
+                    "stored nodes differ after round {round}, full_state={full_state}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn opt_in_profile_observes_node_io_without_changing_the_root() {
+        let store = Arc::new(MockStore::new());
+        let mut baseline = Trie::new(store.clone(), None, true);
+        for (key, value) in [
+            (b"alpha".as_slice(), b"one".as_slice()),
+            (b"beta".as_slice(), b"two".as_slice()),
+            (b"gamma".as_slice(), b"three".as_slice()),
+        ] {
+            baseline.put(key, value).unwrap();
+        }
+        baseline.commit().unwrap();
+        let previous_root = baseline.root_hash().unwrap();
+
+        let profile = Arc::new(crate::mpt_trie::MptProfile::default());
+        let mut profiled =
+            Trie::new_with_node_cache(store.clone(), Some(previous_root), true, None)
+                .with_profile(Arc::clone(&profile));
+        profiled.put(b"alpha", b"updated").unwrap();
+        profiled.put(b"delta", b"four").unwrap();
+        profiled.commit().unwrap();
+        let actual_root = profiled.root_hash();
+
+        let mut canonical = Trie::new_with_node_cache(store, Some(previous_root), true, None);
+        canonical.put(b"alpha", b"updated").unwrap();
+        canonical.put(b"delta", b"four").unwrap();
+        canonical.commit().unwrap();
+        assert_eq!(actual_root, canonical.root_hash());
+
+        let detail = profile.snapshot();
+        assert!(!detail.update.is_zero());
+        assert!(!detail.commit.is_zero());
+        assert!(!detail.root_hash.is_zero());
+        assert!(!detail.hash.is_zero());
+        assert!(!detail.serialization.is_zero());
+        assert!(!detail.hash256.is_zero());
+        assert!(!detail.node_read.is_zero());
+        assert!(!detail.node_deserialize.is_zero());
+        assert!(!detail.node_encode.is_zero());
+        assert!(!detail.node_write.is_zero());
     }
 }

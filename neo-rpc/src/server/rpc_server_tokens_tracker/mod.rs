@@ -6,7 +6,6 @@ use crate::tokens_tracker::{
     Nep11BalanceKey, Nep11Tracker, Nep17BalanceKey, Nep17Tracker, TokenBalance, find_prefix,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_wallets::helper::Helper as WalletHelper;
 use neo_native_contracts::native::contract_management::ContractManagement;
 use neo_primitives::CallFlags;
 use neo_primitives::TriggerType;
@@ -14,6 +13,7 @@ use neo_primitives::UInt160;
 use neo_smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
 use neo_vm::VmState as VMState;
 use neo_vm::{ScriptBuilder, StackItem};
+use neo_wallets::helper::Helper as WalletHelper;
 use serde_json::{Map, Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;

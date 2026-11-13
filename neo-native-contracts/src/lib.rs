@@ -15,8 +15,8 @@ pub use genesis::create_genesis_block;
 
 /// Oracle module re-export for convenience
 pub mod oracle {
-    pub use crate::native::oracle_request::OracleRequest;
     pub use crate::native::oracle_contract::OracleContract;
+    pub use crate::native::oracle_request::OracleRequest;
 }
 
 /// Returns the default native services configuration.
@@ -33,17 +33,23 @@ pub fn default_native_services() -> native::NativeRegistry {
 pub fn engine_native_services_from_registry(
     registry: native::NativeRegistry,
 ) -> neo_smart_contract::application_engine::EngineNativeServices {
-    use neo_smart_contract::application_engine::{EngineNativeServices, NativeStateReader, WitnessHashResolver};
-    use neo_smart_contract::{ContractState, CoreError, CoreResult};
-    use neo_storage::persistence::DataCache;
-    use neo_protocol::payloads::Signer;
     use neo_primitives::UInt160;
+    use neo_protocol::payloads::Signer;
+    use neo_smart_contract::application_engine::{
+        EngineNativeServices, NativeStateReader, WitnessHashResolver,
+    };
+    use neo_smart_contract::{ContractState, CoreResult};
+    use neo_storage::persistence::DataCache;
     use std::sync::Arc;
 
     // Minimal no-op implementations for basic scenarios
     struct NoopStateReader;
     impl NativeStateReader for NoopStateReader {
-        fn contract(&self, _snapshot: &DataCache, _hash: &UInt160) -> CoreResult<Option<ContractState>> {
+        fn contract(
+            &self,
+            _snapshot: &DataCache,
+            _hash: &UInt160,
+        ) -> CoreResult<Option<ContractState>> {
             Ok(None)
         }
         fn current_index(&self, _snapshot: &DataCache) -> CoreResult<u32> {
@@ -90,4 +96,3 @@ pub fn engine_native_services_from_registry(
         default_storage_price: 100_000,
     }
 }
-

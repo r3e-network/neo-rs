@@ -195,9 +195,7 @@ fn transaction_multiple_operations_in_single_commit() {
     let provider = MemoryStoreProvider::new();
     let store = provider.get_store("").expect("memory store");
 
-    let keys: Vec<StorageKey> = (0..10)
-        .map(|i| StorageKey::new(7, vec![i as u8]))
-        .collect();
+    let keys: Vec<StorageKey> = (0..10).map(|i| StorageKey::new(7, vec![i as u8])).collect();
 
     let mut tx = StoreTransaction::from_store(store.clone(), false);
 

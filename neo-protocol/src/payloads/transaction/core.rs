@@ -277,4 +277,86 @@ mod tests {
         let expected = neo_primitives::PrimitiveError::invalid_data(format!("Codec error: {low}"));
         assert_eq!(actual.to_string(), expected.to_string());
     }
+
+    fn warm_transaction() -> Transaction {
+        let tx = transaction_with_script(vec![0x21, 0x00]);
+        let _ = tx.try_hash().unwrap();
+        let _ = neo_io::Serializable::size(&tx);
+        tx
+    }
+
+    fn warm_transaction_clone() -> Transaction {
+        let tx = warm_transaction().clone();
+        let _ = neo_io::Serializable::size(&tx);
+        tx
+    }
+
+    fn assert_variable_width_mutation_invalidates_both_caches(tx: &Transaction) {
+        assert!(tx._hash.lock().is_none());
+        assert!(tx._size.lock().is_none());
+    }
+
+    fn assert_fixed_width_mutation_invalidates_only_hash(tx: &Transaction) {
+        assert!(tx._hash.lock().is_none());
+        assert!(tx._size.lock().is_some());
+    }
+
+    #[test]
+    fn clone_preserves_warm_hash_and_recomputes_size() {
+        let tx = warm_transaction();
+        let cloned = tx.clone();
+        assert_eq!(*cloned._hash.lock(), *tx._hash.lock());
+        assert!(cloned._size.lock().is_none());
+        assert_eq!(cloned.try_hash().unwrap(), tx.try_hash().unwrap());
+        assert_eq!(
+            neo_io::Serializable::size(&cloned),
+            neo_io::Serializable::size(&tx)
+        );
+        assert!(cloned._size.lock().is_some());
+    }
+
+    #[test]
+    fn every_unsigned_mutator_invalidates_cloned_caches() {
+        let mut tx = warm_transaction_clone();
+        tx.set_version(1);
+        assert_fixed_width_mutation_invalidates_only_hash(&tx);
+
+        let mut tx = warm_transaction_clone();
+        tx.set_nonce(0x0506_0708);
+        assert_fixed_width_mutation_invalidates_only_hash(&tx);
+
+        let mut tx = warm_transaction_clone();
+        tx.set_system_fee(2);
+        assert_fixed_width_mutation_invalidates_only_hash(&tx);
+
+        let mut tx = warm_transaction_clone();
+        tx.set_network_fee(2);
+        assert_fixed_width_mutation_invalidates_only_hash(&tx);
+
+        let mut tx = warm_transaction_clone();
+        tx.set_valid_until_block(43);
+        assert_fixed_width_mutation_invalidates_only_hash(&tx);
+
+        let mut tx = warm_transaction_clone();
+        tx.set_signers(Vec::new());
+        assert_variable_width_mutation_invalidates_both_caches(&tx);
+
+        let mut tx = warm_transaction_clone();
+        tx.set_attributes(Vec::new());
+        assert_variable_width_mutation_invalidates_both_caches(&tx);
+
+        let mut tx = warm_transaction_clone();
+        tx.set_script(vec![0x21, 0x01]);
+        assert_variable_width_mutation_invalidates_both_caches(&tx);
+    }
+
+    #[test]
+    fn witness_mutation_invalidates_only_cloned_size_cache() {
+        let mut tx = warm_transaction_clone();
+        let hash = tx.try_hash().unwrap();
+        tx.set_witnesses(vec![Witness::empty(), Witness::empty()]);
+        assert_eq!(*tx._hash.lock(), Some(hash));
+        assert!(tx._size.lock().is_none());
+        assert_eq!(tx.try_hash().unwrap(), hash);
+    }
 }

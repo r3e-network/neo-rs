@@ -13,9 +13,9 @@ use super::super::utility::{
     NepBalanceFieldRefs, balance_list_to_json, insert_nep_balance_fields, object_array,
     parse_balance_list, parse_nep_balance_fields, parse_object_array_lossy, required_string,
 };
-use neo_protocol::ProtocolSettings;
 use neo_json::{JObject, JToken};
 use neo_primitives::UInt160;
+use neo_protocol::ProtocolSettings;
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
 
@@ -169,8 +169,8 @@ impl RpcNep11TokenBalance {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_wallets::helper::Helper as WalletHelper;
     use neo_json::JArray;
+    use neo_wallets::helper::Helper as WalletHelper;
 
     #[test]
     fn token_balance_roundtrip() {

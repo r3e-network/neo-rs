@@ -118,7 +118,11 @@ fn fetch_reference_root_batch(
         .spawn(move || {
             let client = build_reference_root_client()?;
             let mut errors = Vec::new();
-            for attempt in 0..REFERENCE_ROOT_ATTEMPTS {
+            for (attempt, backoff_ms) in REFERENCE_ROOT_RETRY_BACKOFF_MS
+                .iter()
+                .chain(std::iter::once(&0))
+                .enumerate()
+            {
                 for endpoint in endpoints.iter() {
                     let result = fetch_available_reference_root_count(
                         &client,
@@ -177,7 +181,7 @@ fn fetch_reference_root_batch(
                 }
                 if attempt + 1 < REFERENCE_ROOT_ATTEMPTS {
                     thread::sleep(Duration::from_millis(
-                        REFERENCE_ROOT_RETRY_BACKOFF_MS[attempt],
+                        *backoff_ms,
                     ));
                 }
             }
@@ -312,7 +316,11 @@ fn fetch_reference_root_with_client(
     });
     let mut errors = Vec::new();
 
-    for attempt in 0..REFERENCE_ROOT_ATTEMPTS {
+    for (attempt, backoff_ms) in REFERENCE_ROOT_RETRY_BACKOFF_MS
+        .iter()
+        .chain(std::iter::once(&0))
+        .enumerate()
+    {
         for endpoint in endpoints {
             let result = client
                 .post(endpoint)
@@ -340,9 +348,7 @@ fn fetch_reference_root_with_client(
         if attempt + 1 < REFERENCE_ROOT_ATTEMPTS {
             // A bounded backoff absorbs transient seed/gateway failures without
             // weakening validation: every exhausted attempt still returns Err.
-            thread::sleep(Duration::from_millis(
-                REFERENCE_ROOT_RETRY_BACKOFF_MS[attempt],
-            ));
+            thread::sleep(Duration::from_millis(*backoff_ms));
         }
     }
 

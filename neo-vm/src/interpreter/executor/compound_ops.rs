@@ -1,3 +1,4 @@
+use super::super::api::InterpreterSemantics;
 use super::super::helpers::*;
 use super::super::opcodes::*;
 use super::super::runtime_types::{
@@ -51,6 +52,7 @@ pub(super) fn execute(
     consumed_mutations: &mut Vec<StackValue>,
     try_frames: &mut TryStack,
     pending_error: &mut Option<PendingException>,
+    semantics: InterpreterSemantics,
 ) -> Result<Dispatch, String> {
     let mut ip = *ip_ref;
     macro_rules! finish {
@@ -194,8 +196,12 @@ pub(super) fn execute(
         HASKEY => {
             let key = pop_item(stack)?;
             let item = pop_item(stack)?;
-            let has_key = collection_rules::has_key(&to_abi_value(&item), &to_abi_value(&key))
-                .map_err(|_| "HASKEY expects an array, buffer, or map".to_string())?;
+            let has_key = if semantics.pre_gorgon_collection_semantics {
+                collection_rules::has_key_pre_gorgon(&to_abi_value(&item), &to_abi_value(&key))
+            } else {
+                collection_rules::has_key(&to_abi_value(&item), &to_abi_value(&key))
+            }
+            .map_err(|_| "HASKEY expects an array, buffer, or map".to_string())?;
             stack.push(StackValue::Boolean(has_key));
         }
         KEYS => {

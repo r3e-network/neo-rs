@@ -12,11 +12,13 @@ criterion = { workspace = true, features = ["html_reports"] }
 neo-smart-contract = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
+neo-native-contracts = { workspace = true }
 neo-primitives = { workspace = true }
 neo-protocol = { workspace = true }
 neo-storage = { workspace = true }
 neo-system = { workspace = true }
 neo-vm = { workspace = true }
+neo-wallets = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 tempfile.workspace = true
 hex = { workspace = true }
@@ -55,6 +57,16 @@ harness = false
 [[bench]]
 name = "block_persistence"
 path = "benches/block_persistence.rs"
+harness = false
+
+[[bench]]
+name = "execution_modes"
+path = "benches/execution_modes.rs"
+harness = false
+
+[[bench]]
+name = "mempool_preverify"
+path = "benches/mempool_preverify.rs"
 harness = false
 
 [[bench]]

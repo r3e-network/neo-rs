@@ -42,7 +42,10 @@ impl Clone for Transaction {
             attributes: self.attributes.clone(),
             script: self.script.clone(),
             witnesses: self.witnesses.clone(),
-            _hash: Mutex::new(None),
+            // Unsigned fields are deep-cloned without mutation, so a computed
+            // hash remains valid. WitnessData exposes historical direct mutable
+            // access that can leave `_size` stale, so cloning must recompute it.
+            _hash: Mutex::new(*self._hash.lock()),
             _size: Mutex::new(None),
         }
     }

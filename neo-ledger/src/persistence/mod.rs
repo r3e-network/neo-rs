@@ -54,6 +54,7 @@ pub mod engine_port;
 pub mod error;
 pub mod evidence;
 pub mod participant;
+pub mod profile;
 pub mod receipt;
 
 #[cfg(test)]
@@ -68,7 +69,10 @@ pub use evidence::{
     EvidenceSink, FaultCategory, FaultObservation, MAX_PENDING_FAULT_OBSERVATIONS_PER_BLOCK,
 };
 pub use participant::{CommitContext, CommitParticipant, StageContext};
+pub use profile::{PersistenceProfiler, PersistenceStage};
 pub use receipt::{ExecutionReceipt, PersistReceipt};
+
+use profile::StageTimer;
 
 use evidence::FaultObservationBuffer;
 use neo_primitives::Verifiable;
@@ -175,6 +179,30 @@ pub fn persist_block(
     participants: &[Arc<dyn CommitParticipant>],
     options: &PersistOptions,
 ) -> LedgerResult<PersistReceipt> {
+    persist_block_profiled(
+        block,
+        store,
+        engines,
+        runtime_cache,
+        evidence,
+        participants,
+        options,
+        None,
+    )
+}
+
+/// Runs the canonical pipeline with optional observation-only stage timings.
+#[allow(clippy::too_many_arguments)]
+pub fn persist_block_profiled(
+    block: Block,
+    store: &dyn SnapshotStore,
+    engines: &dyn EngineFactory,
+    runtime_cache: &dyn RuntimeCacheSink,
+    evidence: &dyn EvidenceSink,
+    participants: &[Arc<dyn CommitParticipant>],
+    options: &PersistOptions,
+    profiler: Option<&dyn PersistenceProfiler>,
+) -> LedgerResult<PersistReceipt> {
     // Step 1 — resolve options and detailed-execution gating.
     let fast_sync = options.fast_sync;
     let detailed = !fast_sync || participants.iter().any(|p| p.run_during_fast_sync());
@@ -187,29 +215,52 @@ pub fn persist_block(
         FaultObservationBuffer::for_available_capacity(evidence.available_capacity());
 
     // Steps 3/4 — open the store write transaction and derive the base overlay snapshot.
-    let transaction = store.open_transaction(options)?;
+    let transaction = {
+        let _stage = StageTimer::new(profiler, PersistenceStage::SnapshotOpen);
+        store.open_transaction(options)?
+    };
     let base_snapshot = transaction.base_snapshot();
 
     // Step 5 — pre-compute transaction hashes (fail-closed before any engine work).
-    // The legacy pipeline parallelised this with rayon for >= 2 transactions; hashing is
-    // a pure, order-independent projection, so the adapter may reinstate parallelism.
-    for tx in persisting_block.transactions.iter() {
-        tx.try_hash().map_err(|err| LedgerError::TransactionHash {
-            message: err.to_string(),
-        })?;
-    }
+    // Hashing is pure and order-independent. Indexed parallel collection preserves
+    // transaction order, including which error is returned first.
+    use rayon::prelude::*;
+    let transaction_hashes = {
+        let _stage = StageTimer::new(profiler, PersistenceStage::TransactionHash);
+        let hashes = if persisting_block.transactions.len() >= 2 {
+            persisting_block
+                .transactions
+                .par_iter()
+                .map(|tx| tx.try_hash())
+                .collect::<Vec<_>>()
+        } else {
+            persisting_block
+                .transactions
+                .iter()
+                .map(|tx| tx.try_hash())
+                .collect::<Vec<_>>()
+        };
+        hashes
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| LedgerError::TransactionHash {
+                message: err.to_string(),
+            })?
+    };
 
-    // Step 6 — OnPersist native execution.
-    let mut on_persist =
-        engines.open_on_persist(Arc::clone(&base_snapshot), Arc::clone(&persisting_block))?;
-    on_persist.native_on_persist()?;
-    on_persist.record_native_persist_success();
-
-    // Step 7 — OnPersist receipt (detailed only).
+    // Steps 6/7 — OnPersist native execution and receipt.
     let mut receipts = Vec::with_capacity(persisting_block.transactions.len() + 2);
-    if detailed {
-        receipts.push(on_persist.execution_receipt());
-    }
+    let mut on_persist = {
+        let _stage = StageTimer::new(profiler, PersistenceStage::OnPersist);
+        let mut engine =
+            engines.open_on_persist(Arc::clone(&base_snapshot), Arc::clone(&persisting_block))?;
+        engine.native_on_persist()?;
+        engine.record_native_persist_success();
+        if detailed {
+            receipts.push(engine.execution_receipt());
+        }
+        engine
+    };
 
     // Step 8 — seed native-only contract states + shared native cache handle.
     let seeded = on_persist.seed_native_contracts();
@@ -219,78 +270,84 @@ pub fn persist_block(
     let mut tx_states: LedgerTransactionStates = on_persist.take_transaction_states();
 
     // Step 10 — per-transaction application loop over one shared child overlay.
-    if !persisting_block.transactions.is_empty() {
-        let tx_overlay = Arc::new(base_snapshot.clone_cache());
-        for tx in persisting_block.transactions.iter() {
-            let tx_hash = tx.try_hash().map_err(|err| LedgerError::TransactionHash {
-                message: err.to_string(),
-            })?;
+    {
+        let _stage = StageTimer::new(profiler, PersistenceStage::TransactionLoop);
+        if !persisting_block.transactions.is_empty() {
+            let tx_overlay = Arc::new(base_snapshot.clone_cache());
+            for (tx, tx_hash) in persisting_block.transactions.iter().zip(transaction_hashes) {
+                // VM execution for the transaction
+                let container: Arc<dyn Verifiable> = Arc::new(tx.clone());
+                let mut app = engines.open_application(
+                    container,
+                    Arc::clone(&tx_overlay),
+                    Arc::clone(&persisting_block),
+                    tx.system_fee(),
+                    &seeded,
+                    &native_cache,
+                )?;
+                app.set_transaction_states(tx_states);
+                app.load_script(tx.script().to_vec())?;
+                let vm_state = {
+                    let _stage = StageTimer::new(profiler, PersistenceStage::TransactionVm);
+                    app.execute_allow_fault()
+                };
+                app.verify_execution()?;
 
-            // VM execution for the transaction
-            let container: Arc<dyn Verifiable> = Arc::new(tx.clone());
-            let mut app = engines.open_application(
-                container,
-                Arc::clone(&tx_overlay),
-                Arc::clone(&persisting_block),
-                tx.system_fee(),
-                &seeded,
-                &native_cache,
-            )?;
-            app.set_transaction_states(tx_states);
-            app.load_script(tx.script().to_vec())?;
-            let vm_state = app.execute_allow_fault();
-
-            if detailed {
-                receipts.push(app.execution_receipt());
-            } else {
-                // Record the VM state unconditionally even without a detailed receipt.
-                app.record_transaction_vm_state(&tx_hash, vm_state);
-            }
-            tx_states = app.take_transaction_states();
-
-            match vm_state {
-                // Step 10a — HALT: merge the child overlay into the base snapshot.
-                VmState::HALT => base_snapshot.merge_from_child(&tx_overlay),
-                // Step 10b — FAULT: reset the overlay and stage a bounded observation.
-                VmState::FAULT => {
-                    tx_overlay.reset();
-                    let category = if app.fault_exception().is_some() {
-                        FaultCategory::CaughtVmException
-                    } else {
-                        FaultCategory::VmFault
-                    };
-                    fault_buffer.push(FaultObservation {
-                        transaction_hash: tx_hash,
-                        block_height,
-                        block_hash,
-                        vm_state: VmState::FAULT,
-                        category,
-                        gas_consumed: app.fee_consumed(),
-                    });
+                if detailed {
+                    receipts.push(app.execution_receipt());
+                } else {
+                    // Record the VM state unconditionally even without a detailed receipt.
+                    app.record_transaction_vm_state(&tx_hash, vm_state);
                 }
-                // Step 10c — any other VM state aborts before any commit side effect.
-                other => {
-                    return Err(LedgerError::UnexpectedVmState {
-                        transaction_hash: tx_hash,
-                        vm_state: other,
-                    });
+                tx_states = app.take_transaction_states();
+
+                match vm_state {
+                    // Step 10a — HALT: merge the child overlay into the base snapshot.
+                    VmState::HALT => base_snapshot.merge_from_child(&tx_overlay),
+                    // Step 10b — FAULT: reset the overlay and stage a bounded observation.
+                    VmState::FAULT => {
+                        tx_overlay.reset();
+                        let category = if app.fault_exception().is_some() {
+                            FaultCategory::CaughtVmException
+                        } else {
+                            FaultCategory::VmFault
+                        };
+                        fault_buffer.push(FaultObservation {
+                            transaction_hash: tx_hash,
+                            block_height,
+                            block_hash,
+                            vm_state: VmState::FAULT,
+                            category,
+                            gas_consumed: app.fee_consumed(),
+                        });
+                    }
+                    // Step 10c — any other VM state aborts before any commit side effect.
+                    other => {
+                        return Err(LedgerError::UnexpectedVmState {
+                            transaction_hash: tx_hash,
+                            vm_state: other,
+                        });
+                    }
                 }
             }
         }
     }
 
     // Step 11 — PostPersist native execution over the merged base snapshot.
-    let mut post_persist = engines.open_post_persist(
-        Arc::clone(&base_snapshot),
-        Arc::clone(&persisting_block),
-        &seeded,
-        &native_cache,
-    )?;
-    post_persist.set_transaction_states(tx_states);
-    post_persist.native_post_persist()?;
-    post_persist.record_native_persist_success();
-    if detailed {
-        receipts.push(post_persist.execution_receipt());
+    {
+        let _stage = StageTimer::new(profiler, PersistenceStage::PostPersist);
+        let mut post_persist = engines.open_post_persist(
+            Arc::clone(&base_snapshot),
+            Arc::clone(&persisting_block),
+            &seeded,
+            &native_cache,
+        )?;
+        post_persist.set_transaction_states(tx_states);
+        post_persist.native_post_persist()?;
+        post_persist.record_native_persist_success();
+        if detailed {
+            receipts.push(post_persist.execution_receipt());
+        }
     }
 
     // Step 12 — commit participants stage/precommit in registration order.
@@ -301,65 +358,78 @@ pub fn persist_block(
         fast_sync,
     };
     let mut staged: Vec<usize> = Vec::new();
-    for (index, participant) in participants.iter().enumerate() {
-        if fast_sync && !participant.run_during_fast_sync() {
-            continue;
+    {
+        let _stage = StageTimer::new(profiler, PersistenceStage::ParticipantPrecommit);
+        for (index, participant) in participants.iter().enumerate() {
+            if fast_sync && !participant.run_during_fast_sync() {
+                continue;
+            }
+            if let Err(message) = participant.precommit(&stage) {
+                discard_staged_reverse(participants, &staged, &stage);
+                return Err(LedgerError::ParticipantCommit { message });
+            }
+            staged.push(index);
         }
-        if let Err(message) = participant.precommit(&stage) {
-            discard_staged_reverse(participants, &staged, &stage);
-            return Err(LedgerError::ParticipantCommit { message });
-        }
-        staged.push(index);
     }
 
     // Step 13 — canonical store commit.
-    if let Err(message) = transaction.commit() {
-        discard_staged_reverse(participants, &staged, &stage);
-        return Err(LedgerError::StoreCommit {
-            index: block_height,
-            message,
-        });
+    {
+        let _stage = StageTimer::new(profiler, PersistenceStage::StoreCommit);
+        if let Err(message) = transaction.commit() {
+            discard_staged_reverse(participants, &staged, &stage);
+            return Err(LedgerError::StoreCommit {
+                index: block_height,
+                message,
+            });
+        }
     }
 
     // Step 14 — runtime cache / tip update.
-    let cache_result = if options.update_runtime_cache {
-        runtime_cache
-            .record_block(&persisting_block)
-            .map_err(|message| LedgerError::RuntimeCache {
-                index: block_height,
-                message,
-            })
-    } else {
-        runtime_cache.record_tip(block_height);
-        Ok(())
+    let cache_result = {
+        let _stage = StageTimer::new(profiler, PersistenceStage::RuntimeUpdate);
+        if options.update_runtime_cache {
+            runtime_cache
+                .record_block(&persisting_block)
+                .map_err(|message| LedgerError::RuntimeCache {
+                    index: block_height,
+                    message,
+                })
+        } else {
+            runtime_cache.record_tip(block_height);
+            Ok(())
+        }
     };
     if let Err(err) = cache_result {
         discard_staged_reverse(participants, &staged, &stage);
         return Err(err);
     }
 
-    // Step 15a — infallible committed participants (registration order, all participants).
-    let commit_context = CommitContext {
-        block: &persisting_block,
-        fast_sync,
+    let (staged_fault_observations, dropped) = {
+        let _stage = StageTimer::new(profiler, PersistenceStage::PostCommit);
+        // Step 15a — infallible committed participants (registration order).
+        let commit_context = CommitContext {
+            block: &persisting_block,
+            fast_sync,
+        };
+        for participant in participants.iter() {
+            participant.committed(&commit_context);
+        }
+
+        // Step 15b — bounded fault-evidence export (never fails the pipeline).
+        let staged_fault_observations = fault_buffer.staged_len();
+        let mut dropped = fault_buffer.dropped;
+        for observation in std::mem::take(&mut fault_buffer.observations) {
+            let emitted = evidence.try_emit(&observation);
+            dropped = dropped.saturating_add(u64::from(!emitted));
+        }
+        evidence.record_dropped(dropped);
+
+        // Step 15c — plugin BlockReceived broadcast (detailed only, never fails).
+        if detailed {
+            runtime_cache.broadcast_block_received(block_hash.to_string(), block_height);
+        }
+        (staged_fault_observations, dropped)
     };
-    for participant in participants.iter() {
-        participant.committed(&commit_context);
-    }
-
-    // Step 15b — bounded fault-evidence export (never fails the pipeline).
-    let staged_fault_observations = fault_buffer.staged_len();
-    let mut dropped = fault_buffer.dropped;
-    for observation in std::mem::take(&mut fault_buffer.observations) {
-        let emitted = evidence.try_emit(&observation);
-        dropped = dropped.saturating_add(u64::from(!emitted));
-    }
-    evidence.record_dropped(dropped);
-
-    // Step 15c — plugin BlockReceived broadcast (detailed only, never fails).
-    if detailed {
-        runtime_cache.broadcast_block_received(block_hash.to_string(), block_height);
-    }
 
     Ok(PersistReceipt {
         block_hash,

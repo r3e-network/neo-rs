@@ -3,8 +3,8 @@
 //! This module coordinates fast path execution attempts and automatic
 //! fallback to full VM when needed.
 
-use super::error::FastPathResult;
 use super::classifier::{TransactionClassifier, TransactionComplexity};
+use super::error::FastPathResult;
 use super::nep17::{Nep17Parser, TransferParams};
 
 /// Fast path execution statistics.
@@ -37,7 +37,8 @@ impl FastPathStats {
 
     /// Calculates the fallback rate (percentage of fast path attempts that failed).
     pub fn fallback_rate(&self) -> f64 {
-        let fast_path_attempts = self.fast_path_transfers + self.fast_path_blocks + self.fast_path_fallbacks;
+        let fast_path_attempts =
+            self.fast_path_transfers + self.fast_path_blocks + self.fast_path_fallbacks;
         if fast_path_attempts == 0 {
             return 0.0;
         }
@@ -123,7 +124,7 @@ impl Default for FastPathExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::OpCode;
+    use crate::fast_path::nep17::standard_transfer_script;
 
     #[test]
     fn test_stats_percentage() {
@@ -133,8 +134,6 @@ mod tests {
             fast_path_fallbacks: 5,
             full_vm_executions: 10,
         };
-
-        // 90 fast path / 100 total = 90%
         assert!((stats.fast_path_percentage() - 90.0).abs() < 0.01);
     }
 
@@ -146,69 +145,20 @@ mod tests {
             fast_path_fallbacks: 10,
             full_vm_executions: 10,
         };
-
-        // 10 fallbacks / 100 attempts = 10%
         assert!((stats.fallback_rate() - 10.0).abs() < 0.01);
     }
 
     #[test]
-    fn test_classify_nep17() {
-        let executor = FastPathExecutor::new();
-
-        let mut script = Vec::new();
-        script.push(OpCode::PUSHDATA1 as u8);
-        script.push(20);
-        script.extend_from_slice(&[1u8; 20]);
-        script.push(OpCode::PUSHDATA1 as u8);
-        script.push(20);
-        script.extend_from_slice(&[2u8; 20]);
-        script.push(OpCode::PUSHDATA1 as u8);
-        script.push(1);
-        script.push(100);
-        script.push(OpCode::PUSHNULL as u8);
-        script.push(OpCode::PUSH4 as u8);
-        script.push(OpCode::PACK as u8);
-        script.push(OpCode::PUSHDATA1 as u8);
-        script.push(8);
-        script.extend_from_slice(b"transfer");
-        script.push(OpCode::PUSHDATA1 as u8);
-        script.push(20);
-        script.extend_from_slice(&[3u8; 20]);
-        script.push(OpCode::SYSCALL as u8);
-
-        let complexity = executor.classify_transaction(&script);
-        assert_eq!(complexity, TransactionComplexity::SimpleTransfer);
-    }
-
-    #[test]
-    fn test_parse_and_record() {
+    fn test_classify_parse_and_record() {
         let mut executor = FastPathExecutor::new();
-
-        let mut script = Vec::new();
-        script.push(OpCode::PUSHDATA1 as u8);
-        script.push(20);
-        script.extend_from_slice(&[1u8; 20]);
-        script.push(OpCode::PUSHDATA1 as u8);
-        script.push(20);
-        script.extend_from_slice(&[2u8; 20]);
-        script.push(OpCode::PUSHDATA1 as u8);
-        script.push(1);
-        script.push(100);
-        script.push(OpCode::PUSHNULL as u8);
-        script.push(OpCode::PUSH4 as u8);
-        script.push(OpCode::PACK as u8);
-        script.push(OpCode::PUSHDATA1 as u8);
-        script.push(8);
-        script.extend_from_slice(b"transfer");
-        script.push(OpCode::PUSHDATA1 as u8);
-        script.push(20);
-        script.extend_from_slice(&[3u8; 20]);
-        script.push(OpCode::SYSCALL as u8);
-
+        let script = standard_transfer_script(100);
+        assert_eq!(
+            executor.classify_transaction(&script),
+            TransactionComplexity::SimpleTransfer
+        );
         let params = executor.parse_nep17_transfer(&script).unwrap();
         assert_eq!(params.from, vec![1u8; 20]);
         assert_eq!(params.to, vec![2u8; 20]);
-
         executor.record_fast_transfer();
         assert_eq!(executor.stats().fast_path_transfers, 1);
     }

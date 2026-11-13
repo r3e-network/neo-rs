@@ -179,7 +179,9 @@ fn crypto_check_multisig_handler(
     }
 }
 /// Registers crypto-related interop services
-pub(crate) fn register_crypto_interops(engine: &mut ApplicationEngine) -> VmResult<()> {
+pub(crate) fn register_crypto_interops(
+    engine: &mut dyn super::state::InteropRegistration,
+) -> VmResult<()> {
     engine.register_host_service(
         "System.Crypto.CheckSig",
         CHECK_SIG_PRICE,

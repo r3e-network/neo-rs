@@ -138,6 +138,7 @@ client = [
     "dep:neo-system",
     "dep:neo-json",
     "dep:neo-native-contracts",
+    "dep:neo-wallets",
     "dep:reqwest",
     "dep:hyper",
     "dep:anyhow",

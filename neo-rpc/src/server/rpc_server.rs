@@ -3,12 +3,12 @@ use hyper::server::accept::from_stream;
 use hyper::service::{Service, make_service_fn, service_fn};
 // TODO: neo_services crate doesn't exist - needs to be created or removed
 // use neo_services::RpcService;
+use neo_system::NeoSystem;
 use neo_wallets::Wallet;
 use neo_wallets::signing::{
     AuthenticatedContext, FrozenSignIntent, KeyRef, SIGNING_SCHEMA_VERSION, SignPurpose,
     SignerService, SigningKeyResolver, TrustedSignerClient,
 };
-use neo_system::NeoSystem;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use prometheus::Counter;
 use rustls::ServerConfig;

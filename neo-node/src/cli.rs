@@ -160,7 +160,7 @@ pub struct NodeCli {
     #[arg(long)]
     pub hsm: bool,
 
-    /// HSM device type (ledger, pkcs11, simulation).
+    /// HSM device type (ledger or pkcs11).
     #[cfg(feature = "hsm")]
     #[arg(long, value_name = "DEVICE", default_value = "ledger")]
     pub hsm_device: String,
@@ -249,7 +249,12 @@ pub struct NodeCli {
     pub migrate_from: Option<PathBuf>,
 
     /// Force migration type (neo-cli or neo-go) instead of auto-detection.
-    #[arg(long, value_name = "TYPE", env = "NEO_MIGRATE_TYPE", requires = "migrate_from")]
+    #[arg(
+        long,
+        value_name = "TYPE",
+        env = "NEO_MIGRATE_TYPE",
+        requires = "migrate_from"
+    )]
     pub migrate_type: Option<String>,
 
     /// Skip storage migration, only import configuration.

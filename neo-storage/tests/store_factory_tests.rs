@@ -39,7 +39,10 @@ fn store_factory_get_store_fails_for_unknown_provider() {
     // The store factory falls back to the default (Memory) provider
     // when an unknown provider is requested, so this actually succeeds
     let result = StoreFactory::get_store("UnknownProvider", "");
-    assert!(result.is_ok(), "Store factory falls back to default provider");
+    assert!(
+        result.is_ok(),
+        "Store factory falls back to default provider"
+    );
 }
 
 #[test]

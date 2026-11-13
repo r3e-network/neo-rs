@@ -30,12 +30,17 @@ bitflags = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 hex = { workspace = true }
 proptest = "1"
 
 [features]
 default = []
-pooled-engine = []
+
+[[bench]]
+name = "syscall_dispatch"
+path = "benches/syscall_dispatch_bench.rs"
+harness = false
 
 [lints]
 workspace = true

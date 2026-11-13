@@ -10,12 +10,12 @@
 // modifications are permitted.
 
 use super::super::utility::{RpcUtility, object_array, witness_to_json};
-use neo_protocol::ProtocolSettings;
-use neo_protocol::payloads::Header as BlockHeader;
-use neo_wallets::helper::Helper as WalletHelper;
 use neo_io::Serializable;
 use neo_json::{JObject, JToken};
 use neo_primitives::UInt256;
+use neo_protocol::ProtocolSettings;
+use neo_protocol::payloads::Header as BlockHeader;
+use neo_wallets::helper::Helper as WalletHelper;
 use serde::{Deserialize, Serialize};
 
 /// RPC block header information matching C# `RpcBlockHeader`
@@ -147,12 +147,18 @@ impl RpcBlockHeader {
             "merkleroot".to_string(),
             JToken::String(header.merkle_root().to_string()),
         );
-        json.insert("time".to_string(), JToken::Number(header.timestamp() as f64));
+        json.insert(
+            "time".to_string(),
+            JToken::Number(header.timestamp() as f64),
+        );
         json.insert(
             "nonce".to_string(),
             JToken::String(format!("{:016X}", header.nonce())),
         );
-        json.insert("index".to_string(), JToken::Number(f64::from(header.index())));
+        json.insert(
+            "index".to_string(),
+            JToken::Number(f64::from(header.index())),
+        );
         json.insert(
             "primary".to_string(),
             JToken::Number(f64::from(header.primary_index())),
@@ -166,7 +172,7 @@ impl RpcBlockHeader {
         );
         json.insert(
             "witnesses".to_string(),
-            object_array(&[header.witness.clone()], witness_to_json),
+            object_array(std::slice::from_ref(&header.witness), witness_to_json),
         );
         json.insert(
             "confirmations".to_string(),
@@ -246,7 +252,8 @@ mod tests {
         assert_eq!(rpc_header.header.nonce(), 42);
         assert_eq!(rpc_header.confirmations, 8);
         assert!(rpc_header.next_block_hash.is_some());
-        assert_eq!(rpc_header.header.witness.invocation_script().len(), 1);
+        assert_eq!(rpc_header.header.witness.invocation_script(), &[1, 2, 3]);
+        assert_eq!(rpc_header.header.witness.verification_script(), &[4, 5, 6]);
     }
 
     #[test]
@@ -255,7 +262,7 @@ mod tests {
             return;
         };
         let settings = ProtocolSettings::default_settings();
-        let parsed = RpcBlockHeader::from_json(&expected, &settings).expect("parse");
+        let mut parsed = RpcBlockHeader::from_json(&expected, &settings).expect("parse");
         let actual = parsed.to_json(&settings);
         assert_eq!(expected.to_string(), actual.to_string());
     }

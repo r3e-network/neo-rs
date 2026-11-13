@@ -4,7 +4,7 @@ use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
 use async_trait::async_trait;
 use neo_actors::{Actor, ActorContext, ActorRef, ActorResult, ActorSystem, Props};
-use neo_primitives::{UInt256, VerifyResult};
+use neo_system::network::p2p::{VerifyResult, ports::RelayOutcome};
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 use std::any::Any;
@@ -12,24 +12,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::oneshot;
 
-/// Relay response wrapper for RPC endpoints.
-///
-/// This struct bridges the blockchain's VerifyResult and the RPC layer's
-/// JSON response format. It wraps the verification result with the transaction
-/// or block hash for successful relay operations.
-///
-/// The separation between blockchain verification (VerifyResult) and RPC
-/// response formatting (RelayResponse -> JSON) allows:
-/// - Blockchain layer to remain RPC-agnostic
-/// - RPC layer to handle protocol-specific error codes
-/// - Type-safe relay result passing through the actor system
-#[derive(Debug, Clone)]
-pub struct RelayResponse {
-    pub result: VerifyResult,
-    pub hash: UInt256,
-}
-
-pub(super) fn map_relay_result(result: RelayResponse) -> Result<Value, RpcException> {
+pub(super) fn map_relay_result(result: RelayOutcome) -> Result<Value, RpcException> {
     match result.result {
         VerifyResult::Succeed => Ok(json!({ "hash": result.hash.to_string() })),
         VerifyResult::AlreadyExists => Err(RpcException::from(RpcError::already_exists())),
@@ -66,7 +49,7 @@ pub(super) fn map_relay_result(result: RelayResponse) -> Result<Value, RpcExcept
 pub(super) fn with_relay_responder<F>(
     server: &RpcServer,
     send: F,
-) -> Result<RelayResponse, RpcException>
+) -> Result<RelayOutcome, RpcException>
 where
     F: FnOnce(ActorRef) -> Result<(), RpcException>,
 {
@@ -86,7 +69,7 @@ where
 
 fn spawn_relay_responder(
     actor_system: &ActorSystem,
-) -> Result<(ActorRef, oneshot::Receiver<RelayResponse>), RpcException> {
+) -> Result<(ActorRef, oneshot::Receiver<RelayOutcome>), RpcException> {
     let (tx, rx) = oneshot::channel();
     let completion = Arc::new(Mutex::new(Some(tx)));
     let props = {
@@ -106,7 +89,7 @@ fn spawn_relay_responder(
 }
 
 struct RelayResultResponder {
-    completion: Arc<Mutex<Option<oneshot::Sender<RelayResponse>>>>,
+    completion: Arc<Mutex<Option<oneshot::Sender<RelayOutcome>>>>,
 }
 
 #[async_trait]
@@ -116,7 +99,7 @@ impl Actor for RelayResultResponder {
         message: Box<dyn Any + Send>,
         ctx: &mut ActorContext,
     ) -> ActorResult {
-        if let Ok(result) = message.downcast::<RelayResponse>() {
+        if let Ok(result) = message.downcast::<RelayOutcome>() {
             let mut guard = self.completion.lock();
             if let Some(tx) = guard.take() {
                 let _ = tx.send(*result);

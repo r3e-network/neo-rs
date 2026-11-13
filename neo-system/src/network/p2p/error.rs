@@ -137,7 +137,9 @@ impl From<neo_primitives::NetworkError> for P2PError {
             neo_primitives::NetworkError::ProtocolViolation { peer, violation } => {
                 Self::ProtocolViolation { peer, violation }
             }
-            neo_primitives::NetworkError::InvalidMessage(msg) => Self::InvalidMessage { message: msg },
+            neo_primitives::NetworkError::InvalidMessage(msg) => {
+                Self::InvalidMessage { message: msg }
+            }
             neo_primitives::NetworkError::ConnectionError(msg) => Self::ConnectionError(msg),
             neo_primitives::NetworkError::Timeout => Self::Timeout {
                 operation: "network operation".to_string(),
@@ -153,7 +155,9 @@ impl From<crate::network::p2p::protocol_message::P2PMessageError> for P2PError {
             crate::network::p2p::protocol_message::P2PMessageError::InvalidMessage(msg) => {
                 Self::InvalidMessage { message: msg }
             }
-            crate::network::p2p::protocol_message::P2PMessageError::Io(msg) => Self::Io { message: msg },
+            crate::network::p2p::protocol_message::P2PMessageError::Io(msg) => {
+                Self::Io { message: msg }
+            }
         }
     }
 }

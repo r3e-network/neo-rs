@@ -1,10 +1,10 @@
 use super::block_validation::{
-    BlockHashMatch, IncomingBlockDisconnect, IncomingBlockOutcome, PersistedBlockMatch,
-    block_matches_hash, match_persisted_block, persisted_block_hash, validate_incoming_block,
+    IncomingBlockDisconnect, IncomingBlockOutcome, PersistedBlockMatch, match_persisted_block,
+    persisted_block_hash, validate_incoming_block,
 };
 use super::peer_commands::disconnect as disconnect_peer;
 use super::{HEADER_TASK_HASH, TaskManager};
-use crate::network::p2p::payloads::{Block, InventoryType};
+use crate::network::p2p::payloads::Block;
 use neo_actors::ActorRef;
 use neo_primitives::{RelayError, UInt256};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -342,68 +342,5 @@ impl TaskManager {
                 }
             }
         }
-    }
-
-    pub(super) fn on_invalid_block(&mut self, hash: &UInt256, block_index: Option<u32>) {
-        let mut offenders = Vec::with_capacity(self.sessions.len());
-
-        for entry in self.sessions.values() {
-            let mut matches = false;
-            if let Some(index) = block_index {
-                if let Some(stored) = entry.session.received_block.get(&index) {
-                    matches = match block_matches_hash(stored, hash) {
-                        BlockHashMatch::Matches => true,
-                        BlockHashMatch::DoesNotMatch => false,
-                        BlockHashMatch::Unhashable(error) => {
-                            warn!(
-                                target: "neo",
-                                actor = %entry.actor.path(),
-                                block_index = index,
-                                %error,
-                                "treating unhashable cached block as invalid-block offender"
-                            );
-                            true
-                        }
-                    };
-                }
-            } else {
-                for stored in entry.session.received_block.values() {
-                    match block_matches_hash(stored, hash) {
-                        BlockHashMatch::Matches => {
-                            matches = true;
-                            break;
-                        }
-                        BlockHashMatch::DoesNotMatch => {}
-                        BlockHashMatch::Unhashable(error) => {
-                            warn!(
-                                target: "neo",
-                                actor = %entry.actor.path(),
-                                %error,
-                                "treating unhashable cached block as invalid-block offender"
-                            );
-                            matches = true;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if matches {
-                offenders.push(entry.actor.clone());
-            }
-        }
-
-        for actor in offenders {
-            if let Err(error) = disconnect_peer(&actor, "invalid block relayed".to_string()) {
-                warn!(
-                    target: "neo",
-                    actor = %actor.path(),
-                    %error,
-                    "failed to disconnect peer carrying invalid block"
-                );
-            }
-        }
-
-        self.request_tasks_all();
     }
 }

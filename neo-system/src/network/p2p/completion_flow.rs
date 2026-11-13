@@ -9,7 +9,7 @@
 //! * Peers are opaque [`PeerHandle`]s keyed in a `HashMap`, and per-peer
 //!   bookkeeping reuses the existing [`TaskSession`] (task 103) rather than
 //!   re-deriving it. Disconnects go through
-//!   [`PeerCommandPort::disconnect`](crate::ports::PeerCommandPort).
+//!   [`PeerCommandPort::disconnect`](crate::network::p2p::ports::PeerCommandPort).
 //! * The request planner is **not** reimplemented here (it is a separate
 //!   scheduling concern). Instead each handler *returns* the set of peers that
 //!   need a re-request pass, so the caller (the task-manager actor wired in task
@@ -159,10 +159,10 @@ impl TaskManagerState {
         if let Some(ref block_ref) = block {
             index_to_release = Some(block_ref.index());
         }
-        if let Some(index) = index_to_release {
-            if session.complete_index_task(index) {
-                self.global_index_tasks.decrement(&index);
-            }
+        if let Some(index) = index_to_release
+            && session.complete_index_task(index)
+        {
+            self.global_index_tasks.decrement(&index);
         }
 
         let mut should_request = true;
@@ -254,10 +254,9 @@ impl TaskManagerState {
         }
 
         for peer in &to_disconnect {
-            let _ =
-                ports
-                    .peer_command
-                    .disconnect(*peer, "persisted block hash mismatch".to_string());
+            let _ = ports
+                .peer_command
+                .disconnect(*peer, "persisted block hash mismatch".to_string());
         }
 
         self.global_index_tasks.retain_tracked(|idx| *idx > index);
@@ -353,7 +352,7 @@ impl TaskManagerState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ports::PeerHandle;
+    use crate::network::p2p::ports::PeerHandle;
     use neo_protocol::payloads::Block;
     use std::sync::{Arc, Mutex};
 
@@ -363,16 +362,20 @@ mod tests {
         disconnected: Mutex<Vec<(u64, String)>>,
     }
 
-    impl crate::ports::PeerCommandPort for RecordingPeerCommand {
+    impl crate::network::p2p::ports::PeerCommandPort for RecordingPeerCommand {
         fn send_get_data(
             &self,
             _peer: PeerHandle,
             _inventory_type: InventoryType,
             _hashes: Vec<UInt256>,
-        ) -> crate::ports::PortResult<()> {
+        ) -> crate::network::p2p::ports::PortResult<()> {
             Ok(())
         }
-        fn send_get_headers(&self, _peer: PeerHandle, _start_index: u32) -> crate::ports::PortResult<()> {
+        fn send_get_headers(
+            &self,
+            _peer: PeerHandle,
+            _start_index: u32,
+        ) -> crate::network::p2p::ports::PortResult<()> {
             Ok(())
         }
         fn send_get_blocks_by_index(
@@ -380,14 +383,21 @@ mod tests {
             _peer: PeerHandle,
             _start_index: u32,
             _count: i16,
-        ) -> crate::ports::PortResult<()> {
+        ) -> crate::network::p2p::ports::PortResult<()> {
             Ok(())
         }
-        fn send_mempool(&self, _peer: PeerHandle) -> crate::ports::PortResult<()> {
+        fn send_mempool(&self, _peer: PeerHandle) -> crate::network::p2p::ports::PortResult<()> {
             Ok(())
         }
-        fn disconnect(&self, peer: PeerHandle, reason: String) -> crate::ports::PortResult<()> {
-            self.disconnected.lock().unwrap().push((peer.as_u64(), reason));
+        fn disconnect(
+            &self,
+            peer: PeerHandle,
+            reason: String,
+        ) -> crate::network::p2p::ports::PortResult<()> {
+            self.disconnected
+                .lock()
+                .unwrap()
+                .push((peer.as_u64(), reason));
             Ok(())
         }
     }
@@ -407,12 +417,15 @@ mod tests {
     fn harness() -> Harness {
         let peer_command = Arc::new(RecordingPeerCommand::default());
         let ports = TaskManagerPorts {
-            ledger_query: Arc::new(TestLedger::default()),
-            mempool: Arc::new(TestMempool::default()),
+            ledger_query: Arc::new(TestLedger),
+            mempool: Arc::new(TestMempool),
             peer_command: peer_command.clone(),
-            persistence_events: Arc::new(TestPersistenceEvents::default()),
+            persistence_events: Arc::new(TestPersistenceEvents),
         };
-        Harness { ports, peer_command }
+        Harness {
+            ports,
+            peer_command,
+        }
     }
 
     #[test]
@@ -449,10 +462,12 @@ mod tests {
         let mut hash_holder = incoming.clone();
         let hash = hash_holder.try_hash().expect("hash");
 
-        let to_request =
-            state.complete_inventory(&h.ports, peer, hash, Some(incoming), Some(5));
+        let to_request = state.complete_inventory(&h.ports, peer, hash, Some(incoming), Some(5));
 
-        assert!(to_request.is_empty(), "a disconnected peer is not re-requested");
+        assert!(
+            to_request.is_empty(),
+            "a disconnected peer is not re-requested"
+        );
         let disconnected = h.peer_command.disconnected.lock().unwrap();
         assert_eq!(disconnected.len(), 1);
         assert_eq!(disconnected[0].0, 2);
@@ -522,7 +537,7 @@ mod tests {
     #[derive(Default)]
     struct TestLedger;
 
-    impl crate::ports::LedgerQueryPort for TestLedger {
+    impl crate::network::p2p::ports::LedgerQueryPort for TestLedger {
         fn current_index(&self) -> u32 {
             0
         }
@@ -552,26 +567,42 @@ mod tests {
     #[derive(Default)]
     struct TestMempool;
 
-    impl crate::ports::MempoolQueryPort for TestMempool {
+    impl crate::network::p2p::ports::MempoolQueryPort for TestMempool {
         fn capacity(&self) -> usize {
             0
         }
         fn transaction_hashes(&self) -> Vec<UInt256> {
             Vec::new()
         }
-        fn try_get_transaction(&self, _hash: &UInt256) -> Option<neo_protocol::payloads::Transaction> {
+        fn try_get_transaction(
+            &self,
+            _hash: &UInt256,
+        ) -> Option<neo_protocol::payloads::Transaction> {
             None
         }
-        fn contains_transaction(&self, _hash: &UInt256) -> crate::ContainsTransactionType {
-            crate::ContainsTransactionType::NotExist
+        fn contains_transaction(
+            &self,
+            _hash: &UInt256,
+        ) -> crate::network::p2p::ContainsTransactionType {
+            crate::network::p2p::ContainsTransactionType::NotExist
         }
-        fn contains_conflict_hash(&self, _hash: &UInt256, _signers: &[neo_primitives::UInt160]) -> bool {
+        fn contains_conflict_hash(
+            &self,
+            _hash: &UInt256,
+            _signers: &[neo_primitives::UInt160],
+        ) -> bool {
             false
         }
-        fn try_get_relay_extensible(&self, _hash: &UInt256) -> Option<neo_protocol::payloads::Extensible> {
+        fn try_get_relay_extensible(
+            &self,
+            _hash: &UInt256,
+        ) -> Option<neo_protocol::payloads::Extensible> {
             None
         }
-        fn try_get_extensible(&self, _hash: &UInt256) -> Option<neo_protocol::payloads::Extensible> {
+        fn try_get_extensible(
+            &self,
+            _hash: &UInt256,
+        ) -> Option<neo_protocol::payloads::Extensible> {
             None
         }
     }
@@ -582,8 +613,10 @@ mod tests {
     #[derive(Default)]
     struct TestPersistenceEvents;
 
-    impl crate::ports::PersistenceEventPort for TestPersistenceEvents {
-        fn subscribe(&self) -> tokio::sync::mpsc::Receiver<crate::ports::PersistenceEvent> {
+    impl crate::network::p2p::ports::PersistenceEventPort for TestPersistenceEvents {
+        fn subscribe(
+            &self,
+        ) -> tokio::sync::mpsc::Receiver<crate::network::p2p::ports::PersistenceEvent> {
             let (_tx, rx) = tokio::sync::mpsc::channel(1);
             rx
         }

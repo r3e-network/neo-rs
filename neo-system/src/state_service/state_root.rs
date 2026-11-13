@@ -7,7 +7,7 @@ use neo_crypto::Crypto;
 use neo_io_crate::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_native_contracts::native::{Role, role_management::RoleManagement};
 use neo_primitives::error::PrimitiveResult;
-use neo_primitives::{UInt160, UInt256, Verifiable};
+use neo_primitives::{UInt256, Verifiable};
 use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_protocol::witness::Witness;
 use neo_smart_contract::contract::Contract;

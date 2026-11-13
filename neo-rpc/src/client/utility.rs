@@ -46,19 +46,19 @@ pub use witness::{
 #[allow(unused_imports)]
 pub use witness_rule::rule_from_json;
 
-use neo_protocol::ProtocolSettings;
-use neo_wallets::helper::Helper as WalletHelper;
-use neo_wallets::KeyPair;
-use neo_ledger::Block;
-use neo_protocol::payloads::Header as BlockHeader;
 use neo_crypto::{ECCurve, ECPoint};
 use neo_json::{JObject, JToken};
+use neo_ledger::Block;
 use neo_native_contracts::native::NativeRegistry;
 use neo_primitives::{UInt160, UInt256};
+use neo_protocol::ProtocolSettings;
+use neo_protocol::payloads::Header as BlockHeader;
 use neo_protocol::payloads::Transaction;
 use neo_protocol::witness::Witness;
 use neo_smart_contract::contract::Contract;
 use neo_vm::StackValue;
+use neo_wallets::KeyPair;
+use neo_wallets::helper::Helper as WalletHelper;
 use num_bigint::BigInt;
 use std::sync::OnceLock;
 
@@ -610,23 +610,24 @@ mod tests {
     #[test]
     fn block_roundtrip_json() {
         let witness = Witness::new_with_scripts(vec![0xAA, 0xBB], vec![0xCC, 0xDD]);
-        let header = BlockHeader::new(
-            0,
-            UInt256::zero(),
-            UInt256::zero(),
-            12345,
-            999,
-            7,
-            2,
-            UInt160::zero(),
-            vec![witness.clone()],
-        );
+        let mut header = BlockHeader::new();
+        header.set_version(0);
+        header.set_prev_hash(UInt256::zero());
+        header.set_merkle_root(UInt256::zero());
+        header.set_timestamp(12345);
+        header.set_nonce(999);
+        header.set_index(7);
+        header.set_primary_index(2);
+        header.set_next_consensus(UInt160::zero());
+        header.witness = witness.clone();
         let mut tx = Transaction::new();
         tx.set_script(vec![9, 9, 9]);
         tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::GLOBAL)]);
-        let block = Block::new(header, vec![tx]);
+        let mut block = Block::new();
+        block.header = header;
+        block.transactions = vec![tx];
 
-        let json = RpcUtility::block_to_json(&block, &ProtocolSettings::default_settings());
+        let json = RpcUtility::block_to_json(&mut block, &ProtocolSettings::default_settings());
         let parsed =
             RpcUtility::block_from_json(&json, &ProtocolSettings::default_settings()).unwrap();
 

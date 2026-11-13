@@ -52,12 +52,12 @@ impl Block {
     /// Returns the serialized size of the block.
     /// This is an approximation based on header size plus transaction sizes.
     pub fn size(&self) -> usize {
-        use neo_io::serializable::helper::get_var_size_usize;
         use neo_io::Serializable;
+        use neo_io::serializable::helper::get_var_size_usize;
         // Header size + transaction count varint + sum of transaction sizes
         let header_size = self.header.size();
         let tx_count_size = get_var_size_usize(self.transactions.len());
-        let tx_total_size: usize = self.transactions.iter().map(|tx| Serializable::size(tx)).sum();
+        let tx_total_size: usize = self.transactions.iter().map(Serializable::size).sum();
         header_size + tx_count_size + tx_total_size
     }
 }

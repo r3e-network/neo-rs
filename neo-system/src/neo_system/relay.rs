@@ -11,10 +11,6 @@ use neo_smart_contract::error::CoreResult;
 /// Default capacity for the relay extensible cache.
 pub(crate) const RELAY_CACHE_CAPACITY: usize = 100;
 
-/// Maximum number of historical blocks/headers to hydrate into memory on startup.
-/// Older data remains accessible via the store but is not preloaded to reduce memory use.
-pub(crate) const LEDGER_HYDRATION_WINDOW: u32 = 2_000;
-
 /// Entry in the relay cache for extensible payloads.
 ///
 /// Wraps an `ExtensiblePayload` with its precomputed hash for efficient
@@ -62,10 +58,5 @@ mod tests {
     #[test]
     fn relay_cache_capacity_is_reasonable() {
         assert_eq!(RELAY_CACHE_CAPACITY, 100);
-    }
-
-    #[test]
-    fn ledger_hydration_window_is_reasonable() {
-        assert_eq!(LEDGER_HYDRATION_WINDOW, 2_000);
     }
 }

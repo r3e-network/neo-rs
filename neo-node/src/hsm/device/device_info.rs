@@ -9,8 +9,6 @@ pub enum HsmDeviceType {
     Ledger,
     /// Generic PKCS#11 HSM
     Pkcs11,
-    /// Software simulation (for testing)
-    Simulation,
 }
 
 impl std::fmt::Display for HsmDeviceType {
@@ -18,7 +16,6 @@ impl std::fmt::Display for HsmDeviceType {
         match self {
             HsmDeviceType::Ledger => write!(f, "Ledger"),
             HsmDeviceType::Pkcs11 => write!(f, "PKCS#11"),
-            HsmDeviceType::Simulation => write!(f, "Simulation"),
         }
     }
 }
@@ -30,8 +27,9 @@ impl std::str::FromStr for HsmDeviceType {
         match s.to_lowercase().as_str() {
             "ledger" => Ok(HsmDeviceType::Ledger),
             "pkcs11" => Ok(HsmDeviceType::Pkcs11),
-            "simulation" | "sim" => Ok(HsmDeviceType::Simulation),
-            _ => Err(format!("Unknown device type: {}", s)),
+            _ => Err(format!(
+                "Unknown device type: {s}; expected ledger or pkcs11"
+            )),
         }
     }
 }
@@ -59,19 +57,4 @@ pub struct HsmDeviceInfo {
 
     /// Whether the device requires PIN
     pub requires_pin: bool,
-}
-
-impl HsmDeviceInfo {
-    /// Create device info for simulation
-    pub fn simulation() -> Self {
-        Self {
-            device_type: HsmDeviceType::Simulation,
-            manufacturer: "Neo".to_string(),
-            model: "HSM Simulator".to_string(),
-            serial_number: Some("SIM-0001".to_string()),
-            firmware_version: Some("1.0.0".to_string()),
-            is_connected: true,
-            requires_pin: false,
-        }
-    }
 }

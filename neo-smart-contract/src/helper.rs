@@ -367,7 +367,10 @@ mod tests {
         let cost_3_of_5 = Helper::multi_signature_contract_cost(3, 5);
 
         assert!(cost_2_of_5 > cost_2_of_3, "More keys should cost more");
-        assert!(cost_3_of_5 > cost_2_of_5, "More signatures should cost more");
+        assert!(
+            cost_3_of_5 > cost_2_of_5,
+            "More signatures should cost more"
+        );
     }
 
     #[test]

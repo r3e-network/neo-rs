@@ -15,8 +15,8 @@
 //! * [`InboundMessageDispatch`] — wraps a synchronous veto handler and preserves
 //!   the port contract (`true` continues default processing, `false` cancels).
 //! * [`ActorInboundDispatch`] — forwards each frame to an observer actor. It uses
-//!   [`crate::runtime::ActorRef`] *internally* (a system-owned type) but never
-//!   exposes it through the port signature.
+//!   [`neo_actors::ActorRef`] *internally* but never exposes it through the port
+//!   signature.
 //!
 //! # Contract (preserved from `dispatch_message_received`)
 //!
@@ -37,9 +37,9 @@
 //! constructs an adapter from the concrete handler registry and hands it to the
 //! session as `Arc<dyn InboundDispatchPort>`.
 
-use crate::runtime::ActorRef;
 use crate::network::p2p::MessageCommand;
 use crate::network::p2p::ports::{InboundDispatchPort, PeerHandle};
+use neo_actors::ActorRef;
 use std::fmt;
 
 /// Boxed synchronous veto handler body.
@@ -229,7 +229,7 @@ mod tests {
     #[test]
     fn handler_observes_peer_and_payload() {
         let dispatch = InboundMessageDispatch::new(|peer, _command, payload| {
-            peer.as_u64() == 7 && payload == &[0xDE, 0xAD]
+            peer.as_u64() == 7 && payload == [0xDE, 0xAD]
         });
 
         assert!(dispatch.dispatch_inbound(

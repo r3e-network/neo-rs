@@ -52,8 +52,10 @@ impl ContractManagement {
         engine.delete_storage_item(&context, &Self::contract_id_storage_key(contract.id))?;
         engine.delete_storage_item(&context, &Self::contract_id_storage_key_legacy(contract.id))?;
 
-        // Clear all contract storage (would interact with persistence layer)
+        // Clear storage while the contract id is still available locally, then
+        // invalidate the metadata before any subsequent hook can observe it.
         engine.clear_contract_storage(&contract_hash)?;
+        engine.remove_contract_cache(&contract_hash);
 
         // Block the contract hash (pre-Gorgon ordering) so it cannot be
         // redeployed without governance approval; skipped for Gorgon+ where

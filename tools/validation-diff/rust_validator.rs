@@ -1,9 +1,16 @@
-//! Rust 侧区块/交易验证规则包装器
-//!
-//! 简化版本：基于十六进制进行基本格式验证，不依赖完整反序列化
+//! Strict block/transaction validation for cross-implementation differential tests.
 
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
+use neo_io::{MemoryReader, Serializable};
+use neo_json::JToken;
+use neo_ledger::verify_transaction_state_independent;
+use neo_primitives::{Verifiable, VerifyResult};
+use neo_protocol::payloads::{Block, Transaction};
 use neo_protocol::ProtocolSettings;
+use neo_rpc::client::models::{RpcBlock, RpcTransaction};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,210 +20,378 @@ pub struct ValidationResult {
     pub error_message: Option<String>,
 }
 
+impl ValidationResult {
+    fn success() -> Self {
+        Self {
+            valid: true,
+            error_type: None,
+            error_message: None,
+        }
+    }
+
+    fn failure(kind: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            valid: false,
+            error_type: Some(kind.into()),
+            error_message: Some(message.into()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BlockValidationTest {
     pub test_id: String,
-    pub block_hex: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_hex: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_base64: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_json: Option<Value>,
     pub expected_valid: bool,
     pub description: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TransactionValidationTest {
     pub test_id: String,
-    pub tx_hex: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tx_hex: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tx_base64: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tx_json: Option<Value>,
     pub expected_valid: bool,
     pub description: String,
+}
+
+enum Input {
+    Binary(Vec<u8>),
+    RpcJson(Value),
 }
 
 pub struct RustValidator {
-    _protocol_settings: ProtocolSettings,
+    protocol_settings: ProtocolSettings,
 }
 
 impl RustValidator {
     pub fn new(protocol_settings: ProtocolSettings) -> Self {
-        Self {
-            _protocol_settings: protocol_settings,
+        Self { protocol_settings }
+    }
+
+    /// Validates a strict Neo wire block supplied as hex (optional `0x`) or Base64.
+    #[cfg(test)]
+    pub fn validate_block(&self, encoded: &str) -> ValidationResult {
+        match decode_binary(encoded, "block") {
+            Ok(bytes) => self.validate_block_bytes(&bytes),
+            Err(error) => error,
         }
     }
 
-    /// 验证区块（基于十六进制的基本验证）
-    pub fn validate_block(&self, block_hex: &str) -> ValidationResult {
-        // 1. 从十六进制解码区块
-        let block_bytes = match hex::decode(block_hex) {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                return ValidationResult {
-                    valid: false,
-                    error_type: Some("DecodeError".to_string()),
-                    error_message: Some(format!("Failed to decode block hex: {}", e)),
-                }
-            }
+    /// Validates a strict Neo wire transaction supplied as hex or Base64.
+    #[cfg(test)]
+    pub fn validate_transaction(&self, encoded: &str) -> ValidationResult {
+        match decode_binary(encoded, "transaction") {
+            Ok(bytes) => self.validate_transaction_bytes(&bytes),
+            Err(error) => error,
+        }
+    }
+
+    fn validate_block_test(&self, test: &BlockValidationTest) -> ValidationResult {
+        let sources = [
+            test.block_hex.is_some(),
+            test.block_base64.is_some(),
+            test.block_json.is_some(),
+        ];
+        if sources.into_iter().filter(|present| *present).count() != 1 {
+            return ValidationResult::failure(
+                "InputError",
+                "exactly one of block_hex, block_base64 or block_json is required",
+            );
+        }
+        let input = if let Some(encoded) = &test.block_hex {
+            decode_binary(encoded, "block").map(Input::Binary)
+        } else if let Some(encoded) = &test.block_base64 {
+            decode_base64(encoded, "block").map(Input::Binary)
+        } else {
+            Ok(Input::RpcJson(
+                test.block_json.clone().expect("one selected input"),
+            ))
         };
-
-        // 2. 基本格式验证
-        // Block 最小长度：version(4) + prev_hash(32) + merkle_root(32) + timestamp(8) + nonce(8) + index(4) + primary(1) + next_consensus(20) + witness(至少2字节) = 至少 111 字节
-        if block_bytes.len() < 111 {
-            return ValidationResult {
-                valid: false,
-                error_type: Some("SizeError".to_string()),
-                error_message: Some(format!(
-                    "Block too small: {} bytes (minimum 111)",
-                    block_bytes.len()
-                )),
-            };
-        }
-
-        // 3. 验证版本号（前 4 字节，小端序）
-        let version = u32::from_le_bytes([
-            block_bytes[0],
-            block_bytes[1],
-            block_bytes[2],
-            block_bytes[3],
-        ]);
-        if version != 0 {
-            return ValidationResult {
-                valid: false,
-                error_type: Some("VersionError".to_string()),
-                error_message: Some(format!("Invalid version: {} (expected 0)", version)),
-            };
-        }
-
-        // 4. 验证时间戳（字节 68-75，小端序）
-        const MIN_TIMESTAMP: u64 = 1468595301000; // Neo 创世块时间
-        let timestamp = u64::from_le_bytes([
-            block_bytes[68],
-            block_bytes[69],
-            block_bytes[70],
-            block_bytes[71],
-            block_bytes[72],
-            block_bytes[73],
-            block_bytes[74],
-            block_bytes[75],
-        ]);
-
-        if timestamp < MIN_TIMESTAMP {
-            return ValidationResult {
-                valid: false,
-                error_type: Some("TimestampError".to_string()),
-                error_message: Some(format!(
-                    "Timestamp too early: {} (minimum {})",
-                    timestamp, MIN_TIMESTAMP
-                )),
-            };
-        }
-
-        // 验证时间戳不能太远的未来
-        const MAX_FUTURE_SECONDS: u64 = 15 * 60; // 15 分钟
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-
-        if timestamp > now + MAX_FUTURE_SECONDS * 1000 {
-            return ValidationResult {
-                valid: false,
-                error_type: Some("TimestampError".to_string()),
-                error_message: Some(format!(
-                    "Timestamp too far in future: {} (current: {})",
-                    timestamp, now
-                )),
-            };
-        }
-
-        // 基本验证通过
-        ValidationResult {
-            valid: true,
-            error_type: None,
-            error_message: None,
+        match input {
+            Ok(Input::Binary(bytes)) => self.validate_block_bytes(&bytes),
+            Ok(Input::RpcJson(value)) => self.validate_block_json(&value),
+            Err(error) => error,
         }
     }
 
-    /// 验证交易（基于十六进制的基本验证）
-    pub fn validate_transaction(&self, tx_hex: &str) -> ValidationResult {
-        // 1. 从十六进制解码交易
-        let tx_bytes = match hex::decode(tx_hex) {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                return ValidationResult {
-                    valid: false,
-                    error_type: Some("DecodeError".to_string()),
-                    error_message: Some(format!("Failed to decode transaction hex: {}", e)),
-                }
-            }
+    fn validate_transaction_test(&self, test: &TransactionValidationTest) -> ValidationResult {
+        let sources = [
+            test.tx_hex.is_some(),
+            test.tx_base64.is_some(),
+            test.tx_json.is_some(),
+        ];
+        if sources.into_iter().filter(|present| *present).count() != 1 {
+            return ValidationResult::failure(
+                "InputError",
+                "exactly one of tx_hex, tx_base64 or tx_json is required",
+            );
+        }
+        let input = if let Some(encoded) = &test.tx_hex {
+            decode_binary(encoded, "transaction").map(Input::Binary)
+        } else if let Some(encoded) = &test.tx_base64 {
+            decode_base64(encoded, "transaction").map(Input::Binary)
+        } else {
+            Ok(Input::RpcJson(
+                test.tx_json.clone().expect("one selected input"),
+            ))
         };
-
-        // 2. 验证交易大小
-        const MAX_TX_SIZE: usize = 65536;
-        if tx_bytes.len() > MAX_TX_SIZE {
-            return ValidationResult {
-                valid: false,
-                error_type: Some("SizeError".to_string()),
-                error_message: Some(format!(
-                    "Transaction size {} exceeds limit {}",
-                    tx_bytes.len(),
-                    MAX_TX_SIZE
-                )),
-            };
-        }
-
-        // 3. 交易最小长度验证
-        // version(1) + nonce(4) + system_fee(8) + network_fee(8) + valid_until_block(4) + signers(至少1) + attributes(至少1) + script(至少1) + witnesses(至少1) = 至少 28 字节
-        if tx_bytes.len() < 28 {
-            return ValidationResult {
-                valid: false,
-                error_type: Some("SizeError".to_string()),
-                error_message: Some(format!(
-                    "Transaction too small: {} bytes (minimum 28)",
-                    tx_bytes.len()
-                )),
-            };
-        }
-
-        // 基本验证通过
-        ValidationResult {
-            valid: true,
-            error_type: None,
-            error_message: None,
+        match input {
+            Ok(Input::Binary(bytes)) => self.validate_transaction_bytes(&bytes),
+            Ok(Input::RpcJson(value)) => self.validate_transaction_json(&value),
+            Err(error) => error,
         }
     }
 
-    /// 批量验证区块
+    fn validate_block_bytes(&self, bytes: &[u8]) -> ValidationResult {
+        let mut reader = MemoryReader::new(bytes);
+        match <Block as Serializable>::deserialize(&mut reader) {
+            Ok(block) if reader.remaining() == 0 => validate_block_structure(&block),
+            Ok(_) => ValidationResult::failure("TrailingData", "block has trailing wire bytes"),
+            Err(error) => ValidationResult::failure("DecodeError", error.to_string()),
+        }
+    }
+
+    fn validate_transaction_bytes(&self, bytes: &[u8]) -> ValidationResult {
+        let mut reader = MemoryReader::new(bytes);
+        match <Transaction as Serializable>::deserialize(&mut reader) {
+            Ok(transaction) if reader.remaining() == 0 => {
+                self.validate_transaction_structure(&transaction)
+            }
+            Ok(_) => {
+                ValidationResult::failure("TrailingData", "transaction has trailing wire bytes")
+            }
+            Err(error) => ValidationResult::failure("DecodeError", error.to_string()),
+        }
+    }
+
+    fn validate_block_json(&self, value: &Value) -> ValidationResult {
+        match parse_rpc_json(value)
+            .and_then(|object| RpcBlock::from_json(&object, &self.protocol_settings))
+        {
+            Ok(rpc) => validate_block_structure(&rpc.block),
+            Err(error) => ValidationResult::failure("JsonError", error),
+        }
+    }
+
+    fn validate_transaction_json(&self, value: &Value) -> ValidationResult {
+        match parse_rpc_json(value)
+            .and_then(|object| RpcTransaction::from_json(&object, &self.protocol_settings))
+        {
+            Ok(rpc) => self.validate_transaction_structure(&rpc.transaction),
+            Err(error) => ValidationResult::failure("JsonError", error),
+        }
+    }
+
+    fn validate_transaction_structure(&self, transaction: &Transaction) -> ValidationResult {
+        if !transaction.verify() {
+            return ValidationResult::failure(
+                "StructuralError",
+                "transaction fields, signers or witnesses are structurally invalid",
+            );
+        }
+        let result = verify_transaction_state_independent(transaction, &self.protocol_settings);
+        if result == VerifyResult::Succeed {
+            ValidationResult::success()
+        } else {
+            ValidationResult::failure(
+                "VerificationError",
+                format!("state-independent verification returned {result:?}"),
+            )
+        }
+    }
+
+    /// Batch-validates blocks without aborting the differential run on bad vectors.
     pub fn validate_blocks(
         &self,
         tests: &[BlockValidationTest],
     ) -> HashMap<String, ValidationResult> {
         tests
             .iter()
-            .map(|test| {
-                let result = self.validate_block(&test.block_hex);
-                (test.test_id.clone(), result)
-            })
+            .map(|test| (test.test_id.clone(), self.validate_block_test(test)))
             .collect()
     }
 
-    /// 批量验证交易
+    /// Batch-validates transactions without aborting on bad vectors.
     pub fn validate_transactions(
         &self,
         tests: &[TransactionValidationTest],
     ) -> HashMap<String, ValidationResult> {
         tests
             .iter()
-            .map(|test| {
-                let result = self.validate_transaction(&test.tx_hex);
-                (test.test_id.clone(), result)
-            })
+            .map(|test| (test.test_id.clone(), self.validate_transaction_test(test)))
             .collect()
     }
+}
+
+fn validate_block_structure(block: &Block) -> ValidationResult {
+    if block.verify() {
+        ValidationResult::success()
+    } else {
+        ValidationResult::failure(
+            "StructuralError",
+            "block version, Merkle root or transaction set is invalid",
+        )
+    }
+}
+
+fn parse_rpc_json(value: &Value) -> Result<neo_json::JObject, String> {
+    let text = serde_json::to_string(value).map_err(|error| error.to_string())?;
+    JToken::parse(&text, 128)
+        .map_err(|error| error.to_string())?
+        .as_object()
+        .cloned()
+        .ok_or_else(|| "RPC payload must be a JSON object".to_owned())
+}
+
+fn decode_base64(encoded: &str, label: &str) -> Result<Vec<u8>, ValidationResult> {
+    BASE64.decode(encoded.trim()).map_err(|error| {
+        ValidationResult::failure(
+            "DecodeError",
+            format!("failed to decode {label} Base64: {error}"),
+        )
+    })
+}
+
+fn decode_binary(encoded: &str, label: &str) -> Result<Vec<u8>, ValidationResult> {
+    let trimmed = encoded.trim();
+    let hexadecimal = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+        .unwrap_or(trimmed);
+    if hexadecimal.len().is_multiple_of(2)
+        && hexadecimal.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return hex::decode(hexadecimal).map_err(|error| {
+            ValidationResult::failure(
+                "DecodeError",
+                format!("failed to decode {label} hex: {error}"),
+            )
+        });
+    }
+    decode_base64(trimmed, label)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_io::SerializableExtensions;
+    use neo_primitives::WitnessScope;
+    use neo_protocol::payloads::Signer;
+    use neo_protocol::witness::Witness;
+    use neo_vm::OpCode;
+
+    fn valid_block() -> Block {
+        neo_ledger::create_genesis_block(&ProtocolSettings::mainnet())
+    }
+
+    fn valid_transaction() -> Transaction {
+        let witness =
+            Witness::new_with_scripts(Vec::new(), vec![OpCode::PUSHT.byte(), OpCode::RET.byte()]);
+        let signer = Signer::new(witness.script_hash(), WitnessScope::NONE);
+        let mut transaction = Transaction::new();
+        transaction.set_nonce(7);
+        transaction.set_valid_until_block(100);
+        transaction.set_script(vec![OpCode::RET.byte()]);
+        transaction.set_signers(vec![signer]);
+        transaction.set_witnesses(vec![witness]);
+        transaction
+    }
+
+    fn block_test(encoded: String) -> BlockValidationTest {
+        BlockValidationTest {
+            test_id: "block".to_owned(),
+            block_hex: Some(encoded),
+            block_base64: None,
+            block_json: None,
+            expected_valid: true,
+            description: "strict wire block".to_owned(),
+        }
+    }
 
     #[test]
-    fn test_validator_creation() {
+    fn hex_prefixed_and_base64_wire_inputs_validate_the_same_block() {
+        let validator = RustValidator::new(ProtocolSettings::mainnet());
+        let bytes = valid_block().to_array().expect("serialize block");
+        let hex_result =
+            validator.validate_blocks(&[block_test(format!("0x{}", hex::encode(&bytes)))]);
+        let base64_result = validator.validate_blocks(&[BlockValidationTest {
+            block_hex: None,
+            block_base64: Some(BASE64.encode(bytes)),
+            ..block_test(String::new())
+        }]);
+        assert!(hex_result["block"].valid);
+        assert!(base64_result["block"].valid);
+    }
+
+    #[test]
+    fn rpc_json_block_and_transaction_take_the_real_validation_paths() {
         let settings = ProtocolSettings::mainnet();
-        let _validator = RustValidator::new(settings);
+        let validator = RustValidator::new(settings.clone());
+        let block = RpcBlock {
+            block: valid_block(),
+            confirmations: 1,
+            next_block_hash: None,
+        }
+        .to_json(&settings)
+        .to_string();
+        let block_json = serde_json::from_str(&block).expect("block JSON");
+        assert!(validator.validate_block_json(&block_json).valid);
+
+        let transaction = RpcTransaction {
+            transaction: valid_transaction(),
+            block_hash: None,
+            confirmations: None,
+            block_time: None,
+            vm_state: None,
+        }
+        .to_json(&settings)
+        .to_string();
+        let transaction_json = serde_json::from_str(&transaction).expect("transaction JSON");
+        assert!(validator.validate_transaction_json(&transaction_json).valid);
+    }
+
+    #[test]
+    fn strict_wire_decoder_rejects_trailing_bytes() {
+        let validator = RustValidator::new(ProtocolSettings::mainnet());
+        let mut bytes = valid_block().to_array().expect("serialize block");
+        bytes.push(0);
+        let result = validator.validate_block(&hex::encode(bytes));
+        assert!(!result.valid);
+        assert_eq!(result.error_type.as_deref(), Some("TrailingData"));
+    }
+
+    #[test]
+    fn transaction_runs_real_witness_verification() {
+        let validator = RustValidator::new(ProtocolSettings::mainnet());
+        let bytes = valid_transaction()
+            .to_array()
+            .expect("serialize transaction");
+        assert!(validator.validate_transaction(&hex::encode(bytes)).valid);
+        let mut invalid = valid_transaction();
+        invalid.set_witnesses(Vec::new());
+        let result = validator.validate_transaction(&hex::encode(invalid.to_array().unwrap()));
+        assert!(!result.valid);
+    }
+
+    #[test]
+    fn vectors_require_exactly_one_input_encoding() {
+        let validator = RustValidator::new(ProtocolSettings::mainnet());
+        let result = validator.validate_blocks(&[BlockValidationTest {
+            block_hex: None,
+            ..block_test(String::new())
+        }]);
+        assert_eq!(result["block"].error_type.as_deref(), Some("InputError"));
     }
 }

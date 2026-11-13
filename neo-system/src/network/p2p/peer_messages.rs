@@ -59,10 +59,11 @@ fn collect_reachable_endpoints(addresses: Vec<NetworkAddressWithTime>) -> Vec<So
     let mut seen = HashSet::new();
 
     for address in addresses {
-        if let Some(endpoint) = address.endpoint() {
-            if endpoint.port() > 0 && seen.insert(endpoint) {
-                endpoints.push(endpoint);
-            }
+        if let Some(endpoint) = address.endpoint()
+            && endpoint.port() > 0
+            && seen.insert(endpoint)
+        {
+            endpoints.push(endpoint);
         }
     }
 
@@ -156,11 +157,7 @@ pub fn on_get_headers(
 
 /// Handles an inbound `Headers` batch: forwards the tip as a peer-height hint,
 /// submits the headers to the chain sink, and notifies the task manager.
-pub fn on_headers(
-    ports: &RemoteSessionPorts,
-    peer: PeerHandle,
-    payload: HeadersPayload,
-) {
+pub fn on_headers(ports: &RemoteSessionPorts, peer: PeerHandle, payload: HeadersPayload) {
     if payload.headers.is_empty() {
         return;
     }
@@ -179,8 +176,8 @@ pub fn on_headers(
 #[cfg(test)]
 mod tests {
     use super::{collect_reachable_endpoints, normalize_request};
-    use crate::payloads::node_capability::NodeCapability;
-    use crate::payloads::network_address_with_time::NetworkAddressWithTime;
+    use crate::network::p2p::payloads::network_address_with_time::NetworkAddressWithTime;
+    use crate::network::p2p::payloads::node_capability::NodeCapability;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
     fn address(ip: [u8; 4], port: u16) -> NetworkAddressWithTime {

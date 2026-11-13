@@ -65,10 +65,11 @@ pub fn verify_witness_multi_signature(
         return Ok(false);
     }
 
-    let mut sorted_keys = public_keys.to_vec();
-    sorted_keys.sort();
-
-    let total_keys = sorted_keys.len();
+    // CheckMultisig consumes public keys in verification-script order. Contract
+    // construction sorts ECPoints by X then Y (C# ECPoint.CompareTo), which is
+    // not necessarily the same as lexicographic compressed-key ordering. Keep
+    // the caller's script order so each signature stays aligned with its slot.
+    let total_keys = public_keys.len();
     let mut sig_index = 0usize;
     let mut key_index = 0usize;
 
@@ -86,7 +87,7 @@ pub fn verify_witness_multi_signature(
         let verified = Secp256r1Crypto::verify_prehash(
             &Crypto::sha256(message),
             &signature_bytes,
-            &sorted_keys[key_index],
+            &public_keys[key_index],
         )
         .map_err(|e| CoreError::Cryptographic {
             message: format!("ECDSA verification failed: {e}"),
@@ -237,32 +238,52 @@ impl WitnessExt for Witness {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_crypto::ECPoint;
 
     #[test]
     fn test_witness_verify_multi_signature() {
         let message = b"neo-multisig-test";
+        let candidates: Vec<([u8; 32], Vec<u8>)> = (1u8..=32)
+            .map(|value| {
+                let private_key = [value; 32];
+                let public_key = Secp256r1Crypto::derive_public_key(&private_key).unwrap();
+                (private_key, public_key)
+            })
+            .collect();
 
-        let priv1 = Secp256r1Crypto::generate_private_key();
-        let priv2 = Secp256r1Crypto::generate_private_key();
-        let priv3 = Secp256r1Crypto::generate_private_key();
-
-        let pub1 = Secp256r1Crypto::derive_public_key(&priv1).unwrap();
-        let pub2 = Secp256r1Crypto::derive_public_key(&priv2).unwrap();
-        let pub3 = Secp256r1Crypto::derive_public_key(&priv3).unwrap();
+        // Find fixed keys whose C# ECPoint ordering differs from compressed
+        // byte ordering. This specifically guards against re-sorting keys in
+        // the verifier after the signatures have been assigned script slots.
+        let (left, right) = 'search: {
+            for (left_index, left) in candidates.iter().enumerate() {
+                for right in candidates.iter().skip(left_index + 1) {
+                    let point_order = ECPoint::from_bytes(&left.1)
+                        .unwrap()
+                        .cmp(&ECPoint::from_bytes(&right.1).unwrap());
+                    if point_order != left.1.cmp(&right.1) {
+                        break 'search (left.clone(), right.clone());
+                    }
+                }
+            }
+            panic!("fixed P-256 key set must contain differing orderings");
+        };
 
         let m = 2usize;
-        let mut pairs = [(pub1, priv1), (pub2, priv2), (pub3, priv3)];
-        pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
+        let mut pairs = [left, right];
+        pairs.sort_by(|(_, left), (_, right)| {
+            ECPoint::from_bytes(left)
+                .unwrap()
+                .cmp(&ECPoint::from_bytes(right).unwrap())
+        });
 
-        let public_keys: Vec<Vec<u8>> = pairs.iter().map(|(p, _)| p.clone()).collect();
+        let public_keys: Vec<Vec<u8>> = pairs.iter().map(|(_, public)| public.clone()).collect();
         let verification_script = Helper::multi_sig_redeem_script(m, &public_keys);
         let account = UInt160::from_script(&verification_script);
 
         let signatures: Vec<Vec<u8>> = pairs
             .iter()
-            .take(m)
-            .map(|(_, pk)| {
-                Secp256r1Crypto::sign_prehash(&Crypto::sha256(message), pk)
+            .map(|(private_key, _)| {
+                Secp256r1Crypto::sign_prehash(&Crypto::sha256(message), private_key)
                     .unwrap()
                     .to_vec()
             })

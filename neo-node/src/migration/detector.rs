@@ -1,51 +1,33 @@
 //! Auto-detection of Neo node implementation type.
 
-use super::{NodeImplementation};
-use std::path::Path;
+use super::NodeImplementation;
 use anyhow::{Result, bail};
+use std::path::Path;
 
 /// Detect which Neo implementation a directory belongs to.
 ///
 /// Detection logic:
-/// 1. Check for neo-cli characteristic files:
-///    - config.json (main config)
-///    - protocol.*.json (protocol settings)
-///    - Storage/ directory with RocksDB data
-/// 2. Check for neo-go characteristic files:
-///    - config.yml or config.yaml
-///    - *.db or *.bolt (BoltDB storage)
-///    - chains/ directory structure
+/// 1. neo-cli: config.json plus protocol.*.json, or a recognized Storage layout.
+/// 2. neo-go: config.yml or config.yaml. Chain storage is not required for
+///    configuration-only migration.
 pub fn detect_implementation(source_dir: &Path) -> Result<NodeImplementation> {
     // Check neo-cli indicators
     let has_config_json = source_dir.join("config.json").exists();
-    let has_protocol_json = source_dir
-        .read_dir()?
-        .filter_map(|e| e.ok())
-        .any(|e| {
-            let name = e.file_name();
-            let name_str = name.to_string_lossy();
-            name_str.starts_with("protocol.") && name_str.ends_with(".json")
-        });
+    let has_protocol_json = source_dir.read_dir()?.filter_map(|e| e.ok()).any(|e| {
+        let name = e.file_name();
+        let name_str = name.to_string_lossy();
+        name_str.starts_with("protocol.") && name_str.ends_with(".json")
+    });
     let has_storage_dir = source_dir.join("Storage").exists();
 
-    if has_config_json && has_protocol_json && has_storage_dir {
+    if has_config_json && has_protocol_json {
         return Ok(NodeImplementation::NeoCli);
     }
 
-    // Check neo-go indicators
-    let has_config_yml = source_dir.join("config.yml").exists()
-        || source_dir.join("config.yaml").exists();
-    let has_bolt_db = source_dir
-        .read_dir()?
-        .filter_map(|e| e.ok())
-        .any(|e| {
-            let name = e.file_name();
-            let name_str = name.to_string_lossy();
-            name_str.ends_with(".db") || name_str.ends_with(".bolt")
-        });
-    let has_chains_dir = source_dir.join("chains").exists();
-
-    if has_config_yml && (has_bolt_db || has_chains_dir) {
+    // A neo-go protocol configuration is sufficient in configuration-only mode.
+    let has_config_yml =
+        source_dir.join("config.yml").exists() || source_dir.join("config.yaml").exists();
+    if has_config_yml {
         return Ok(NodeImplementation::NeoGo);
     }
 
@@ -61,8 +43,8 @@ pub fn detect_implementation(source_dir: &Path) -> Result<NodeImplementation> {
 
     bail!(
         "Could not detect node implementation type in: {}\n\
-        Expected neo-cli (config.json, protocol.*.json, Storage/) \
-        or neo-go (config.yml, *.db)",
+        Expected neo-cli (config.json and protocol.*.json, or recognized Storage/) \
+        or neo-go (config.yml or config.yaml)",
         source_dir.display()
     )
 }
@@ -98,6 +80,27 @@ mod tests {
 
         let impl_type = detect_implementation(dir).unwrap();
         assert_eq!(impl_type, NodeImplementation::NeoGo);
+    }
+
+    #[test]
+    fn detects_configuration_without_chain_storage() {
+        let temp = TempDir::new().unwrap();
+        let cli_dir = temp.path().join("cli");
+        let go_dir = temp.path().join("go");
+        fs::create_dir(&cli_dir).unwrap();
+        fs::create_dir(&go_dir).unwrap();
+        fs::write(cli_dir.join("config.json"), "{}").unwrap();
+        fs::write(cli_dir.join("protocol.custom.json"), "{}").unwrap();
+        fs::write(go_dir.join("config.yml"), "{}").unwrap();
+
+        assert_eq!(
+            detect_implementation(&cli_dir).unwrap(),
+            NodeImplementation::NeoCli
+        );
+        assert_eq!(
+            detect_implementation(&go_dir).unwrap(),
+            NodeImplementation::NeoGo
+        );
     }
 
     #[test]

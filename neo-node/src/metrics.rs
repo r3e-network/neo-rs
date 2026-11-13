@@ -3,8 +3,8 @@
 //! Provides Prometheus-compatible metrics exposition.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::LazyLock;
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 /// Simple telemetry collector for node metrics
 pub struct Telemetry {
@@ -58,8 +58,10 @@ impl Telemetry {
     }
 
     pub fn update_storage(&self, free_gb: f64, total_gb: f64) {
-        self.storage_free_gb.store((free_gb * 1000.0) as u64, Ordering::Relaxed);
-        self.storage_total_gb.store((total_gb * 1000.0) as u64, Ordering::Relaxed);
+        self.storage_free_gb
+            .store((free_gb * 1000.0) as u64, Ordering::Relaxed);
+        self.storage_total_gb
+            .store((total_gb * 1000.0) as u64, Ordering::Relaxed);
     }
 
     pub fn export_prometheus(&self) -> String {

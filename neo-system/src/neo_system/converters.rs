@@ -3,12 +3,10 @@
 //! This module provides conversion functions between network payload types
 //! (used in P2P communication) and ledger types (used in storage and processing).
 
-use crate::network::p2p::payloads::{
-    Block, Witness as PayloadWitness,
-};
-use neo_protocol::payloads::Header;
+use crate::network::p2p::payloads::{Block, Witness as PayloadWitness};
 use neo_protocol::execution::Block as LedgerBlock;
 use neo_protocol::execution::BlockHeader as LedgerBlockHeader;
+use neo_protocol::payloads::Header;
 
 /// Converts a payload witness to a ledger witness.
 pub(crate) fn convert_payload_witness(witness: &PayloadWitness) -> neo_protocol::witness::Witness {

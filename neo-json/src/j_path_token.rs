@@ -139,10 +139,10 @@ impl JPathToken {
                         .ok_or_else(|| JsonError::format("Identifier token missing content"))?;
                     let mut new_results = Vec::new();
                     for token in &results {
-                        if let JToken::Object(object) = token {
-                            if let Some(value) = object.get(name) {
-                                new_results.push(value);
-                            }
+                        if let JToken::Object(object) = token
+                            && let Some(value) = object.get(name)
+                        {
+                            new_results.push(value);
                         }
                     }
                     results = new_results;
@@ -165,10 +165,10 @@ impl JPathToken {
                                 JsonError::format("Invalid array index in JSONPath expression")
                             })?;
                             for token in &results {
-                                if let JToken::Array(array) = token {
-                                    if let Some(value) = array.get(index) {
-                                        new_results.push(value);
-                                    }
+                                if let JToken::Array(array) = token
+                                    && let Some(value) = array.get(index)
+                                {
+                                    new_results.push(value);
                                 }
                             }
                             i += 1;

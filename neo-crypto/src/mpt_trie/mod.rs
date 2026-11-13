@@ -12,6 +12,8 @@ pub mod error;
 pub mod node;
 /// Node type enumeration
 pub mod node_type;
+/// Optional MPT wall-clock profiling
+pub mod profile;
 /// Root branch buffer for optimized trie operations
 pub mod root_branch_buffer;
 /// MPT trie implementation
@@ -28,5 +30,6 @@ pub type Cache<S> = MptCache<S>;
 pub use error::{MptError, MptResult};
 pub use node::Node;
 pub use node_type::NodeType;
+pub use profile::{MptProfile, MptProfileSnapshot, MptProfileStage};
 pub use root_branch_buffer::RootBranchBuffer;
 pub use trie::{Trie, TrieEntry};

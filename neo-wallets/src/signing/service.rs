@@ -200,6 +200,13 @@ pub trait SignerService: Send + Sync {
     ) -> SignResult<SignResponse>;
 
     /// Recovers a previously dispatched request without re-signing.
+    ///
+    /// The default is an explicit fail-closed boundary: services that cannot
+    /// answer recovery queries surface [`SignErrorCode::CapabilityUnavailable`]
+    /// instead of silently reporting success or inventing state. Implementors
+    /// with durable operation stores override this — [`DefaultSignerService`]
+    /// provides the production implementation (persisted-state load, binding
+    /// digest check, provider query, signature re-verification).
     async fn recover(
         &self,
         _request: SignRequest,
@@ -212,6 +219,11 @@ pub trait SignerService: Send + Sync {
     }
 
     /// Loads the original persisted request by operation ID and queries only.
+    ///
+    /// Same fail-closed contract as [`SignerService::recover`]: the default
+    /// rejects callers with [`SignErrorCode::CapabilityUnavailable`] and only
+    /// services with durable operation stores should override it.
+    /// [`DefaultSignerService`] provides the production implementation.
     async fn recover_operation(
         &self,
         _request_id: &str,

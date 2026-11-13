@@ -25,6 +25,14 @@ pub trait Store: ReadOnlyStore + WriteStore<Vec<u8>, Vec<u8>> + Send + Sync + An
     /// Flushes pending writes to durable storage when supported.
     fn flush(&self) {}
 
+    /// Forces all writes already accepted by the backend to durable storage.
+    /// Unlike legacy `flush`, failures are returned so callers can fail closed.
+    fn try_flush_durable(&self) -> crate::error::StorageResult<()> {
+        Err(crate::error::StorageError::InvalidOperation {
+            message: "store backend does not support explicit durable flushes".to_string(),
+        })
+    }
+
     /// Returns whether snapshots can force WAL-backed synchronous durability.
     fn supports_durable_writes(&self) -> bool {
         false

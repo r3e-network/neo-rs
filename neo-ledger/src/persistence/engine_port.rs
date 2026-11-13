@@ -87,6 +87,12 @@ pub trait ApplicationEnginePort: Send {
     /// Executes the loaded script, tolerating a VM fault (step 10).
     fn execute_allow_fault(&mut self) -> VmState;
 
+    /// Checks any optional dual-execution verification before overlay merge.
+    /// Implementations without a verification engine retain the canonical no-op.
+    fn verify_execution(&self) -> Result<(), LedgerError> {
+        Ok(())
+    }
+
     /// Records the transaction's VM state unconditionally, even when detailed receipts
     /// are suppressed during fast-sync/import (step 10).
     fn record_transaction_vm_state(&mut self, transaction_hash: &UInt256, vm_state: VmState);

@@ -22,11 +22,11 @@ use super::{
     peer::PeerCommand,
 };
 use crate::neo_system::NeoSystemContext;
+use crate::network::p2p::error::P2PError as NetworkError;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::p2p::payloads::inv_payload::InvPayload;
 use async_trait::async_trait;
 use neo_actors::{Actor, ActorContext, ActorResult, Props, ScheduleHandle};
-use crate::network::p2p::error::P2PError as NetworkError;
 use neo_io_crate::HashSetCache;
 use neo_primitives::UInt256;
 use neo_protocol::protocol_settings::ProtocolSettings;
@@ -436,9 +436,7 @@ impl RemoteNode {
             .capabilities
             .iter()
             .find_map(|capability| match capability {
-                super::payloads::NodeCapability::FullNode { start_height } => {
-                    Some(*start_height)
-                }
+                super::payloads::NodeCapability::FullNode { start_height } => Some(*start_height),
                 _ => None,
             })
             .unwrap_or(0);
@@ -611,18 +609,16 @@ mod tests {
     };
     use crate::i_event_handlers::MessageReceivedHandler;
     use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
+    use crate::network::p2p::{MessageCommand, MessageFlags};
     use crate::network::p2p::{
         local_node::RelayInventory,
         message::Message,
         messages::{NetworkMessage, ProtocolMessage},
-        payloads::{
-            block::Block, ping_payload::PingPayload, signer::Signer, transaction::Transaction,
-            witness::Witness,
-        },
+        payloads::{block::Block, ping_payload::PingPayload, transaction::Transaction},
         timeouts,
     };
-    use crate::network::p2p::{MessageCommand, MessageFlags};
     use neo_primitives::{UInt160, WitnessScope};
+    use neo_protocol::payloads::{Signer, Witness};
     use neo_vm::OpCode;
     use std::sync::{
         Arc,

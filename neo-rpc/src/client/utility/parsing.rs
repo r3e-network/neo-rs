@@ -1,9 +1,9 @@
 use base64::{Engine as _, engine::general_purpose};
-use neo_protocol::ProtocolSettings;
-use neo_primitives::OracleResponseCode;
-use neo_wallets::helper::Helper as WalletHelper;
 use neo_json::{JArray, JObject, JToken};
+use neo_primitives::OracleResponseCode;
 use neo_primitives::{UInt160, UInt256};
+use neo_protocol::ProtocolSettings;
+use neo_wallets::helper::Helper as WalletHelper;
 use num_bigint::BigInt;
 use serde_json::Value as JsonValue;
 use std::{fmt::Display, str::FromStr};
@@ -410,10 +410,10 @@ pub fn jtoken_to_serde(token: &JToken) -> Result<JsonValue, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_protocol::ProtocolSettings;
-    use neo_wallets::helper::Helper as WalletHelper;
     use neo_json::{JArray, JObject};
     use neo_primitives::UInt160;
+    use neo_protocol::ProtocolSettings;
+    use neo_wallets::helper::Helper as WalletHelper;
 
     #[test]
     fn optional_string_or_null_preserves_present_and_absent_values() {

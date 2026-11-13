@@ -931,14 +931,17 @@ fn durable_resume_uses_historical_binding_after_expiry_and_query_timeout() {
         assert_eq!(initial_provider.calls.load(Ordering::SeqCst), 1);
         assert_eq!(recovery_provider.sign_calls.load(Ordering::SeqCst), 0);
         assert_eq!(recovery_provider.query_calls.load(Ordering::SeqCst), 2);
-        let queries = recovery_provider
-            .queries
-            .lock()
-            .expect("recovery query lock");
-        assert!(queries.iter().all(|(request_id, queried_key, digest)| {
-            request_id == operation_id && queried_key == &key_ref() && digest == &original_digest
-        }));
-        drop(queries);
+        {
+            let queries = recovery_provider
+                .queries
+                .lock()
+                .expect("recovery query lock");
+            assert!(queries.iter().all(|(request_id, queried_key, digest)| {
+                request_id == operation_id
+                    && queried_key == &key_ref()
+                    && digest == &original_digest
+            }));
+        }
 
         let mut changed_intent = intent;
         changed_intent.key_ref = KeyRef::new("new-default-provider", "rotated-key", 9);
@@ -983,5 +986,53 @@ fn concurrent_quota_reservations_are_atomic() {
         assert_eq!(successes, 2);
         assert_eq!(limit_errors, 1);
         assert_eq!(provider.calls.load(Ordering::SeqCst), 2);
+    });
+}
+
+struct RecoveryUnavailableService;
+
+#[async_trait]
+impl SignerService for RecoveryUnavailableService {
+    async fn sign(
+        &self,
+        _request: SignRequest,
+        _context: AuthenticatedContext,
+    ) -> SignResult<super::types::SignResponse> {
+        Err(super::SignError::new(
+            SignErrorCode::CapabilityUnavailable,
+            "dummy service does not sign",
+        ))
+    }
+
+    async fn resume_or_start(
+        &self,
+        _operation_id: &str,
+        _frozen_intent: FrozenSignIntent,
+        _context: AuthenticatedContext,
+        _request_timeout: Duration,
+    ) -> SignResult<super::types::SignResponse> {
+        Err(super::SignError::new(
+            SignErrorCode::CapabilityUnavailable,
+            "dummy service does not resume",
+        ))
+    }
+}
+
+#[test]
+fn signer_service_recovery_defaults_fail_closed() {
+    let runtime = tokio::runtime::Runtime::new().expect("runtime");
+    runtime.block_on(async {
+        let service = RecoveryUnavailableService;
+        let recover = service
+            .recover(request("unsupported-recovery"), context())
+            .await
+            .expect_err("recovery must not invent operation state");
+        assert_eq!(recover.code, SignErrorCode::CapabilityUnavailable);
+
+        let recover_operation = service
+            .recover_operation("unsupported-recovery", context())
+            .await
+            .expect_err("operation recovery must require a durable implementation");
+        assert_eq!(recover_operation.code, SignErrorCode::CapabilityUnavailable);
     });
 }

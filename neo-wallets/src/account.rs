@@ -26,6 +26,7 @@ use crate::wallet::{WalletError, WalletResult};
 use async_trait::async_trait;
 use neo_primitives::UInt160;
 use neo_protocol::ProtocolSettings;
+use neo_smart_contract::helper::Helper as ContractHelper;
 use std::sync::Arc;
 
 // Re-export types from their canonical locations
@@ -107,10 +108,17 @@ pub trait WalletAccount: Send + Sync {
 
     /// Creates a witness for the supplied signature preimage using the account credentials.
     ///
+    /// Single-key accounts produce the canonical single-signature witness
+    /// (66-byte invocation script, 40-byte verification script). Multi-signature
+    /// and deployed-contract scripts fail closed: use
+    /// [`crate::multisig::MultiSigWitnessBuilder`] to collect the m required
+    /// signatures instead of silently emitting an invalid witness.
+    ///
     /// # Errors
     ///
     /// Returns [`WalletError::AccountLocked`] when the key is unavailable, or
-    /// [`WalletError::SigningFailed`] when signing fails.
+    /// [`WalletError::SigningFailed`] when signing fails or the verification
+    /// script cannot be satisfied by a single key.
     fn create_witness(&self, sign_data: &[u8]) -> WalletResult<Witness>;
 }
 
@@ -314,6 +322,32 @@ impl WalletAccount for StandardWalletAccount {
 
     fn create_witness(&self, sign_data: &[u8]) -> WalletResult<Witness> {
         let key = self.key_pair.as_ref().ok_or(WalletError::AccountLocked)?;
+
+        // Fail closed on verification scripts a single key cannot satisfy:
+        // an m-of-n script needs m signature parameters (collected through
+        // `MultiSigWitnessBuilder`), and arbitrary deployed scripts have no
+        // known invocation encoding in the wallet layer.
+        if let Some(contract) = &self.contract {
+            if ContractHelper::is_multi_sig_contract(&contract.script) {
+                return Err(WalletError::SigningFailed(
+                    "multi-signature contract requires collecting m signatures via MultiSigWitnessBuilder"
+                        .to_string(),
+                ));
+            }
+            if !ContractHelper::is_signature_contract(&contract.script) {
+                return Err(WalletError::SigningFailed(
+                    "contract verification script is not a supported single-signature script"
+                        .to_string(),
+                ));
+            }
+            if contract.script != key.get_verification_script() {
+                return Err(WalletError::SigningFailed(
+                    "single-signature contract public key does not match the account key"
+                        .to_string(),
+                ));
+            }
+        }
+
         let signature = key.sign(sign_data)?;
 
         let verification_script = if let Some(contract) = &self.contract {
@@ -396,5 +430,56 @@ mod tests {
         let public_key = ECPoint::from_bytes(&key.public_key()).unwrap();
         let contract = Contract::create_signature_contract(public_key);
         assert_eq!(contract.script_hash(), key.get_script_hash());
+    }
+
+    #[test]
+    fn create_witness_accepts_signature_contract_with_canonical_byte_format() {
+        let key = KeyPair::generate().unwrap();
+        let contract = Contract::create_signature_contract(key.get_public_key_point().unwrap());
+        let account = StandardWalletAccount::new_with_key(key, Some(contract), settings(), None);
+        let witness = account.create_witness(b"sign-me").unwrap();
+        // Byte-level contract with the ledger verifier: 66-byte invocation
+        // (PUSHDATA1 + length + 64-byte signature) and 40-byte verification
+        // script (PUSHDATA1 + 33-byte key + SYSCALL + 4-byte interop hash).
+        assert_eq!(witness.invocation_script.len(), 66);
+        assert_eq!(witness.invocation_script[0], OP_PUSHDATA1);
+        assert_eq!(witness.invocation_script[1], 64);
+        assert_eq!(witness.verification_script.len(), 40);
+    }
+
+    #[test]
+    fn create_witness_rejects_signature_contract_for_a_different_key() {
+        let key = KeyPair::generate().unwrap();
+        let other = KeyPair::generate().unwrap();
+        let contract = Contract::create_signature_contract(other.get_public_key_point().unwrap());
+        let account = StandardWalletAccount::new_with_key(key, Some(contract), settings(), None);
+
+        let result = account.create_witness(b"sign-me");
+        assert!(matches!(result, Err(WalletError::SigningFailed(_))));
+    }
+
+    #[test]
+    fn create_witness_fails_closed_for_multisig_contract() {
+        let keys: Vec<KeyPair> = (0..2).map(|_| KeyPair::generate().unwrap()).collect();
+        let points: Vec<ECPoint> = keys
+            .iter()
+            .map(|key| key.get_public_key_point().unwrap())
+            .collect();
+        let contract = Contract::create_multi_sig_contract(2, &points);
+        let account =
+            StandardWalletAccount::new_with_key(keys[0].clone(), Some(contract), settings(), None);
+        let result = account.create_witness(b"sign-me");
+        assert!(matches!(result, Err(WalletError::SigningFailed(_))));
+    }
+
+    #[test]
+    fn create_witness_fails_closed_for_unsupported_contract_script() {
+        let key = KeyPair::generate().unwrap();
+        // A deployed-contract placeholder with an empty script cannot be
+        // satisfied by any invocation this single-key path can produce.
+        let contract = Contract::create(vec![], Vec::new());
+        let account = StandardWalletAccount::new_with_key(key, Some(contract), settings(), None);
+        let result = account.create_witness(b"sign-me");
+        assert!(matches!(result, Err(WalletError::SigningFailed(_))));
     }
 }

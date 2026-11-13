@@ -1,0 +1,69 @@
+[network]
+# Required. Must match both nodes and the complete protocol JSON.
+magic = 860833102
+# Optional when neo-cli config.json / protocol.*.json discovery finds one matching configuration.
+protocol_path = "./nodes/neo-cli/protocol.json"
+
+[validator]
+# Dedicated neo-rs replay ledger. Never point this at an upstream database.
+data_path = "./validator-data"
+audit_path = "./validator-audit.jsonl"
+poll_interval_ms = 500
+rpc_timeout_ms = 3000
+max_catch_up_blocks = 128
+max_block_bytes = 16777216
+require_application_logs = true
+
+[neo_cli]
+path = "./nodes/neo-cli"
+rpc_url = "http://127.0.0.1:10332"
+proxy_listen = "127.0.0.1:20332"
+# Optional; both variables must be set together. Values are never stored in TOML.
+# rpc_username_env = "NEO_CLI_RPC_USER"
+# rpc_password_env = "NEO_CLI_RPC_PASS"
+
+[neo_go]
+path = "./nodes/neo-go"
+rpc_url = "http://127.0.0.1:10333"
+proxy_listen = "127.0.0.1:20333"
+# rpc_username_env = "NEO_GO_RPC_USER"
+# rpc_password_env = "NEO_GO_RPC_PASS"
+
+[security]
+# Management is loopback-only. Replace both example digests before deployment.
+admin_listen = "127.0.0.1:20400"
+admin_token_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+read_token_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+# Required when allow_public_proxy = true; also enforced on loopback if present.
+# proxy_token_sha256 = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+max_request_body_bytes = 1048576
+max_response_body_bytes = 16777216
+allow_public_proxy = false
+allow_remote_upstreams = false
+allowed_methods = [
+  "getbestblockhash",
+  "getblock",
+  "getblockcount",
+  "getblockhash",
+  "getblockheader",
+  "getblockheadercount",
+  "getcontractstate",
+  "getnativecontracts",
+  "getstorage",
+  "findstorage",
+  "gettransaction",
+  "getrawtransaction",
+  "getrawmempool",
+  "getversion",
+  "getstateheight",
+  "getstateroot",
+  "getproof",
+  "verifyproof",
+  "getstate",
+  "findstates",
+  "getapplicationlog",
+  "invokefunction",
+  "invokescript",
+  "invokecontractverify",
+  "calculatenetworkfee",
+]

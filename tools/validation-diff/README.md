@@ -68,6 +68,14 @@ def run_validation_diff():
   - attributes 合法性
   - witnesses 数量与签名者匹配
 
+## 当前 Rust 输入与验证语义
+
+每个区块向量必须且只能提供 `block_hex`、`block_base64`、`block_json` 之一；交易向量对应使用 `tx_hex`、`tx_base64`、`tx_json`。hex 允许 `0x` 前缀，JSON 使用 Neo RPC block/transaction 对象。
+
+二进制输入由规范 `Block`/`Transaction` 反序列化器严格解码，尾随字节会被拒绝。区块执行真实结构验证；交易在结构验证后继续执行 `verify_transaction_state_independent`，包含真实见证验证。无效输入和验证失败分别保留错误类型与错误信息，批处理不会因单个坏向量中止。
+
+当前交易检查是**状态无关验证**，不包含依赖链上快照的余额、费用、策略或冲突检查。README 中的数量是差分测试目标，不是已经完成的 C# parity 结果。
+
 ## 成功标准
 - 50/50 区块验证结果与 C# 一致
 - 500/500 交易验证结果与 C# 一致

@@ -1,6 +1,6 @@
 //! HSM Configuration
 
-use crate::device::HsmDeviceType;
+use super::device::HsmDeviceType;
 use std::path::PathBuf;
 
 /// HSM configuration
@@ -31,7 +31,7 @@ pub struct HsmConfig {
 impl Default for HsmConfig {
     fn default() -> Self {
         Self {
-            device_type: HsmDeviceType::Simulation,
+            device_type: HsmDeviceType::Ledger,
             slot: 0,
             key_id: None,
             pkcs11_lib: None,
@@ -58,15 +58,6 @@ impl HsmConfig {
             device_type: HsmDeviceType::Pkcs11,
             slot,
             pkcs11_lib: Some(lib_path),
-            ..Default::default()
-        }
-    }
-
-    /// Create a new HSM configuration for simulation
-    pub fn simulation() -> Self {
-        Self {
-            device_type: HsmDeviceType::Simulation,
-            skip_pin: true,
             ..Default::default()
         }
     }

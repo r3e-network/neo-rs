@@ -469,7 +469,9 @@ fn runtime_current_signers_handler(
         app.runtime_current_signers(),
     )
 }
-pub(crate) fn register_runtime_interops(engine: &mut ApplicationEngine) -> VmResult<()> {
+pub(crate) fn register_runtime_interops(
+    engine: &mut dyn super::state::InteropRegistration,
+) -> VmResult<()> {
     engine.register_host_service(
         "System.Runtime.Platform",
         1 << 3,

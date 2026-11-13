@@ -16,6 +16,12 @@ use neo_vm::BinarySerializer;
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::Interoperable;
 use neo_vm::StorageContext;
+use std::sync::OnceLock;
+
+fn contract_query_cache_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var_os("NEO_RS_DISABLE_CONTRACT_QUERY_CACHE").is_none())
+}
 
 fn put_storage_if_changed(
     engine: &mut ApplicationEngine,
@@ -50,7 +56,7 @@ impl NativeContract for ContractManagement {
     }
 
     fn methods(&self) -> &[NativeMethod] {
-        &self.methods
+        self.methods
     }
 
     fn events(
@@ -76,7 +82,14 @@ impl NativeContract for ContractManagement {
                 }
                 let hash = UInt160::from_bytes(&args[0])
                     .map_err(|e| Error::invalid_argument(format!("Invalid hash: {}", e)))?;
-                match Self::get_contract_from_snapshot(engine.snapshot_cache().as_ref(), &hash)? {
+                let cache_enabled = contract_query_cache_enabled();
+                if cache_enabled && let Some(cached) = engine.cached_contract_query_result(&hash) {
+                    return Ok(cached.unwrap_or_default());
+                }
+                let result = match Self::get_contract_from_snapshot(
+                    engine.snapshot_cache().as_ref(),
+                    &hash,
+                )? {
                     Some(contract) => {
                         let item = contract.to_stack_item()?;
                         let bytes =
@@ -87,10 +100,14 @@ impl NativeContract for ContractManagement {
                                     e
                                 ))
                             })?;
-                        Ok(bytes)
+                        Some(bytes)
                     }
-                    None => Ok(vec![]),
+                    None => None,
+                };
+                if cache_enabled {
+                    engine.cache_contract_query_result(hash, result.clone());
                 }
+                Ok(result.unwrap_or_default())
             }
             "deploy" => {
                 self.hydrate_from_engine(engine)?;

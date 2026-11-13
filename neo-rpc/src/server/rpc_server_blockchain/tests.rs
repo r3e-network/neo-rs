@@ -4,7 +4,6 @@ use crate::server::rpc_server_settings::RpcServerConfig;
 use neo_protocol::witness::Witness as LedgerWitness;
 // `TrimmedBlock::from_block` and the RPC converters operate on the execution block
 // representation owned by `neo-protocol`, matching the native `LedgerContract` API.
-use neo_wallets::KeyPair;
 use neo_io::SerializableExtensions as SerializableExt;
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_json::JToken;
@@ -30,6 +29,7 @@ use neo_system::NeoSystem;
 use neo_vm::BinarySerializer;
 use neo_vm::{ExecutionEngineLimits, VmState as VMState};
 use neo_vm::{OpCode, StackValue};
+use neo_wallets::KeyPair;
 use num_bigint::BigInt;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -600,7 +600,7 @@ async fn get_block_genesis_roundtrips_and_reports_empty_txs() {
     let handler = find_handler(&handlers, "getblock");
 
     let genesis = system.genesis_block();
-    let genesis_hash = genesis.hash().expect("genesis hash");
+    let genesis_hash = genesis.hash();
 
     let params = [Value::Number(0u32.into())];
     let result = (handler.callback())(&server, &params).expect("get genesis block");

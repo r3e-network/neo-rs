@@ -1,0 +1,92 @@
+use super::helpers::PersistCompletedHarness;
+use neo_primitives::UInt256;
+
+#[tokio::test]
+async fn persist_completed_starts_consensus_round() {
+    let network = 0x4E454F;
+    let mut harness = PersistCompletedHarness::new(network, 4);
+    let prev_hash = UInt256::from([0x01; 32]);
+
+    harness
+        .persist_completed_all(0, prev_hash, 1_000)
+        .expect("persist completed");
+    harness.fire_initial_timers().expect("initial timers");
+    harness.drive_until_idle(50).await.expect("drive");
+
+    assert!(harness.saw_prepare_request(1));
+}
+
+#[tokio::test]
+async fn persist_completed_multiple_rounds() {
+    let network = 0x4E454F;
+    let mut harness = PersistCompletedHarness::new(network, 4);
+
+    for round in 0u32..3 {
+        let prev_hash = UInt256::from([round as u8; 32]);
+        harness
+            .persist_completed_all(round, prev_hash, 1_000 + round as u64)
+            .expect("persist completed");
+        harness.fire_initial_timers().expect("initial timers");
+        harness.drive_until_idle(50).await.expect("drive");
+
+        assert!(harness.saw_prepare_request(round + 1));
+        harness.take_events();
+    }
+}
+
+#[tokio::test]
+async fn persist_completed_round_emits_block_committed() {
+    let network = 0x4E454F;
+    let mut harness = PersistCompletedHarness::new(network, 4);
+    let prev_hash = UInt256::from([0x02; 32]);
+
+    harness
+        .persist_completed_all(0, prev_hash, 1_000)
+        .expect("persist completed");
+    harness.fire_initial_timers().expect("initial timers");
+    harness.drive_until_idle(200).await.expect("drive");
+
+    assert!(harness.saw_block_committed(1));
+    let block_data = harness
+        .take_events()
+        .into_iter()
+        .find_map(|event| match event {
+            crate::ConsensusEvent::BlockCommitted { block_data, .. } => Some(block_data),
+            _ => None,
+        })
+        .expect("timer-driven round must emit block data");
+    let permit = block_data
+        .commit_persistence
+        .as_ref()
+        .expect("final block containing a local Commit must carry a persistence permit");
+    assert!(permit.validate().is_ok());
+    let signature = block_data
+        .signatures
+        .iter()
+        .find(|(validator, _)| *validator == permit.validator_index)
+        .map(|(_, signature)| signature)
+        .expect("permit validator signature");
+    assert!(permit.covers_commit(
+        block_data.block_index,
+        permit.view_number,
+        permit.validator_index,
+        signature,
+    ));
+}
+
+#[tokio::test]
+async fn persist_completed_commits_with_one_validator_offline() {
+    let network = 0x4E454F;
+    let mut harness = PersistCompletedHarness::new(network, 4);
+    // n=4 => f=1; three online validators are still a quorum.
+    harness.set_offline(3);
+    let prev_hash = UInt256::from([0x03; 32]);
+
+    harness
+        .persist_completed_all(0, prev_hash, 1_000)
+        .expect("persist completed");
+    harness.fire_initial_timers().expect("initial timers");
+    harness.drive_until_idle(200).await.expect("drive");
+
+    assert!(harness.saw_block_committed(1));
+}

@@ -159,7 +159,11 @@ impl ReferenceCounter {
             record.stack_references -= 1;
             self.subtract_references(1);
             if record.stack_references == 0 {
-                tracked.zero_referred.insert(id);
+                if record.parents.is_empty() && record.children.is_empty() {
+                    tracked.tracked_items.remove(&id);
+                } else {
+                    tracked.zero_referred.insert(id);
+                }
                 true
             } else {
                 false
@@ -606,15 +610,13 @@ mod tests {
         counter.remove_stack_reference(&item);
         assert_eq!(counter.count(), 0);
 
-        // First call drains the zero set and clears the tracked record.
+        assert!(counter.state.tracked.lock().tracked_items.is_empty());
         assert_eq!(counter.check_zero_referred(), 0);
-
-        // Second call should be a no-op.
         assert_eq!(counter.check_zero_referred(), 0);
     }
 
     #[test]
-    fn zero_referred_collects_many_isolated_buffers() {
+    fn isolated_buffers_are_removed_on_last_stack_reference() {
         let counter = ReferenceCounter::new();
         for value in 0..20_000u32 {
             let item = StackItem::from_buffer(value.to_le_bytes().to_vec());
@@ -622,11 +624,37 @@ mod tests {
             counter.remove_stack_reference(&item);
         }
         assert_eq!(counter.count(), 0);
-        assert_eq!(counter.state.tracked.lock().tracked_items.len(), 20_000);
 
-        assert_eq!(counter.check_zero_referred(), 0);
         let tracked = counter.state.tracked.lock();
         assert!(tracked.tracked_items.is_empty());
         assert!(tracked.zero_referred.is_empty());
+    }
+
+    #[test]
+    fn last_stack_reference_defers_items_with_compound_edges() {
+        let counter = ReferenceCounter::new();
+        let child = make_struct();
+        let parent = make_array();
+        counter.add_reference(&child, &parent);
+        counter.add_stack_reference(&parent, 1);
+
+        counter.remove_stack_reference(&parent);
+        assert_eq!(counter.count(), 1);
+        let tracked = counter.state.tracked.lock();
+        assert!(
+            tracked
+                .tracked_items
+                .contains_key(&ItemId::from(&parent).unwrap())
+        );
+        assert!(
+            tracked
+                .zero_referred
+                .contains(&ItemId::from(&parent).unwrap())
+        );
+        drop(tracked);
+
+        counter.remove_reference(&child, &parent);
+        assert_eq!(counter.check_zero_referred(), 0);
+        assert!(counter.state.tracked.lock().tracked_items.is_empty());
     }
 }

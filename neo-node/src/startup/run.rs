@@ -17,20 +17,19 @@ use super::services::{
 use super::services::{maybe_enable_tee_runtime, maybe_enable_tee_wallet};
 use super::signal::{parse_live_stop_height, wait_for_live_stop_height, wait_for_shutdown_signal};
 use super::tasks::{BackgroundTasks, DEFAULT_BACKGROUND_TASK_SHUTDOWN};
-// TODO: Re-enable when these modules are implemented
-// use crate::ai_agent::AiAgentRuntime;
-// use crate::signing_provider::{
-//     ActiveSignerBackend, NODE_SIGNING_TENANT, ORACLE_SIGNING_PRINCIPAL, RPC_SIGNING_PRINCIPAL,
-//     STATE_SIGNING_PRINCIPAL, initialize_signer_service,
-// };
+use crate::ai_agent::AiAgentRuntime;
 use crate::cli::NodeCli;
 use crate::config::{NodeConfig, SignerProviderKind};
 use crate::rpc_consensus::RpcServerConsensus;
+use crate::signing_provider::{
+    ActiveSignerBackend, NODE_SIGNING_TENANT, ORACLE_SIGNING_PRINCIPAL, RPC_SIGNING_PRINCIPAL,
+    STATE_SIGNING_PRINCIPAL, initialize_signer_service,
+};
 use anyhow::{Context, Result, bail};
 use neo_protocol::ProtocolSettings;
 use neo_rpc::server::RpcSignerRuntime;
+use neo_system::{ExecutionMode, NeoSystem};
 use neo_wallets::signing::SecurityLevel;
-use neo_system::NeoSystem;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 #[cfg(feature = "tee")]
@@ -40,7 +39,7 @@ use tracing::warn;
 
 pub(crate) async fn run(cli: NodeCli) -> Result<()> {
     // Handle migration if requested
-    if let Some(ref migrate_from) = cli.migrate_from {
+    if cli.migrate_from.is_some() {
         return run_migration(&cli).await;
     }
 
@@ -130,12 +129,8 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
         );
     }
 
-    let state_service_settings = build_state_service_settings(
-        &cli,
-        &node_config,
-        storage_path.as_deref(),
-        &protocol_settings,
-    )?;
+    let state_service_settings =
+        build_state_service_settings(&node_config, storage_path.as_deref(), &protocol_settings)?;
 
     // Save auto_verify flag before moving state_service_settings
     let state_service_auto_verify = state_service_settings
@@ -163,6 +158,17 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
     )
     .map_err(|e| anyhow::anyhow!(e.to_string()))
     .context("failed to initialise NeoSystem")?;
+    let execution_mode: ExecutionMode = node_config
+        .execution
+        .mode
+        .parse()
+        .map_err(anyhow::Error::msg)?;
+    system.set_execution_mode(execution_mode);
+    info!(
+        target: "neo",
+        execution_mode = execution_mode.as_str(),
+        "transaction execution engine selected"
+    );
     configure_live_reference_roots(&system)
         .context("failed to configure live state-root validation")?;
 
@@ -171,15 +177,14 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
 
     apply_mempool_policy(&node_config, &system);
 
-    // TODO: Re-enable when AiAgentRuntime is available
-    // let diagnostics_config = node_config.diagnostics.clone().unwrap_or_default();
-    // let ai_agent_runtime = Arc::new(
-    //     AiAgentRuntime::new(&diagnostics_config, system.clone())
-    //         .context("failed to initialize AI diagnostics runtime")?,
-    // );
-    // ai_agent_runtime
-    //     .configure_mempool(&diagnostics_config)
-    //     .context("failed to configure diagnostics quarantine")?;
+    let diagnostics_config = node_config.diagnostics.clone().unwrap_or_default();
+    let ai_agent_runtime = Arc::new(
+        AiAgentRuntime::new(&diagnostics_config, system.clone())
+            .context("failed to initialize AI diagnostics runtime")?,
+    );
+    ai_agent_runtime
+        .configure_mempool(&diagnostics_config)
+        .context("failed to configure diagnostics quarantine")?;
 
     #[cfg(feature = "tee")]
     let tee_runtime = maybe_enable_tee_runtime(&cli, &node_config, &protocol_settings, &system)
@@ -306,10 +311,7 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
 
     let needs_wallet_provider = state_service_auto_verify
         || oracle_service.is_some()
-        || dbft_settings
-            .as_ref()
-            .map(|settings| settings.auto_start)
-            .unwrap_or(false)
+        || dbft_settings.is_some()
         || node_config
             .signer_service
             .as_ref()
@@ -362,72 +364,66 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
         false
     };
 
-    // TODO: Re-enable when signing_provider module is available
-    // let mut active_signer_backend = None;
-    // #[cfg(feature = "hsm")]
-    // if hsm_wallet_enabled {
-    //     let security_level = if cli.hsm_device.eq_ignore_ascii_case("simulation")
-    //         || cli.hsm_device.eq_ignore_ascii_case("sim")
-    //     {
-    //         SecurityLevel::Software
-    //     } else {
-    //         SecurityLevel::Hsm
-    //     };
-    //     active_signer_backend = Some(ActiveSignerBackend {
-    //         kind: SignerProviderKind::Hsm,
-    //         security_level,
-    //     });
-    // }
-    // if tee_wallet_enabled {
-    //     active_signer_backend = Some(ActiveSignerBackend {
-    //         kind: SignerProviderKind::HostSealedTee,
-    //         security_level: SecurityLevel::HostSealed,
-    //     });
-    // } else if nep6_wallet_enabled {
-    //     active_signer_backend = Some(ActiveSignerBackend {
-    //         kind: SignerProviderKind::Nep6,
-    //         security_level: SecurityLevel::Software,
-    //     });
-    // }
-    //
-    // let signer_runtime = initialize_signer_service(
-    //     node_config.signer_service.as_ref(),
-    //     protocol_settings.network,
-    //     wallet_provider.as_ref(),
-    //     active_signer_backend,
-    // )
-    // .context("failed to initialize unified signer service")?;
-    let signer_runtime: Option<()> = None; // Placeholder
+    let mut active_signer_backend = None;
+    #[cfg(feature = "hsm")]
+    if hsm_wallet_enabled {
+        active_signer_backend = Some(ActiveSignerBackend {
+            kind: SignerProviderKind::Hsm,
+            security_level: SecurityLevel::Hsm,
+        });
+    }
+    if tee_wallet_enabled {
+        active_signer_backend = Some(ActiveSignerBackend {
+            kind: SignerProviderKind::HostSealedTee,
+            security_level: SecurityLevel::HostSealed,
+        });
+    } else if nep6_wallet_enabled {
+        active_signer_backend = Some(ActiveSignerBackend {
+            kind: SignerProviderKind::Nep6,
+            security_level: SecurityLevel::Software,
+        });
+    }
 
-    // TODO: Re-enable when NodeSignerRuntime is available
-    // if let Some(server) = rpc_server.as_ref() {
-    //     server
-    //         .write()
-    //         .set_signer_runtime(signer_runtime.as_ref().map(|runtime| RpcSignerRuntime {
-    //             service: runtime.service(),
-    //             default_provider: runtime.default_provider().to_string(),
-    //             policy_version: runtime.policy_version().to_string(),
-    //             request_timeout: runtime.request_timeout(),
-    //             key_resolver: runtime.key_resolver(),
-    //             principal: RPC_SIGNING_PRINCIPAL.to_string(),
-    //             tenant: NODE_SIGNING_TENANT.to_string(),
-    //         }))
-    //         .map_err(anyhow::Error::msg)
-    //         .context("failed to install authenticated RPC signer runtime")?;
-    // }
-    // let state_signer = signer_runtime
-    //     .as_ref()
-    //     .map(|runtime| {
-    //         runtime.trusted_client(
-    //             STATE_SIGNING_PRINCIPAL,
-    //             "node-local-state-service",
-    //             "sign:state-root",
-    //         )
-    //     })
-    //     .transpose()
-    //     .map_err(|error| anyhow::anyhow!(error.to_string()))?;
-    let state_signer = None; // Placeholder
+    let signer_runtime = initialize_signer_service(
+        node_config.signer_service.as_ref(),
+        protocol_settings.network,
+        wallet_provider.as_ref(),
+        active_signer_backend,
+    )
+    .context("failed to initialize unified signer service")?;
+    if let Some(server) = rpc_server.as_ref() {
+        server
+            .write()
+            .set_signer_runtime(signer_runtime.as_ref().map(|runtime| RpcSignerRuntime {
+                service: runtime.service(),
+                default_provider: runtime.default_provider().to_string(),
+                policy_version: runtime.policy_version().to_string(),
+                request_timeout: runtime.request_timeout(),
+                key_resolver: runtime.key_resolver(),
+                principal: RPC_SIGNING_PRINCIPAL.to_string(),
+                tenant: NODE_SIGNING_TENANT.to_string(),
+            }))
+            .map_err(anyhow::Error::msg)
+            .context("failed to install authenticated RPC signer runtime")?;
+    }
 
+    let state_signer = if state_service_auto_verify {
+        let runtime = signer_runtime
+            .as_ref()
+            .context("state root verification requires the unified signer service")?;
+        runtime.ensure_purpose(&neo_wallets::signing::SignPurpose::StateRoot)?;
+        Some(
+            runtime
+                .trusted_client(
+                    STATE_SIGNING_PRINCIPAL,
+                    "node-local-state-service",
+                    "sign:state-root",
+                )
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?,
+        )
+    } else {
+        None
+    };
     maybe_enable_state_service_verification(
         &system,
         &state_service_settings,
@@ -436,32 +432,26 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
     )
     .context("failed to initialise state service verification")?;
 
-    // TODO: Re-enable when oracle signer is available
-    // if let Some(oracle) = oracle_service.as_ref() {
-    //     let runtime = signer_runtime
-    //         .as_ref()
-    //         .context("OracleService requires the unified signer service")?;
-    //     let client = runtime
-    //         .trusted_client(
-    //             ORACLE_SIGNING_PRINCIPAL,
-    //             "node-local-oracle-service",
-    //             "sign:oracle-response",
-    //         )
-    //         .map_err(|error| anyhow::anyhow!(error.to_string()))?;
-    //     oracle.set_signer_client(client);
-    // }
-
-    // TODO: Re-enable when AiAgentRuntime is available
-    // let ai_agent_runtime = Arc::new(AiAgentRuntime::default());
-    let ai_agent_runtime = (); // Placeholder
+    if let Some(oracle) = oracle_service.as_ref() {
+        let runtime = signer_runtime
+            .as_ref()
+            .context("OracleService requires the unified signer service")?;
+        runtime.ensure_purpose(&neo_wallets::signing::SignPurpose::OracleResponse)?;
+        let client = runtime
+            .trusted_client(
+                ORACLE_SIGNING_PRINCIPAL,
+                "node-local-oracle-service",
+                "sign:oracle-response",
+            )
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        oracle.set_signer_client(client);
+    }
 
     maybe_enable_dbft_consensus(
         &dbft_settings,
         &protocol_settings,
         &system,
         wallet_provider.as_ref(),
-        signer_runtime,
-        ai_agent_runtime,
     )
     .context("failed to initialise dBFT consensus")?;
 
@@ -557,7 +547,10 @@ async fn run_migration(cli: &NodeCli) -> Result<()> {
         match type_str.to_lowercase().as_str() {
             "neo-cli" | "neocli" => NodeImplementation::NeoCli,
             "neo-go" | "neogo" => NodeImplementation::NeoGo,
-            _ => bail!("Invalid migration type: {}. Use 'neo-cli' or 'neo-go'", type_str),
+            _ => bail!(
+                "Invalid migration type: {}. Use 'neo-cli' or 'neo-go'",
+                type_str
+            ),
         }
     } else {
         info!("Auto-detecting implementation type...");
@@ -567,9 +560,10 @@ async fn run_migration(cli: &NodeCli) -> Result<()> {
     info!("Detected implementation: {}", implementation.as_str());
 
     // Determine target storage directory
-    let target_dir = cli.storage.clone().unwrap_or_else(|| {
-        std::path::PathBuf::from("./Chain")
-    });
+    let target_dir = cli
+        .storage
+        .clone()
+        .unwrap_or_else(|| std::path::PathBuf::from("./Chain"));
 
     // Build migration config
     let config = MigrationConfig {
@@ -585,26 +579,34 @@ async fn run_migration(cli: &NodeCli) -> Result<()> {
     info!("Starting migration...");
     info!("  Source: {}", config.source_dir.display());
     info!("  Target: {}", config.target_dir.display());
-    info!("  Mode: {}", if config.migrate_storage { "full (storage + config)" } else { "config only" });
+    info!(
+        "  Mode: {}",
+        if config.migrate_storage {
+            "full (storage + config)"
+        } else {
+            "config only"
+        }
+    );
 
     let result = migrate(config).await?;
 
-    // Display results
     info!("");
-    info!("╔══════════════════════════════════════════════════════════╗");
-    info!("║           Migration Completed Successfully              ║");
-    info!("╠══════════════════════════════════════════════════════════╣");
-    info!("║ Network:        {:40} ║", result.network);
-    info!("║ Magic:          {:40} ║", result.protocol_magic);
-    info!("║ Blocks:         {:40} ║", result.blocks_migrated);
-    info!("║ State entries:  {:40} ║", result.state_entries_migrated);
-    info!("║ Starting height:{:40} ║", result.starting_height);
-    info!("╠══════════════════════════════════════════════════════════╣");
-    info!("║ Storage path:   {:40} ║", target_dir.display());
-    info!("╚══════════════════════════════════════════════════════════╝");
-    info!("");
-    info!("You can now start neo-rs with --storage {} to continue syncing", target_dir.display());
-    info!("The node will resume from block height {}", result.starting_height);
+    info!(
+        "Migration completed for network {} (magic {})",
+        result.network, result.protocol_magic
+    );
+    if cli.migrate_config_only {
+        info!("Configuration parsed successfully; no chain data was imported");
+        info!("Start neo-rs with a separate configuration to synchronize from genesis");
+    } else {
+        info!(
+            "Imported {} blocks and {} state entries into {}; resume at height {}",
+            result.blocks_migrated,
+            result.state_entries_migrated,
+            target_dir.display(),
+            result.starting_height
+        );
+    }
 
     Ok(())
 }

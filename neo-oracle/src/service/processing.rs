@@ -215,10 +215,10 @@ where
     /// Fetches `url` and returns the oracle response code and body.
     ///
     /// Faithful port of the reference `process_url`: length and emptiness are
-    /// checked first, `neofs:` requests fail closed (both by prefix and by
-    /// parsed scheme), only `https` is dispatched to the HTTP client under a
-    /// hard 60-second ceiling, and every other scheme yields
-    /// [`OracleResponseCode::ProtocolNotSupported`].
+    /// checked first, `neofs:` requests use the REST/gRPC protocol stack with
+    /// explicit wallet-key requirements, only `https` is dispatched to the
+    /// HTTP client under a hard 60-second ceiling, and every other scheme
+    /// yields [`OracleResponseCode::ProtocolNotSupported`].
     pub async fn process_url(&self, url: &str) -> (OracleResponseCode, String) {
         // Validate URL length
         if url.len() > MAX_URL_LENGTH {
@@ -239,16 +239,60 @@ where
             return (OracleResponseCode::Error, "Empty URL".to_string());
         }
 
-        // Handle NeoFS protocol
+        // Handle NeoFS protocol. Public REST objects and complete pre-provisioned
+        // credentials need no private key. Automatic bearer signing and every
+        // gRPC request require the real key of an unlocked designated account.
         if url.len() >= 6 && url[..6].eq_ignore_ascii_case("neofs:") {
-            tracing::warn!(
-                target: "neo::oracle",
-                "NeoFS oracle requests are fail-closed until dedicated signer algorithms are migrated"
-            );
-            return (
-                OracleResponseCode::ProtocolNotSupported,
-                format!("Invalid Protocol:<{url}>"),
-            );
+            let token = self
+                .settings
+                .neofs_bearer_token
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            let signature = self
+                .settings
+                .neofs_bearer_signature
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            let signature_key = self
+                .settings
+                .neofs_bearer_signature_key
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            let invalid_auth = signature.is_some() != signature_key.is_some()
+                || (signature.is_some() && token.is_none())
+                || (self.settings.neofs_auto_sign_bearer && token.is_none());
+            if invalid_auth {
+                tracing::warn!(target: "neo::oracle", "NeoFS authentication configuration is incomplete");
+                return (OracleResponseCode::Error, String::new());
+            }
+
+            let needs_key = self.settings.neofs_use_grpc
+                || (self.settings.neofs_auto_sign_bearer && signature.is_none());
+            let oracle_key = if needs_key {
+                (|| {
+                    let wallet = self.wallet.read().clone()?;
+                    let snapshot = self.snapshots.snapshot();
+                    let oracles = snapshot.designated_oracles(snapshot.ledger_height()).ok()?;
+                    let (account, _) = wallet.oracle_accounts(&oracles).into_iter().next()?;
+                    wallet.oracle_key(&account)
+                })()
+            } else {
+                None
+            };
+            if needs_key && oracle_key.is_none() {
+                tracing::warn!(
+                    target: "neo::oracle",
+                    "NeoFS signing requires an unlocked designated Oracle wallet key"
+                );
+                return (OracleResponseCode::Error, String::new());
+            }
+            return self
+                .neofs
+                .process(&self.settings, url, oracle_key.as_ref())
+                .await;
         }
 
         // Parse and validate URL
@@ -283,17 +327,6 @@ where
                     (OracleResponseCode::Timeout, String::new())
                 }
             };
-        }
-
-        if scheme.eq_ignore_ascii_case("neofs") {
-            tracing::warn!(
-                target: "neo::oracle",
-                "NeoFS oracle requests are fail-closed until dedicated signer algorithms are migrated"
-            );
-            return (
-                OracleResponseCode::ProtocolNotSupported,
-                format!("Invalid Protocol:<{url}>"),
-            );
         }
 
         (

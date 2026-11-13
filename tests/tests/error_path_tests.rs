@@ -9,9 +9,9 @@
 //! - Concurrent operation errors
 //! - State inconsistency detection
 
-use neo_smart_contract::error::CoreError;
 use neo_crypto::{Crypto, ECCurve, ECPoint};
 use neo_primitives::{UInt160, UInt256};
+use neo_smart_contract::error::CoreError;
 
 // ============================================================================
 // Error Creation and Classification Tests

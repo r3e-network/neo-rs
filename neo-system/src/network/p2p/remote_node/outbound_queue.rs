@@ -1,10 +1,10 @@
 //! Outbound message queueing and per-peer memory quota handling.
 
 use super::RemoteNode;
+use crate::network::p2p::MessageCommand;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use bitvec::{array::BitArray, order::Lsb0};
 use neo_actors::ActorResult;
-use crate::network::p2p::MessageCommand;
 use neo_io_crate::Serializable;
 use std::collections::VecDeque;
 use std::time::Instant;

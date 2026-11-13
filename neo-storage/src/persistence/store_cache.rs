@@ -1,6 +1,7 @@
 //! Cache facade that fronts a `Store` or snapshot for smart-contract storage.
 
 use super::{
+    commit_profile::{StoreCommitProfiler, StoreCommitStage, StoreCommitTimer},
     data_cache::{DataCache, DataCacheConfig, DataCacheError, DataCacheResult},
     read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
     seek_direction::SeekDirection,
@@ -22,6 +23,7 @@ pub struct StoreCache {
     data_cache: DataCache,
     store: Option<Arc<dyn Store>>,
     snapshot: Option<Arc<dyn StoreSnapshot>>,
+    commit_profiler: Option<Arc<dyn StoreCommitProfiler>>,
 }
 
 impl StoreCache {
@@ -57,6 +59,7 @@ impl StoreCache {
                 Some(store_find),
                 config,
             ),
+            commit_profiler: None,
             store: Some(store),
             snapshot: None,
         }
@@ -99,6 +102,7 @@ impl StoreCache {
                 Some(snapshot_find),
                 config,
             ),
+            commit_profiler: None,
             store: None,
             snapshot: Some(snapshot),
         }
@@ -109,6 +113,11 @@ impl StoreCache {
         if let Err(err) = self.try_commit() {
             warn!(target: "neo", error = ?err, "store cache commit failed");
         }
+    }
+
+    /// Attaches an observation-only profiler to subsequent commits.
+    pub fn set_commit_profiler(&mut self, profiler: Option<Arc<dyn StoreCommitProfiler>>) {
+        self.commit_profiler = profiler;
     }
 
     /// Commits all changes, returning an error if read-only.
@@ -122,22 +131,35 @@ impl StoreCache {
             return Ok(());
         }
 
-        let mut writer_snapshot = if let Some(snapshot_arc) = self.snapshot.as_ref() {
-            snapshot_arc.store().snapshot()
-        } else if let Some(store_arc) = self.store.as_ref() {
-            store_arc.snapshot()
-        } else {
-            let msg = "no backing store available for commit";
-            warn!(target: "neo", "{msg}");
-            return Err(DataCacheError::CommitFailed(msg.to_string()));
+        let mut writer_snapshot = {
+            let _stage = StoreCommitTimer::new(
+                self.commit_profiler.as_deref(),
+                StoreCommitStage::WriterSnapshotOpen,
+            );
+            if let Some(snapshot_arc) = self.snapshot.as_ref() {
+                snapshot_arc.store().snapshot()
+            } else if let Some(store_arc) = self.store.as_ref() {
+                store_arc.snapshot()
+            } else {
+                let msg = "no backing store available for commit";
+                warn!(target: "neo", "{msg}");
+                return Err(DataCacheError::CommitFailed(msg.to_string()));
+            }
         };
 
         if let Some(snapshot) = Arc::get_mut(&mut writer_snapshot) {
-            self.data_cache
-                .apply_tracked_to_writer(snapshot)
-                .map_err(|e| {
-                    DataCacheError::CommitFailed(format!("storage write failed: {}", e))
-                })?;
+            snapshot.set_commit_profiler(self.commit_profiler.clone());
+            {
+                let _stage = StoreCommitTimer::new(
+                    self.commit_profiler.as_deref(),
+                    StoreCommitStage::ChangeApplication,
+                );
+                self.data_cache
+                    .apply_tracked_to_writer(snapshot)
+                    .map_err(|e| {
+                        DataCacheError::CommitFailed(format!("storage write failed: {}", e))
+                    })?;
+            }
             snapshot
                 .try_commit()
                 .map_err(|e| DataCacheError::CommitFailed(e.to_string()))?;

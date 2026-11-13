@@ -132,7 +132,7 @@ pub(crate) use static_contract_hash;
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
-    use super::{ContractManagement, GasToken, NativeContract, NativeRegistry, NeoToken};
+    use super::{ContractManagement, GasToken, NativeContract, NeoToken};
     use neo_primitives::UInt160;
     use std::sync::Arc;
 

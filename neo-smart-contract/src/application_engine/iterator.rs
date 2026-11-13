@@ -34,7 +34,9 @@ fn iterator_value_handler(
         .map_err(|e| map_iterator_error("System.Iterator.Value", e))?;
     Ok(())
 }
-pub(crate) fn register_iterator_interops(engine: &mut ApplicationEngine) -> VmResult<()> {
+pub(crate) fn register_iterator_interops(
+    engine: &mut dyn super::state::InteropRegistration,
+) -> VmResult<()> {
     engine.register_host_service(
         "System.Iterator.Next",
         1 << 15,

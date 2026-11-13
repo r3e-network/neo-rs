@@ -7,8 +7,9 @@
 //! driven by the blockchain actor and the `NeoSystemContext` handler
 //! registry, both of which live here.
 
-mod state_root;
 pub mod commit_handlers;
+mod state_root;
+mod store;
 
 /// Test-only helpers for building native-contract storage fixtures.
 ///
@@ -17,8 +18,12 @@ pub mod commit_handlers;
 pub(crate) mod test_support;
 
 // Re-export state root types
+pub use commit_handlers::{
+    StateRootCommitProfile, StateRootNodeCacheStats, StateRootProfileSink,
+    StateServiceCommitHandlers,
+};
 pub use state_root::{STATE_SERVICE_CATEGORY, StateRoot};
-pub use commit_handlers::StateServiceCommitHandlers;
+pub(crate) use store::StateRootStore;
 
 /// Event emitted when a validated state root is persisted.
 #[derive(Debug, Clone)]

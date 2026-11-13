@@ -78,9 +78,18 @@ fn witness_condition_type_display() {
     assert_eq!(WitnessConditionType::Or.to_string(), "Or");
     assert_eq!(WitnessConditionType::ScriptHash.to_string(), "ScriptHash");
     assert_eq!(WitnessConditionType::Group.to_string(), "Group");
-    assert_eq!(WitnessConditionType::CalledByEntry.to_string(), "CalledByEntry");
-    assert_eq!(WitnessConditionType::CalledByContract.to_string(), "CalledByContract");
-    assert_eq!(WitnessConditionType::CalledByGroup.to_string(), "CalledByGroup");
+    assert_eq!(
+        WitnessConditionType::CalledByEntry.to_string(),
+        "CalledByEntry"
+    );
+    assert_eq!(
+        WitnessConditionType::CalledByContract.to_string(),
+        "CalledByContract"
+    );
+    assert_eq!(
+        WitnessConditionType::CalledByGroup.to_string(),
+        "CalledByGroup"
+    );
 }
 
 #[test]
@@ -125,7 +134,7 @@ fn witness_condition_type_serde_rejects_invalid() {
 #[test]
 fn witness_condition_type_clone() {
     let condition = WitnessConditionType::CalledByContract;
-    let cloned = condition.clone();
+    let cloned = condition;
     assert_eq!(condition, cloned);
 }
 

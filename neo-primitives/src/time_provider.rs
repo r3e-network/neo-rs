@@ -5,9 +5,12 @@ use chrono::{DateTime, Utc};
 use parking_lot::RwLock;
 use std::sync::{Arc, LazyLock};
 
+/// Supplies UTC time to protocol code and deterministic tests.
 pub trait TimeSource: Send + Sync {
+    /// Returns the current UTC date and time.
     fn utc_now(&self) -> DateTime<Utc>;
 
+    /// Returns the current UTC time as Unix epoch milliseconds.
     fn utc_now_timestamp_millis(&self) -> i64 {
         datetime_to_millis(self.utc_now())
     }
@@ -25,18 +28,22 @@ impl TimeSource for SystemTimeSource {
 static CURRENT_TIME_SOURCE: LazyLock<RwLock<Arc<dyn TimeSource>>> =
     LazyLock::new(|| RwLock::new(Arc::new(SystemTimeSource) as Arc<dyn TimeSource>));
 
+/// Accesses the process-wide [`TimeSource`].
 #[derive(Debug, Clone, Copy)]
 pub struct TimeProvider;
 
 impl TimeProvider {
+    /// Returns a shared handle to the active time source.
     pub fn current() -> Arc<dyn TimeSource> {
         CURRENT_TIME_SOURCE.read().clone()
     }
 
+    /// Replaces the active time source.
     pub fn set_current(provider: Arc<dyn TimeSource>) {
         *CURRENT_TIME_SOURCE.write() = provider;
     }
 
+    /// Restores the system UTC clock.
     pub fn reset_to_default() {
         *CURRENT_TIME_SOURCE.write() = Arc::new(SystemTimeSource);
     }

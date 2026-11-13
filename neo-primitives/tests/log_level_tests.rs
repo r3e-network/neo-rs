@@ -35,7 +35,7 @@ fn log_level_equality() {
 #[test]
 fn log_level_clone() {
     let level = LogLevel::Warning;
-    let cloned = level.clone();
+    let cloned = level;
     assert_eq!(level, cloned);
 }
 

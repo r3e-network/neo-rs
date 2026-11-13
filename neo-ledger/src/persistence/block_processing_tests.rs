@@ -5,19 +5,18 @@
 
 #[cfg(test)]
 mod tests {
+    #![allow(dead_code)] // Retain fault-injection controls shared by test scenarios.
     use crate::persistence::*;
     use neo_primitives::{TriggerType, UInt256};
     use neo_protocol::execution::Block;
     use neo_protocol::payloads::Transaction;
-    use neo_smart_contract::application_engine::{
-        LedgerTransactionStates, NativeContractsCache,
-    };
+    use neo_smart_contract::application_engine::{LedgerTransactionStates, NativeContractsCache};
     use neo_storage::persistence::DataCache;
     use neo_vm::VmState;
     use parking_lot::Mutex;
     use std::collections::HashMap;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     type Log = Arc<Mutex<Vec<String>>>;
 
@@ -32,15 +31,15 @@ mod tests {
         use neo_protocol::execution::BlockHeader;
 
         let header = BlockHeader::new(
-            0,                  // version
-            UInt256::zero(),    // previous_hash
-            UInt256::zero(),    // merkle_root
-            1234567890000,      // timestamp
-            0,                  // nonce
-            index,              // index
-            0,                  // primary_index
-            UInt160::zero(),    // next_consensus
-            vec![],             // witnesses
+            0,               // version
+            UInt256::zero(), // previous_hash
+            UInt256::zero(), // merkle_root
+            1234567890000,   // timestamp
+            0,               // nonce
+            index,           // index
+            0,               // primary_index
+            UInt160::zero(), // next_consensus
+            vec![],          // witnesses
         );
 
         let transactions = (0..tx_count)
@@ -67,7 +66,7 @@ mod tests {
 
     impl NativeEnginePort for TestNativeEngine {
         fn native_on_persist(&mut self) -> Result<(), LedgerError> {
-            self.log.lock().push(format!("on_persist"));
+            self.log.lock().push("on_persist".to_string());
             if self.fail_on_persist {
                 return Err(LedgerError::Engine {
                     message: "native persist failed".to_string(),
@@ -77,7 +76,7 @@ mod tests {
         }
 
         fn native_post_persist(&mut self) -> Result<(), LedgerError> {
-            self.log.lock().push(format!("post_persist"));
+            self.log.lock().push("post_persist".to_string());
             if self.fail_on_post_persist {
                 return Err(LedgerError::Engine {
                     message: "native persist failed".to_string(),
@@ -118,12 +117,12 @@ mod tests {
         }
 
         fn execute_allow_fault(&mut self) -> VmState {
-            self.log.lock().push(format!("execute"));
+            self.log.lock().push("execute".to_string());
             self.vm_state
         }
 
         fn record_transaction_vm_state(&mut self, _tx_hash: &UInt256, _vm_state: VmState) {
-            self.log.lock().push(format!("record_state"));
+            self.log.lock().push("record_state".to_string());
         }
 
         fn set_transaction_states(&mut self, _states: LedgerTransactionStates) {}
@@ -202,11 +201,7 @@ mod tests {
             _seeded: &SeededNativeContracts,
             _cache: &NativeCacheHandle,
         ) -> Result<Box<dyn ApplicationEnginePort>, LedgerError> {
-            let vm_state = self
-                .app_vm_states
-                .lock()
-                .pop()
-                .unwrap_or(VmState::HALT);
+            let vm_state = self.app_vm_states.lock().pop().unwrap_or(VmState::HALT);
             Ok(Box::new(TestApplicationEngine {
                 vm_state,
                 log: self.log.clone(),
@@ -667,10 +662,7 @@ mod tests {
             .iter()
             .position(|e| e == "on_persist")
             .expect("on_persist");
-        let first_execute = events
-            .iter()
-            .position(|e| e == "execute")
-            .expect("execute");
+        let first_execute = events.iter().position(|e| e == "execute").expect("execute");
         let post_persist_pos = events
             .iter()
             .position(|e| e == "post_persist")

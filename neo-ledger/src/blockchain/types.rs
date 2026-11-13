@@ -20,10 +20,10 @@ pub enum ImportDisposition {
 }
 
 /// Classifies an incoming block based on its index relative to current blockchain height.
-pub fn classify_import_block(block_index: u32, current_height: u32) -> ImportDisposition {
+pub fn classify_import_block(current_height: u32, block_index: u32) -> ImportDisposition {
     if block_index <= current_height {
         ImportDisposition::AlreadySeen
-    } else if block_index == current_height + 1 {
+    } else if block_index == current_height.saturating_add(1) {
         ImportDisposition::NextExpected
     } else {
         ImportDisposition::FutureGap
@@ -213,8 +213,8 @@ impl BlockchainHandle {
     /// Sends a message to the blockchain actor with an explicit sender.
     ///
     /// Uses non-blocking `try_send` - if the mailbox is full, returns an error
-    /// immediately. The sender parameter is type-erased to `impl Any` for API
-    /// flexibility, but is typically another `ActorRef`.
+    /// immediately. The optional actor reference is preserved in the envelope
+    /// so request/reply handlers can return their terminal result to the caller.
     ///
     /// # Type Parameters
     ///
@@ -223,7 +223,7 @@ impl BlockchainHandle {
     /// # Arguments
     ///
     /// * `msg` - The message to send
-    /// * `sender` - The sender reference (typically another ActorRef, type-erased for flexibility)
+    /// * `sender` - Optional actor reference receiving the reply
     ///
     /// # Errors
     ///
@@ -231,18 +231,13 @@ impl BlockchainHandle {
     /// - The actor's mailbox is full
     /// - The actor has stopped
     /// - The actor system is shutting down
-    ///
-    /// # Note
-    ///
-    /// The current implementation ignores the `sender` parameter because the
-    /// blockchain actor typically doesn't need to reply. This may be extended
-    /// in the future if request/reply patterns are needed.
-    pub fn tell_from<M>(&self, msg: M, _sender: impl std::any::Any) -> Result<(), String>
+    pub fn tell_from<M>(&self, msg: M, sender: Option<ActorRef>) -> Result<(), String>
     where
         M: std::any::Any + Send + 'static,
     {
-        // For now, blockchain messages are fire-and-forget, so sender is unused
-        self.actor_ref.tell(msg).map_err(|e| e.to_string())
+        self.actor_ref
+            .tell_from(msg, sender)
+            .map_err(|e| e.to_string())
     }
 
     /// Sends a message to the blockchain actor from an async context.
@@ -258,7 +253,7 @@ impl BlockchainHandle {
     /// # Arguments
     ///
     /// * `msg` - The message to send
-    /// * `sender` - The sender reference (type-erased, currently unused)
+    /// * `sender` - Optional actor reference receiving the reply
     ///
     /// # Errors
     ///
@@ -278,15 +273,17 @@ impl BlockchainHandle {
     /// // Critical persist operation - wait for mailbox capacity
     /// handle.tell_from_async(
     ///     BlockchainCommand::PersistCompleted(event),
-    ///     actor_context.self_ref()
+    ///     Some(actor_context.self_ref())
     /// ).await?;
     /// ```
-    pub async fn tell_from_async<M>(&self, msg: M, _sender: impl std::any::Any) -> Result<(), String>
+    pub async fn tell_from_async<M>(&self, msg: M, sender: Option<ActorRef>) -> Result<(), String>
     where
         M: std::any::Any + Send + 'static,
     {
-        // Use async send with backpressure for critical messages
-        self.actor_ref.tell_async(msg).await.map_err(|e| e.to_string())
+        self.actor_ref
+            .tell_from_async(msg, sender)
+            .await
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -300,9 +297,6 @@ pub enum InventoryPayload {
 }
 
 #[cfg(test)]
-pub fn should_schedule_reverify_idle(
-    _reverify_cache_len: usize,
-    _max_cache_size: usize,
-) -> bool {
+pub fn should_schedule_reverify_idle(_reverify_cache_len: usize, _max_cache_size: usize) -> bool {
     true
 }

@@ -9,10 +9,10 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_protocol::ProtocolSettings;
-use neo_wallets::helper::Helper as WalletHelper;
 use neo_json::{JObject, JToken};
 use neo_primitives::UInt160;
+use neo_protocol::ProtocolSettings;
+use neo_wallets::helper::Helper as WalletHelper;
 use serde::{Deserialize, Serialize};
 
 /// Transfer output information matching C# `RpcTransferOut`

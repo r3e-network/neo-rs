@@ -49,7 +49,10 @@ fn primitive_error_buffer_overflow() {
 fn primitive_error_buffer_overflow_constructor() {
     let err = PrimitiveError::buffer_overflow(200, 100);
     match err {
-        PrimitiveError::BufferOverflow { requested, available } => {
+        PrimitiveError::BufferOverflow {
+            requested,
+            available,
+        } => {
             assert_eq!(requested, 200);
             assert_eq!(available, 100);
         }
@@ -83,7 +86,7 @@ fn primitive_error_type_conversion_constructor() {
 #[test]
 fn primitive_result_ok() {
     let result: PrimitiveResult<i32> = Ok(42);
-    assert_eq!(result.unwrap(), 42);
+    assert_eq!(result, Ok(42));
 }
 
 #[test]

@@ -1,6 +1,4 @@
 use super::*;
-use crate::pool_item::PoolItem;
-use crate::transaction_removed_event_args::TransactionRemovedEventArgs;
 use neo_ledger::validation::TransactionVerificationContext;
 use neo_native_contracts::AccountState;
 use neo_native_contracts::fungible_token::PREFIX_ACCOUNT;

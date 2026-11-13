@@ -12,6 +12,7 @@ impl NeoToken {
     pub fn new() -> Self {
         Self {
             methods: crate::native::static_native_methods!(NeoToken::native_methods()),
+            committee_decode_cache: parking_lot::RwLock::new(None),
         }
     }
 

@@ -1,5 +1,4 @@
 use super::*;
-use neo_primitives::NetworkError;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
@@ -121,7 +120,7 @@ async fn read_frame_times_out_when_peer_silent() {
 
     let result = read_frame(&mut client_stream, &cfg, false).await;
     assert!(
-        matches!(result, Err(NetworkError::Timeout)),
+        matches!(result, Err(NetworkError::Timeout { .. })),
         "expected timeout error, got: {:?}",
         result
     );
@@ -136,7 +135,7 @@ async fn read_frame_times_out_in_active_session_when_peer_silent() {
 
     let result = read_frame(&mut client_stream, &cfg, true).await;
     assert!(
-        matches!(result, Err(NetworkError::Timeout)),
+        matches!(result, Err(NetworkError::Timeout { .. })),
         "expected active timeout error, got: {:?}",
         result
     );
@@ -156,7 +155,7 @@ async fn read_frame_times_out_when_partial_frame_stalls() {
 
     let result = read_frame(&mut client_stream, &cfg, false).await;
     assert!(
-        matches!(result, Err(NetworkError::Timeout)),
+        matches!(result, Err(NetworkError::Timeout { .. })),
         "expected partial-frame timeout, got: {:?}",
         result
     );
@@ -179,7 +178,7 @@ async fn read_frame_rejects_partial_frame_eof() {
     assert!(
         matches!(
             result,
-            Err(NetworkError::ConnectionError(_)) | Err(NetworkError::InvalidMessage(_))
+            Err(NetworkError::ConnectionError(_)) | Err(NetworkError::InvalidMessage { .. })
         ),
         "expected partial-frame EOF to fail closed, got: {:?}",
         result
@@ -390,7 +389,7 @@ async fn read_frame_preserves_partial_buffer_after_timeout_and_resumes() {
         reader
             .read_from_stream(&mut client_stream, &cfg, false)
             .await,
-        Err(NetworkError::Timeout)
+        Err(NetworkError::Timeout { .. })
     ));
     assert_eq!(&reader.buffer[..], &partial);
 
@@ -500,25 +499,21 @@ async fn reader_paths_share_the_message_payload_limit_and_primitive_error() {
         .expect("loopback permission is required for migration parity");
     let cfg = FrameConfig::default();
     let mut header = vec![0x00, 0x2C];
-    neo_io_crate::var_int::write_var_int(crate::message::PAYLOAD_MAX_SIZE as u64 + 1, &mut header);
+    neo_io_crate::var_int::write_var_int(
+        crate::network::p2p::message::PAYLOAD_MAX_SIZE as u64 + 1,
+        &mut header,
+    );
 
     let mut reader = FrameReader::new();
     reader.buffer.extend_from_slice(&header);
-    let full: neo_primitives::NetworkResult<Vec<u8>> = reader
+    let full: NetworkResult<Vec<u8>> = reader
         .read_from_stream(&mut client_stream, &cfg, true)
         .await;
-    assert!(matches!(
-        full,
-        Err(neo_primitives::NetworkError::InvalidMessage(_))
-    ));
+    assert!(matches!(full, Err(NetworkError::InvalidMessage { .. })));
     assert_eq!(&reader.buffer[..], header.as_slice());
 
-    let step: neo_primitives::NetworkResult<FrameReadStep> =
-        reader.read_step(&mut client_stream, &cfg, true).await;
-    assert!(matches!(
-        step,
-        Err(neo_primitives::NetworkError::InvalidMessage(_))
-    ));
+    let step: NetworkResult<FrameReadStep> = reader.read_step(&mut client_stream, &cfg, true).await;
+    assert!(matches!(step, Err(NetworkError::InvalidMessage { .. })));
     assert_eq!(&reader.buffer[..], header.as_slice());
 }
 

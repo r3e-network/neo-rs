@@ -11,6 +11,7 @@ use neo_primitives::UInt160;
 use neo_primitives::UInt256;
 use neo_primitives::WitnessScope;
 use neo_protocol::ProtocolSettings;
+use neo_protocol::execution::Block as ExecutionBlock;
 use neo_protocol::payloads::Signer;
 use neo_protocol::payloads::{block::Block, transaction::Transaction};
 use neo_protocol::witness::Witness;
@@ -47,7 +48,7 @@ fn bench_persist_empty_block(c: &mut Criterion) {
 
     let system = NeoSystem::new(ProtocolSettings::testnet(), None, None).expect("neo system");
     let mut height = system.context().ledger().current_height();
-    let mut genesis = system.genesis_block().as_ref().clone();
+    let genesis = system.genesis_block().as_ref().clone();
     let mut prev_hash = genesis.hash();
     let mut timestamp = 1_700_000_000_000u64;
 
@@ -57,7 +58,10 @@ fn bench_persist_empty_block(c: &mut Criterion) {
             timestamp = timestamp.saturating_add(15_000);
             let mut block = empty_block(height, prev_hash, timestamp);
             prev_hash = block.hash();
-            black_box(system.persist_block(block).expect("persist block"));
+            // `NeoSystem::persist_block` consumes the execution representation.
+            let block = ExecutionBlock::from(&block);
+            system.persist_block(block).expect("persist block");
+            black_box(());
         });
     });
 }
@@ -73,7 +77,7 @@ fn bench_persist_one_ret_transaction(c: &mut Criterion) {
     let committee = NativeHelpers::committee_address(&settings, None);
     let system = NeoSystem::new(settings, None, None).expect("neo system");
     let mut height = system.context().ledger().current_height();
-    let mut genesis = system.genesis_block().as_ref().clone();
+    let genesis = system.genesis_block().as_ref().clone();
     let mut prev_hash = genesis.hash();
     let mut timestamp = 1_700_000_000_000u64;
 
@@ -85,7 +89,10 @@ fn bench_persist_one_ret_transaction(c: &mut Criterion) {
             block.transactions = vec![ret_transaction(height, committee)];
             block.rebuild_merkle_root();
             prev_hash = block.hash();
-            black_box(system.persist_block(block).expect("persist block"));
+            // `NeoSystem::persist_block` consumes the execution representation.
+            let block = ExecutionBlock::from(&block);
+            system.persist_block(block).expect("persist block");
+            black_box(());
         });
     });
 }
@@ -101,7 +108,7 @@ fn bench_persist_ten_ret_transactions(c: &mut Criterion) {
     let committee = NativeHelpers::committee_address(&settings, None);
     let system = NeoSystem::new(settings, None, None).expect("neo system");
     let mut height = system.context().ledger().current_height();
-    let mut genesis = system.genesis_block().as_ref().clone();
+    let genesis = system.genesis_block().as_ref().clone();
     let mut prev_hash = genesis.hash();
     let mut timestamp = 1_700_000_000_000u64;
 
@@ -115,7 +122,41 @@ fn bench_persist_ten_ret_transactions(c: &mut Criterion) {
                 .collect();
             block.rebuild_merkle_root();
             prev_hash = block.hash();
-            black_box(system.persist_block(block).expect("persist block"));
+            // `NeoSystem::persist_block` consumes the execution representation.
+            let block = ExecutionBlock::from(&block);
+            system.persist_block(block).expect("persist block");
+            black_box(());
+        });
+    });
+}
+
+fn bench_persist_consecutive_empty_blocks(c: &mut Criterion) {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let _guard = runtime.enter();
+
+    let system = NeoSystem::new(ProtocolSettings::testnet(), None, None).expect("neo system");
+    let mut height = system.context().ledger().current_height();
+    let genesis = system.genesis_block().as_ref().clone();
+    let mut prev_hash = genesis.hash();
+    let mut timestamp = 1_700_000_000_000u64;
+
+    c.bench_function("persist_consecutive_empty_blocks_32", |b| {
+        b.iter(|| {
+            // Measure an explicit run of consecutive empty blocks. Every block
+            // still executes all native hooks and commits in height order.
+            for _ in 0..32 {
+                height = height.saturating_add(1);
+                timestamp = timestamp.saturating_add(15_000);
+                let mut block = empty_block(height, prev_hash, timestamp);
+                prev_hash = block.hash();
+                system
+                    .persist_block(ExecutionBlock::from(&block))
+                    .expect("persist empty block");
+            }
+            black_box(());
         });
     });
 }
@@ -123,6 +164,7 @@ fn bench_persist_ten_ret_transactions(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_persist_empty_block,
+    bench_persist_consecutive_empty_blocks,
     bench_persist_one_ret_transaction,
     bench_persist_ten_ret_transactions
 );

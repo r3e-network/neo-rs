@@ -111,8 +111,8 @@ impl ContractParameter {
                     .ok_or_else(|| "Invalid Hash160, expected hex string".to_string())?;
                 let bytes = hex::decode(hex_str.trim_start_matches("0x"))
                     .map_err(|e| format!("Invalid Hash160 hex: {}", e))?;
-                let hash = UInt160::from_bytes(&bytes)
-                    .map_err(|e| format!("Invalid Hash160: {}", e))?;
+                let hash =
+                    UInt160::from_bytes(&bytes).map_err(|e| format!("Invalid Hash160: {}", e))?;
                 ContractParameterValue::Hash160(hash)
             }
             "Hash256" => {
@@ -121,8 +121,8 @@ impl ContractParameter {
                     .ok_or_else(|| "Invalid Hash256, expected hex string".to_string())?;
                 let bytes = hex::decode(hex_str.trim_start_matches("0x"))
                     .map_err(|e| format!("Invalid Hash256 hex: {}", e))?;
-                let hash = UInt256::from_bytes(&bytes)
-                    .map_err(|e| format!("Invalid Hash256: {}", e))?;
+                let hash =
+                    UInt256::from_bytes(&bytes).map_err(|e| format!("Invalid Hash256: {}", e))?;
                 ContractParameterValue::Hash256(hash)
             }
             "PublicKey" => {
@@ -151,16 +151,13 @@ impl ContractParameter {
                 let arr = value_json
                     .as_array()
                     .ok_or_else(|| "Invalid Array, expected JSON array".to_string())?;
-                let params: Result<Vec<_>, _> = arr
-                    .iter()
-                    .map(Self::from_json)
-                    .collect();
+                let params: Result<Vec<_>, _> = arr.iter().map(Self::from_json).collect();
                 ContractParameterValue::Array(params?)
             }
             "Map" => {
-                let arr = value_json
-                    .as_array()
-                    .ok_or_else(|| "Invalid Map, expected JSON array of [key, value] pairs".to_string())?;
+                let arr = value_json.as_array().ok_or_else(|| {
+                    "Invalid Map, expected JSON array of [key, value] pairs".to_string()
+                })?;
                 let pairs: Result<Vec<_>, _> = arr
                     .iter()
                     .map(|pair| {
@@ -333,4 +330,3 @@ mod tests {
         }
     }
 }
-

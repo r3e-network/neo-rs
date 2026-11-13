@@ -34,7 +34,7 @@ pub mod converters;
 pub(crate) mod helpers;
 pub(crate) mod mempool;
 pub(crate) mod network;
-// pub(crate) mod persistence;  // Removed during consolidation
+pub(crate) mod persistence;
 pub mod registry;
 pub(crate) mod relay;
 pub(crate) mod services;
@@ -53,6 +53,7 @@ pub use core::*;
 // Re-export from extracted modules (these override legacy exports)
 pub use actors::TransactionRouterHandle;
 pub use builder::NeoSystemBuilder;
+pub use persistence::{ExecutionMode, ExecutionProfileSnapshot, ExecutionStats};
 pub use registry::ServiceRegistry;
 pub use system::{ReadinessStatus, STATE_STORE_SERVICE};
 

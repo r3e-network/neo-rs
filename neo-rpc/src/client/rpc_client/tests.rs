@@ -1,18 +1,16 @@
 use super::*;
 use crate::client::models::{
-    RpcAccount, RpcContractState, RpcPlugin, RpcRawMemPool, RpcRequest, RpcTransferOut,
-    RpcValidator,
+    RpcAccount, RpcContractState, RpcPlugin, RpcRawMemPool, RpcRequest, RpcValidator,
 };
 use base64::{Engine as _, engine::general_purpose};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Response, Server as HyperServer};
 use mockito::{Matcher, Mock, Server, ServerGuard};
-use neo_protocol::ProtocolSettings;
 use neo_io::SerializableExtensions;
 use neo_io::{MemoryReader, Serializable};
 use neo_json::{JArray, JObject, JToken};
-use neo_primitives::BigDecimal;
 use neo_primitives::UInt256;
+use neo_protocol::ProtocolSettings;
 use neo_protocol::payloads::Transaction;
 use neo_protocol::payloads::block::Block;
 use num_bigint::BigInt;
@@ -1526,8 +1524,11 @@ async fn close_wallet_matches_fixture() {
 
     let url = Url::parse(&server.url()).unwrap();
     let client = RpcClient::builder(url).build().unwrap();
-    let actual = client.close_wallet().await.expect("closewallet");
-    assert_eq!(actual, expected);
+    let actual = client
+        .rpc_send_async("closewallet", vec![])
+        .await
+        .expect("closewallet");
+    assert_eq!(actual.as_boolean(), expected);
 }
 
 #[tokio::test]
@@ -1586,10 +1587,16 @@ async fn open_wallet_matches_fixture() {
     let url = Url::parse(&server.url()).unwrap();
     let client = RpcClient::builder(url).build().unwrap();
     let actual = client
-        .open_wallet(&path, &password)
+        .rpc_send_async(
+            "openwallet",
+            vec![
+                JToken::String(path.clone()),
+                JToken::String(password.clone()),
+            ],
+        )
         .await
         .expect("openwallet");
-    assert_eq!(actual, expected);
+    assert_eq!(actual.as_boolean(), expected);
 }
 
 #[tokio::test]
@@ -1623,8 +1630,11 @@ async fn get_new_address_matches_fixture() {
 
     let url = Url::parse(&server.url()).unwrap();
     let client = RpcClient::builder(url).build().unwrap();
-    let actual = client.get_new_address().await.expect("new address");
-    assert_eq!(actual, expected);
+    let actual = client
+        .rpc_send_async("getnewaddress", vec![])
+        .await
+        .expect("new address");
+    assert_eq!(actual.as_string(), Some(expected));
 }
 
 #[tokio::test]
@@ -1671,8 +1681,11 @@ async fn dump_priv_key_matches_fixture() {
 
     let url = Url::parse(&server.url()).unwrap();
     let client = RpcClient::builder(url).build().unwrap();
-    let actual = client.dump_priv_key(&address).await.expect("dumpprivkey");
-    assert_eq!(actual, expected);
+    let actual = client
+        .rpc_send_async("dumpprivkey", vec![JToken::String(address.clone())])
+        .await
+        .expect("dumpprivkey");
+    assert_eq!(actual.as_string(), Some(expected));
 }
 
 #[tokio::test]
@@ -1712,9 +1725,20 @@ async fn list_address_matches_fixture() {
 
     let url = Url::parse(&server.url()).unwrap();
     let client = RpcClient::builder(url).build().unwrap();
-    let actual = client.list_address().await.expect("listaddress");
-    assert_eq!(actual.len(), expected.len());
-    for (left, right) in actual.iter().zip(expected.iter()) {
+    let actual = client
+        .rpc_send_async("listaddress", vec![])
+        .await
+        .expect("listaddress");
+    let actual_accounts = actual
+        .as_array()
+        .expect("result array")
+        .iter()
+        .filter_map(|item| item.as_ref())
+        .filter_map(|token| token.as_object())
+        .map(|obj| RpcAccount::from_json(obj).expect("account"))
+        .collect::<Vec<_>>();
+    assert_eq!(actual_accounts.len(), expected.len());
+    for (left, right) in actual_accounts.iter().zip(expected.iter()) {
         assert_eq!(left.address, right.address);
         assert_eq!(left.has_key, right.has_key);
         assert_eq!(left.label, right.label);
@@ -1753,8 +1777,6 @@ async fn get_wallet_balance_matches_fixture() {
         .and_then(|obj| obj.get("balance"))
         .and_then(|value| value.as_string())
         .expect("balance");
-    let expected_value = BigInt::from_str(&balance).expect("parse balance");
-    let expected = BigDecimal::new(expected_value, 8);
 
     let mut server = Server::new_async().await;
     let escaped_asset = escape(&asset_id);
@@ -1769,23 +1791,18 @@ async fn get_wallet_balance_matches_fixture() {
         .with_body(response_body)
         .create();
 
-    let invoke_body = r#"{"jsonrpc":"2.0","id":1,"result":{"script":"","state":"HALT","gasconsumed":"0","stack":[{"type":"Integer","value":"8"}]}}"#;
-    let _m_invoke = server
-        .mock("POST", "/")
-        .match_body(Matcher::Regex(r#""method"\s*:\s*"invokescript""#.into()))
-        .with_status(200)
-        .with_header("content-type", "application/json")
-        .with_body(invoke_body)
-        .create();
-
     let url = Url::parse(&server.url()).unwrap();
     let client = RpcClient::builder(url).build().unwrap();
     let actual = client
-        .get_wallet_balance(&asset_id)
+        .rpc_send_async("getwalletbalance", vec![JToken::String(asset_id.clone())])
         .await
         .expect("wallet balance");
-    assert_eq!(actual.value(), expected.value());
-    assert_eq!(actual.decimals(), expected.decimals());
+    let actual_balance = actual
+        .as_object()
+        .and_then(|obj| obj.get("balance"))
+        .and_then(|value| value.as_string())
+        .expect("balance");
+    assert_eq!(actual_balance, balance);
 }
 
 #[tokio::test]
@@ -1805,8 +1822,6 @@ async fn get_wallet_unclaimed_gas_matches_fixture() {
         .get("result")
         .and_then(|value| value.as_string())
         .expect("result");
-    let expected_value = BigInt::from_str(&amount).expect("parse amount");
-    let expected = BigDecimal::new(expected_value, 8);
 
     let mut server = Server::new_async().await;
     let body_re = r#""method"\s*:\s*"getwalletunclaimedgas".*"params"\s*:\s*\[\s*\]"#;
@@ -1822,11 +1837,10 @@ async fn get_wallet_unclaimed_gas_matches_fixture() {
     let url = Url::parse(&server.url()).unwrap();
     let client = RpcClient::builder(url).build().unwrap();
     let actual = client
-        .get_wallet_unclaimed_gas()
+        .rpc_send_async("getwalletunclaimedgas", vec![])
         .await
         .expect("wallet unclaimed gas");
-    assert_eq!(actual.value(), expected.value());
-    assert_eq!(actual.decimals(), expected.decimals());
+    assert_eq!(actual.as_string(), Some(amount));
 }
 
 #[tokio::test]
@@ -1893,12 +1907,21 @@ async fn send_from_matches_fixture() {
     let url = Url::parse(&server.url()).unwrap();
     let client = RpcClient::builder(url).build().unwrap();
     let actual = client
-        .send_from(&asset_id, &from_addr, &to_addr, &amount)
+        .rpc_send_async(
+            "sendfrom",
+            vec![
+                JToken::String(asset_id.clone()),
+                JToken::String(from_addr.clone()),
+                JToken::String(to_addr.clone()),
+                JToken::String(amount.clone()),
+            ],
+        )
         .await
         .expect("sendfrom");
     let actual_hash = actual
-        .get("hash")
-        .and_then(|value| value.as_string())
+        .get_property("hash")
+        .expect("hash")
+        .and_then(|token| token.as_string())
         .expect("hash");
     assert_eq!(actual_hash, expected_hash);
 }
@@ -1999,7 +2022,7 @@ async fn get_block_verbose_matches_fixture() {
 
         let url = Url::parse(&server.url()).unwrap();
         let client = RpcClient::builder(url).build().unwrap();
-        let actual = client
+        let mut actual = client
             .get_block_verbose(&hash_or_index)
             .await
             .expect("block");
@@ -2069,7 +2092,7 @@ async fn get_block_header_verbose_matches_fixture() {
 
         let url = Url::parse(&server.url()).unwrap();
         let client = RpcClient::builder(url).build().unwrap();
-        let actual = client
+        let mut actual = client
             .get_block_header_verbose(&hash_or_index)
             .await
             .expect("block header");
@@ -2494,10 +2517,10 @@ async fn validate_address_matches_fixture() {
     let url = Url::parse(&server.url()).unwrap();
     let client = RpcClient::builder(url).build().unwrap();
     let actual = client
-        .validate_address(&address)
+        .rpc_send_async("validateaddress", vec![JToken::String(address.clone())])
         .await
         .expect("validate address");
-    assert_eq!(actual.to_json(), expected.clone());
+    assert_eq!(actual, JToken::Object(expected.clone()));
 }
 
 #[tokio::test]
@@ -2547,8 +2570,11 @@ async fn import_priv_key_matches_fixture() {
 
     let url = Url::parse(&server.url()).unwrap();
     let client = RpcClient::builder(url).build().unwrap();
-    let actual = client.import_priv_key(&wif).await.expect("import");
-    assert_eq!(actual.to_json(), expected.clone());
+    let actual = client
+        .rpc_send_async("importprivkey", vec![JToken::String(wif.clone())])
+        .await
+        .expect("import");
+    assert_eq!(actual, JToken::Object(expected.clone()));
 }
 
 #[tokio::test]
@@ -2599,10 +2625,10 @@ async fn get_unclaimed_gas_matches_fixture() {
     let url = Url::parse(&server.url()).unwrap();
     let client = RpcClient::builder(url).build().unwrap();
     let actual = client
-        .get_unclaimed_gas(&address)
+        .rpc_send_async("getunclaimedgas", vec![JToken::String(address.clone())])
         .await
         .expect("unclaimed gas");
-    assert_eq!(actual.to_json(), expected.clone());
+    assert_eq!(actual, JToken::Object(expected.clone()));
 }
 
 #[tokio::test]
@@ -2845,12 +2871,20 @@ async fn send_to_address_matches_fixture() {
     let url = Url::parse(&server.url()).unwrap();
     let client = RpcClient::builder(url).build().unwrap();
     let actual = client
-        .send_to_address(&asset_id, &address, &amount)
+        .rpc_send_async(
+            "sendtoaddress",
+            vec![
+                JToken::String(asset_id.clone()),
+                JToken::String(address.clone()),
+                JToken::String(amount.clone()),
+            ],
+        )
         .await
         .expect("sendtoaddress");
     let actual_hash = actual
-        .get("hash")
-        .and_then(|value| value.as_string())
+        .get_property("hash")
+        .expect("hash")
+        .and_then(|token| token.as_string())
         .expect("hash");
     assert_eq!(actual_hash, expected_hash);
 }
@@ -2880,13 +2914,6 @@ async fn send_many_matches_fixture() {
         .get(1)
         .and_then(|value| value.as_array())
         .expect("outputs");
-    let settings = ProtocolSettings::default_settings();
-    let parsed_outputs = outputs
-        .iter()
-        .filter_map(|item| item.as_ref())
-        .filter_map(|token| token.as_object())
-        .map(|obj| RpcTransferOut::from_json(obj, &settings).expect("output"))
-        .collect::<Vec<_>>();
     let response = case
         .get("Response")
         .and_then(|value| value.as_object())
@@ -2930,12 +2957,19 @@ async fn send_many_matches_fixture() {
     let url = Url::parse(&server.url()).unwrap();
     let client = RpcClient::builder(url).build().unwrap();
     let actual = client
-        .send_many(&from_addr, &parsed_outputs)
+        .rpc_send_async(
+            "sendmany",
+            vec![
+                JToken::String(from_addr.clone()),
+                JToken::Array(outputs.clone()),
+            ],
+        )
         .await
         .expect("sendmany");
     let actual_hash = actual
-        .get("hash")
-        .and_then(|value| value.as_string())
+        .get_property("hash")
+        .expect("hash")
+        .and_then(|token| token.as_string())
         .expect("hash");
     assert_eq!(actual_hash, expected_hash);
 }

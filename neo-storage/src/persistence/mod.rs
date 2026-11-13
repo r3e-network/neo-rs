@@ -1,3 +1,4 @@
+pub mod commit_profile;
 pub mod data_cache;
 pub mod detached_snapshot;
 pub mod index;
@@ -17,6 +18,7 @@ pub mod transaction;
 pub mod write_batch_buffer;
 pub mod write_store;
 
+pub use commit_profile::{StoreCommitProfiler, StoreCommitStage};
 pub use data_cache::{DataCache, Trackable};
 pub use detached_snapshot::{
     DetachedSnapshot, DetachedSnapshotEntry, DetachedSnapshotError, DetachedSnapshotLimits,

@@ -103,6 +103,8 @@ pub(crate) struct OracleTask {
     pub(crate) timestamp: SystemTime,
 }
 
+type OracleServiceRef<S, W, Sig, TB, R, V> = Weak<OracleService<S, W, Sig, TB, R, V>>;
+
 /// Oracle service runtime.
 ///
 /// Generic over the infrastructure traits to allow integration with
@@ -118,7 +120,7 @@ where
 {
     settings: OracleServiceSettings,
     status: AtomicU8,
-    self_ref: RwLock<Weak<OracleService<S, W, Sig, TB, R, V>>>,
+    self_ref: RwLock<OracleServiceRef<S, W, Sig, TB, R, V>>,
     wallet: RwLock<Option<Arc<W>>>,
     signer: RwLock<Option<Arc<Sig>>>,
     snapshots: Arc<S>,

@@ -6,5 +6,7 @@
 //! [`p2p`] so the historical `network::*` paths keep resolving.
 
 pub mod p2p;
+#[cfg(feature = "upnp")]
+pub mod upnp;
 
 pub use p2p::*;

@@ -50,11 +50,7 @@ pub fn convert_ledger_header(header: BlockHeader) -> Header {
     converted.set_index(header.index);
     converted.set_primary_index(header.primary_index);
     converted.set_next_consensus(header.next_consensus);
-    let witness = header
-        .witnesses
-        .into_iter()
-        .next()
-        .unwrap_or_else(Witness::new);
+    let witness = header.witnesses.into_iter().next().unwrap_or_default();
     converted.witness = convert_witness(witness);
     converted
 }

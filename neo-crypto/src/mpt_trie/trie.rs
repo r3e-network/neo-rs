@@ -3,6 +3,7 @@ use super::cache::{GlobalNodeCache, MptStoreSnapshot};
 use super::error::{MptError, MptResult};
 use super::node::{BRANCH_CHILD_COUNT, BRANCH_VALUE_INDEX, MAX_KEY_LENGTH, MAX_VALUE_LENGTH, Node};
 use super::node_type::NodeType;
+use super::profile::{MptProfile, MptProfileStage, MptProfileTimer};
 use crate::Crypto;
 use neo_primitives::UINT256_SIZE;
 use neo_primitives::UInt256;
@@ -21,6 +22,7 @@ where
     cache: MptCache<S>,
     root: Node,
     full_state: bool,
+    profile: Option<Arc<MptProfile>>,
 }
 
 impl<S> Trie<S>
@@ -29,12 +31,14 @@ where
 {
     /// Creates a new trie instance using the supplied store snapshot and optional root hash.
     pub fn new(store: Arc<S>, root: Option<UInt256>, full_state: bool) -> Self {
-        let cache = MptCache::with_global_cache(store, CACHE_PREFIX, full_state);
+        let mut cache = MptCache::with_global_cache(store, CACHE_PREFIX, full_state);
+        cache.set_full_state(full_state);
         let root_node = root.map_or_else(Node::new, Node::new_hash);
         Self {
             cache,
             root: root_node,
             full_state,
+            profile: None,
         }
     }
 
@@ -56,12 +60,22 @@ where
         full_state: bool,
         node_cache: Option<Arc<GlobalNodeCache>>,
     ) -> Self {
-        let cache = MptCache::with_node_cache(store, CACHE_PREFIX, node_cache);
+        let mut cache = MptCache::with_node_cache(store, CACHE_PREFIX, node_cache);
+        cache.set_full_state(full_state);
         Self {
             cache,
             root: root_node,
             full_state,
+            profile: None,
         }
+    }
+
+    /// Attaches an observation-only profiler to this trie and its node cache.
+    #[must_use]
+    pub fn with_profile(mut self, profile: Arc<MptProfile>) -> Self {
+        self.cache.set_profile(Some(Arc::clone(&profile)));
+        self.profile = Some(profile);
+        self
     }
 
     /// Returns a reference to the current root node.
@@ -76,21 +90,30 @@ where
 
     /// Returns the current root hash if the trie is not empty.
     pub fn root_hash(&self) -> Option<UInt256> {
+        let _timer = MptProfileTimer::new(self.profile.as_deref(), MptProfileStage::RootHash);
         if self.root.is_empty() {
             None
         } else {
-            let _ = Self::parallel_hash_subtrees(&self.root);
+            let _ = Self::parallel_hash_subtrees(&self.root, self.profile.as_deref());
             Some(self.root.hash())
         }
     }
 
     /// Flushes all in-memory dirty nodes into the underlying [`MptCache`].
     pub fn flush_dirty(&mut self) -> MptResult<()> {
+        self.flush_dirty_with_parallelism(true)
+    }
+
+    fn flush_dirty_with_parallelism(&mut self, parallel_hash: bool) -> MptResult<()> {
         if !self.root.is_dirty() {
             return Ok(());
         }
-        Self::parallel_hash_subtrees(&self.root)?;
-        let _ = Self::flush_dirty_node(&mut self.cache, &mut self.root)?;
+        if parallel_hash {
+            Self::parallel_hash_subtrees(&self.root, self.profile.as_deref())?;
+        } else {
+            Self::serial_hash_subtrees(&self.root, self.profile.as_deref())?;
+        }
+        let _ = Self::flush_dirty_node(&mut self.cache, &mut self.root, self.profile.as_deref())?;
         Ok(())
     }
 
@@ -101,7 +124,16 @@ where
     /// in-memory root hash matches the persisted state. This catches partial
     /// commit failures that could lead to consensus divergence.
     pub fn commit(&mut self) -> MptResult<()> {
-        self.flush_dirty()?;
+        self.commit_with_parallelism(true)
+    }
+
+    /// Commits with explicit control over dirty-subtree hash scheduling.
+    /// The resulting nodes and root are identical; small updates can avoid
+    /// parallel dispatcher overhead without changing larger updates.
+    pub fn commit_with_parallelism(&mut self, parallel_hash: bool) -> MptResult<()> {
+        let profile = self.profile.clone();
+        let _timer = MptProfileTimer::new(profile.as_deref(), MptProfileStage::Commit);
+        self.flush_dirty_with_parallelism(parallel_hash)?;
 
         #[cfg(debug_assertions)]
         let expected_root = self.root_hash();
@@ -143,12 +175,14 @@ where
 
     /// Inserts or updates the value stored under `key`.
     pub fn put(&mut self, key: &[u8], value: &[u8]) -> MptResult<()> {
+        let _timer = MptProfileTimer::new(self.profile.as_deref(), MptProfileStage::Update);
         let path = Self::ensure_lookup_key(key)?;
         Self::ensure_value_length(value)?;
         let leaf = Node::new_leaf(value.to_vec());
         Self::put_internal(
             &mut self.cache,
             self.full_state,
+            self.profile.as_deref(),
             &mut self.root,
             &path,
             leaf,
@@ -157,8 +191,15 @@ where
 
     /// Deletes the entry stored under `key`. Returns `true` if an entry was removed.
     pub fn delete(&mut self, key: &[u8]) -> MptResult<bool> {
+        let _timer = MptProfileTimer::new(self.profile.as_deref(), MptProfileStage::Update);
         let path = Self::ensure_lookup_key(key)?;
-        Self::try_delete_node(&mut self.cache, self.full_state, &mut self.root, &path)
+        Self::try_delete_node(
+            &mut self.cache,
+            self.full_state,
+            self.profile.as_deref(),
+            &mut self.root,
+            &path,
+        )
     }
 
     /// Enumerates key/value pairs under the supplied prefix, optionally resuming from `from`.
@@ -270,20 +311,53 @@ where
         trie.get_required(key)
     }
 
-    fn parallel_hash_subtrees(node: &Node) -> MptResult<()> {
-        Self::parallel_hash_subtrees_depth(node, 0)
+    fn serial_hash_subtrees(node: &Node, profile: Option<&MptProfile>) -> MptResult<()> {
+        let _timer = MptProfileTimer::new(profile, MptProfileStage::Hash);
+        Self::serial_hash_subtrees_depth(node, profile)
     }
 
-    fn parallel_hash_subtrees_depth(node: &Node, fanout_depth: usize) -> MptResult<()> {
+    fn serial_hash_subtrees_depth(node: &Node, profile: Option<&MptProfile>) -> MptResult<()> {
         if !node.is_dirty() {
             return Ok(());
         }
         match node.node_type {
             NodeType::ExtensionNode => {
                 if let Some(ref next) = node.next {
-                    Self::parallel_hash_subtrees_depth(next, fanout_depth)?;
+                    Self::serial_hash_subtrees_depth(next, profile)?;
                 }
-                let _ = node.try_hash()?;
+            }
+            NodeType::BranchNode => {
+                for child in &node.children {
+                    if child.is_dirty() {
+                        Self::serial_hash_subtrees_depth(child, profile)?;
+                    }
+                }
+            }
+            _ => {}
+        }
+        let _ = node.try_hash_profiled(profile)?;
+        Ok(())
+    }
+
+    fn parallel_hash_subtrees(node: &Node, profile: Option<&MptProfile>) -> MptResult<()> {
+        let _timer = MptProfileTimer::new(profile, MptProfileStage::Hash);
+        Self::parallel_hash_subtrees_depth(node, 0, profile)
+    }
+
+    fn parallel_hash_subtrees_depth(
+        node: &Node,
+        fanout_depth: usize,
+        profile: Option<&MptProfile>,
+    ) -> MptResult<()> {
+        if !node.is_dirty() {
+            return Ok(());
+        }
+        match node.node_type {
+            NodeType::ExtensionNode => {
+                if let Some(ref next) = node.next {
+                    Self::parallel_hash_subtrees_depth(next, fanout_depth, profile)?;
+                }
+                let _ = node.try_hash_profiled(profile)?;
                 Ok(())
             }
             NodeType::BranchNode if fanout_depth < 2 => {
@@ -294,20 +368,20 @@ where
                         .par_iter()
                         .filter(|c| c.is_dirty())
                         .try_for_each(|child| {
-                            Self::parallel_hash_subtrees_depth(child, fanout_depth + 1)
+                            Self::parallel_hash_subtrees_depth(child, fanout_depth + 1, profile)
                         })?;
                 } else {
                     for child in &node.children {
                         if child.is_dirty() {
-                            Self::parallel_hash_subtrees_depth(child, fanout_depth)?;
+                            Self::parallel_hash_subtrees_depth(child, fanout_depth, profile)?;
                         }
                     }
                 }
-                let _ = node.try_hash()?;
+                let _ = node.try_hash_profiled(profile)?;
                 Ok(())
             }
             _ => {
-                let _ = node.try_hash()?;
+                let _ = node.try_hash_profiled(profile)?;
                 Ok(())
             }
         }
@@ -327,7 +401,11 @@ where
         cache.put_node_with_hint(cached, known_absent_in_store)
     }
 
-    fn flush_dirty_node(cache: &mut MptCache<S>, node: &mut Node) -> MptResult<bool> {
+    fn flush_dirty_node(
+        cache: &mut MptCache<S>,
+        node: &mut Node,
+        profile: Option<&MptProfile>,
+    ) -> MptResult<bool> {
         if !node.is_dirty() {
             return Ok(false);
         }
@@ -337,7 +415,7 @@ where
                 Ok(false)
             }
             NodeType::LeafNode => {
-                let _ = node.try_hash()?;
+                let _ = node.try_hash_profiled(profile)?;
                 Self::cache_flushed_node(cache, node, false)
             }
             NodeType::ExtensionNode => {
@@ -346,9 +424,9 @@ where
                     && next_arc.is_dirty()
                 {
                     let next = Arc::make_mut(next_arc);
-                    child_absent = Self::flush_dirty_node(cache, next)?;
+                    child_absent = Self::flush_dirty_node(cache, next, profile)?;
                 }
-                let _ = node.try_hash()?;
+                let _ = node.try_hash_profiled(profile)?;
                 Self::cache_flushed_node(cache, node, child_absent)
             }
             NodeType::BranchNode => {
@@ -356,12 +434,12 @@ where
                 for child_arc in &mut node.children {
                     if child_arc.is_dirty() {
                         let child = Arc::make_mut(child_arc);
-                        if Self::flush_dirty_node(cache, child)? {
+                        if Self::flush_dirty_node(cache, child, profile)? {
                             any_child_absent = true;
                         }
                     }
                 }
-                let _ = node.try_hash()?;
+                let _ = node.try_hash_profiled(profile)?;
                 Self::cache_flushed_node(cache, node, any_child_absent)
             }
         }
@@ -420,6 +498,7 @@ where
     fn put_internal(
         cache: &mut MptCache<S>,
         full_state: bool,
+        profile: Option<&MptProfile>,
         node: &mut Node,
         path: &[u8],
         val: Node,
@@ -428,7 +507,7 @@ where
             NodeType::LeafNode => {
                 if path.is_empty() {
                     if !node.is_dirty() && !full_state {
-                        let old_hash = node.try_hash()?;
+                        let old_hash = node.try_hash_profiled(profile)?;
                         cache.delete_node(old_hash)?;
                     }
                     *node = val;
@@ -443,7 +522,7 @@ where
                 let child = branch
                     .get_child_mut(index)
                     .ok_or_else(|| MptError::invalid("branch child index out of bounds"))?;
-                Self::put_internal(cache, full_state, child, &path[1..], val)?;
+                Self::put_internal(cache, full_state, profile, child, &path[1..], val)?;
 
                 *node = branch;
             }
@@ -451,7 +530,7 @@ where
                 if path.starts_with(&node.key) {
                     let consumed = node.key.len();
                     let old_hash = if !node.is_dirty() && !full_state {
-                        Some(node.try_hash()?)
+                        Some(node.try_hash_profiled(profile)?)
                     } else {
                         None
                     };
@@ -460,7 +539,7 @@ where
                     let next = node
                         .get_next_mut()
                         .ok_or_else(|| MptError::invalid("extension node missing child"))?;
-                    Self::put_internal(cache, full_state, next, &path[consumed..], val)?;
+                    Self::put_internal(cache, full_state, profile, next, &path[consumed..], val)?;
 
                     if let Some(old_hash) = old_hash {
                         cache.delete_node(old_hash)?;
@@ -471,7 +550,7 @@ where
 
                 let prefix_len = Self::common_prefix_len(&node.key, path);
                 if !node.is_dirty() && !full_state {
-                    let old_hash = node.try_hash()?;
+                    let old_hash = node.try_hash_profiled(profile)?;
                     cache.delete_node(old_hash)?;
                 }
 
@@ -494,13 +573,14 @@ where
 
                 if path_remain.is_empty() {
                     let mut value_child = Node::new();
-                    Self::put_internal(cache, full_state, &mut value_child, &[], val)?;
+                    Self::put_internal(cache, full_state, profile, &mut value_child, &[], val)?;
                     child_branch.set_child(BRANCH_VALUE_INDEX, value_child);
                 } else {
                     let mut value_child = Node::new();
                     Self::put_internal(
                         cache,
                         full_state,
+                        profile,
                         &mut value_child,
                         &path_remain[1..],
                         val,
@@ -517,7 +597,7 @@ where
             }
             NodeType::BranchNode => {
                 let old_hash = if !node.is_dirty() && !full_state {
-                    Some(node.try_hash()?)
+                    Some(node.try_hash_profiled(profile)?)
                 } else {
                     None
                 };
@@ -525,13 +605,13 @@ where
                     let child = node
                         .get_child_mut(BRANCH_VALUE_INDEX)
                         .ok_or_else(|| MptError::invalid("branch node missing value child"))?;
-                    Self::put_internal(cache, full_state, child, path, val)?;
+                    Self::put_internal(cache, full_state, profile, child, path, val)?;
                 } else {
                     let index = path[0] as usize;
                     let child = node
                         .get_child_mut(index)
                         .ok_or_else(|| MptError::invalid("branch child index out of bounds"))?;
-                    Self::put_internal(cache, full_state, child, &path[1..], val)?;
+                    Self::put_internal(cache, full_state, profile, child, &path[1..], val)?;
                 }
                 if let Some(old_hash) = old_hash {
                     cache.delete_node(old_hash)?;
@@ -553,7 +633,7 @@ where
                     .resolve_node(&node.hash())?
                     .ok_or_else(|| MptError::storage("unable to resolve hash during trie put"))?;
                 *node = resolved;
-                Self::put_internal(cache, full_state, node, path, val)?;
+                Self::put_internal(cache, full_state, profile, node, path, val)?;
             }
         }
         Ok(())
@@ -562,6 +642,7 @@ where
     fn try_delete_node(
         cache: &mut MptCache<S>,
         full_state: bool,
+        profile: Option<&MptProfile>,
         node: &mut Node,
         path: &[u8],
     ) -> MptResult<bool> {
@@ -569,7 +650,7 @@ where
             NodeType::LeafNode => {
                 if path.is_empty() {
                     if !node.is_dirty() && !full_state {
-                        let old_hash = node.try_hash()?;
+                        let old_hash = node.try_hash_profiled(profile)?;
                         cache.delete_node(old_hash)?;
                     }
                     *node = Node::new();
@@ -581,7 +662,7 @@ where
                 if path.starts_with(&node.key) {
                     let consumed = node.key.len();
                     let old_hash = if !node.is_dirty() && !full_state {
-                        Some(node.try_hash()?)
+                        Some(node.try_hash_profiled(profile)?)
                     } else {
                         None
                     };
@@ -589,7 +670,7 @@ where
                         let next = node
                             .get_next_mut()
                             .ok_or_else(|| MptError::invalid("extension node missing child"))?;
-                        Self::try_delete_node(cache, full_state, next, &path[consumed..])?
+                        Self::try_delete_node(cache, full_state, profile, next, &path[consumed..])?
                     };
                     if !result {
                         return Ok(false);
@@ -617,7 +698,7 @@ where
                             MptError::invalid("extension node missing child during take")
                         })?;
                         if !next_node.is_dirty() && !full_state {
-                            let child_hash = next_node.try_hash()?;
+                            let child_hash = next_node.try_hash_profiled(profile)?;
                             cache.delete_node(child_hash)?;
                         }
                         node.key.extend_from_slice(&next_node.key);
@@ -632,7 +713,7 @@ where
             }
             NodeType::BranchNode => {
                 let old_hash = if !node.is_dirty() && !full_state {
-                    Some(node.try_hash()?)
+                    Some(node.try_hash_profiled(profile)?)
                 } else {
                     None
                 };
@@ -640,13 +721,13 @@ where
                     let child = node
                         .get_child_mut(BRANCH_VALUE_INDEX)
                         .ok_or_else(|| MptError::invalid("branch node missing value child"))?;
-                    Self::try_delete_node(cache, full_state, child, path)?
+                    Self::try_delete_node(cache, full_state, profile, child, path)?
                 } else {
                     let index = path[0] as usize;
                     let child = node
                         .get_child_mut(index)
                         .ok_or_else(|| MptError::invalid("branch child index out of bounds"))?;
-                    Self::try_delete_node(cache, full_state, child, &path[1..])?
+                    Self::try_delete_node(cache, full_state, profile, child, &path[1..])?
                 };
                 if !result {
                     return Ok(false);
@@ -698,7 +779,7 @@ where
 
                 if last_child.node_type == NodeType::ExtensionNode {
                     if !last_child.is_dirty() && !full_state {
-                        let child_hash = last_child.try_hash()?;
+                        let child_hash = last_child.try_hash_profiled(profile)?;
                         cache.delete_node(child_hash)?;
                     }
                     let mut key = vec![last_index];
@@ -719,7 +800,7 @@ where
                     MptError::storage("unable to resolve hash during trie delete")
                 })?;
                 *node = resolved;
-                Self::try_delete_node(cache, full_state, node, path)
+                Self::try_delete_node(cache, full_state, profile, node, path)
             }
         }
     }

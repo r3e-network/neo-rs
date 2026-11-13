@@ -4,7 +4,7 @@
 //! This module holds the *migration seams* approved in task 102. Each adapter
 //! implements a trait owned by a sibling crate (`neo_ledger::persistence`,
 //! `neo_p2p::ports`) while naming only that crate's canonical vocabulary,
-//! `neo_primitives`, `crate::runtime`, `std`, and `tokio` — never a `neo-core`
+//! `neo_primitives`, `neo_actors`, `std`, and `tokio` — never a `neo-core`
 //! type, `DataCache`, or `StoreSnapshot` in a port parameter. The concrete wiring
 //! to `neo-core` lives in the integration lane (task 89), the only place allowed
 //! to touch both sides.

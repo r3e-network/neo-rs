@@ -1,11 +1,11 @@
 use super::*;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use neo_wallets::helper::Helper as WalletHelper;
 use neo_json::{JArray, JObject, JToken};
-use neo_primitives::ContractParameterType;
 use neo_primitives::{UInt160, UInt256};
 use neo_protocol::ProtocolSettings;
 use neo_protocol::payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
+use neo_smart_contract::contract_parameter::ContractParameterValue;
+use neo_wallets::helper::Helper as WalletHelper;
 
 fn ctx() -> ConversionContext {
     ConversionContext::new(ProtocolSettings::default().address_version)
@@ -658,7 +658,10 @@ fn contract_parameters_accept_valid_array() {
     let params =
         ParameterConverter::convert::<Vec<ContractParameter>>(&token, &ctx()).expect("params");
     assert_eq!(params.len(), 1);
-    assert_eq!(params[0].param_type, ContractParameterType::String);
+    assert!(matches!(
+        &params[0].value,
+        ContractParameterValue::String(value) if value == "test"
+    ));
 }
 
 #[test]

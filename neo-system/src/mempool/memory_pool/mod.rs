@@ -87,13 +87,13 @@ pub struct MemoryPool {
     pub(crate) _max_milliseconds_to_reverify_tx: f64,
     pub(crate) _max_milliseconds_to_reverify_tx_per_idle: f64,
 
-    pub(crate) verified: PoolIndex,
-    pub(crate) unverified: PoolIndex,
+    verified: PoolIndex,
+    unverified: PoolIndex,
     pub(crate) conflicts: HashMap<UInt256, HashSet<UInt256>>,
 
     pub(crate) verification_context: TransactionVerificationContext,
     pub(crate) quarantine: HashMap<UInt256, QuarantineMetadata>,
-    pub(crate) quarantine_history: HashMap<UInt256, QuarantineHistory>,
+    quarantine_history: HashMap<UInt256, QuarantineHistory>,
     pub(crate) quarantine_expiry_reviews: VecDeque<QuarantineExpiryReview>,
     pub(crate) quarantine_config: QuarantineConfig,
     pub(crate) proposal_scan_cursor: Option<PoolItem>,

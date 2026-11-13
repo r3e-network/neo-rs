@@ -13,12 +13,12 @@
 use super::message::Message;
 use super::message_command::MessageCommand;
 use super::message_flags::MessageFlags;
+use super::payloads::headers_payload::HeadersPayload;
+use super::payloads::merkle_block_payload::MerkleBlockPayload;
 use super::payloads::{
     AddrPayload, FilterAddPayload, FilterLoadPayload, GetBlockByIndexPayload, GetBlocksPayload,
     InvPayload, PingPayload, VersionPayload,
 };
-use super::payloads::headers_payload::HeadersPayload;
-use super::payloads::merkle_block_payload::MerkleBlockPayload;
 use neo_io_crate::{BinaryWriter, MemoryReader, Serializable};
 use neo_protocol::payloads::{Block, Extensible, Transaction};
 
@@ -282,7 +282,7 @@ impl NetworkMessage {
     pub fn from_bytes(bytes: &[u8]) -> P2PResult<Self> {
         let mut reader = MemoryReader::new(bytes);
         let message: super::Message = neo_io_crate::Serializable::deserialize(&mut reader)
-            .map_err(|e| P2PMessageError::Io(e.to_string()))?;
+            .map_err(|e| P2PMessageError::InvalidMessage(e.to_string()))?;
 
         if reader.remaining() != 0 {
             return Err(P2PMessageError::InvalidMessage(
@@ -331,7 +331,9 @@ impl std::error::Error for P2PMessageError {}
 impl From<P2PMessageError> for neo_primitives::NetworkError {
     fn from(error: P2PMessageError) -> Self {
         match error {
-            P2PMessageError::InvalidMessage(msg) => neo_primitives::NetworkError::InvalidMessage(msg),
+            P2PMessageError::InvalidMessage(msg) => {
+                neo_primitives::NetworkError::InvalidMessage(msg)
+            }
             P2PMessageError::Io(msg) => neo_primitives::NetworkError::ConnectionError(msg),
         }
     }
@@ -354,8 +356,7 @@ fn serialize_typed<T: Serializable>(payload: &T) -> P2PResult<Vec<u8>> {
 
 fn deserialize_typed<T: Serializable>(bytes: &[u8]) -> P2PResult<T> {
     let mut reader = MemoryReader::new(bytes);
-    let payload =
-        T::deserialize(&mut reader).map_err(|e| P2PMessageError::Io(e.to_string()))?;
+    let payload = T::deserialize(&mut reader).map_err(|e| P2PMessageError::Io(e.to_string()))?;
     if reader.remaining() != 0 {
         return Err(P2PMessageError::InvalidMessage(
             "trailing bytes present after payload deserialization".into(),
@@ -391,14 +392,8 @@ mod tests {
             (ProtocolMessage::GetAddr, MessageCommand::GetAddr),
             (ProtocolMessage::Mempool, MessageCommand::Mempool),
             (ProtocolMessage::FilterClear, MessageCommand::FilterClear),
-            (
-                ProtocolMessage::Alert(vec![1, 2]),
-                MessageCommand::Alert,
-            ),
-            (
-                ProtocolMessage::Reject(vec![3]),
-                MessageCommand::Reject,
-            ),
+            (ProtocolMessage::Alert(vec![1, 2]), MessageCommand::Alert),
+            (ProtocolMessage::Reject(vec![3]), MessageCommand::Reject),
         ];
         for (msg, expected_cmd) in cases {
             assert_eq!(msg.command(), expected_cmd);
@@ -433,8 +428,7 @@ mod tests {
     #[test]
     fn unknown_command_preserves_bytes() {
         let data = vec![0xBB, 0xCC];
-        let decoded =
-            ProtocolMessage::from_bytes(MessageCommand::Unknown(0xFE), &data).unwrap();
+        let decoded = ProtocolMessage::from_bytes(MessageCommand::Unknown(0xFE), &data).unwrap();
         match decoded {
             ProtocolMessage::Unknown { command, bytes } => {
                 assert_eq!(command, MessageCommand::Unknown(0xFE));
@@ -447,7 +441,9 @@ mod tests {
     #[test]
     fn ensure_empty_rejects_non_empty_payload() {
         let err = ProtocolMessage::from_bytes(MessageCommand::FilterClear, &[0x01]).unwrap_err();
-        assert!(matches!(err, P2PMessageError::InvalidMessage(msg) if msg.contains("does not carry a payload")));
+        assert!(
+            matches!(err, P2PMessageError::InvalidMessage(msg) if msg.contains("does not carry a payload"))
+        );
     }
 
     #[test]

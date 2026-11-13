@@ -4,7 +4,7 @@ struct ExternalVmExecution {
     script: Vec<u8>,
     initial_stack: Vec<VmStackValue>,
     initial_ip: usize,
-    rvcount: i32,
+    result_stack_limit: Option<usize>,
     max_instructions: u64,
     instructions_executed: u64,
 }
@@ -12,6 +12,7 @@ struct ExternalVmHost<'a> {
     engine: &'a mut ApplicationEngine,
     instructions_executed: u64,
     max_instructions: u64,
+    runtime_items: HashMap<u64, StackItem>,
 }
 impl<'a> ExternalVmHost<'a> {
     fn new(engine: &'a mut ApplicationEngine, execution: &ExternalVmExecution) -> Self {
@@ -19,10 +20,19 @@ impl<'a> ExternalVmHost<'a> {
             engine,
             instructions_executed: execution.instructions_executed,
             max_instructions: execution.max_instructions,
+            runtime_items: HashMap::new(),
         }
     }
 }
 impl SyscallProvider for ExternalVmHost<'_> {
+    fn semantics(&self) -> InterpreterSemantics {
+        let limits = self.engine.vm_engine.engine().limits();
+        InterpreterSemantics {
+            zero_shift_converts_to_integer: limits.zero_shift_converts_to_integer,
+            pre_gorgon_collection_semantics: limits.pre_gorgon_collection_semantics,
+        }
+    }
+
     fn on_instruction(&mut self, opcode: u8) -> std::result::Result<(), String> {
         if self.instructions_executed >= self.max_instructions {
             return Err(format!(
@@ -31,6 +41,10 @@ impl SyscallProvider for ExternalVmHost<'_> {
             ));
         }
         self.instructions_executed = self.instructions_executed.saturating_add(1);
+        if let Some(profiler) = self.engine.profiler.as_ref() {
+            profiler.record_opcode(opcode);
+            profiler.record_external_instruction();
+        }
         let opcode_price = ApplicationEngine::get_opcode_price(opcode);
         if opcode_price > 0 {
             self.engine
@@ -47,6 +61,31 @@ impl SyscallProvider for ExternalVmHost<'_> {
     ) -> std::result::Result<(), String> {
         self.charge_syscall_fee(api)?;
         self.handle_runtime_syscall(api, stack)
+    }
+    fn needs_full_stack(&self) -> bool {
+        true
+    }
+    fn syscall_with_full_stack(
+        &mut self,
+        api: u32,
+        _ip: usize,
+        stack: &mut Vec<VmStackValue>,
+        _argument_count: usize,
+    ) -> std::result::Result<(), String> {
+        if external_runtime_syscall(api).is_some() {
+            self.charge_syscall_fee(api)?;
+            self.handle_runtime_syscall(api, stack)
+        } else {
+            self.invoke_canonical_syscall(api, stack)
+        }
+    }
+    fn callt(
+        &mut self,
+        token: u16,
+        _ip: usize,
+        stack: &mut Vec<VmStackValue>,
+    ) -> std::result::Result<(), String> {
+        self.invoke_canonical_callt(token, stack)
     }
 }
 impl ExternalVmHost<'_> {
@@ -190,7 +229,7 @@ impl ExternalVmHost<'_> {
                     transaction
                         .signers()
                         .iter()
-                        .map(|signer| signer_to_stack_value(signer))
+                        .map(signer_to_stack_value)
                         .collect(),
                 ));
                 Ok(())
@@ -237,49 +276,281 @@ impl ExternalVmHost<'_> {
         }
     }
 }
+
+impl ExternalVmHost<'_> {
+    fn invoke_canonical_syscall(
+        &mut self,
+        api: u32,
+        stack: &mut Vec<VmStackValue>,
+    ) -> std::result::Result<(), String> {
+        self.replace_canonical_stack(stack)?;
+        let target_depth = self.engine.vm_engine.engine().invocation_stack().len();
+        let syscall_result = self.engine.vm_engine.engine_mut().on_syscall(api);
+        if external_vm_trace_enabled() {
+            eprintln!(
+                "external syscall=0x{api:08x} target_depth={target_depth} depth={} state={:?} result={syscall_result:?}",
+                self.engine.vm_engine.engine().invocation_stack().len(),
+                self.engine.vm_engine.engine().state(),
+            );
+        }
+        syscall_result.map_err(|error| error.to_string())?;
+        let nested_result = self.execute_nested_to_depth(target_depth);
+        if external_vm_trace_enabled() {
+            eprintln!(
+                "external nested target_depth={target_depth} depth={} state={:?} result={nested_result:?}",
+                self.engine.vm_engine.engine().invocation_stack().len(),
+                self.engine.vm_engine.engine().state(),
+            );
+        }
+        nested_result?;
+        self.export_canonical_stack(stack)
+    }
+
+    fn invoke_canonical_callt(
+        &mut self,
+        token: u16,
+        stack: &mut Vec<VmStackValue>,
+    ) -> std::result::Result<(), String> {
+        self.replace_canonical_stack(stack)?;
+        let target_depth = self.engine.vm_engine.engine().invocation_stack().len();
+        self.engine
+            .vm_engine
+            .engine_mut()
+            .invoke_callt(token)
+            .map_err(|error| error.to_string())?;
+        self.execute_nested_to_depth(target_depth)?;
+        self.export_canonical_stack(stack)
+    }
+
+    fn execute_nested_to_depth(&mut self, target_depth: usize) -> std::result::Result<(), String> {
+        if self.engine.vm_engine.engine().invocation_stack().len() <= target_depth {
+            return Ok(());
+        }
+        match self
+            .engine
+            .execute_until_invocation_stack_depth(target_depth)
+        {
+            VMState::FAULT => Err(self
+                .engine
+                .fault_exception()
+                .unwrap_or("nested contract execution faulted")
+                .to_string()),
+            VMState::HALT
+                if self.engine.vm_engine.engine().invocation_stack().len() > target_depth =>
+            {
+                Err("nested contract execution halted before returning to its caller".to_string())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn replace_canonical_stack(
+        &mut self,
+        stack: &[VmStackValue],
+    ) -> std::result::Result<(), String> {
+        let items = stack
+            .iter()
+            .cloned()
+            .map(|value| self.external_to_canonical(value))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let engine = self.engine.vm_engine.engine_mut();
+        let context = engine
+            .current_context_mut()
+            .ok_or_else(|| "No current execution context for external VM bridge".to_string())?;
+        let mut evaluation_stack = context.evaluation_stack_mut();
+        evaluation_stack.clear();
+        for item in items {
+            evaluation_stack
+                .push(item)
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    }
+
+    fn export_canonical_stack(
+        &mut self,
+        stack: &mut Vec<VmStackValue>,
+    ) -> std::result::Result<(), String> {
+        let items = {
+            let engine = self.engine.vm_engine.engine();
+            let context = engine
+                .current_context()
+                .ok_or_else(|| "No current execution context after host call".to_string())?;
+            context.evaluation_stack().to_vec()
+        };
+        let mut exported = Vec::with_capacity(items.len());
+        for item in items {
+            exported.push(self.canonical_to_external(item)?);
+        }
+        *stack = exported;
+        Ok(())
+    }
+
+    fn external_to_canonical(&self, value: VmStackValue) -> std::result::Result<StackItem, String> {
+        match value {
+            VmStackValue::Null => Ok(StackItem::Null),
+            VmStackValue::Boolean(value) => Ok(StackItem::from_bool(value)),
+            VmStackValue::Integer(value) => Ok(StackItem::from_i64(value)),
+            VmStackValue::BigInteger(bytes) => Ok(StackItem::from_int(
+                num_bigint::BigInt::from_signed_bytes_le(&bytes),
+            )),
+            VmStackValue::ByteString(bytes) => Ok(StackItem::from_byte_string(bytes)),
+            VmStackValue::Buffer(bytes) => Ok(StackItem::from_buffer(bytes)),
+            VmStackValue::Array(items) => Ok(StackItem::from_array(
+                items
+                    .into_iter()
+                    .map(|item| self.external_to_canonical(item))
+                    .collect::<std::result::Result<Vec<_>, _>>()?,
+            )),
+            VmStackValue::Struct(items) => Ok(StackItem::from_struct(
+                items
+                    .into_iter()
+                    .map(|item| self.external_to_canonical(item))
+                    .collect::<std::result::Result<Vec<_>, _>>()?,
+            )),
+            VmStackValue::Map(entries) => {
+                let mut map = neo_vm::VmOrderedDictionary::with_capacity(entries.len());
+                for (key, value) in entries {
+                    map.insert(
+                        self.external_to_canonical(key)?,
+                        self.external_to_canonical(value)?,
+                    );
+                }
+                Ok(StackItem::from_map(map))
+            }
+            VmStackValue::Pointer(position) => {
+                let position = usize::try_from(position)
+                    .map_err(|_| format!("negative external VM pointer: {position}"))?;
+                let script = self
+                    .engine
+                    .vm_engine
+                    .engine()
+                    .current_context()
+                    .ok_or_else(|| "No script for external VM pointer".to_string())?
+                    .script_arc();
+                Ok(StackItem::from_pointer(script, position))
+            }
+            VmStackValue::Interop(handle) | VmStackValue::Iterator(handle) => self
+                .runtime_items
+                .get(&handle)
+                .cloned()
+                .ok_or_else(|| format!("unknown external VM host handle: {handle}")),
+        }
+    }
+
+    fn canonical_to_external(
+        &mut self,
+        item: StackItem,
+    ) -> std::result::Result<VmStackValue, String> {
+        match item {
+            StackItem::Null => Ok(VmStackValue::Null),
+            StackItem::Boolean(value) => Ok(VmStackValue::Boolean(value)),
+            StackItem::Integer(value) => Ok(match value.to_i64() {
+                Some(value) => VmStackValue::Integer(value),
+                None => VmStackValue::BigInteger(value.to_signed_bytes_le()),
+            }),
+            StackItem::ByteString(bytes) => Ok(VmStackValue::ByteString(bytes)),
+            StackItem::Buffer(buffer) => Ok(VmStackValue::Buffer(buffer.data())),
+            StackItem::Array(array) => Ok(VmStackValue::Array(
+                array
+                    .items()
+                    .into_iter()
+                    .map(|item| self.canonical_to_external(item))
+                    .collect::<std::result::Result<Vec<_>, _>>()?,
+            )),
+            StackItem::Struct(structure) => Ok(VmStackValue::Struct(
+                structure
+                    .items()
+                    .into_iter()
+                    .map(|item| self.canonical_to_external(item))
+                    .collect::<std::result::Result<Vec<_>, _>>()?,
+            )),
+            StackItem::Map(map) => {
+                let mut entries = Vec::with_capacity(map.len());
+                for (key, value) in map.iter() {
+                    entries.push((
+                        self.canonical_to_external(key)?,
+                        self.canonical_to_external(value)?,
+                    ));
+                }
+                Ok(VmStackValue::Map(entries))
+            }
+            StackItem::Pointer(pointer) => Ok(VmStackValue::Pointer(
+                i64::try_from(pointer.position())
+                    .map_err(|_| "canonical pointer does not fit external VM i64".to_string())?,
+            )),
+            StackItem::InteropInterface(interface) => {
+                let handle = Arc::as_ptr(&interface).cast::<()>() as usize as u64;
+                self.runtime_items
+                    .insert(handle, StackItem::InteropInterface(interface));
+                Ok(VmStackValue::Interop(handle))
+            }
+        }
+    }
+}
+
 impl ApplicationEngine {
     pub(super) fn try_execute_with_external_vm(&mut self) -> Option<VMState> {
         let execution = self.prepare_external_vm_execution()?;
-        let (result, instructions_executed) = {
-            let mut host = ExternalVmHost::new(self, &execution);
-            let result = if execution.rvcount >= 0 {
-                interpret_with_stack_and_syscalls_at_with_result_limit(
-                    &execution.script,
-                    execution.initial_stack,
-                    execution.initial_ip,
-                    execution.rvcount as usize,
-                    &mut host,
-                )
-            } else {
-                interpret_with_stack_and_syscalls_at(
-                    &execution.script,
-                    execution.initial_stack,
-                    execution.initial_ip,
-                    &mut host,
-                )
-            };
-            (result, host.instructions_executed)
+        let mut host = ExternalVmHost::new(self, &execution);
+        let result = if let Some(result_stack_limit) = execution.result_stack_limit {
+            interpret_with_stack_and_syscalls_at_with_result_limit(
+                &execution.script,
+                execution.initial_stack,
+                execution.initial_ip,
+                result_stack_limit,
+                &mut host,
+            )
+        } else {
+            interpret_with_stack_and_syscalls_at(
+                &execution.script,
+                execution.initial_stack,
+                execution.initial_ip,
+                &mut host,
+            )
         };
+        let instructions_executed = host.instructions_executed;
         match result {
-            Ok(result) => Some(self.apply_external_vm_result(result, instructions_executed)),
-            Err(message) => Some(self.apply_external_vm_fault(message, instructions_executed)),
+            Ok(result) => {
+                if result.state == VMState::HALT
+                    && let Err(message) = host.replace_canonical_stack(&result.stack)
+                {
+                    return Some(
+                        host.engine
+                            .apply_external_vm_fault(message, instructions_executed),
+                    );
+                }
+                Some(
+                    host.engine
+                        .apply_external_vm_result(result, instructions_executed),
+                )
+            }
+            Err(message) => Some(
+                host.engine
+                    .apply_external_vm_fault(message, instructions_executed),
+            ),
         }
     }
     fn prepare_external_vm_execution(&self) -> Option<ExternalVmExecution> {
+        // The bridge remains an explicit experiment until it supports method slots
+        // and beats canonical execution in no-profiler A/B replay. Keep the disable
+        // switch as well so one experimental binary can run alternating comparisons.
+        static ENABLE_EXTERNAL_VM: OnceLock<bool> = OnceLock::new();
+        static DISABLE_EXTERNAL_VM: OnceLock<bool> = OnceLock::new();
+        let enabled = *ENABLE_EXTERNAL_VM
+            .get_or_init(|| crate::env_flags::env_flag_enabled("NEO_RS_ENABLE_EXTERNAL_VM", false));
+        if !enabled
+            || *DISABLE_EXTERNAL_VM
+                .get_or_init(|| std::env::var_os("NEO_RS_DISABLE_EXTERNAL_VM").is_some())
+        {
+            return None;
+        }
         // Diagnostics must not change consensus semantics by forcing the jump-table path.
         if !self.pending_native_calls.is_empty() {
             return None;
         }
         let engine = self.vm_engine.engine();
-        // The fast interpreter only implements current (Gorgon) numeric
-        // semantics; pre-Gorgon execution must use the fork-aware jump table.
-        if !engine.limits().zero_shift_converts_to_integer {
-            return None;
-        }
         if matches!(engine.state(), VMState::HALT | VMState::FAULT) {
-            return None;
-        }
-        if engine.invocation_stack().len() != 1 {
             return None;
         }
         let context = engine.current_context()?;
@@ -290,17 +561,19 @@ impl ApplicationEngine {
         {
             return None;
         }
-        if !context.evaluation_stack().is_empty() {
-            return None;
-        }
+        let invocation_stack = engine.invocation_stack();
+        let shares_caller_stack = invocation_stack
+            .len()
+            .checked_sub(2)
+            .and_then(|caller_index| invocation_stack.get(caller_index))
+            .is_some_and(|caller| context.shares_evaluation_stack_with(caller));
         let script = context.script().as_bytes();
         if script_uses_application_engine_host(script) {
             return None;
         }
-        // The guard above proves the stack is empty, so nothing is converted
-        // today. Keep the conversion fallible anyway: if that guard is ever
-        // relaxed, a value the fast VM cannot represent must fall back to the
-        // fork-aware interpreter rather than panic here.
+        // Host-only objects cannot be manufactured without their runtime
+        // identity. Such a context remains on the canonical engine; objects
+        // returned later by syscalls use the bridge's handle table instead.
         let initial_stack = context
             .evaluation_stack()
             .iter()
@@ -312,7 +585,7 @@ impl ApplicationEngine {
             script: script.to_vec(),
             initial_stack,
             initial_ip: context.instruction_pointer(),
-            rvcount: context.rvcount(),
+            result_stack_limit: external_result_stack_limit(context.rvcount(), shares_caller_stack),
             max_instructions: engine.limits().max_instructions,
             instructions_executed: engine.instructions_executed,
         })
@@ -324,7 +597,7 @@ impl ApplicationEngine {
     ) -> VMState {
         self.vm_engine.engine_mut().instructions_executed = instructions_executed;
         match result.state {
-            VMState::HALT => self.apply_external_vm_halt(result.stack),
+            VMState::HALT => self.apply_external_vm_halt(instructions_executed),
             VMState::FAULT => {
                 let message = external_vm_fault_message(result.fault_message, result.fault_ip);
                 self.apply_external_vm_fault(message, instructions_executed)
@@ -335,81 +608,18 @@ impl ApplicationEngine {
             }
         }
     }
-    fn apply_external_vm_halt(&mut self, stack: Vec<VmStackValue>) -> VMState {
-        // The fast interpreter carries a pointer as a bare script offset
-        // (`StackValue::Pointer(i64)`), while `StackItem::Pointer` also records
-        // the owning script. It only ever executes the current context's script,
-        // so that context supplies the script here. Rebuilding the pointer keeps
-        // parity with C#, where `PUSHA` halts with a `Pointer` on the result
-        // stack instead of faulting.
-        //
-        // `Interop` and `Iterator` have no `StackItem` counterpart at all. They
-        // cannot appear for a script the fast interpreter accepts (any syscall
-        // other than the runtime-only set forces the fork-aware path), so a value
-        // that still fails to convert faults the invocation instead of panicking
-        // on attacker-controlled input.
-        let script = self
-            .vm_engine
-            .engine()
-            .current_context()
-            .map(|context| context.script_arc());
-        let mut stack_items = Vec::with_capacity(stack.len());
-        for value in stack {
-            let item = match value {
-                VmStackValue::Pointer(position) => {
-                    let Some(script) = script.as_ref() else {
-                        return self.apply_external_vm_fault(
-                            "external VM halted with a pointer but no execution context"
-                                .to_string(),
-                            0,
-                        );
-                    };
-                    let Ok(position) = usize::try_from(position) else {
-                        return self.apply_external_vm_fault(
-                            format!(
-                                "external VM halted with a negative pointer offset: {position}"
-                            ),
-                            0,
-                        );
-                    };
-                    StackItem::from_pointer(Arc::clone(script), position)
-                }
-                other => match StackItem::try_from(other) {
-                    Ok(item) => item,
-                    Err(error) => {
-                        return self.apply_external_vm_fault(
-                            format!(
-                                "external VM halted with an unconvertible stack value: {error}"
-                            ),
-                            0,
-                        );
-                    }
-                },
-            };
-            stack_items.push(item);
+    fn apply_external_vm_halt(&mut self, instructions_executed: u64) -> VMState {
+        // Reuse the canonical RET path after synchronizing the evaluation stack.
+        // This preserves rvcount checks, return propagation, dynamic-call null
+        // normalization, child snapshot commits, and notification rollback.
+        let result = neo_vm::jump_table::control::ret(
+            self.vm_engine.engine_mut(),
+            &neo_vm::Instruction::ret(),
+        );
+        match result {
+            Ok(()) => self.vm_engine.engine().state(),
+            Err(error) => self.apply_external_vm_fault(error.to_string(), instructions_executed),
         }
-        let Some(context_index) = self
-            .vm_engine
-            .engine()
-            .invocation_stack()
-            .len()
-            .checked_sub(1)
-        else {
-            return self.apply_external_vm_fault(
-                "No execution context after external VM halt".to_string(),
-                0,
-            );
-        };
-        if let Err(error) = self.vm_engine.engine_mut().remove_context(context_index) {
-            return self.apply_external_vm_fault(error.to_string(), 0);
-        }
-        let result_stack = self.vm_engine.engine_mut().result_stack_mut();
-        for item in stack_items {
-            if let Err(error) = result_stack.push(item) {
-                return self.apply_external_vm_fault(error.to_string(), 0);
-            }
-        }
-        VMState::HALT
     }
     fn apply_external_vm_fault(&mut self, message: String, instructions_executed: u64) -> VMState {
         if instructions_executed > 0 {
@@ -429,13 +639,19 @@ fn script_uses_application_engine_host(script: &[u8]) -> bool {
     let Ok(instructions) = neo_vm::parse_script_instructions(script) else {
         return true;
     };
+    let invocation_stack = neo_vm::interop_hash("System.Runtime.GetInvocationStack");
     for instruction in instructions {
-        match instruction.opcode() {
-            OpCode::SYSCALL if !is_external_vm_supported_syscall(instruction.token_u32()) => {
-                return true;
-            }
-            OpCode::CALLT => return true,
-            _ => {}
+        // Static fields are canonical contract state. Until their object identity
+        // can be preserved across the ABI bridge, both initialization and every
+        // initialized static slot must stay on the canonical engine.
+        if instruction.opcode() == OpCode::INITSSLOT {
+            return true;
+        }
+        // The fast interpreter deliberately owns caller slots and TRY frames.
+        // Projecting the complete invocation stack would expose the incomplete
+        // canonical mirror, so this one introspection syscall stays canonical.
+        if instruction.opcode() == OpCode::SYSCALL && instruction.token_u32() == invocation_stack {
+            return true;
         }
     }
     false
@@ -496,9 +712,6 @@ fn external_runtime_syscall(api: u32) -> Option<ExternalRuntimeSyscall> {
         None
     }
 }
-fn is_external_vm_supported_syscall(api: u32) -> bool {
-    external_runtime_syscall(api).is_some()
-}
 fn vm_integer_from_u64(value: u64) -> VmStackValue {
     if value <= i64::MAX as u64 {
         VmStackValue::Integer(value as i64)
@@ -537,10 +750,52 @@ fn pop_vm_bytes(
         .to_byte_string_bytes()
         .ok_or_else(|| format!("{syscall} expects a byte-convertible argument, got {value:?}"))
 }
+fn external_result_stack_limit(rvcount: i32, shares_caller_stack: bool) -> Option<usize> {
+    // Canonical RET ignores rvcount when a cloned context shares its caller's
+    // evaluation stack. Applying the limit inside the fast interpreter would
+    // discard method arguments before the shared-stack RET can run.
+    (rvcount >= 0 && !shares_caller_stack).then_some(rvcount as usize)
+}
+
+fn external_vm_trace_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| crate::env_flags::env_flag_enabled("NEO_TRACE_EXTERNAL_VM", false))
+}
+
 fn external_vm_fault_message(message: Option<String>, ip: Option<u32>) -> String {
     let message = message.unwrap_or_else(|| "VM execution faulted".to_string());
     match ip {
         Some(ip) => format!("{message} [ip={ip}]"),
         None => message,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{external_result_stack_limit, script_uses_application_engine_host};
+    use neo_vm::OpCode;
+
+    #[test]
+    fn static_slot_initialization_stays_on_canonical_engine() {
+        assert!(script_uses_application_engine_host(&[
+            OpCode::INITSSLOT as u8,
+            1,
+            OpCode::RET as u8,
+        ]));
+        assert!(!script_uses_application_engine_host(&[OpCode::RET as u8]));
+    }
+
+    #[test]
+    fn shared_caller_stack_never_truncates_initializer_arguments() {
+        assert_eq!(external_result_stack_limit(0, true), None);
+        assert_eq!(external_result_stack_limit(1, true), None);
+        assert_eq!(external_result_stack_limit(-1, true), None);
+    }
+
+    #[test]
+    fn independent_stack_retains_declared_return_limit() {
+        assert_eq!(external_result_stack_limit(0, false), Some(0));
+        assert_eq!(external_result_stack_limit(1, false), Some(1));
+        assert_eq!(external_result_stack_limit(-1, false), None);
     }
 }

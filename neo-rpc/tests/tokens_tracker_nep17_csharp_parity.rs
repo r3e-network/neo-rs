@@ -1,14 +1,14 @@
 #![cfg(feature = "server")]
 
-use neo_ledger::{Block, BlockHeader};
-use neo_ledger::blockchain_application_executed::ApplicationExecuted;
+use neo_ledger::ApplicationExecuted;
+use neo_native_contracts::native::{GasToken, NativeContract, NeoToken};
+use neo_primitives::TriggerType;
+use neo_primitives::{UInt160, UInt256, WitnessScope};
+use neo_protocol::ProtocolSettings;
+use neo_protocol::execution::{Block, BlockHeader};
 use neo_protocol::payloads::signer::Signer;
 use neo_protocol::payloads::transaction::Transaction;
 use neo_protocol::witness::Witness;
-use neo_native_contracts::native::{GasToken, NativeContract, NeoToken};
-use neo_primitives::TriggerType;
-use neo_primitives::{UInt160, WitnessScope};
-use neo_protocol::ProtocolSettings;
 use neo_rpc::tokens_tracker::{
     Nep17Tracker, Nep17TransferKey, TokenTransfer, TokenTransferKeyView, Tracker, find_prefix,
 };
@@ -42,11 +42,17 @@ async fn nep17_tracker_matches_csharp_history_indexing() {
     let tx_container: Arc<dyn neo_primitives::Verifiable> = Arc::new(tx.clone());
 
     let block = Block::new(
-        BlockHeader {
-            index: 38_781,
-            timestamp: 1_628_511_122_592,
-            ..Default::default()
-        },
+        BlockHeader::new(
+            0,
+            UInt256::zero(),
+            UInt256::zero(),
+            1_628_511_122_592,
+            0,
+            38_781,
+            0,
+            UInt160::zero(),
+            vec![Witness::empty()],
+        ),
         vec![tx.clone()],
     );
 

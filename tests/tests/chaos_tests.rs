@@ -4,84 +4,20 @@
 //! - Network partition simulation
 //! - Node failure and recovery
 //! - State corruption detection
-//! - Consensus timeout handling
 //! - Concurrent access stress tests
+//!
+//! NOTE: The dBFT consensus service implementation was removed from the
+//! workspace (see neo-node `maybe_enable_dbft_consensus` TODO stub), so the
+//! consensus timeout chaos scenarios that exercised `neo_consensus` are no
+//! longer representable and were retired with that subsystem.
 
-mod common;
-
-use common::TestConsensusSigner;
-use neo_consensus::{ConsensusEvent, ConsensusService, ValidatorInfo};
-use neo_crypto::{ECCurve, ECPoint};
 use neo_primitives::{UInt160, UInt256};
 use neo_tests::state::{
     MemoryWorldState, StateChanges, StateTrieManager, StorageItem, StorageKey, WorldState,
 };
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{RwLock, mpsc};
-
-// ============================================================================
-// Test Helpers
-// ============================================================================
-
-fn create_test_validators(count: usize) -> Vec<ValidatorInfo> {
-    (0..count)
-        .map(|i| ValidatorInfo {
-            index: i as u8,
-            public_key: ECPoint::infinity(ECCurve::Secp256r1),
-            script_hash: UInt160::zero(),
-        })
-        .collect()
-}
-
-// ============================================================================
-// Network Partition Tests
-// ============================================================================
-
-#[tokio::test]
-async fn test_consensus_timeout_triggers_view_change() {
-    let (tx, mut rx) = mpsc::channel(100);
-    let validators = create_test_validators(7);
-
-    let mut service = ConsensusService::new(0x4E454F, validators, Some(1), vec![15u8; 32], tx);
-    service.set_signer(Some(Arc::new(TestConsensusSigner::new([15u8; 32]))));
-
-    service.start(0, 1000, UInt256::zero(), 0).unwrap();
-
-    let timeout_time = 1000 + 60_000;
-    service.on_timer_tick(timeout_time).unwrap();
-
-    let event = tokio::time::timeout(Duration::from_millis(100), rx.recv())
-        .await
-        .expect("timeout")
-        .expect("event");
-
-    match event {
-        ConsensusEvent::BroadcastMessage(payload) => {
-            assert_eq!(
-                payload.message_type,
-                neo_consensus::ConsensusMessageType::ChangeView
-            );
-        }
-        _ => panic!("Expected ChangeView broadcast"),
-    }
-}
-
-#[tokio::test]
-async fn test_multiple_timeouts_increment_view() {
-    let (tx, mut rx) = mpsc::channel(100);
-    let validators = create_test_validators(7);
-
-    let mut service = ConsensusService::new(0x4E454F, validators, Some(1), vec![15u8; 32], tx);
-    service.set_signer(Some(Arc::new(TestConsensusSigner::new([15u8; 32]))));
-
-    service.start(0, 1000, UInt256::zero(), 0).unwrap();
-
-    service.on_timer_tick(1000 + 60_000).unwrap();
-    let _ = rx.recv().await;
-
-    assert!(service.is_running());
-}
+use tokio::sync::RwLock;
 
 // ============================================================================
 // Node Failure and Recovery Tests

@@ -74,8 +74,9 @@ enum InstructionCache {
 /// synchronisation overhead on the `hash()` / `hash_code()` accessors.
 #[derive(Debug, Clone)]
 pub struct Script {
-    /// The script data
-    script: Vec<u8>,
+    /// Immutable script data shared by clones. The outer `Script` keeps a
+    /// distinct identity, but cloning one no longer copies the byte code.
+    script: Arc<[u8]>,
 
     /// Cached instructions — either a shared offset table or a lazy map.
     instructions: InstructionCache,
@@ -136,6 +137,18 @@ impl Script {
 
     /// Creates a new script with optional validation and strict mode.
     pub fn new(script: Vec<u8>, strict_mode: bool) -> VmResult<Self> {
+        Self::new_shared(script.into(), strict_mode)
+    }
+
+    /// Creates a non-strict script from immutable shared bytes.
+    ///
+    /// This is used by the contract-script cache so its content key and parsed
+    /// `Script` own the same allocation rather than retaining two byte copies.
+    pub fn from_shared(script: Arc<[u8]>) -> VmResult<Self> {
+        Self::new_shared(script, false)
+    }
+
+    fn new_shared(script: Arc<[u8]>, strict_mode: bool) -> VmResult<Self> {
         let hash_code = Self::compute_hash(&script);
         let mut s = Self {
             script,
@@ -169,7 +182,7 @@ impl Script {
     pub fn new_from_bytes(script: Vec<u8>) -> Self {
         let hash_code = Self::compute_hash(&script);
         Self {
-            script,
+            script: script.into(),
             instructions: InstructionCache::Lazy(Arc::new(RwLock::new(HashMap::new()))),
             strict_mode: false,
             hash_code,
@@ -181,7 +194,7 @@ impl Script {
     pub fn new_relaxed(script: Vec<u8>) -> Self {
         let hash_code = Self::compute_hash(&script);
         Self {
-            script,
+            script: script.into(),
             instructions: InstructionCache::Lazy(Arc::new(RwLock::new(HashMap::new()))),
             strict_mode: false,
             hash_code,
@@ -297,7 +310,7 @@ impl Script {
     /// Returns the script as a byte array.
     #[must_use]
     pub fn to_array(&self) -> Vec<u8> {
-        self.script.clone()
+        self.script.to_vec()
     }
 
     /// Returns the script as a byte slice.
@@ -530,6 +543,22 @@ mod tests {
         // The instructions should be the same object
         assert_eq!(instr1.pointer(), instr2.pointer());
         assert_eq!(instr1.opcode(), instr2.opcode());
+    }
+
+    #[test]
+    fn eager_script_clone_shares_bytes_and_instructions() {
+        let script = Script::from(vec![OpCode::PUSH1.byte(), OpCode::RET.byte()]).unwrap();
+        let cloned = script.clone();
+
+        assert_eq!(script.as_bytes().as_ptr(), cloned.as_bytes().as_ptr());
+        assert!(Arc::ptr_eq(
+            &script.get_instruction(0).unwrap(),
+            &cloned.get_instruction(0).unwrap()
+        ));
+        assert_eq!(
+            cloned.to_array(),
+            vec![OpCode::PUSH1.byte(), OpCode::RET.byte()]
+        );
     }
 
     #[test]

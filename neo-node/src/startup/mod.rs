@@ -13,5 +13,4 @@ pub(crate) mod services;
 mod signal;
 mod tasks;
 
-pub(crate) use config::STORAGE_VERSION;
 pub(crate) use run::run;

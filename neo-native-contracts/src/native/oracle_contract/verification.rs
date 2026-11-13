@@ -14,14 +14,12 @@
 
 use super::OracleContract;
 use crate::native::{LedgerContract, NativeHelpers, Role, RoleManagement};
-use neo_primitives::CallFlags;
+use neo_protocol::payloads::get_fixed_script;
 use neo_protocol::payloads::transaction_attribute::TransactionAttribute;
 use neo_protocol::payloads::{OracleResponse, Transaction, WitnessScope};
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::error::CoreResult as Result;
 use neo_storage::persistence::DataCache;
-use neo_vm::{OpCode, ScriptBuilder};
-use tracing::error;
 
 impl OracleContract {
     pub(super) fn verify(&self, engine: &mut ApplicationEngine) -> Result<Vec<u8>> {
@@ -41,27 +39,11 @@ impl OracleContract {
         Ok(vec![if valid { 1 } else { 0 }])
     }
 
-    /// Get the fixed script for oracle response transactions.
-    fn get_fixed_script() -> Vec<u8> {
-        static ORACLE_FINISH_SCRIPT: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
-        ORACLE_FINISH_SCRIPT
-            .get_or_init(|| {
-                let oracle_hash = OracleContract::new().hash;
-                let mut builder = ScriptBuilder::new();
-                builder.emit_opcode(OpCode::NEWARRAY0);
-                builder.emit_push_int(CallFlags::ALL.bits() as i64);
-                builder.emit_push("finish".as_bytes());
-                builder.emit_push(&oracle_hash.to_array());
-                if let Err(err) = builder.emit_syscall("System.Contract.Call") {
-                    error!(?err, "Failed to build OracleContract finish syscall script");
-                    return Vec::new();
-                }
-                builder.to_array()
-            })
-            .clone()
-    }
-
     /// Verify the oracle response attribute against on-chain state.
+    ///
+    /// The fixed script comparison uses the single source of truth in
+    /// `neo_protocol::payloads::get_fixed_script`, so this verifier and the
+    /// transaction producers can never drift apart.
     fn verify_oracle_response(
         response: &OracleResponse,
         snapshot: &DataCache,
@@ -73,7 +55,7 @@ impl OracleContract {
         }
 
         // Check that the script matches the fixed script.
-        if tx.script() != Self::get_fixed_script() {
+        if tx.script() != get_fixed_script() {
             return false;
         }
 
@@ -106,5 +88,54 @@ impl OracleContract {
         };
         let oracle_account = NativeHelpers::get_bft_address(&designated);
         tx.signers().iter().any(|s| s.account == oracle_account)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OracleContract;
+    use neo_protocol::payloads::get_fixed_script;
+    use neo_smart_contract::application_engine::native_contract::NativeContract;
+    use neo_vm::{OpCode, ScriptBuilder};
+
+    /// Byte-level consistency check between the protocol-layer fixed script
+    /// and the Oracle native contract identity: the script embedded hash must
+    /// equal `OracleContract::new().hash()`, proving the protocol constant and
+    /// the native contract registry agree on the Oracle contract address.
+    #[test]
+    fn protocol_fixed_script_embeds_native_oracle_hash() {
+        let script = get_fixed_script();
+        let oracle_hash = OracleContract::new().hash().to_array();
+
+        // Layout: NEWARRAY0(1) PUSH15(1) PUSHDATA1+"finish"(8) PUSHDATA1+hash(22) SYSCALL(5).
+        assert_eq!(script.len(), 37, "fixed script length is stable");
+        assert_eq!(script[0], OpCode::NEWARRAY0 as u8);
+        assert_eq!(script[1], 0x1f, "PUSH15 encodes CallFlags::ALL");
+        assert_eq!(script[2], OpCode::PUSHDATA1 as u8);
+        assert_eq!(script[3], 6, "pushed method name length");
+        assert_eq!(&script[4..10], b"finish");
+        assert_eq!(&script[10..12], &[OpCode::PUSHDATA1 as u8, 20][..]);
+        assert_eq!(&script[12..32], &oracle_hash[..]);
+        assert_eq!(script[32], OpCode::SYSCALL as u8);
+        // The interop hash 0x627d5b52 is serialized big-endian in the script
+        // (the trailing bytes of the golden hex ...41627d5b52).
+        assert_eq!(&script[33..37], &0x627d5b52u32.to_be_bytes()[..]);
+    }
+
+    /// Rebuilding the script locally from the native contract hash must
+    /// reproduce the protocol-layer bytes exactly (guards against any future
+    /// divergence between the two construction orders).
+    #[test]
+    fn local_rebuild_from_native_hash_matches_protocol_script() {
+        let oracle_hash = OracleContract::new().hash().to_array();
+        let mut builder = ScriptBuilder::new();
+        builder.emit_opcode(OpCode::NEWARRAY0);
+        builder.emit_push_int(neo_primitives::CallFlags::ALL.bits() as i64);
+        builder.emit_push(b"finish");
+        builder.emit_push(&oracle_hash);
+        builder
+            .emit_syscall("System.Contract.Call")
+            .expect("System.Contract.Call interop name is valid");
+        assert_eq!(builder.to_array(), get_fixed_script());
     }
 }

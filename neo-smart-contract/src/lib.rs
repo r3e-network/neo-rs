@@ -39,5 +39,7 @@ pub use execution_context_state::ExecutionContextState;
 pub use helper::Helper;
 pub use iterators::StorageIterator;
 pub use key_builder::KeyBuilder;
-pub use manifest::{ContractAbi, ContractEventDescriptor, ContractManifest, ContractMethodDescriptor};
+pub use manifest::{
+    ContractAbi, ContractEventDescriptor, ContractManifest, ContractMethodDescriptor,
+};
 pub use storage_item::StorageItemExt;
