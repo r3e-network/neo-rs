@@ -23,12 +23,9 @@ pub use crate::mempool::services::{LockedMempoolService, MempoolService};
 // Re-export network services
 pub use crate::network::p2p::services::PeerManagerService;
 
-// Placeholder traits for services not yet fully implemented
-pub trait LedgerService: Send + Sync {
-    fn current_height(&self) -> u32;
-    fn current_header_height(&self) -> u32;
-}
-
+/// State-store service trait backed by `StateRootStore`
+/// (see `crate::state_service::store`). The canonical ledger service trait
+/// lives in `neo-ledger` (`neo_ledger::services::LedgerService`).
 pub trait StateStoreService: Send + Sync {
     fn on_new_state_root(&self, state_root: crate::state_service::StateRoot) -> bool;
 

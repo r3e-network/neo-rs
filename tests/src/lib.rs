@@ -1,7 +1,7 @@
 //! Shared support types for workspace integration tests.
 
 pub mod mempool {
-    /// Lightweight fee-policy placeholder used by integration tests.
+    /// Lightweight fee-policy stand-in used by integration tests.
     #[derive(Debug, Clone, Copy, Default)]
     pub struct FeePolicy;
 

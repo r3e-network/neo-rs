@@ -2,8 +2,9 @@
 //!
 //! Scope note (review §4.3.5): despite the source file name, this suite does
 //! NOT benchmark MPT state-root computation — no trie is involved. Results
-//! must not be reported as state-root performance. The MPT benchmark belongs
-//! in a dedicated trie suite once the staging path is wired for replay.
+//! must not be reported as state-root performance. MPT trie benchmarks live
+//! in `mpt_state_root.rs`, which drives the trie with an in-memory snapshot
+//! store for a stable, replayable baseline.
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use neo_crypto::Crypto;
@@ -53,8 +54,8 @@ fn bench_hash160(c: &mut Criterion) {
     group.finish();
 }
 
-// TODO: Add MPT trie insert/lookup benchmarks once a simpler in-memory
-// MptStoreSnapshot implementation is available for benchmarking.
+// MPT trie insert/lookup benchmarks are covered by `mpt_state_root.rs`,
+// which implements an in-memory `MptStoreSnapshot` for benchmarking.
 
 criterion_group!(benches, bench_sha256, bench_hash256, bench_hash160,);
 criterion_main!(benches);

@@ -5,7 +5,7 @@
 //! standalone dependency set. Two types that live outside the allowed
 //! dependency cone are represented here:
 //!
-//! * [`Contract`] — a lightweight placeholder for the `neo-smart-contract`
+//! * [`Contract`] — a lightweight stand-in for the `neo-smart-contract`
 //!   `Contract`. It carries just enough (verification script + parameter names +
 //!   deployed flag) for wallet account bookkeeping and NEP-6 (de)serialization.
 //!   Reconciling this with the canonical contract type is a task 89 alignment item.
@@ -147,8 +147,7 @@ impl StandardWalletAccount {
     ) -> Self {
         let script_hash = contract
             .as_ref()
-            .map(Contract::script_hash)
-            .unwrap_or_else(|| key_pair.get_script_hash());
+            .map_or_else(|| key_pair.get_script_hash(), Contract::script_hash);
 
         Self {
             script_hash,
@@ -475,7 +474,7 @@ mod tests {
     #[test]
     fn create_witness_fails_closed_for_unsupported_contract_script() {
         let key = KeyPair::generate().unwrap();
-        // A deployed-contract placeholder with an empty script cannot be
+        // A deployed-contract entry with an empty script cannot be
         // satisfied by any invocation this single-key path can produce.
         let contract = Contract::create(vec![], Vec::new());
         let account = StandardWalletAccount::new_with_key(key, Some(contract), settings(), None);

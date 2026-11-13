@@ -336,7 +336,8 @@ mod rocksdb_integration_tests {
 mod rocksdb_integration_tests {
     #[test]
     fn rocksdb_feature_not_enabled() {
-        // Placeholder test when rocksdb feature is not enabled
+        // Guard test that keeps the suite green when the rocksdb feature is
+        // not enabled
         assert!(true, "RocksDB feature not enabled, tests skipped");
     }
 }

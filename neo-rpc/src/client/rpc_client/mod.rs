@@ -13,8 +13,6 @@ mod builder;
 mod client;
 mod helpers;
 mod hooks;
-// TODO: Re-enable once wallet.rs is implemented
-// mod wallet;
 
 #[cfg(test)]
 mod tests;

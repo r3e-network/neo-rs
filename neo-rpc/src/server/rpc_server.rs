@@ -1,8 +1,6 @@
 use futures::stream;
 use hyper::server::accept::from_stream;
 use hyper::service::{Service, make_service_fn, service_fn};
-// TODO: neo_services crate doesn't exist - needs to be created or removed
-// use neo_services::RpcService;
 use neo_system::NeoSystem;
 use neo_wallets::Wallet;
 use neo_wallets::signing::{
@@ -759,10 +757,3 @@ impl RpcServer {
         self.handler_lookup.read().contains_key(&key)
     }
 }
-
-// TODO: Re-enable once neo_services crate is available
-// impl RpcService for RpcServer {
-//     fn is_started(&self) -> bool {
-//         self.started
-//     }
-// }
