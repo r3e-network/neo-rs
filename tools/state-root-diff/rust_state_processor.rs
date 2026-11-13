@@ -207,8 +207,11 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn genesis_fixture_produces_the_real_persisted_root() {
+        // Tracked under tests/fixtures/ (not the gitignored data/ runtime dir) so
+        // clean checkouts compile without any locally downloaded artifacts.
         let mut file: BlocksFile =
-            serde_json::from_str(include_str!("data/test_blocks.json")).expect("genesis fixture");
+            serde_json::from_str(include_str!("tests/fixtures/test_blocks.json"))
+                .expect("genesis fixture");
         file.blocks.truncate(1);
         file.block_count = 1;
         file.end_height = 0;

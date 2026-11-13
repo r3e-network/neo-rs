@@ -10,9 +10,11 @@
 
 ```bash
 cargo run -p state-root-diff -- \
-  tools/state-root-diff/data/test_blocks.json \
+  tools/state-root-diff/tests/fixtures/test_blocks.json \
   rust_state_roots.json
 ```
+
+该示例输入是随仓库提交的创世到高度 10 的测试夹具（`tests/fixtures/test_blocks.json`）；`data/` 目录仅存放运行期下载产物，已被 .gitignore 忽略。
 
 可选的第三个输出路径会导出原生合约存储，用于定位首个键值分歧：
 
