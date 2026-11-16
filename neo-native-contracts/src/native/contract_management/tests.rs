@@ -7,11 +7,13 @@
 // `crate::network::p2p::payloads::*`/`crate::witness`/`crate::protocol_settings`
 // → `neo_protocol`, `crate::persistence::*` → `neo_storage`,
 // `crate::smart_contract::*` → `neo_smart_contract`/`neo_primitives`,
-// `crate::wallets::KeyPair` → `neo_wallets::KeyPair`,
+// `crate::wallets::KeyPair` → `neo_crypto` P-256 primitives (no neo-wallets
+// dev-dependency; breaks the native-contracts <-> wallets dev cycle),
 // `crate::{UInt160, Verifiable, WitnessScope}` → `neo_primitives`.
 //
 
 use super::*;
+use neo_crypto::{ECC, ECCurve, ECDsa, ECPoint};
 use neo_io::BinaryWriter;
 use neo_primitives::trigger_type::TriggerType;
 use neo_primitives::{CallFlags, ContractParameterType, UInt160, Verifiable, WitnessScope};
@@ -29,7 +31,6 @@ use neo_storage::StorageItem;
 use neo_storage::persistence::providers::MemoryStore;
 use neo_storage::persistence::{DataCache, SeekDirection, Store, StoreCache};
 use neo_vm::{BinarySerializer, OpCode, StackItem};
-use neo_wallets::KeyPair;
 use std::sync::Arc;
 
 fn default_manifest() -> ContractManifest {
@@ -376,9 +377,21 @@ fn update_preserves_storage_and_increments_counter() {
 
     let mut updated_manifest = default_manifest();
     updated_manifest.name = contract.manifest.name.clone();
-    let key = KeyPair::new(vec![1u8; 32]).expect("keypair");
-    let signature = key.sign(&contract.hash.to_bytes()).expect("signature");
-    let pub_key = key.get_public_key_point().expect("pubkey");
+    // P-256 fixtures built straight from neo-crypto so this test needs no
+    // neo-wallets dev-dependency (cycle breaker); mirrors what KeyPair did.
+    let private_key = [1u8; 32];
+    let signature = ECDsa::sign(
+        &contract.hash.to_bytes(),
+        &private_key,
+        ECCurve::secp256r1(),
+    )
+    .expect("signature")
+    .to_vec();
+    let point =
+        ECC::generate_public_key(&private_key, ECCurve::secp256r1()).expect("public key point");
+    let compressed = ECC::compress_public_key(&point).expect("compressed public key");
+    let pub_key =
+        ECPoint::decode_compressed_with_curve(ECCurve::secp256r1(), &compressed).expect("pubkey");
     updated_manifest.groups = vec![ContractGroup::new(pub_key, signature)];
 
     let updated_nef = make_nef(vec![OpCode::NOP.byte(), OpCode::RET.byte()]);

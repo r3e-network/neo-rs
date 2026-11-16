@@ -1,23 +1,23 @@
 //! Resumable, persistent, two-upstream MainNet block and state-root verifier.
 
-use anyhow::{bail, Context, Result};
-use base64::{engine::general_purpose, Engine as _};
+use anyhow::{Context, Result, bail};
+use base64::{Engine as _, engine::general_purpose};
 use clap::{Parser, ValueEnum};
 use neo_io::{MemoryReader, Serializable};
 use neo_primitives::{BlockLike, UInt256};
-use neo_protocol::payloads::Block;
 use neo_protocol::ProtocolSettings;
+use neo_protocol::payloads::Block;
 use neo_system::ExecutionMode;
 use neo_validator::executor::{BlockExecutor, NeoExecutor};
-use neo_validator::upstream::{validate_protocol_identity, ExecutionReceipt};
+use neo_validator::upstream::{ExecutionReceipt, validate_protocol_identity};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use sysinfo::{Pid, ProcessExt, System, SystemExt};
 
@@ -1053,13 +1053,13 @@ fn repair_offline_audit(args: &Args, package: &Path) -> Result<()> {
         if record.offline_block_offset.is_none() || record.offline_next_offset.is_none() {
             bail!("non-offline audit record found at height {}", record.height);
         }
-        if let Some(previous) = last.as_ref() {
-            if record.offline_block_offset != previous.offline_next_offset {
-                bail!(
-                    "offline audit offsets are not contiguous at {}",
-                    record.height
-                );
-            }
+        if let Some(previous) = last.as_ref()
+            && record.offline_block_offset != previous.offline_next_offset
+        {
+            bail!(
+                "offline audit offsets are not contiguous at {}",
+                record.height
+            );
         }
         valid_len = valid_len
             .checked_add(read as u64)
@@ -1422,7 +1422,9 @@ fn process_offline_batch(
         };
         profile.local_execution_seconds += stage.elapsed().as_secs_f64();
         if outcomes.len() != run.len() {
-            bail!("offline execution returned the wrong outcome count at {first_height}-{last_height}");
+            bail!(
+                "offline execution returned the wrong outcome count at {first_height}-{last_height}"
+            );
         }
 
         let stage = Instant::now();

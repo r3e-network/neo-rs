@@ -1,6 +1,6 @@
 //! Read-only MainNet transfer-script distribution profiler for official `.acc` packages.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Parser;
 use neo_io::{MemoryReader, Serializable};
 use neo_primitives::UInt160;

@@ -16,7 +16,8 @@
 //! - `crate::ledger::{Block, BlockHeader}` → `neo_protocol::payloads::{Block, Header}`
 //! - `crate::protocol_settings::ProtocolSettings` → `neo_protocol::ProtocolSettings`
 //! - `crate::smart_contract::native::helpers::NativeHelpers` → `crate::native::helpers::NativeHelpers`
-//! - `crate::wallets::helper::Helper` (tests) → `neo_wallets::helper::Helper`
+//! - `crate::wallets::helper::Helper` (tests) → `neo_primitives::base58_check`
+//!   address decoding (no wallet dependency in tests)
 
 use crate::native::helpers::NativeHelpers;
 use neo_primitives::constants::GENESIS_TIMESTAMP_MS;
@@ -59,7 +60,7 @@ pub fn create_genesis_block(settings: &ProtocolSettings) -> Block {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_wallets::helper::Helper;
+    use neo_primitives::base58_check::decode_address_payload;
 
     #[test]
     fn genesis_block_has_correct_index() {
@@ -104,11 +105,16 @@ mod tests {
     fn mainnet_genesis_next_consensus_matches_csharp() {
         let settings = ProtocolSettings::mainnet();
         let genesis = create_genesis_block(&settings);
-        let expected = Helper::to_script_hash(
-            "NVg7LjGcUSrgxgjX3zEgqaksfMaiS8Z6e1",
-            settings.address_version,
+        // Reference address decode via the pure neo-primitives helper; keeps the
+        // C# comparison without a neo-wallets dev-dependency (cycle breaker).
+        let expected = UInt160::from_bytes(
+            &decode_address_payload(
+                "NVg7LjGcUSrgxgjX3zEgqaksfMaiS8Z6e1",
+                settings.address_version,
+            )
+            .expect("reference address should decode"),
         )
-        .expect("reference address should decode");
+        .expect("reference script hash should parse");
         assert_eq!(genesis.next_consensus(), &expected);
     }
 

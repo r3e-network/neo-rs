@@ -1,13 +1,13 @@
 //! Strict block/transaction validation for cross-implementation differential tests.
 
-use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use neo_io::{MemoryReader, Serializable};
 use neo_json::JToken;
 use neo_ledger::verify_transaction_state_independent;
 use neo_primitives::{Verifiable, VerifyResult};
-use neo_protocol::payloads::{Block, Transaction};
 use neo_protocol::ProtocolSettings;
+use neo_protocol::payloads::{Block, Transaction};
 use neo_rpc::client::models::{RpcBlock, RpcTransaction};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

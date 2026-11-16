@@ -1,8 +1,8 @@
 [package]
 name = "neo-oracle"
-version = "0.1.0"
+version.workspace = true
 edition = "2024"
-rust-version = "1.95"
+rust-version.workspace = true
 description = "Oracle service implementation for Neo N3 nodes"
 license = "MIT"
 build = "build.rs"
@@ -13,32 +13,37 @@ build = "build.rs"
 workspace = true
 
 [dependencies]
-neo-primitives = { path = "../neo-primitives" }
-neo-protocol = { path = "../neo-protocol" }
-neo-crypto = { path = "../neo-crypto" }
-neo-io = { path = "../neo-io" }
-neo-json = { path = "../neo-json" }
-neo-wallets = { path = "../neo-wallets" }
-neo-vm = { path = "../neo-vm" }
-neo-smart-contract = { path = "../neo-smart-contract" }
+# Internal crates (registered in workspace.dependencies)
+neo-primitives = { workspace = true }
+neo-protocol = { workspace = true }
+neo-crypto = { workspace = true }
+neo-io = { workspace = true }
+neo-json = { workspace = true }
+neo-wallets = { workspace = true }
+neo-vm = { workspace = true }
+neo-smart-contract = { workspace = true }
 
-# Third-party
-async-trait = "0.1"
-base64 = "0.22"
-futures = "0.3"
-hex = "0.4"
-parking_lot = "0.12"
+# Third-party (registered in workspace.dependencies)
+async-trait = { workspace = true }
+base64 = { workspace = true }
+futures = { workspace = true }
+hex = { workspace = true }
+parking_lot = { workspace = true }
+# No matching [workspace.dependencies] entry; kept inline on purpose.
 percent-encoding = "2.3"
-rand = "0.8"
-reqwest = { version = "0.12", features = ["json", "stream"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-thiserror = "2"
-tokio = { version = "1", features = ["full"] }
-tracing = "0.1"
-url = "2"
+rand = { workspace = true }
+# The workspace entry carries json/blocking/stream/gzip; this crate only needs
+# json+stream, but features unify workspace-wide so the superset is accepted.
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+url = { workspace = true }
 
 # NeoFS gRPC transport (optional, mirrors neo-core's `neofs-grpc` feature gate).
+# No [workspace.dependencies] entries for tonic/prost; kept inline on purpose.
 tonic = { version = "0.13", features = ["transport", "tls-ring", "tls-webpki-roots"], optional = true }
 prost = { version = "0.13", optional = true }
 
@@ -51,7 +56,7 @@ protoc-bin-vendored = "3.0"
 
 [dev-dependencies]
 bs58 = { workspace = true }
-tokio = { version = "1", features = ["full", "test-util"] }
+tokio = { workspace = true, features = ["full", "test-util"] }
 
 [features]
 default = []

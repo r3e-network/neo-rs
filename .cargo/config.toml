@@ -10,9 +10,11 @@
 CFLAGS = { value = "-D_WIN32_WINNT=0x0A00", force = false }
 CXXFLAGS = { value = "-D_WIN32_WINNT=0x0A00", force = false }
 
+# Debuginfo levels live in the root manifest profiles (dev uses
+# line-tables-only); only the Windows-friendly split-debuginfo packaging
+# stays here, where it applies to both dev and test builds.
 [profile.dev]
 split-debuginfo = "unpacked"
-debug = 1
 
 [profile.test]
 split-debuginfo = "unpacked"

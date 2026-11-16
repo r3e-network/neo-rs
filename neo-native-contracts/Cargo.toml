@@ -35,8 +35,5 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 unicode-segmentation = "1.10"
 
-[dev-dependencies]
-neo-wallets = { workspace = true }
-
 [lints]
 workspace = true

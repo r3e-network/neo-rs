@@ -62,12 +62,12 @@ impl HardforkManager {
 
     /// Creates a manager using the single MainNet source.
     pub fn mainnet() -> Self {
-        Self::from_heights(&crate::config::ProtocolSettings::mainnet().hardforks)
+        Self::from_heights(&crate::config::ProtocolConfigData::mainnet().hardforks)
     }
 
     /// Creates a manager using the single TestNet source.
     pub fn testnet() -> Self {
-        Self::from_heights(&crate::config::ProtocolSettings::testnet().hardforks)
+        Self::from_heights(&crate::config::ProtocolConfigData::testnet().hardforks)
     }
 
     /// Builds a manager from explicitly configured heights, without filling omissions.

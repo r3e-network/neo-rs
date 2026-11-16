@@ -143,6 +143,8 @@ formal/**/*.aux
 formal/**/.lia.cache
 formal/**/.mimosa/
 .lia.cache
+# Model-checking state files (regenerate from .v sources; never commit)
+formal/consensus/model/states/
 
 # C# differential runner build artifacts
 /tools/csharp-*/bin/

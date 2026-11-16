@@ -69,17 +69,11 @@ members = [
     "tools/validation-diff",
     "tools/state-root-diff",
 ]
-default-members = [
-    "neo-primitives",
-    "neo-crypto",
-    "neo-storage",
-    "neo-io",
-    "neo-json",
-    "neo-vm",
-    "neo-protocol",
-    "neo-rpc",
-    "neo-node",
-]
+# Bare `cargo build`/`cargo check`/`cargo test` at the workspace root operate on
+# the default members only (reth-style): the node daemon and its dependency
+# closure. tests/benches/tools members require explicit `-p` selection, and CI
+# gates pass `--workspace` to cover every member.
+default-members = ["neo-node"]
 exclude = [
     "target",
     "data",
@@ -296,9 +290,22 @@ incremental = false
 
 [profile.dev]
 opt-level = 0
-debug = true
+# Line tables are sufficient for backtraces while keeping dev builds fast;
+# full debug info remains available via an explicit `debug = 2` override.
+debug = "line-tables-only"
 overflow-checks = true
 lto = false
+
+# Native C/C++ heavyweights dominate unoptimized build times; compile them
+# optimized inside the dev profile (package names as resolved in Cargo.lock).
+[profile.dev.package.librocksdb-sys]
+opt-level = 3
+
+[profile.dev.package.rocksdb]
+opt-level = 3
+
+[profile.dev.package.blst]
+opt-level = 3
 
 [profile.test]
 opt-level = 1

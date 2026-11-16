@@ -205,8 +205,6 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("neo-native-contracts", "neo-protocol"),
     ("neo-native-contracts", "neo-storage"),
     ("neo-native-contracts", "neo-vm"),
-    // Test-only edge (kind dev): wallet fixtures are exercised in tests.
-    ("neo-native-contracts", "neo-wallets"),
     // Decomposed service crates, same metadata-verified review.
     ("neo-mempool", "neo-primitives"),
     // Test-only edge (kind dev): mempool tests build VM scripts directly.
@@ -282,9 +280,8 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
 // permits a dev-dependency cycle, so the acyclic guard ignores dev edges. The
 // static-policy fixture must mark these kind=dev as well; otherwise it flattens
 // them into normal edges and fabricates a cycle that cannot occur in the real
-// metadata graph (e.g. neo-native-contracts <-> neo-wallets).
+// metadata graph (e.g. neo-mempool <-> neo-wallets).
 const DEV_ONLY_EDGES: &[(&str, &str)] = &[
-    ("neo-native-contracts", "neo-wallets"),
     ("neo-mempool", "neo-vm"),
     ("neo-mempool", "neo-wallets"),
     ("neo-state-service", "neo-wallets"),

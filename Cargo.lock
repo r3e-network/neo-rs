@@ -2661,7 +2661,6 @@ dependencies = [
  "neo-smart-contract",
  "neo-storage",
  "neo-vm",
- "neo-wallets",
  "num-bigint",
  "num-traits",
  "parking_lot",
@@ -2740,7 +2739,7 @@ dependencies = [
 
 [[package]]
 name = "neo-oracle"
-version = "0.1.0"
+version = "0.20.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",

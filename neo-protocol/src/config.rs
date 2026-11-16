@@ -21,9 +21,14 @@ pub struct HardforkHeights {
     pub hf_huyao: Option<u32>,
 }
 
-/// Raw protocol settings data structure.
+/// Raw protocol configuration data used to seed normative settings.
+///
+/// Distinct from [`crate::ProtocolSettings`]: this is the pure-data form
+/// (string committee keys, [`HardforkHeights`]) embedded for MainNet/TestNet
+/// and converted by `ProtocolSettings::from_config`. It is not part of the
+/// crate's public API; `config` is a private module.
 #[derive(Debug, Clone)]
-pub struct ProtocolSettings {
+pub struct ProtocolConfigData {
     pub network: u32,
     pub address_version: u8,
     pub standby_validators: Vec<String>,
@@ -38,7 +43,7 @@ pub struct ProtocolSettings {
     pub initial_gas_distribution: i64,
 }
 
-impl ProtocolSettings {
+impl ProtocolConfigData {
     /// Returns the embedded MainNet configuration.
     pub fn mainnet() -> Self {
         Self {

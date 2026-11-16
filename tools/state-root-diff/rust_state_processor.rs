@@ -1,6 +1,6 @@
 //! Replays downloaded RPC blocks through the canonical neo-rs execution pipeline.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use neo_json::JToken;
 use neo_primitives::{BlockLike, UInt256};
 use neo_protocol::ProtocolSettings;

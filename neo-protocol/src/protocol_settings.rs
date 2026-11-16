@@ -97,7 +97,7 @@ impl ProtocolSettings {
         memory_pool_max_transactions: u32,
         milliseconds_per_block: u32,
     ) -> Self {
-        use crate::config::ProtocolSettings as ConfigSettings;
+        use crate::config::ProtocolConfigData as ConfigSettings;
 
         // Build a minimal config and convert
         let config = ConfigSettings {
@@ -131,7 +131,7 @@ impl ProtocolSettings {
     }
 
     /// Converts the shared pure-data configuration into normative protocol parameters.
-    fn from_config(config: crate::config::ProtocolSettings) -> Result<Self, String> {
+    fn from_config(config: crate::config::ProtocolConfigData) -> Result<Self, String> {
         let standby_committee = parse_committee(config.standby_validators)?;
         let validators_count = i32::try_from(config.validators_count)
             .map_err(|_| "validators_count exceeds i32".to_string())?;
@@ -167,13 +167,13 @@ impl ProtocolSettings {
 
     /// Returns built-in ProtocolSettings for Neo MainNet.
     pub fn mainnet() -> Self {
-        Self::from_config(crate::config::ProtocolSettings::mainnet())
+        Self::from_config(crate::config::ProtocolConfigData::mainnet())
             .expect("embedded mainnet protocol settings should be valid")
     }
 
     /// Returns built-in ProtocolSettings for Neo TestNet.
     pub fn testnet() -> Self {
-        Self::from_config(crate::config::ProtocolSettings::testnet())
+        Self::from_config(crate::config::ProtocolConfigData::testnet())
             .expect("embedded testnet protocol settings should be valid")
     }
 
@@ -191,9 +191,9 @@ impl ProtocolSettings {
     /// `Network = 0`, empty committee and seed list, `ValidatorsCount = 0`,
     /// and every omitted hardfork enabled at genesis.
     ///
-    /// This is not `neo_config::ProtocolSettings::default()`, which selects
-    /// MainNet. MainNet/TestNet parameters must be requested explicitly via
-    /// [`Self::mainnet`] / [`Self::testnet`] or loaded from a configuration file.
+    /// This fallback never selects MainNet implicitly; MainNet/TestNet
+    /// parameters must be requested explicitly via [`Self::mainnet`] /
+    /// [`Self::testnet`] or loaded from a configuration file.
     pub fn default_settings() -> Self {
         Self {
             network: 0,
@@ -331,7 +331,7 @@ mod tests {
 
     #[test]
     fn config_numeric_boundaries_preserve_field_widths() {
-        let mut config = crate::config::ProtocolSettings::private(42);
+        let mut config = crate::config::ProtocolConfigData::private(42);
         config.validators_count = i32::MAX as u32;
         config.ms_per_block = u32::MAX as u64;
         config.memory_pool_max_transactions = i32::MAX as u32;
@@ -345,28 +345,28 @@ mod tests {
 
     #[test]
     fn config_numeric_overflow_errors_are_preserved() {
-        let mut config = crate::config::ProtocolSettings::private(42);
+        let mut config = crate::config::ProtocolConfigData::private(42);
         config.validators_count = i32::MAX as u32 + 1;
         assert_eq!(
             ProtocolSettings::from_config(config).unwrap_err(),
             "validators_count exceeds i32"
         );
 
-        let mut config = crate::config::ProtocolSettings::private(42);
+        let mut config = crate::config::ProtocolConfigData::private(42);
         config.ms_per_block = u32::MAX as u64 + 1;
         assert_eq!(
             ProtocolSettings::from_config(config).unwrap_err(),
             "ms_per_block exceeds u32"
         );
 
-        let mut config = crate::config::ProtocolSettings::private(42);
+        let mut config = crate::config::ProtocolConfigData::private(42);
         config.memory_pool_max_transactions = i32::MAX as u32 + 1;
         assert_eq!(
             ProtocolSettings::from_config(config).unwrap_err(),
             "memory_pool_max_transactions exceeds i32"
         );
 
-        let mut config = crate::config::ProtocolSettings::private(42);
+        let mut config = crate::config::ProtocolConfigData::private(42);
         config.initial_gas_distribution = -1;
         assert_eq!(
             ProtocolSettings::from_config(config).unwrap_err(),
