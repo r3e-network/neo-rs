@@ -8,6 +8,7 @@
 mod action_store;
 mod agent;
 mod audit;
+mod config;
 mod diagnosis;
 mod durable_actions;
 mod evidence;
@@ -26,6 +27,7 @@ pub use audit::{
     AUDIT_ROTATE_DEFAULT_MAX_EVENTS, AuditError, AuditEvent, AuditEventKind, AuditInput, AuditLog,
     FileAuditLog, FileAuditLogOptions, MemoryAuditLog, verify_audit_chain,
 };
+pub use config::{DiagnosticsSection, ModelProviderSection};
 pub use diagnosis::{
     ACTION_CATALOG, ActionId, ActionPolicy, ActionRecommendation, Diagnosis, DiagnosisError,
     DiagnosisValidator,

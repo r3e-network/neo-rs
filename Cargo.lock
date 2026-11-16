@@ -2875,6 +2875,7 @@ dependencies = [
 name = "neo-probe"
 version = "0.20.0"
 dependencies = [
+ "async-trait",
  "neo-ai-agent",
  "neo-native-contracts",
  "neo-primitives",
@@ -2885,7 +2886,11 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
  "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -1,3 +1,6 @@
+pub mod containment;
+pub mod controller;
+
 use neo_ai_agent::{
     EvidenceAuthority, PROBE_SCHEMA_VERSION, ProbeAction, ProbeContractError, ProbeJob,
     ProbeOutcome, ProbeOutcomeStatus,

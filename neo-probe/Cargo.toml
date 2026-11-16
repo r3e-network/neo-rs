@@ -14,6 +14,7 @@ readme.workspace = true
 description = "Capability-restricted detached transaction prevalidation worker"
 
 [dependencies]
+async-trait = { workspace = true }
 neo-ai-agent = { workspace = true }
 neo-native-contracts = { workspace = true }
 neo-primitives = { workspace = true }
@@ -25,6 +26,19 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true, features = ["process"] }
+tokio-util = { workspace = true, features = ["rt"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
+
+[dev-dependencies]
+tempfile = { workspace = true }
 
 [lints]
 workspace = true
