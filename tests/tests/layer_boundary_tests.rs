@@ -45,7 +45,8 @@ fn classify(name: &str, relative_manifest: &Path, package: &Value) -> Result<Mem
         // Generic actor runtime (task 189): protocol-agnostic, zero neo-* deps,
         // so it declares no ALLOWED_EDGES entry of its own.
         | "neo-actors" => Some(ProtocolExecution),
-        "neo-p2p" | "neo-consensus" | "neo-rpc" | "neo-telemetry" | "neo-tee" | "neo-hsm"
+        "neo-p2p" | "neo-consensus" | "neo-rpc" | "neo-rpc-client" | "neo-rpc-server"
+        | "neo-telemetry" | "neo-tee" | "neo-hsm"
         | "neo-ai-agent" | "neo-probe" | "neo-mempool" | "neo-oracle"
         | "neo-state-service" | "neo-wallets" | "neo-system" => Some(Services),
         "neo-node" | "neo-signer-server" | "neo-validator" => Some(Assembly),
@@ -114,24 +115,53 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("neo-consensus", "neo-io"),
     ("neo-consensus", "neo-primitives"),
     ("neo-consensus", "neo-vm"),
-    ("neo-rpc", "neo-config"),
-    ("neo-rpc", "neo-crypto"),
-    ("neo-rpc", "neo-io"),
-    ("neo-rpc", "neo-json"),
-    ("neo-rpc", "neo-ledger"),
-    ("neo-rpc", "neo-primitives"),
-    ("neo-rpc", "neo-protocol"),
-    ("neo-rpc", "neo-storage"),
-    ("neo-rpc", "neo-tee"),
-    ("neo-rpc", "neo-vm"),
+    // Phase 2 S5: neo-rpc is a facade shim over the two extracted RPC crates;
+    // it declares only these two dependencies (client non-optional for the
+    // shared error vocabulary, server behind the `server` feature).
+    ("neo-rpc", "neo-rpc-client"),
+    ("neo-rpc", "neo-rpc-server"),
+    // Phase 2 S5: neo-rpc-client extracted from neo-rpc::client. Reviewed
+    // downward edges: the client is a transaction-building client (same
+    // rationale as neo-mempool) and binds the L1 execution vocabulary
+    // (ledger Block/VerifiableExt, storage DataCache, VM ScriptBuilder,
+    // native contracts, wallet KeyPair) directly. The plan's light-dependency
+    // goal is adjusted accordingly; port inversion was rejected to preserve
+    // single-definition TypeId identity during the move.
+    ("neo-rpc-client", "neo-primitives"),
+    ("neo-rpc-client", "neo-crypto"),
+    ("neo-rpc-client", "neo-io"),
+    ("neo-rpc-client", "neo-json"),
+    ("neo-rpc-client", "neo-ledger"),
+    ("neo-rpc-client", "neo-protocol"),
+    ("neo-rpc-client", "neo-storage"),
+    ("neo-rpc-client", "neo-vm"),
+    ("neo-rpc-client", "neo-smart-contract"),
+    ("neo-rpc-client", "neo-native-contracts"),
+    ("neo-rpc-client", "neo-wallets"),
+    // Phase 2 S5: neo-rpc-server extracted from neo-rpc::server together with
+    // application_logs/tokens_tracker. It consumes the client crate's shared
+    // models/serialization/error vocabulary and keeps the heavy system face.
+    ("neo-rpc-server", "neo-rpc-client"),
+    ("neo-rpc-server", "neo-primitives"),
+    ("neo-rpc-server", "neo-crypto"),
+    ("neo-rpc-server", "neo-io"),
+    ("neo-rpc-server", "neo-json"),
+    ("neo-rpc-server", "neo-ledger"),
+    ("neo-rpc-server", "neo-protocol"),
+    ("neo-rpc-server", "neo-storage"),
+    ("neo-rpc-server", "neo-vm"),
     // Task 206: the RPC server actor relay binds directly to the generic actor
     // runtime (downward edge, same pattern as neo-vm).
-    ("neo-rpc", "neo-actors"),
+    ("neo-rpc-server", "neo-actors"),
+    ("neo-rpc-server", "neo-smart-contract"),
+    ("neo-rpc-server", "neo-native-contracts"),
     // Same-layer service edges exercised by RPC request handlers.
-    ("neo-rpc", "neo-wallets"),
-    ("neo-rpc", "neo-system"),
+    ("neo-rpc-server", "neo-wallets"),
+    ("neo-rpc-server", "neo-system"),
     // Phase 1 S1: RPC server relay/session bind the extracted P2P surface.
-    ("neo-rpc", "neo-p2p"),
+    ("neo-rpc-server", "neo-p2p"),
+    // Phase 1 S3: RPC server state endpoints bind the extracted state service.
+    ("neo-rpc-server", "neo-state-service"),
     ("neo-tee", "neo-crypto"),
     ("neo-tee", "neo-primitives"),
     ("neo-hsm", "neo-crypto"),
@@ -188,11 +218,6 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("neo-signer-server", "neo-crypto"),
     ("neo-signer-server", "neo-tee"),
     ("neo-signer-server", "neo-wallets"),
-    ("neo-rpc", "neo-native-contracts"),
-    ("neo-rpc", "neo-state-service"),
-    ("neo-rpc", "neo-smart-contract"),
-    ("neo-rpc", "neo-mempool"),
-    ("neo-rpc", "neo-oracle"),
     // Native implementations may use the engine, never the reverse direction.
     ("neo-native-contracts", "neo-smart-contract"),
     // Decomposed protocol/execution crates (Phase 2), verified one by one

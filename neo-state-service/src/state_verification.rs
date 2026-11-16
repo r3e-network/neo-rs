@@ -402,9 +402,7 @@ mod tests {
         persist_bytes(
             &store,
             StorageKey::new(RoleManagement::new().id(), designation_key),
-            crate::test_support::serialize_role_public_keys(std::slice::from_ref(
-                &validator,
-            )),
+            crate::test_support::serialize_role_public_keys(std::slice::from_ref(&validator)),
         );
 
         let mut root = unsigned_root(height, 6);

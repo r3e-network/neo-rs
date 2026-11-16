@@ -11,7 +11,7 @@ neo-primitives = { path = "../../neo-primitives" }
 neo-io = { path = "../../neo-io" }
 neo-json = { path = "../../neo-json" }
 neo-ledger = { path = "../../neo-ledger" }
-neo-rpc = { path = "../../neo-rpc", features = ["client"] }
+neo-rpc-client = { path = "../../neo-rpc-client" }
 neo-vm = { path = "../../neo-vm" }
 base64 = "0.22"
 hex = "0.4"

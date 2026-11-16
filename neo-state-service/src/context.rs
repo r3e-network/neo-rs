@@ -7,9 +7,9 @@
 //! over `NeoSystemContext`. Embedders without a runtime context pass `None`
 //! and retain the post-commit fallback in `StateRootStore::accept_local_root`.
 
+use super::ValidatedRootPersisted;
 use super::commit_handlers::StateServiceError;
 use super::services::StateStoreService;
-use super::ValidatedRootPersisted;
 use std::sync::Arc;
 
 /// Runtime services required by the state-root commit pipeline.

@@ -2886,15 +2886,17 @@ fn compound_byte_sequence_reads_reuse_neo_vm_rs_collection_semantics() {
 #[test]
 fn neo_rpc_uses_neo_vm_rs_opcode_directly() {
     let workspace = workspace_root();
-    let rpc_manifest = fs::read_to_string(workspace.join("neo-rpc/Cargo.toml")).unwrap();
+    let rpc_manifest = fs::read_to_string(workspace.join("neo-rpc-server/Cargo.toml")).unwrap();
     assert!(
         rpc_manifest.contains("neo-vm = { workspace = true"),
-        "neo-rpc should depend on the local neo-vm crate when it needs OpCode"
+        "neo-rpc-server should depend on the local neo-vm crate when it needs OpCode"
     );
 
-    let rpc_dir = workspace.join("neo-rpc/src");
+    // Phase 2 S5: the RPC surface lives in two extracted crates; scan both.
     let mut offenders = Vec::new();
-    collect_rs_files(&rpc_dir, &mut offenders);
+    for dir in ["neo-rpc-client/src", "neo-rpc-server/src"] {
+        collect_rs_files(&workspace.join(dir), &mut offenders);
+    }
     offenders.retain(|path| {
         fs::read_to_string(path)
             .is_ok_and(|source| source.contains("neo_core::neo_vm::op_code::OpCode"))
@@ -2902,7 +2904,7 @@ fn neo_rpc_uses_neo_vm_rs_opcode_directly() {
 
     assert!(
         offenders.is_empty(),
-        "neo-rpc should import neo_vm::OpCode directly instead of routing \
+        "RPC crates should import neo_vm::OpCode directly instead of routing \
          through neo-core's compatibility module: {offenders:?}"
     );
 }
@@ -3285,13 +3287,13 @@ fn nep11_token_ordering_does_not_use_local_bytestring_wrapper() {
     let workspace = workspace_root();
     let stack_item_module = read_source(workspace.join("neo-vm/src/stack_item/mod.rs"));
     let balance_key = read_source(
-        workspace.join("neo-rpc/src/tokens_tracker/trackers/nep_11/nep11_balance_key.rs"),
+        workspace.join("neo-rpc-server/src/tokens_tracker/trackers/nep_11/nep11_balance_key.rs"),
     );
     let transfer_key = read_source(
-        workspace.join("neo-rpc/src/tokens_tracker/trackers/nep_11/nep11_transfer_key.rs"),
+        workspace.join("neo-rpc-server/src/tokens_tracker/trackers/nep_11/nep11_transfer_key.rs"),
     );
     let nep11_module =
-        read_source(workspace.join("neo-rpc/src/tokens_tracker/trackers/nep_11/mod.rs"));
+        read_source(workspace.join("neo-rpc-server/src/tokens_tracker/trackers/nep_11/mod.rs"));
 
     assert!(
         !workspace
@@ -3398,10 +3400,10 @@ fn local_vm_test_tree_does_not_keep_unwired_or_empty_modules() {
 fn rpc_final_state_models_use_neo_vm_rs_vmstate_directly() {
     let workspace = workspace_root();
     for relative in [
-        "neo-rpc/src/client/models/rpc_invoke_result.rs",
-        "neo-rpc/src/client/models/rpc_application_log.rs",
-        "neo-rpc/src/client/models/rpc_transaction.rs",
-        "neo-rpc/src/client/models/vm_state_utils.rs",
+        "neo-rpc-client/src/models/rpc_invoke_result.rs",
+        "neo-rpc-client/src/models/rpc_application_log.rs",
+        "neo-rpc-client/src/models/rpc_transaction.rs",
+        "neo-rpc-client/src/models/vm_state_utils.rs",
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(
@@ -3414,7 +3416,7 @@ fn rpc_final_state_models_use_neo_vm_rs_vmstate_directly() {
         );
     }
 
-    let helper = read_source(workspace.join("neo-rpc/src/client/models/vm_state_utils.rs"));
+    let helper = read_source(workspace.join("neo-rpc-client/src/models/vm_state_utils.rs"));
     assert!(
         helper.contains("pub fn vm_state_to_string(state: VmState)"),
         "RPC VM-state formatting should accept neo_vm::VmState directly"
@@ -3439,7 +3441,7 @@ fn rpc_final_state_models_use_neo_vm_rs_vmstate_directly() {
 #[test]
 fn rpc_server_final_state_formatting_uses_neo_vm_rs_boundary() {
     let workspace = workspace_root();
-    let helper = read_source(workspace.join("neo-rpc/src/server/smart_contract/helpers.rs"));
+    let helper = read_source(workspace.join("neo-rpc-server/src/smart_contract/helpers.rs"));
 
     assert!(
         helper.contains(".final_name()"),
@@ -3456,8 +3458,8 @@ fn rpc_server_final_state_formatting_uses_neo_vm_rs_boundary() {
     );
 
     for relative in [
-        "neo-rpc/src/server/smart_contract/invocation.rs",
-        "neo-rpc/src/server/smart_contract/contract_verify.rs",
+        "neo-rpc-server/src/smart_contract/invocation.rs",
+        "neo-rpc-server/src/smart_contract/contract_verify.rs",
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(
@@ -3475,7 +3477,7 @@ fn rpc_server_final_state_formatting_uses_neo_vm_rs_boundary() {
 #[test]
 fn rpc_server_blockchain_tests_seed_native_state_through_stack_value() {
     let workspace = workspace_root();
-    let source = read_source(workspace.join("neo-rpc/src/server/rpc_server_blockchain/tests.rs"));
+    let source = read_source(workspace.join("neo-rpc-server/src/rpc_server_blockchain/tests.rs"));
 
     assert!(
         source.contains("use neo_vm::{OpCode, StackValue};")
@@ -3496,10 +3498,10 @@ fn rpc_server_blockchain_tests_seed_native_state_through_stack_value() {
 fn rpc_client_stack_models_use_neo_vm_rs_stackvalue_directly() {
     let workspace = workspace_root();
     for relative in [
-        "neo-rpc/src/client/utility.rs",
-        "neo-rpc/src/client/utility/stack.rs",
-        "neo-rpc/src/client/models/rpc_invoke_result.rs",
-        "neo-rpc/src/client/models/rpc_application_log.rs",
+        "neo-rpc-client/src/utility.rs",
+        "neo-rpc-client/src/utility/stack.rs",
+        "neo-rpc-client/src/models/rpc_invoke_result.rs",
+        "neo-rpc-client/src/models/rpc_application_log.rs",
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(
@@ -3515,7 +3517,7 @@ fn rpc_client_stack_models_use_neo_vm_rs_stackvalue_directly() {
         );
     }
 
-    let stack = read_source(workspace.join("neo-rpc/src/client/utility/stack.rs"));
+    let stack = read_source(workspace.join("neo-rpc-client/src/utility/stack.rs"));
     assert!(
         stack.contains("StackValue::BigInteger(integer.to_signed_bytes_le())"),
         "RPC stack integer parsing should preserve non-i64 integer strings with \
@@ -3532,19 +3534,19 @@ fn rpc_server_imports_host_runtime_directly_from_neo_vm() {
     let workspace = workspace_root();
     for (relative, symbols) in [
         (
-            "neo-rpc/src/server/diagnostic.rs",
+            "neo-rpc-server/src/diagnostic.rs",
             &["ExecutionContext", "Instruction"][..],
         ),
         (
-            "neo-rpc/src/server/session.rs",
+            "neo-rpc-server/src/session.rs",
             &["StackItem", "InteropInterface"][..],
         ),
         (
-            "neo-rpc/src/server/rpc_server_tokens_tracker/mod.rs",
+            "neo-rpc-server/src/rpc_server_tokens_tracker/mod.rs",
             &["ScriptBuilder", "StackItem"][..],
         ),
         (
-            "neo-rpc/src/server/smart_contract/helpers.rs",
+            "neo-rpc-server/src/smart_contract/helpers.rs",
             &[
                 "NotifyEventArgs",
                 "ScriptBuilder",
@@ -3555,11 +3557,11 @@ fn rpc_server_imports_host_runtime_directly_from_neo_vm() {
             ][..],
         ),
         (
-            "neo-rpc/src/server/smart_contract/invocation.rs",
+            "neo-rpc-server/src/smart_contract/invocation.rs",
             &["StackItem", "VmState"][..],
         ),
         (
-            "neo-rpc/src/server/smart_contract/tests.rs",
+            "neo-rpc-server/src/smart_contract/tests.rs",
             &[
                 "InteropInterface",
                 "BinarySerializer",
@@ -3603,15 +3605,15 @@ fn rpc_server_imports_host_runtime_directly_from_neo_vm() {
 #[test]
 fn rpc_error_type_does_not_expose_local_vm_error() {
     let workspace = workspace_root();
-    let rpc_error = read_source(workspace.join("neo-rpc/src/error.rs"));
+    let rpc_error = read_source(workspace.join("neo-rpc-client/src/error.rs"));
 
     assert!(
         !rpc_error.contains("neo_core::neo_vm::VmError"),
-        "neo-rpc should not expose local neo_vm::VmError through its public error type"
+        "neo-rpc-client should not expose local neo_vm::VmError through its public error type"
     );
     assert!(
         !rpc_error.contains("Vm(#[from]"),
-        "neo-rpc should map local script-building errors explicitly instead of relying on \
+        "neo-rpc-client should map local script-building errors explicitly instead of relying on \
          a blanket From<VmError> conversion"
     );
 }
@@ -3627,7 +3629,7 @@ fn rpc_server_invoke_arguments_push_neo_vm_rs_stackvalue_directly() {
          longer need local StackItem identity"
     );
 
-    let helpers = read_source(workspace.join("neo-rpc/src/server/smart_contract/helpers.rs"));
+    let helpers = read_source(workspace.join("neo-rpc-server/src/smart_contract/helpers.rs"));
     assert!(
         helpers.contains("contract_parameter_to_stack_value")
             && helpers.contains("emit_push_stack_value(item)"),
@@ -3642,7 +3644,7 @@ fn rpc_server_invoke_arguments_push_neo_vm_rs_stackvalue_directly() {
     );
 
     let contract_verify =
-        read_source(workspace.join("neo-rpc/src/server/smart_contract/contract_verify.rs"));
+        read_source(workspace.join("neo-rpc-server/src/smart_contract/contract_verify.rs"));
     assert!(
         contract_verify.contains("contract_parameter_to_stack_value")
             && contract_verify.contains("emit_push_stack_value(&item)")

@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 use neo_json::JToken;
 use neo_primitives::{BlockLike, UInt256};
 use neo_protocol::ProtocolSettings;
-use neo_rpc::client::models::RpcBlock;
+use neo_rpc_client::models::RpcBlock;
 use neo_storage::persistence::providers::memory_store_provider::MemoryStoreProvider;
 use neo_storage::persistence::store_provider::StoreProvider;
 use neo_validator::executor::{BlockExecutor, NeoExecutor};

@@ -11,151 +11,28 @@ license.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
-description = "RPC server and client for Neo blockchain"
+description = "RPC facade re-exporting neo-rpc-client and neo-rpc-server"
 
 [dependencies]
-# Internal crates
-neo-primitives = { workspace = true }
-neo-crypto = { workspace = true }
-neo-io = { workspace = true }
-# Unconditional modules (`application_logs`, `tokens_tracker`) bind directly to
-# these leaf crates, so they are non-optional regular dependencies (task 134, D3=a).
-neo-storage = { workspace = true }
-neo-ledger = { workspace = true }
-neo-protocol = { workspace = true }
-# Task 206: the RPC server actor relay binds directly to neo-actors instead of
-# the neo-core `runtime` compatibility re-export (same types, TypeId-preserving).
-neo-actors = { workspace = true, optional = true }
-neo-smart-contract = { workspace = true, optional = true }
-# Task 153: `NeoSystem` is consumed through the `neo_system::*` facade, which
-# re-exports the canonical `neo_core::neo_system` surface (same types), so the
-# RPC server/session code no longer needs to name neo-core for it.
-neo-system = { workspace = true, optional = true }
-# Phase 1 S1: P2P surface bound directly from the extracted crate (server).
-neo-p2p = { workspace = true, optional = true }
-# Phase 1 S3: state-service surface bound directly from the extracted crate (server).
-neo-state-service = { workspace = true, optional = true }
-neo-json = { path = "../neo-json", optional = true }
-# Wallet primitives (task D4): server RPC endpoints bind to neo-wallets directly.
-neo-wallets = { workspace = true, optional = true }
-# Native contracts are used by RPC server for GAS, NEO, and other native contract interactions
-neo-native-contracts = { workspace = true, optional = true }
-# `application_logs` and `tokens_tracker` are unconditional modules that bind
-# directly to the VM, so neo-vm is a non-optional dependency (task 140).
-neo-vm = { workspace = true }
-# neo-config merged into neo-core
-
-# Async runtime
-tokio = { workspace = true }
-async-trait = { workspace = true }
-futures = { workspace = true, optional = true }
-
-# Serialization
-serde = { workspace = true }
-serde_json = { workspace = true }
-serde_urlencoded = { version = "0.7", optional = true }
-
-# Error handling
-thiserror = { workspace = true }
-anyhow = { version = "1.0", optional = true }
-
-# Logging
-tracing = { workspace = true }
-
-# Web server (server feature)
-warp = { version = "0.3", optional = true, features = ["compression-gzip"] }
-hyper = { workspace = true, optional = true }
-# Updated to 0.26.0 to resolve indexmap version conflicts (tower dependency)
-jsonrpsee = { version = "0.26.0", optional = true, default-features = false, features = ["server"] }
-
-# TLS (server feature)
-tokio-rustls = { version = "0.24", optional = true }
-rustls = { version = "0.21", optional = true }
-rustls-native-certs = { version = "0.6", optional = true }
-p12 = { version = "0.6", optional = true }
-sha1 = { version = "0.10", optional = true }
-
-# Rate limiting (server feature)
-dashmap = { workspace = true, optional = true }
-governor = { workspace = true, optional = true }
-
-# HTTP client (client feature)
-reqwest = { workspace = true, optional = true }
-
-# Utilities
-uuid = { workspace = true, optional = true }
-# Unconditional modules (`application_logs`, `tokens_tracker`) use these
-# directly, so they are non-optional regular dependencies (task 140).
-parking_lot = { workspace = true }
-prometheus = { workspace = true, optional = true }
-base64 = { workspace = true }
-bytes = { workspace = true, optional = true }
-num-bigint = { workspace = true }
-num-traits = { workspace = true }
-hex = { workspace = true, optional = true }
-socket2 = { workspace = true, optional = true }
-regex = { version = "1.10", optional = true }
-
-# Cryptography (server feature)
-rand = { workspace = true, optional = true }
-zeroize = { workspace = true, optional = true }
-subtle = { version = "2.5", optional = true }
-
-[dev-dependencies]
-tokio = { workspace = true, features = ["test-util", "macros"] }
-mockito = "1.0"
-tempfile = { workspace = true }
-tracing-subscriber = { workspace = true }
+# Phase 2 S5: the implementation lives in two extracted crates. This facade
+# freezes every historical neo_rpc::* path (single definitions, TypeId-safe).
+# The client crate is non-optional because the ungated shared error/error_code
+# vocabulary lives there; the server crate stays behind the `server` feature.
+neo-rpc-client = { path = "../neo-rpc-client" }
+neo-rpc-server = { path = "../neo-rpc-server", optional = true }
 
 [features]
 default = []
+# Compatibility alias kept for historical consumers (`features = ["client"]`);
+# the client surface is always available via the non-optional dependency.
+client = []
 server = [
-    "client",  # Server uses client models for JSON serialization
-    "dep:neo-actors",
-    "dep:neo-smart-contract",
-    "dep:neo-system",
-    "dep:neo-p2p",
-    "dep:neo-state-service",
-    "dep:neo-json",
-    "dep:neo-wallets",
-    "dep:neo-native-contracts",
-    "dep:warp",
-    "dep:hyper",
-    "dep:uuid",
-    "dep:prometheus",
-    "dep:serde_urlencoded",
-    "dep:bytes",
-    "dep:hex",
-    "dep:rand",
-    "dep:zeroize",
-    "dep:subtle",
-    "dep:dashmap",
-    "dep:governor",
-    "dep:futures",
-    "dep:tokio-rustls",
-    "dep:rustls",
-    "dep:rustls-native-certs",
-    "dep:p12",
-    "dep:sha1",
-    "dep:socket2",
-]
-client = [
-    "dep:neo-smart-contract",
-    "dep:neo-system",
-    "dep:neo-json",
-    "dep:neo-native-contracts",
-    "dep:neo-wallets",
-    "dep:reqwest",
-    "dep:hyper",
-    "dep:anyhow",
-    "dep:hex",
-    "dep:regex",
-    "dep:rand",
-    "dep:zeroize",
+    "client",
+    "dep:neo-rpc-server",
 ]
 jsonrpsee-server = [
     "server",
-    "dep:jsonrpsee",
+    "neo-rpc-server/jsonrpsee-server",
 ]
 # Aggregate feature so `cargo check -p neo-rpc --features full` builds the same
 # surface as the workspace build (where `neo-node` enables `neo-rpc/server`).

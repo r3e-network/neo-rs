@@ -8,7 +8,7 @@ use neo_ledger::verify_transaction_state_independent;
 use neo_primitives::{Verifiable, VerifyResult};
 use neo_protocol::ProtocolSettings;
 use neo_protocol::payloads::{Block, Transaction};
-use neo_rpc::client::models::{RpcBlock, RpcTransaction};
+use neo_rpc_client::models::{RpcBlock, RpcTransaction};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;

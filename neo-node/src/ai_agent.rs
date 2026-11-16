@@ -2296,9 +2296,9 @@ mod tests {
     use neo_protocol::payloads::Signer;
     use neo_protocol::payloads::{Block, Header, Transaction};
     use neo_protocol::witness::Witness;
+    use neo_state_service::StateServiceSettings;
     use neo_storage::persistence::{DataCache, ReadOnlyStoreGeneric};
     use neo_storage::{StorageItem, StorageKey};
-    use neo_state_service::StateServiceSettings;
     use neo_system::{TransactionExecutionExceptionCategory, TransactionExecutionStage};
     use neo_vm::BinarySerializer;
     use neo_vm::{ExecutionEngineLimits, OpCode, VmState};

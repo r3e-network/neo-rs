@@ -1,0 +1,65 @@
+[package]
+name = "neo-rpc-client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "RPC client and shared RPC error vocabulary for Neo blockchain"
+
+[dependencies]
+# Internal crates
+neo-primitives = { workspace = true }
+neo-crypto = { workspace = true }
+neo-io = { workspace = true }
+# Phase 2 S5: the client is a transaction-building client (mempool-like
+# reviewed downward edges): it binds ledger/storage/VM/native-contract
+# vocabulary directly instead of routing through neo-system.
+neo-storage = { workspace = true }
+neo-ledger = { workspace = true }
+neo-protocol = { workspace = true }
+neo-vm = { workspace = true }
+neo-smart-contract = { workspace = true }
+neo-native-contracts = { workspace = true }
+neo-wallets = { workspace = true }
+neo-json = { path = "../neo-json" }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# HTTP client
+reqwest = { workspace = true }
+
+# Utilities
+base64 = { workspace = true }
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
+hex = { workspace = true }
+regex = { version = "1.10" }
+rand = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }
+mockito = "1.0"
+# Client transport tests bind hyper directly (test-only surface).
+hyper = { workspace = true }
+
+[lints]
+workspace = true

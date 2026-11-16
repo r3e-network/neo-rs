@@ -13,49 +13,39 @@
 //!
 //! ## Architecture
 //!
+//! Phase 2 S5 split the implementation into two standalone crates; this crate
+//! is a thin facade that freezes every historical `neo_rpc::*` path:
+//!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────────┐
-//! │                         RPC Layer                                │
+//! │                    neo-rpc (facade shim)                         │
 //! ├─────────────────────────────────────────────────────────────────┤
-//! │                                                                  │
-//! │   ┌──────────────┐         ┌──────────────┐                     │
-//! │   │    Server    │         │    Client    │                     │
-//! │   │              │         │              │                     │
-//! │   │ • HTTP       │         │ • HTTP       │                     │
-//! │   │ • WebSocket  │         │ • Typed API  │                     │
-//! │   │ • Methods    │         │ • Builders   │                     │
-//! │   │ • Middleware │         │ • Retry      │                     │
-//! │   └──────────────┘         └──────────────┘                     │
-//! │                                                                  │
-//! │   ┌──────────────────────────────────────────────────────────┐  │
-//! │   │              Shared Components                            │  │
-//! │   │  • RpcErrorCode    • RpcError    • RpcRequest            │  │
-//! │   │  • RpcResponse     • RpcVersion  • RpcBlock              │  │
-//! │   └──────────────────────────────────────────────────────────┘  │
+//! │   ┌──────────────────────┐     ┌──────────────────────┐         │
+//! │   │   neo-rpc-server     │     │   neo-rpc-client     │         │
+//! │   │  (server feature)    │────▶│  (always available)  │         │
+//! │   │ • HTTP / WebSocket   │     │ • Typed API          │         │
+//! │   │ • Methods            │     │ • Builders / Retry   │         │
+//! │   │ • Middleware         │     │ • Shared vocabulary: │         │
+//! │   │ • application_logs   │     │   RpcError,          │         │
+//! │   │ • tokens_tracker     │     │   RpcErrorCode,      │         │
+//! │   │                      │     │   serialization      │         │
+//! │   └──────────────────────┘     └──────────────────────┘         │
 //! └─────────────────────────────────────────────────────────────────┘
 //! ```
 //!
 //! ## Layer Position
 //!
-//! This crate is **Layer 3 (Services)**. The `server` feature is what pulls
-//! in `neo-core`. A client-only build stays on the foundation crates.
-//!
-//! ```text
-//! Layer 3 (Services): neo-rpc
-//!            │
-//!            ▼
-//! Layer 2 (VM and protocol): neo-core, neo-vm   (server feature)
-//!            │
-//!            ▼
-//! Layer 0 (Foundation): neo-primitives, neo-io, neo-json, neo-config
-//! ```
+//! All three crates are **Services** in the workspace layer guard. The
+//! `server` feature pulls in the heavy system/ledger surface through
+//! `neo-rpc-server`; a client-only build stays on `neo-rpc-client`.
 //!
 //! ## Features
 //!
 //! - `server`: Enable RPC server functionality (HTTP/WebSocket endpoints)
-//! - `client`: Enable RPC client functionality (typed API, builders)
+//! - `client`: Compatibility alias; the client surface is always available
+//!   because the shared error vocabulary lives in `neo-rpc-client`.
 //!
-//! Default: both features enabled.
+//! Default: no features (client surface only).
 //!
 //! ## RPC Server
 //!
@@ -203,33 +193,34 @@
 //! - Don't expose `openwallet` on public nodes
 
 // ============================================================================
-// Module Declarations
+// Facade Shims (Phase 2 S5)
 // ============================================================================
+//
+// The implementation lives in neo-rpc-client (client + shared error/error_code/
+// serialization vocabulary) and neo-rpc-server (server + application_logs +
+// tokens_tracker). These re-exports freeze every historical neo_rpc::* path;
+// types keep their identity because each has exactly one definition.
+
+/// RPC client implementation (always available; see the `client` feature note).
+pub use neo_rpc_client as client;
 
 /// Error types for RPC operations.
-pub mod error;
+pub use neo_rpc_client::error;
 
 /// JSON-RPC error codes.
-pub mod error_code;
-
-/// RPC-owned Application Logs subsystem (parity with Neo.Plugins.ApplicationLogs).
-#[cfg(feature = "server")]
-pub mod application_logs;
-
-/// RPC-owned NEP-11/NEP-17 token tracker.
-#[cfg(feature = "server")]
-pub mod tokens_tracker;
-
-#[cfg(any(feature = "client", feature = "server"))]
-mod serialization;
+pub use neo_rpc_client::error_code;
 
 /// RPC server implementation (requires `server` feature).
 #[cfg(feature = "server")]
-pub mod server;
+pub use neo_rpc_server as server;
 
-/// RPC client implementation (requires `client` feature).
-#[cfg(feature = "client")]
-pub mod client;
+/// RPC-owned Application Logs subsystem (parity with Neo.Plugins.ApplicationLogs).
+#[cfg(feature = "server")]
+pub use neo_rpc_server::application_logs;
+
+/// RPC-owned NEP-11/NEP-17 token tracker.
+#[cfg(feature = "server")]
+pub use neo_rpc_server::tokens_tracker;
 
 // ============================================================================
 // Public Re-exports
@@ -243,8 +234,7 @@ pub use error_code::RpcErrorCode;
 #[cfg(feature = "server")]
 pub use server::{RpcServer, RpcServerConfig, RpcServerSettings};
 
-// Client exports (requires `client` feature)
-#[cfg(feature = "client")]
+// Client exports
 pub use client::{
     ClientRpcError, ContractClient, Nep17Api, PolicyApi, RpcClient, RpcClientBuilder,
     RpcClientHooks, RpcRequestOutcome, RpcUtility, StateApi, TransactionManager,

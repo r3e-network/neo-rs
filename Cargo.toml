@@ -24,9 +24,6 @@ members = [
     # Protocol settings and signing data
     "neo-protocol",
 
-    # RPC server and client
-    "neo-rpc",
-
     # Native contracts
     "neo-native-contracts",
 
@@ -43,6 +40,12 @@ members = [
     "neo-mempool",
     # State-root computation, persistence, and verification (Phase 1 S3 extraction)
     "neo-state-service",
+    # RPC client + shared error vocabulary (Phase 2 S5 extraction, Services)
+    "neo-rpc-client",
+    # RPC server + application logs + token tracker (Phase 2 S5 extraction, Services)
+    "neo-rpc-server",
+    # RPC facade shim freezing historical neo_rpc::* paths (Services)
+    "neo-rpc",
     # Actor runtime and system adapters
     "neo-system",
     # Wallet primitives (BIP-32 / BIP-39) and signing service
@@ -142,6 +145,8 @@ neo-json = { path = "neo-json", version = "0.20.0" }
 neo-vm = { path = "neo-vm", version = "0.20.0" }
 neo-protocol = { path = "neo-protocol", version = "0.20.0" }
 neo-rpc = { path = "neo-rpc", version = "0.20.0" }
+neo-rpc-client = { path = "neo-rpc-client", version = "0.20.0" }
+neo-rpc-server = { path = "neo-rpc-server", version = "0.20.0" }
 neo-native-contracts = { path = "neo-native-contracts", version = "0.20.0" }
 
 # Generic actor runtime extracted from neo-core (task 189). It has no neo-*

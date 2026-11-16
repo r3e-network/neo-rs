@@ -2890,7 +2890,46 @@ dependencies = [
 name = "neo-rpc"
 version = "0.20.0"
 dependencies = [
- "anyhow",
+ "neo-rpc-client",
+ "neo-rpc-server",
+]
+
+[[package]]
+name = "neo-rpc-client"
+version = "0.20.0"
+dependencies = [
+ "base64 0.22.1",
+ "hex",
+ "hyper 0.14.32",
+ "mockito",
+ "neo-crypto",
+ "neo-io",
+ "neo-json",
+ "neo-ledger",
+ "neo-native-contracts",
+ "neo-primitives",
+ "neo-protocol",
+ "neo-smart-contract",
+ "neo-storage",
+ "neo-vm",
+ "neo-wallets",
+ "num-bigint",
+ "num-traits",
+ "rand 0.8.8",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "zeroize",
+]
+
+[[package]]
+name = "neo-rpc-server"
+version = "0.20.0"
+dependencies = [
  "async-trait",
  "base64 0.22.1",
  "bytes",
@@ -2900,7 +2939,6 @@ dependencies = [
  "hex",
  "hyper 0.14.32",
  "jsonrpsee",
- "mockito",
  "neo-actors",
  "neo-crypto",
  "neo-io",
@@ -2910,6 +2948,7 @@ dependencies = [
  "neo-p2p",
  "neo-primitives",
  "neo-protocol",
+ "neo-rpc-client",
  "neo-smart-contract",
  "neo-state-service",
  "neo-storage",
@@ -2922,8 +2961,6 @@ dependencies = [
  "parking_lot",
  "prometheus",
  "rand 0.8.8",
- "regex",
- "reqwest",
  "rustls 0.21.12",
  "rustls-native-certs",
  "serde",
@@ -4858,7 +4895,7 @@ dependencies = [
  "neo-native-contracts",
  "neo-primitives",
  "neo-protocol",
- "neo-rpc",
+ "neo-rpc-client",
  "neo-state-service",
  "neo-storage",
  "neo-system",
@@ -5655,7 +5692,7 @@ dependencies = [
  "neo-ledger",
  "neo-primitives",
  "neo-protocol",
- "neo-rpc",
+ "neo-rpc-client",
  "neo-vm",
  "serde",
  "serde_json",

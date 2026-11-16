@@ -16,7 +16,7 @@ neo-state-service = { path = "../../neo-state-service" }
 neo-primitives = { path = "../../neo-primitives" }
 neo-protocol = { path = "../../neo-protocol" }
 neo-json = { path = "../../neo-json" }
-neo-rpc = { path = "../../neo-rpc", features = ["client"] }
+neo-rpc-client = { path = "../../neo-rpc-client" }
 neo-validator = { path = "../../neo-validator" }
 neo-vm = { path = "../../neo-vm" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
