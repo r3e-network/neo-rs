@@ -21,9 +21,9 @@ use neo_ai_agent::{
     StallPolicy,
 };
 use neo_io::BinaryWriter;
+use neo_mempool::{QuarantineConfig, QuarantineMetadata};
 use neo_primitives::UInt256;
 use neo_probe::{ProbeRequestFrame, SnapshotInput};
-use neo_system::mempool::{QuarantineConfig, QuarantineMetadata};
 use neo_system::{
     NeoSystem, TRANSACTION_EXECUTION_OBSERVATION_RULE_VERSION,
     TRANSACTION_EXECUTION_OBSERVATION_SCHEMA_VERSION, TransactionExecutionObservation,

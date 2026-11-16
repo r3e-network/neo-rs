@@ -1,5 +1,5 @@
 use super::MemoryPool;
-use crate::mempool::pool_item::PoolItem;
+use crate::pool_item::PoolItem;
 use neo_primitives::UInt256;
 use neo_protocol::payloads::Transaction;
 use std::sync::Arc;

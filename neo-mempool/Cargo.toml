@@ -1,0 +1,38 @@
+[package]
+name = "neo-mempool"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Transaction memory pool, quarantine, and preverification router for neo-rs"
+
+[dependencies]
+# Internal crates (registered in workspace.dependencies)
+neo-primitives = { workspace = true }
+neo-protocol = { workspace = true }
+neo-native-contracts = { workspace = true }
+neo-ledger = { workspace = true }
+neo-storage = { workspace = true }
+
+# Third-party
+parking_lot = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+# Test-only: mempool tests build VM scripts and sign with wallet fixtures.
+neo-vm = { workspace = true }
+neo-wallets = { workspace = true }
+num-bigint = { workspace = true }
+
+[lints]
+workspace = true

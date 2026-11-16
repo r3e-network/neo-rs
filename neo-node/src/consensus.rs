@@ -907,7 +907,7 @@ impl ConsensusActor {
     #[cfg(feature = "tee")]
     fn tee_ordered_candidates(
         runtime: &crate::tee_integration::TeeRuntime,
-        pool: &std::sync::Arc<Mutex<neo_system::MemoryPool>>,
+        pool: &std::sync::Arc<Mutex<neo_mempool::MemoryPool>>,
         limit: usize,
     ) -> Vec<Arc<Transaction>> {
         let tee_hashes = runtime

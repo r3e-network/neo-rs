@@ -21,7 +21,10 @@
 pub mod adapters;
 pub mod blockchain;
 pub mod events;
-pub mod mempool;
+// Phase 1 S2: the mempool lives in the dedicated `neo-mempool` crate.
+// The re-export freezes every historical `crate::mempool::*` / `neo_system::mempool::*`
+// path (TypeId identity preserved: single definition, re-exported).
+pub use neo_mempool as mempool;
 // Phase 1 S1: the P2P actor layer lives in the dedicated `neo-p2p` crate.
 // The re-export freezes every historical `crate::network::*` / `neo_system::network::*`
 // path (TypeId identity preserved: single definition, re-exported).
@@ -60,7 +63,7 @@ pub use neo_system::{
     TransactionRouterHandle,
 };
 
-// Re-export MemoryPool from the merged mempool module
+// Re-export MemoryPool from the extracted neo-mempool crate
 pub use mempool::MemoryPool;
 
 // State verification handler for wallet-based state root verification

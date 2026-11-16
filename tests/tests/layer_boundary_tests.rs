@@ -273,6 +273,9 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     // through production adapters (snapshot/wallet/signer/tx-builder/relay).
     ("neo-system", "neo-oracle"),
     ("neo-system", "neo-p2p"),
+    // Phase 1 S2: the mempool shim (`pub use neo_mempool as mempool`) binds the
+    // extracted pool; same-layer service edge, same pattern as neo-p2p.
+    ("neo-system", "neo-mempool"),
     ("neo-system", "neo-primitives"),
     // Task 208: state verification service moved from neo-core into
     // neo-system; it binds directly to the unified signing service (now in

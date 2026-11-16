@@ -16,6 +16,7 @@ neo-native-contracts = { workspace = true }
 neo-primitives = { workspace = true }
 neo-protocol = { workspace = true }
 neo-storage = { workspace = true }
+neo-mempool = { workspace = true }
 neo-system = { workspace = true }
 neo-vm = { workspace = true }
 neo-wallets = { workspace = true }

@@ -57,6 +57,8 @@ neo-rpc = { path = "../neo-rpc", features = ["server"] }
 neo-system = { workspace = true, features = ["state-verifier"] }
 # Phase 1 S1: P2P surface bound directly from the extracted crate.
 neo-p2p = { workspace = true }
+# Phase 1 S2: mempool surface bound directly from the extracted crate.
+neo-mempool = { workspace = true }
 # Wallet primitives (task D4): consumers bind to neo-wallets directly.
 neo-wallets = { workspace = true }
 neo-ledger = { path = "../neo-ledger" }

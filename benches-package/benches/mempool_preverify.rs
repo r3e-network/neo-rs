@@ -1,12 +1,12 @@
 //! Deterministic serial versus parallel mempool preverification benchmarks.
 
 use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main};
+use neo_mempool::TransactionRouter;
 use neo_primitives::{VerifyResult, WitnessScope};
 use neo_protocol::get_sign_data_vec;
 use neo_protocol::payloads::{Signer, Transaction};
 use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_protocol::witness::Witness;
-use neo_system::mempool::TransactionRouter;
 use neo_vm::OpCode;
 use neo_wallets::KeyPair;
 
@@ -36,7 +36,7 @@ fn signed_transaction(settings: &ProtocolSettings, nonce: u32) -> Transaction {
     transaction
 }
 
-fn assert_all_succeed(results: &[neo_system::mempool::PreverifyCompleted]) {
+fn assert_all_succeed(results: &[neo_mempool::PreverifyCompleted]) {
     assert_eq!(results.len(), 64);
     assert!(
         results

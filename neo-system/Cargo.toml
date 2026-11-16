@@ -29,6 +29,8 @@ full = ["state-verifier", "upnp"]
 neo-primitives = { workspace = true }
 # Phase 1 S1: P2P actor layer extracted from neo-system::network.
 neo-p2p = { path = "../neo-p2p" }
+# Phase 1 S2: mempool extracted from neo-system::mempool.
+neo-mempool = { workspace = true }
 # Task 208: state verification builds extensible-payload witness invocation
 # scripts with VM opcodes (PUSHDATA1).
 neo-vm = { workspace = true }
@@ -70,7 +72,6 @@ indexmap = { workspace = true }
 lru = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }
-rayon = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
