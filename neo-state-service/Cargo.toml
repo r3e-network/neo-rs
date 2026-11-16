@@ -1,0 +1,51 @@
+[package]
+name = "neo-state-service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "State-root computation, persistence, and verification service for neo-rs"
+
+[features]
+default = []
+# Task 208 / Phase 1 S3: signed state-root verification binds the unified
+# signing service (TrustedSignerClient/Wallet) from neo-wallets; only consumers
+# that register the verifier (e.g. neo-node) pay for it.
+state-verifier = ["dep:neo-wallets"]
+
+[dependencies]
+# Internal crates (registered in workspace.dependencies)
+neo-primitives = { workspace = true }
+neo-protocol = { workspace = true }
+neo-crypto = { workspace = true }
+neo-storage = { workspace = true }
+neo-native-contracts = { workspace = true }
+neo-smart-contract = { workspace = true }
+# test_support reproduces the RoleManagement storage encoding with the VM
+# binary serializer; verification tests drive OpCode scripts.
+neo-vm = { workspace = true }
+# Shared binary reader/writer vocabulary used by the StateRoot payload.
+neo_io_crate = { path = "../neo-io", package = "neo-io" }
+# Optional: enabled by the state-verifier feature (verification surface).
+neo-wallets = { workspace = true, optional = true }
+
+# Third-party
+parking_lot = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+# Test-only: store/verification tests sign roots with wallet fixtures and
+# build a rejecting signer stub.
+neo-wallets = { workspace = true }
+async-trait = { workspace = true }
+
+[lints]
+workspace = true

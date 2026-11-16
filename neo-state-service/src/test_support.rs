@@ -9,7 +9,10 @@ use neo_vm::{BinarySerializer, ExecutionEngineLimits, StackValue};
 
 /// Serializes public keys into the `RoleManagement` storage representation:
 /// a VM array of compressed point byte strings, encoded with the binary serializer.
-pub(crate) fn serialize_role_public_keys(public_keys: &[neo_crypto::ECPoint]) -> Vec<u8> {
+// Phase 1 S3: public test-support helper compiled unconditionally so
+// cross-crate consumers (neo-system blockchain tests) can seed the same
+// role-designation records.
+pub fn serialize_role_public_keys(public_keys: &[neo_crypto::ECPoint]) -> Vec<u8> {
     let value = StackValue::Array(
         public_keys
             .iter()

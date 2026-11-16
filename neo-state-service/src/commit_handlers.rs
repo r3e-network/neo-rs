@@ -31,6 +31,7 @@
 //! - Blockchain_Committing event handler computes state roots
 //! - Blockchain_Committed event handler notifies and persists state roots
 
+use super::context::StateCommitContext;
 use super::{StateRoot, ValidatedRootPersisted};
 use neo_crypto::mpt_trie::{
     GlobalNodeCache, MptError, MptProfile, MptProfileSnapshot, MptResult, MptStoreSnapshot, Trie,
@@ -812,21 +813,15 @@ impl StateServiceCommitHandlers {
     /// Stages the local-root cursor in the same snapshot as the block and root record.
     fn stage_local_root_progress(
         &self,
-        system: &dyn std::any::Any,
+        context: Option<&dyn StateCommitContext>,
         snapshot: &DataCache,
     ) -> Result<(), StateServiceError> {
-        if let Some(system) = system.downcast_ref::<crate::neo_system::NeoSystem>() {
-            return self.stage_local_root_progress(system.context().as_ref(), snapshot);
-        }
-        let Some(context) = system.downcast_ref::<crate::neo_system::NeoSystemContext>() else {
+        let Some(context) = context else {
             // Direct embedders without a system context retain the post-commit
             // fallback in StateRootStore::accept_local_root.
             return Ok(());
         };
-        let Some(state_store) = context
-            .state_store_typed()
-            .map_err(|error| StateServiceError::new(error.to_string()))?
-        else {
+        let Some(state_store) = context.state_store()? else {
             return Ok(());
         };
         let state_root = self
@@ -847,13 +842,9 @@ impl StateServiceCommitHandlers {
     }
 
     /// Removes the in-memory staged marker when the block transaction aborts.
-    fn discard_staged_local_root(&self, system: &dyn std::any::Any, index: u32) {
-        if let Some(system) = system.downcast_ref::<crate::neo_system::NeoSystem>() {
-            self.discard_staged_local_root(system.context().as_ref(), index);
-            return;
-        }
-        if let Some(context) = system.downcast_ref::<crate::neo_system::NeoSystemContext>()
-            && let Ok(Some(state_store)) = context.state_store_typed()
+    fn discard_staged_local_root(&self, context: Option<&dyn StateCommitContext>, index: u32) {
+        if let Some(context) = context
+            && let Ok(Some(state_store)) = context.state_store()
         {
             state_store.discard_staged_local_root(index);
         }
@@ -868,7 +859,7 @@ impl StateServiceCommitHandlers {
     /// 3. a warning when neither channel is available — never a silent skip.
     fn announce_validated_root(
         &self,
-        system: &dyn std::any::Any,
+        context: Option<&dyn StateCommitContext>,
         index: u32,
         state_root: &StateRoot,
     ) {
@@ -878,18 +869,9 @@ impl StateServiceCommitHandlers {
             sink(event.clone());
         }
 
-        // The canonical persistence adapter supplies `NeoSystem`, while embedders
-        // may supply its context directly. Both identities must reach the same
-        // registered state store; otherwise roots commit without advancing the
-        // local state-service cursor.
-        if let Some(system) = system.downcast_ref::<crate::neo_system::NeoSystem>() {
-            self.announce_validated_root(system.context().as_ref(), index, state_root);
-            return;
-        }
-
-        if let Some(context) = system.downcast_ref::<crate::neo_system::NeoSystemContext>() {
+        if let Some(context) = context {
             // Keep the registered state store service in sync with the new root.
-            match context.state_store_typed() {
+            match context.state_store() {
                 Ok(Some(state_store)) => {
                     let accepted = if state_root.witness.is_none() {
                         state_store.on_local_root_committed(state_root)
@@ -920,7 +902,7 @@ impl StateServiceCommitHandlers {
                     );
                 }
             }
-            context.event_stream().publish(event);
+            context.publish_validated_root_persisted(event);
         } else if self.event_sink.is_none() {
             warn!(
                 target: "neo::state_service",
@@ -929,36 +911,26 @@ impl StateServiceCommitHandlers {
             );
         }
     }
-}
 
-// Implement CommittingHandler trait
-impl crate::events::handlers::CommittingHandler for StateServiceCommitHandlers {
     /// Indicates whether this handler should run during fast sync.
     ///
     /// State root computation should run during fast sync to maintain
     /// state root history for verification.
-    fn run_during_fast_sync(&self) -> bool {
+    pub fn run_during_fast_sync(&self) -> bool {
         self.state_root_enabled
     }
 
-    /// Called when a block is committing, while its state is still in the cache.
+    /// Pre-commit hook: computes the state root from the snapshot before it is
+    /// persisted to storage, then stages the local-root cursor.
     ///
-    /// This is the pre-commit hook that computes the state root from the
-    /// snapshot before it's persisted to storage.
-    ///
-    /// # Arguments
-    /// * `system` - System context used to stage local-root progress
-    /// * `block` - Block being committed
-    /// * `snapshot` - Data cache containing the block's state changes
-    /// * `application_executed_list` - Execution results (unused for state root)
+    /// `context` is the runtime commit port; `None` retains the post-commit
+    /// fallback for direct embedders without a system context.
     ///
     /// # Reference
     /// C# Neo StateService: Blockchain_Committing event handler
-    /// - Computes state root from DataCache snapshot
-    /// - Stores result for later persistence in Committed handler
-    fn blockchain_committing_handler(
+    pub fn blockchain_committing_handler(
         &self,
-        system: &dyn std::any::Any,
+        context: Option<&dyn StateCommitContext>,
         block: &neo_protocol::execution::Block,
         snapshot: &DataCache,
         _application_executed_list: &[neo_protocol::execution::ApplicationExecuted],
@@ -971,7 +943,7 @@ impl crate::events::handlers::CommittingHandler for StateServiceCommitHandlers {
 
         match self
             .commit_block_with_parallelism(height, snapshot, !block.transactions.is_empty())
-            .and_then(|()| self.stage_local_root_progress(system, snapshot))
+            .and_then(|()| self.stage_local_root_progress(context, snapshot))
         {
             Ok(()) => {
                 debug!(
@@ -993,22 +965,22 @@ impl crate::events::handlers::CommittingHandler for StateServiceCommitHandlers {
 
     /// Fallible committing hook for protocol-critical state root computation.
     ///
-    /// This version returns an error if state root computation fails,
-    /// allowing the blockchain to handle the failure appropriately.
-    fn try_blockchain_committing_handler(
+    /// Returns an error if state root computation fails, allowing the
+    /// blockchain to handle the failure appropriately.
+    pub fn try_blockchain_committing_handler(
         &self,
-        system: &dyn std::any::Any,
+        context: Option<&dyn StateCommitContext>,
         block: &neo_protocol::execution::Block,
         snapshot: &DataCache,
         _application_executed_list: &[neo_protocol::execution::ApplicationExecuted],
-    ) -> crate::events::handlers::CoreResult<()> {
+    ) -> Result<(), StateServiceError> {
         if !self.state_root_enabled {
             return Ok(());
         }
 
         let height = block.index();
         self.commit_block_with_parallelism(height, snapshot, !block.transactions.is_empty())
-            .and_then(|()| self.stage_local_root_progress(system, snapshot))
+            .and_then(|()| self.stage_local_root_progress(context, snapshot))
             .map_err(|e| {
                 error!(
                     target: "neo::state_service",
@@ -1016,42 +988,32 @@ impl crate::events::handlers::CommittingHandler for StateServiceCommitHandlers {
                     error = %e,
                     "try_blockchain_committing_handler: state root computation failed"
                 );
-                Box::new(e) as Box<dyn std::error::Error + Send + Sync>
+                e
             })
     }
 
-    fn blockchain_rollback_handler(
+    /// Rollback hook: discards the staged local-root marker and rolls back the
+    /// incremental trie state after a failed participant vote or store commit.
+    pub fn blockchain_rollback_handler(
         &self,
-        system: &dyn std::any::Any,
+        context: Option<&dyn StateCommitContext>,
         block: &neo_protocol::execution::Block,
         _snapshot: &DataCache,
-    ) -> crate::events::handlers::CoreResult<()> {
-        self.discard_staged_local_root(system, block.index());
+    ) -> Result<(), StateServiceError> {
+        self.discard_staged_local_root(context, block.index());
         self.rollback()
-            .map_err(|error| Box::new(error) as Box<dyn std::error::Error + Send + Sync>)
     }
-}
 
-// Implement CommittedHandler trait
-impl crate::events::handlers::CommittedHandler for StateServiceCommitHandlers {
-    /// Called after a block has been committed and its state updated.
-    ///
-    /// This is the post-commit hook that persists the state root computed
-    /// during the committing phase and emits notification events.
-    ///
-    /// # Arguments
-    /// * `system` - System context used to resolve the event stream and state
-    ///   store service for announcement
-    /// * `block` - Block that was committed
+    /// Post-commit hook: persists the state root computed during the committing
+    /// phase and emits notification events.
     ///
     /// # Reference
     /// C# Neo StateService: Blockchain_Committed event handler
     /// - Persists state root to storage
     /// - Emits ValidatedRootPersisted event
-    /// - Triggers state root relay to network
-    fn blockchain_committed_handler(
+    pub fn blockchain_committed_handler(
         &self,
-        system: &dyn std::any::Any,
+        context: Option<&dyn StateCommitContext>,
         block: &neo_protocol::execution::Block,
     ) {
         if !self.state_root_enabled {
@@ -1062,7 +1024,7 @@ impl crate::events::handlers::CommittedHandler for StateServiceCommitHandlers {
 
         match self.persist_pending_state_root(index) {
             Ok(Some(state_root)) => {
-                self.announce_validated_root(system, index, &state_root);
+                self.announce_validated_root(context, index, &state_root);
                 debug!(
                     target: "neo::state_service",
                     index,
@@ -1706,9 +1668,8 @@ mod tests {
         let snapshot = snapshot_with_changes(&[(1, b"account".to_vec(), b"v1".to_vec())]);
         let app_executed: Vec<ApplicationExecuted> = vec![];
 
-        // Call committing handler
-        use crate::events::handlers::CommittingHandler;
-        handlers.blockchain_committing_handler(&(), &block, &snapshot, &app_executed);
+        // Call committing hook (no runtime context: direct-embedder fallback)
+        handlers.blockchain_committing_handler(None, &block, &snapshot, &app_executed);
 
         // Should have computed state root
         let pending = handlers.pending_state_root.lock().unwrap();
@@ -1745,8 +1706,7 @@ mod tests {
             .merge_tracked_items(&snapshot.tracked_items());
         snapshot.commit();
 
-        use crate::events::handlers::CommittedHandler;
-        handlers.blockchain_committed_handler(&(), &block);
+        handlers.blockchain_committed_handler(None, &block);
 
         // Should have persisted (cleared pending), stored the record and
         // announced the ValidatedRootPersisted event through the sink.
@@ -1770,7 +1730,6 @@ mod tests {
         let enabled_handlers = StateServiceCommitHandlers::new(Arc::clone(&cache), true).unwrap();
         let disabled_handlers = StateServiceCommitHandlers::new(cache, false).unwrap();
 
-        use crate::events::handlers::CommittingHandler;
         assert!(enabled_handlers.run_during_fast_sync());
         assert!(!disabled_handlers.run_during_fast_sync());
     }
@@ -1789,9 +1748,8 @@ mod tests {
         let app_executed: Vec<ApplicationExecuted> = vec![];
 
         // Call fallible version
-        use crate::events::handlers::CommittingHandler;
         let result =
-            handlers.try_blockchain_committing_handler(&(), &block, &snapshot, &app_executed);
+            handlers.try_blockchain_committing_handler(None, &block, &snapshot, &app_executed);
 
         assert!(result.is_ok());
 

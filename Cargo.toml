@@ -41,6 +41,8 @@ members = [
     "neo-p2p",
     # Transaction memory pool and preverification router (Phase 1 S2 extraction)
     "neo-mempool",
+    # State-root computation, persistence, and verification (Phase 1 S3 extraction)
+    "neo-state-service",
     # Actor runtime and system adapters
     "neo-system",
     # Wallet primitives (BIP-32 / BIP-39) and signing service
@@ -151,6 +153,7 @@ neo-ledger = { path = "neo-ledger" }
 neo-smart-contract = { path = "neo-smart-contract" }
 neo-p2p = { path = "neo-p2p" }
 neo-mempool = { path = "neo-mempool" }
+neo-state-service = { path = "neo-state-service" }
 neo-system = { path = "neo-system" }
 neo-wallets = { path = "neo-wallets" }
 neo-oracle = { path = "neo-oracle" }

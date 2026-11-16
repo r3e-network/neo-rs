@@ -17,10 +17,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::NeoSystem;
-use crate::i_event_handlers::WalletChangedHandler;
-use crate::state_service::StateRoot;
-use crate::state_service::commit_handlers::{
+use crate::StateRoot;
+use crate::commit_handlers::{
     PREFIX_STATE_ROOT, STATE_ROOT_STORAGE_ID, deserialize_state_root_record, state_root_record_key,
 };
 
@@ -203,17 +201,26 @@ pub fn verify_state_root(
 /// while no wallet is available are rejected instead of being reported as
 /// successful.
 pub struct StateServiceVerification {
-    system: Arc<NeoSystem>,
+    store: Arc<dyn Store>,
+    settings: ProtocolSettings,
     armed: AtomicBool,
     _signer: TrustedSignerClient,
 }
 
 impl StateServiceVerification {
     /// Creates a disabled verification handler. A wallet-open callback arms it.
+    ///
+    /// Phase 1 S3: binds the primary store and protocol settings directly
+    /// instead of holding the concrete `NeoSystem` runtime.
     #[must_use]
-    pub fn new(system: Arc<NeoSystem>, signer: TrustedSignerClient) -> Self {
+    pub fn new(
+        store: Arc<dyn Store>,
+        settings: ProtocolSettings,
+        signer: TrustedSignerClient,
+    ) -> Self {
         Self {
-            system,
+            store,
+            settings,
             armed: AtomicBool::new(false),
             _signer: signer,
         }
@@ -236,17 +243,15 @@ impl StateServiceVerification {
                 "state root verification is not armed because no wallet is available",
             ));
         }
-        let source = StoreStateRootSource::new(self.system.store(), self.system.settings().clone());
+        let source = StoreStateRootSource::new(self.store.clone(), self.settings.clone());
         verify_state_root(&source, height, expected_root)
     }
-}
 
-impl WalletChangedHandler for StateServiceVerification {
-    fn wallet_provider_wallet_changed_handler(
-        &self,
-        _sender: &dyn std::any::Any,
-        wallet: Option<Arc<dyn neo_wallets::Wallet>>,
-    ) {
+    /// Arms or disarms verification based on wallet availability.
+    ///
+    /// Phase 1 S3: inherent hook; the runtime `WalletChangedHandler` glue in
+    /// neo-system delegates here.
+    pub fn on_wallet_changed(&self, wallet: Option<Arc<dyn neo_wallets::Wallet>>) {
         let armed = wallet.is_some();
         self.armed.store(armed, Ordering::Release);
         tracing::info!(
@@ -260,7 +265,7 @@ impl WalletChangedHandler for StateServiceVerification {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state_service::commit_handlers::serialize_state_root_record;
+    use crate::commit_handlers::serialize_state_root_record;
     use neo_native_contracts::{NativeContract, Role, role_management::RoleManagement};
     use neo_protocol::witness::Witness;
     use neo_smart_contract::Contract;
@@ -397,7 +402,7 @@ mod tests {
         persist_bytes(
             &store,
             StorageKey::new(RoleManagement::new().id(), designation_key),
-            crate::state_service::test_support::serialize_role_public_keys(std::slice::from_ref(
+            crate::test_support::serialize_role_public_keys(std::slice::from_ref(
                 &validator,
             )),
         );
@@ -471,13 +476,14 @@ mod tests {
         .expect("trusted signer")
     }
 
-    #[tokio::test]
-    async fn test_wallet_callback_controls_verification_call_chain() {
+    #[test]
+    fn test_wallet_callback_controls_verification_call_chain() {
         let settings = ProtocolSettings::default();
-        let system = NeoSystem::new(settings.clone(), None, None).expect("neo system");
-        let verification = StateServiceVerification::new(system.clone(), trusted_signer());
+        let store = empty_store();
+        let verification =
+            StateServiceVerification::new(store.clone(), settings.clone(), trusted_signer());
         let root = unsigned_root(9, 7);
-        persist_root(&system.store(), &root);
+        persist_root(&store, &root);
 
         let disabled = verification.verify_root(9, &root.root_hash).unwrap_err();
         assert!(disabled.message.contains("not armed"));
@@ -487,13 +493,13 @@ mod tests {
             None,
             Arc::new(settings),
         ));
-        verification.wallet_provider_wallet_changed_handler(&(), Some(wallet));
+        verification.on_wallet_changed(Some(wallet));
         assert!(verification.is_armed());
         verification
             .verify_root(9, &root.root_hash)
             .expect("armed verification should read the persisted root");
 
-        verification.wallet_provider_wallet_changed_handler(&(), None);
+        verification.on_wallet_changed(None);
         assert!(!verification.is_armed());
         assert!(verification.verify_root(9, &root.root_hash).is_err());
     }

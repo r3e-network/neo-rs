@@ -11,6 +11,8 @@ neo-ledger = { path = "../../neo-ledger" }
 neo-native-contracts = { path = "../../neo-native-contracts" }
 neo-io.workspace = true
 neo-system = { path = "../../neo-system" }
+# Phase 1 S3: state-service surface bound directly from the extracted crate.
+neo-state-service = { path = "../../neo-state-service" }
 neo-primitives = { path = "../../neo-primitives" }
 neo-protocol = { path = "../../neo-protocol" }
 neo-json = { path = "../../neo-json" }

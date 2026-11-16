@@ -575,8 +575,8 @@ struct MptNodeCacheProfile {
     warm_root_estimated_bytes: usize,
 }
 
-impl From<neo_system::state_service::StateRootNodeCacheStats> for MptNodeCacheProfile {
-    fn from(stats: neo_system::state_service::StateRootNodeCacheStats) -> Self {
+impl From<neo_state_service::StateRootNodeCacheStats> for MptNodeCacheProfile {
+    fn from(stats: neo_state_service::StateRootNodeCacheStats) -> Self {
         Self {
             enabled: stats.enabled,
             capacity: stats.capacity,
@@ -981,7 +981,7 @@ fn read_direct_point(
     height: u32,
 ) -> Result<neo_validator::state::VerifiedPoint> {
     use neo_native_contracts::ledger_contract::{HashOrIndex, LedgerContract};
-    use neo_system::state_service::commit_handlers::read_state_root_record;
+    use neo_state_service::commit_handlers::read_state_root_record;
 
     let block = LedgerContract::new()
         .get_block(cache, HashOrIndex::Index(height))?

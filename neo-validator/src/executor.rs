@@ -7,11 +7,11 @@ use neo_primitives::{TriggerType, UInt256};
 use neo_protocol::ProtocolSettings;
 use neo_protocol::execution::ApplicationExecuted;
 use neo_protocol::payloads::Block;
-use neo_storage::persistence::store_provider::StoreProvider;
-use neo_system::state_service::{
+use neo_state_service::{
     StateRootNodeCacheStats, StateServiceCommitHandlers, StateServiceSettings,
     UnhandledExceptionPolicy,
 };
+use neo_storage::persistence::store_provider::StoreProvider;
 use neo_system::{ExecutionMode, ExecutionProfileSnapshot, NeoSystem};
 use std::path::Path;
 use std::sync::Arc;
@@ -269,7 +269,7 @@ impl NeoExecutor {
         stats.set_profiling(enabled);
         if enabled {
             let profile_stats = Arc::clone(&stats);
-            let sink: neo_system::state_service::StateRootProfileSink = Arc::new(move |profile| {
+            let sink: neo_state_service::StateRootProfileSink = Arc::new(move |profile| {
                 profile_stats.record_state_root_profile(
                     profile.change_extraction,
                     profile.mpt,

@@ -6,7 +6,7 @@ use super::commit_handlers::{
     read_state_root_record, serialize_state_root_record, state_root_record_key,
 };
 use super::state_root::CURRENT_VERSION;
-use crate::services::StateStoreService;
+use crate::StateStoreService;
 use neo_primitives::UInt256;
 use neo_protocol::ProtocolSettings;
 use neo_storage::persistence::store::Store;
@@ -27,7 +27,7 @@ const PREFIX_VALIDATED_ROOT_INDEX: u8 = 0xf3;
 /// arrive before the corresponding block has been persisted locally. Progress
 /// is durable even when a signed root arrives for an existing unsigned local
 /// record, in which case the local record must remain intact.
-pub(crate) struct StateRootStore {
+pub struct StateRootStore {
     store: Arc<dyn Store>,
     store_cache: Arc<StoreCache>,
     settings: Arc<ProtocolSettings>,
@@ -40,7 +40,7 @@ pub(crate) struct StateRootStore {
 }
 
 impl StateRootStore {
-    pub(crate) fn new(
+    pub fn new(
         store: Arc<dyn Store>,
         store_cache: Arc<StoreCache>,
         settings: Arc<ProtocolSettings>,
@@ -330,7 +330,7 @@ fn recover_progress(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state_service::test_support::serialize_role_public_keys;
+    use crate::test_support::serialize_role_public_keys;
     use neo_native_contracts::{NativeContract, Role, role_management::RoleManagement};
     use neo_protocol::witness::Witness;
     use neo_smart_contract::Contract;

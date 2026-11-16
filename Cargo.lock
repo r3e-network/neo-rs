@@ -2723,6 +2723,7 @@ dependencies = [
  "neo-protocol",
  "neo-rpc",
  "neo-smart-contract",
+ "neo-state-service",
  "neo-storage",
  "neo-system",
  "neo-tee",
@@ -2910,6 +2911,7 @@ dependencies = [
  "neo-primitives",
  "neo-protocol",
  "neo-smart-contract",
+ "neo-state-service",
  "neo-storage",
  "neo-system",
  "neo-vm",
@@ -2993,6 +2995,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "neo-state-service"
+version = "0.20.0"
+dependencies = [
+ "async-trait",
+ "neo-crypto",
+ "neo-io",
+ "neo-native-contracts",
+ "neo-primitives",
+ "neo-protocol",
+ "neo-smart-contract",
+ "neo-storage",
+ "neo-vm",
+ "neo-wallets",
+ "parking_lot",
+ "serde",
+ "tracing",
+]
+
+[[package]]
 name = "neo-storage"
 version = "0.20.0"
 dependencies = [
@@ -3021,7 +3042,6 @@ name = "neo-system"
 version = "0.20.0"
 dependencies = [
  "async-trait",
- "bitvec",
  "bytes",
  "dashmap",
  "futures",
@@ -3041,13 +3061,13 @@ dependencies = [
  "neo-primitives",
  "neo-protocol",
  "neo-smart-contract",
+ "neo-state-service",
  "neo-storage",
  "neo-vm",
  "neo-wallets",
  "num-bigint",
  "parking_lot",
  "rand 0.8.8",
- "serde",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
@@ -3128,6 +3148,7 @@ dependencies = [
  "neo-native-contracts",
  "neo-primitives",
  "neo-protocol",
+ "neo-state-service",
  "neo-storage",
  "neo-system",
  "neo-vm",
@@ -4838,6 +4859,7 @@ dependencies = [
  "neo-primitives",
  "neo-protocol",
  "neo-rpc",
+ "neo-state-service",
  "neo-storage",
  "neo-system",
  "neo-validator",

@@ -1,10 +1,10 @@
 use anyhow::{Context, Result};
 use neo_native_contracts::ledger_contract::{HashOrIndex, LedgerContract};
+use neo_state_service::commit_handlers::read_state_root_record;
 use neo_storage::persistence::providers::rocksdb::RocksDBStoreProvider;
 use neo_storage::persistence::storage::StorageConfig;
 use neo_storage::persistence::store_cache::StoreCache;
 use neo_storage::persistence::store_provider::StoreProvider;
-use neo_system::state_service::commit_handlers::read_state_root_record;
 use std::path::PathBuf;
 
 fn main() -> Result<()> {

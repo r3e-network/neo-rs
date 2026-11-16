@@ -180,6 +180,9 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("neo-validator", "neo-primitives"),
     ("neo-validator", "neo-protocol"),
     ("neo-validator", "neo-storage"),
+    // Phase 1 S3: the executor composes the extracted state-service commit
+    // handlers and profile surface (assembly -> service downward edge).
+    ("neo-validator", "neo-state-service"),
     ("neo-validator", "neo-system"),
     ("neo-validator", "neo-vm"),
     ("neo-signer-server", "neo-crypto"),
@@ -248,7 +251,9 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("neo-state-service", "neo-native-contracts"),
     ("neo-state-service", "neo-smart-contract"),
     ("neo-state-service", "neo-vm"),
-    // Test-only edge (kind dev): state-service tests use wallet fixtures.
+    // Phase 1 S3: the state-verifier feature binds the unified signing service
+    // (TrustedSignerClient/Wallet) as an optional production dependency; store
+    // and verification tests additionally use wallet fixtures (dev).
     ("neo-state-service", "neo-wallets"),
     ("neo-wallets", "neo-crypto"),
     ("neo-wallets", "neo-primitives"),
@@ -276,6 +281,10 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     // Phase 1 S2: the mempool shim (`pub use neo_mempool as mempool`) binds the
     // extracted pool; same-layer service edge, same pattern as neo-p2p.
     ("neo-system", "neo-mempool"),
+    // Phase 1 S3: the state-service shim (`pub use neo_state_service as
+    // state_service`) binds the extracted service; same-layer service edge,
+    // same pattern as neo-p2p/neo-mempool.
+    ("neo-system", "neo-state-service"),
     ("neo-system", "neo-primitives"),
     // Task 208: state verification service moved from neo-core into
     // neo-system; it binds directly to the unified signing service (now in
@@ -300,7 +309,6 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
 const DEV_ONLY_EDGES: &[(&str, &str)] = &[
     ("neo-mempool", "neo-vm"),
     ("neo-mempool", "neo-wallets"),
-    ("neo-state-service", "neo-wallets"),
     // Phase 1 S1: OpCode is used only by remote_node/bloom_filter unit tests.
     // Scheduling tests use a local in-memory P2PContext stub, so no dev edge
     // back to neo-system exists (a dev cycle would duplicate the trait).

@@ -7,9 +7,9 @@
 
 use anyhow::{Context, Result};
 use neo_protocol::ProtocolSettings;
+use neo_state_service::StateServiceSettings;
 use neo_storage::persistence::StoreProvider;
 use neo_storage::persistence::storage::StorageConfig;
-use neo_system::state_service::StateServiceSettings;
 use std::path::Path;
 use tracing::{info, warn};
 

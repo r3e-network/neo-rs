@@ -2298,7 +2298,7 @@ mod tests {
     use neo_protocol::witness::Witness;
     use neo_storage::persistence::{DataCache, ReadOnlyStoreGeneric};
     use neo_storage::{StorageItem, StorageKey};
-    use neo_system::state_service::StateServiceSettings;
+    use neo_state_service::StateServiceSettings;
     use neo_system::{TransactionExecutionExceptionCategory, TransactionExecutionStage};
     use neo_vm::BinarySerializer;
     use neo_vm::{ExecutionEngineLimits, OpCode, VmState};
@@ -2386,7 +2386,7 @@ mod tests {
             network: ProtocolSettings::default().network,
             auto_verify: false,
             max_find_result_items: 100,
-            exception_policy: neo_system::state_service::UnhandledExceptionPolicy::StopPlugin,
+            exception_policy: neo_state_service::UnhandledExceptionPolicy::StopPlugin,
         }
     }
 

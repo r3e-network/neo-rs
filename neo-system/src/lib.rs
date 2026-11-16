@@ -31,7 +31,14 @@ pub use neo_mempool as mempool;
 pub use neo_p2p as network;
 pub mod oracle_service;
 pub mod services;
-pub mod state_service;
+// Phase 1 S3: the state-root service lives in the dedicated `neo-state-service`
+// crate. The re-export freezes every historical `crate::state_service::*` /
+// `neo_system::state_service::*` path (TypeId identity preserved: single
+// definition, re-exported).
+pub use neo_state_service as state_service;
+// Runtime glue: handler-trait impls + NeoSystemContext adapter for the
+// extracted state-service types (trait vocabulary stays in neo-system).
+mod state_service_glue;
 
 pub mod neo_system;
 
@@ -48,8 +55,10 @@ pub mod i_event_handlers {
 // Task 208: state root verification service moved from
 // neo-core::state_service::verification; gated behind `state-verifier` so only
 // consumers that register the verifier (e.g. neo-node) pay for it.
+// Phase 1 S3: the module lives in neo-state-service; re-export freezes the
+// historical `neo_system::state_verification::*` paths.
 #[cfg(feature = "state-verifier")]
-pub mod state_verification;
+pub use neo_state_service::state_verification;
 
 pub use events::{EventHandler, EventManager, PluginEvent, broadcast_plugin_event};
 pub use services::SystemContext;

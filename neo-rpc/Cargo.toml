@@ -33,6 +33,8 @@ neo-smart-contract = { workspace = true, optional = true }
 neo-system = { workspace = true, optional = true }
 # Phase 1 S1: P2P surface bound directly from the extracted crate (server).
 neo-p2p = { workspace = true, optional = true }
+# Phase 1 S3: state-service surface bound directly from the extracted crate (server).
+neo-state-service = { workspace = true, optional = true }
 neo-json = { path = "../neo-json", optional = true }
 # Wallet primitives (task D4): server RPC endpoints bind to neo-wallets directly.
 neo-wallets = { workspace = true, optional = true }
@@ -113,6 +115,7 @@ server = [
     "dep:neo-smart-contract",
     "dep:neo-system",
     "dep:neo-p2p",
+    "dep:neo-state-service",
     "dep:neo-json",
     "dep:neo-wallets",
     "dep:neo-native-contracts",

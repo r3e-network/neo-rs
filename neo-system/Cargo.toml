@@ -18,7 +18,8 @@ default = []
 # Task 208: state root verification actor + wallet-changed handler moved from
 # neo-core::state_service::verification. Enabled by consumers (neo-node) that
 # register the verification service with the unified signer.
-state-verifier = []
+# Phase 1 S3: the service lives in neo-state-service; forward the feature.
+state-verifier = ["neo-state-service/state-verifier"]
 # Task W3-C2: moved P2P peer discovery UPnP transport support.
 # Phase 1 S1: the transport lives in neo-p2p; forward the feature.
 upnp = ["neo-p2p/upnp"]
@@ -31,6 +32,8 @@ neo-primitives = { workspace = true }
 neo-p2p = { path = "../neo-p2p" }
 # Phase 1 S2: mempool extracted from neo-system::mempool.
 neo-mempool = { workspace = true }
+# Phase 1 S3: state-root service extracted from neo-system::state_service.
+neo-state-service = { workspace = true }
 # Task 208: state verification builds extensible-payload witness invocation
 # scripts with VM opcodes (PUSHDATA1).
 neo-vm = { workspace = true }
@@ -61,7 +64,6 @@ neo-protocol = { workspace = true }
 
 # Third-party
 async-trait = { workspace = true }
-bitvec = { workspace = true }
 bytes = { workspace = true }
 dashmap = { workspace = true }
 futures = { workspace = true }
@@ -72,7 +74,6 @@ indexmap = { workspace = true }
 lru = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }
-serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true, features = ["codec", "rt"] }

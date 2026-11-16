@@ -59,6 +59,8 @@ neo-system = { workspace = true, features = ["state-verifier"] }
 neo-p2p = { workspace = true }
 # Phase 1 S2: mempool surface bound directly from the extracted crate.
 neo-mempool = { workspace = true }
+# Phase 1 S3: state-service surface bound directly from the extracted crate.
+neo-state-service = { workspace = true }
 # Wallet primitives (task D4): consumers bind to neo-wallets directly.
 neo-wallets = { workspace = true }
 neo-ledger = { path = "../neo-ledger" }

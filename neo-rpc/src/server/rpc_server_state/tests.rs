@@ -1,7 +1,7 @@
 use super::*;
 use neo_protocol::ProtocolSettings;
+use neo_state_service::{StateServiceSettings, UnhandledExceptionPolicy};
 use neo_system::NeoSystem;
-use neo_system::state_service::{StateServiceSettings, UnhandledExceptionPolicy};
 
 fn make_server() -> (Arc<NeoSystem>, RpcServer, tempfile::TempDir) {
     let temp = tempfile::tempdir().expect("temporary state directory");

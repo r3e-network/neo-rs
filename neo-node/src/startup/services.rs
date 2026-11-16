@@ -17,9 +17,9 @@ use neo_rpc::server::{
     RpcServerSettings, RpcServerSmartContract, RpcServerState, RpcServerUtilities, RpcServerWallet,
 };
 use neo_rpc::tokens_tracker::{TokensTracker, TokensTrackerService};
+use neo_state_service::StateServiceSettings;
 use neo_system::i_event_handlers::{CommittedHandler, CommittingHandler, WalletChangedHandler};
 use neo_system::oracle_service::OracleService;
-use neo_system::state_service::StateServiceSettings;
 use neo_system::{NeoSystem, StateServiceVerification};
 use neo_wallets::signing::TrustedSignerClient;
 use neo_wallets::{Nep6Wallet, Wallet as CoreWallet, WalletProvider};
@@ -483,7 +483,8 @@ pub(crate) fn maybe_enable_state_service_verification(
 
     system
         .register_wallet_changed_handler(Arc::new(StateServiceVerification::new(
-            system.clone(),
+            system.store(),
+            system.settings().clone(),
             signer,
         )) as Arc<dyn WalletChangedHandler + Send + Sync>)
         .map_err(|e| anyhow::anyhow!(e.to_string()))

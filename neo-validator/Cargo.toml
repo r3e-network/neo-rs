@@ -31,6 +31,8 @@ neo-native-contracts.workspace = true
 neo-primitives.workspace = true
 neo-protocol.workspace = true
 neo-storage.workspace = true
+# Phase 1 S3: state-service surface bound directly from the extracted crate.
+neo-state-service.workspace = true
 neo-system.workspace = true
 neo-vm.workspace = true
 parking_lot.workspace = true

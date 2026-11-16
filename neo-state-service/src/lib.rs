@@ -1,29 +1,48 @@
-//! State-service integration owned by the node runtime (task W3-C2).
+//! State-root computation, persistence, and verification service.
 //!
-//! The state root computation/verification service lives in the
-//! `neo-state-service` crate (re-exported from `neo_core::state_service`).
-//! The commit pipeline that wires state root calculation into block
-//! persistence — [`commit_handlers`] — is owned by this crate because it is
-//! driven by the blockchain actor and the `NeoSystemContext` handler
-//! registry, both of which live here.
+//! Phase 1 S3: extracted from `neo-system::state_service` (TypeId identity
+//! preserved: `neo_system::state_service` re-exports this crate). The commit
+//! pipeline — [`commit_handlers`] — computes MPT state roots during block
+//! persistence through the [`StateCommitContext`] port; the runtime glue that
+//! adapts `NeoSystemContext` to the port and implements the shared blockchain
+//! handler traits lives in neo-system (`state_service_glue`).
+//!
+//! The optional `state-verifier` feature adds [`state_verification`]: signed
+//! state-root verification against the unified signing service.
 
 pub mod commit_handlers;
+pub mod context;
+pub mod services;
 mod state_root;
 mod store;
 
-/// Test-only helpers for building native-contract storage fixtures.
+#[cfg(feature = "state-verifier")]
+pub mod state_verification;
+
+/// Test helpers for building native-contract storage fixtures.
 ///
-/// Only consumer is `crate::blockchain::tests`.
-#[cfg(test)]
-pub(crate) mod test_support;
+/// Phase 1 S3: always compiled and public so cross-crate consumers
+/// (`neo-system::blockchain::tests`, state-verification tests) can build the
+/// same role-designation records.
+pub mod test_support;
 
 // Re-export state root types
 pub use commit_handlers::{
     StateRootCommitProfile, StateRootNodeCacheStats, StateRootProfileSink,
     StateServiceCommitHandlers,
 };
+pub use context::StateCommitContext;
+pub use services::StateStoreService;
 pub use state_root::{STATE_SERVICE_CATEGORY, StateRoot};
-pub(crate) use store::StateRootStore;
+pub use store::StateRootStore;
+
+// State verification surface (feature-gated, mirrors the historical
+// neo-system::state_verification module).
+#[cfg(feature = "state-verifier")]
+pub use state_verification::{
+    StateRootSource, StateServiceVerification, StateVerificationError, StoreStateRootSource,
+    verify_merkle_proof, verify_state_root,
+};
 
 /// Event emitted when a validated state root is persisted.
 #[derive(Debug, Clone)]

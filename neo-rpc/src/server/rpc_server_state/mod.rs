@@ -1,10 +1,10 @@
-//! State Service RPC endpoints backed by the canonical `neo-system` state store.
+//! State Service RPC endpoints backed by the canonical `neo-state-service` store.
 //!
 //! Proof and storage-value methods remain unregistered until their wire encoding
 //! is implemented against the canonical persistent MPT; no stubbed success
 //! responses are exposed.
 
-use neo_system::state_service::{StateRoot, commit_handlers::read_state_root_record};
+use neo_state_service::{StateRoot, commit_handlers::read_state_root_record};
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
 
@@ -64,7 +64,7 @@ impl RpcServerState {
 
     fn ensure_state_service(
         server: &RpcServer,
-    ) -> Result<Arc<dyn neo_system::services::StateStoreService>, RpcException> {
+    ) -> Result<Arc<dyn neo_state_service::StateStoreService>, RpcException> {
         server
             .system()
             .state_store_typed()
