@@ -5,6 +5,7 @@
 //! fixed action catalog. This crate exposes no signing, wallet, shell, file, or
 //! model-selected network tooling.
 
+mod action_store;
 mod agent;
 mod audit;
 mod diagnosis;
@@ -15,6 +16,10 @@ mod probe;
 mod provider;
 mod stall;
 
+pub use action_store::{
+    ActionBinding, ActionRecord, ActionState, ActionStoreError, ActionStoreOptions, AdmitOutcome,
+    DurableActionStore,
+};
 pub use agent::{AgentError, DiagnosticAgent, DiagnosticReport, ModelFailure};
 pub use audit::{
     AUDIT_MEMORY_WINDOW_DEFAULT, AUDIT_ROTATE_DEFAULT_GENERATIONS, AUDIT_ROTATE_DEFAULT_MAX_BYTES,
