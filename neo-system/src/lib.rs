@@ -22,7 +22,10 @@ pub mod adapters;
 pub mod blockchain;
 pub mod events;
 pub mod mempool;
-pub mod network;
+// Phase 1 S1: the P2P actor layer lives in the dedicated `neo-p2p` crate.
+// The re-export freezes every historical `crate::network::*` / `neo_system::network::*`
+// path (TypeId identity preserved: single definition, re-exported).
+pub use neo_p2p as network;
 pub mod oracle_service;
 pub mod services;
 pub mod state_service;

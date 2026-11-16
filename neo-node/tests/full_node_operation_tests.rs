@@ -1,9 +1,9 @@
 //! Integration tests for full node operation including all services
 
 use anyhow::Result;
+use neo_p2p::p2p::ChannelsConfig;
 use neo_protocol::ProtocolSettings;
 use neo_system::NeoSystem;
-use neo_system::network::p2p::ChannelsConfig;
 use tempfile::TempDir;
 use tokio::time::Duration;
 

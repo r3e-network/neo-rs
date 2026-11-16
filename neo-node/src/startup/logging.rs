@@ -116,7 +116,7 @@ pub(crate) fn spawn_metrics_pump(
 
             // Ingest the real P2P timeout counters instead of dropping the
             // snapshot that was previously computed and discarded.
-            let timeouts = neo_system::network::p2p::timeouts::stats();
+            let timeouts = neo_p2p::p2p::timeouts::stats();
             crate::metrics::update_timeout_metrics(
                 peer_count,
                 timeouts.handshake + timeouts.read + timeouts.write,

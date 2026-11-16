@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use std::thread;
 
-use neo_actors::{ActorSystemHandle, EventStreamHandle};
+use neo_actors::{ActorRef, ActorRuntimeResult, ActorSystemHandle, EventStreamHandle};
 use tokio::sync::mpsc;
 use tracing::trace;
 
@@ -26,7 +26,7 @@ use crate::events::{PluginEvent, broadcast_plugin_event};
 use crate::i_event_handlers::{CommittedHandler, CommittingHandler, WalletChangedHandler};
 use crate::mempool::MemoryPool;
 use crate::network::p2p::{
-    LocalNode, LocalNodeHandle, TaskManagerHandle,
+    LocalNode, LocalNodeHandle, P2PContext, TaskManagerHandle,
     payloads::{extensible_payload::ExtensiblePayload, header::Header, transaction::Transaction},
 };
 use crate::services::StateStoreService as StateStore;
@@ -47,6 +47,7 @@ use neo_vm::VmState;
 use neo_wallets::{Wallet, WalletProvider};
 
 use super::core::NeoSystem;
+use async_trait::async_trait;
 
 /// Schema version of the canonical transaction-execution observation contract.
 pub const TRANSACTION_EXECUTION_OBSERVATION_SCHEMA_VERSION: u16 = 1;
@@ -847,5 +848,95 @@ impl SystemContext for NeoSystemContext {
 
     fn notify_application_notify(&self, engine: &ApplicationEngine, args: &NotifyEventArgs) {
         NeoSystemContext::notify_application_notify(self, engine, args);
+    }
+}
+
+#[async_trait]
+impl P2PContext for NeoSystemContext {
+    fn store_cache(&self) -> StoreCache {
+        NeoSystemContext::store_cache(self)
+    }
+
+    fn ledger(&self) -> Arc<LedgerContext> {
+        NeoSystemContext::ledger(self)
+    }
+
+    fn header_cache(&self) -> Arc<HeaderCache> {
+        NeoSystemContext::header_cache(self)
+    }
+
+    fn event_stream(&self) -> EventStreamHandle {
+        NeoSystemContext::event_stream(self)
+    }
+
+    fn blockchain(&self) -> BlockchainHandle {
+        self.blockchain.clone()
+    }
+
+    fn task_manager(&self) -> TaskManagerHandle {
+        self.task_manager.clone()
+    }
+
+    fn mempool_capacity(&self) -> usize {
+        self.memory_pool.lock().capacity
+    }
+
+    fn is_fast_sync_mode(&self) -> bool {
+        NeoSystemContext::is_fast_sync_mode(self)
+    }
+
+    fn current_block_index(&self) -> u32 {
+        NeoSystemContext::current_block_index(self)
+    }
+
+    fn try_get_block(&self, hash: &UInt256) -> Option<neo_ledger::Block> {
+        NeoSystemContext::try_get_block(self, hash)
+    }
+
+    fn try_get_extensible(&self, hash: &UInt256) -> Option<ExtensiblePayload> {
+        NeoSystemContext::try_get_extensible(self, hash)
+    }
+
+    fn try_get_relay_extensible(&self, hash: &UInt256) -> Option<ExtensiblePayload> {
+        NeoSystemContext::try_get_relay_extensible(self, hash)
+    }
+
+    fn block_hashes_from(&self, hash_start: &UInt256, count: usize) -> Vec<UInt256> {
+        NeoSystemContext::block_hashes_from(self, hash_start, count)
+    }
+
+    fn block_hash_at(&self, index: u32) -> Option<UInt256> {
+        NeoSystemContext::block_hash_at(self, index)
+    }
+
+    fn headers_from_index(&self, index_start: u32, count: usize) -> Vec<Header> {
+        NeoSystemContext::headers_from_index(self, index_start, count)
+    }
+
+    fn try_get_transaction_from_mempool(&self, hash: &UInt256) -> Option<Transaction> {
+        NeoSystemContext::try_get_transaction_from_mempool(self, hash)
+    }
+
+    fn contains_transaction(&self, hash: &UInt256) -> ContainsTransactionType {
+        NeoSystemContext::contains_transaction(self, hash)
+    }
+
+    fn contains_conflict_hash(&self, hash: &UInt256, signers: &[UInt160]) -> bool {
+        NeoSystemContext::contains_conflict_hash(self, hash, signers)
+    }
+
+    fn mempool_transaction_hashes(&self) -> Vec<UInt256> {
+        NeoSystemContext::mempool_transaction_hashes(self)
+    }
+
+    async fn enqueue_preverify(
+        &self,
+        transaction: Transaction,
+        relay: bool,
+        sender: Option<ActorRef>,
+    ) -> ActorRuntimeResult<()> {
+        self.tx_router
+            .enqueue_preverify_from(transaction, relay, sender)
+            .await
     }
 }

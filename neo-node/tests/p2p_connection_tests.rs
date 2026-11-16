@@ -1,9 +1,9 @@
 //! Integration tests for P2P networking and connections
 
 use anyhow::Result;
+use neo_p2p::p2p::ChannelsConfig;
 use neo_protocol::ProtocolSettings;
 use neo_system::NeoSystem;
-use neo_system::network::p2p::ChannelsConfig;
 use tokio::time::Duration;
 
 /// Channels configuration that keeps the P2P layer dormant in tests:

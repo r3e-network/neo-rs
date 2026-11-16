@@ -1,10 +1,10 @@
 //! Integration tests for block synchronization
 
 use anyhow::Result;
+use neo_p2p::p2p::ChannelsConfig;
 use neo_primitives::UInt256;
 use neo_protocol::ProtocolSettings;
 use neo_system::NeoSystem;
-use neo_system::network::p2p::ChannelsConfig;
 use tokio::time::Duration;
 
 /// Channels configuration that keeps the P2P layer dormant in tests.

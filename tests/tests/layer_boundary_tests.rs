@@ -99,6 +99,17 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("neo-p2p", "neo-io"),
     ("neo-p2p", "neo-primitives"),
     ("neo-p2p", "neo-protocol"),
+    // Phase 1 S1: neo-p2p extracted from neo-system::network. Reviewed
+    // downward edges: generic actor runtime + L1 ledger/contract/storage
+    // vocabulary (BlockchainCommand/handles, LedgerContract, StoreCache,
+    // CoreError) consumed by the moved actors.
+    ("neo-p2p", "neo-actors"),
+    ("neo-p2p", "neo-ledger"),
+    ("neo-p2p", "neo-native-contracts"),
+    ("neo-p2p", "neo-storage"),
+    ("neo-p2p", "neo-smart-contract"),
+    // Test-only edge (kind dev): remote_node/bloom_filter unit tests use OpCode.
+    ("neo-p2p", "neo-vm"),
     ("neo-consensus", "neo-crypto"),
     ("neo-consensus", "neo-io"),
     ("neo-consensus", "neo-primitives"),
@@ -119,6 +130,8 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     // Same-layer service edges exercised by RPC request handlers.
     ("neo-rpc", "neo-wallets"),
     ("neo-rpc", "neo-system"),
+    // Phase 1 S1: RPC server relay/session bind the extracted P2P surface.
+    ("neo-rpc", "neo-p2p"),
     ("neo-tee", "neo-crypto"),
     ("neo-tee", "neo-primitives"),
     ("neo-hsm", "neo-crypto"),
@@ -285,6 +298,10 @@ const DEV_ONLY_EDGES: &[(&str, &str)] = &[
     ("neo-mempool", "neo-vm"),
     ("neo-mempool", "neo-wallets"),
     ("neo-state-service", "neo-wallets"),
+    // Phase 1 S1: OpCode is used only by remote_node/bloom_filter unit tests.
+    // Scheduling tests use a local in-memory P2PContext stub, so no dev edge
+    // back to neo-system exists (a dev cycle would duplicate the trait).
+    ("neo-p2p", "neo-vm"),
 ];
 
 #[derive(Debug)]

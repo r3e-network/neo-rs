@@ -11,6 +11,13 @@ use neo_io::{MemoryReader, Serializable};
 use neo_ledger::{PersistCompleted, TransactionVerificationContext, verify_transaction};
 use neo_native_contracts::native::ledger_contract::HashOrIndex;
 use neo_native_contracts::native::{LedgerContract, NeoToken, helpers::NativeHelpers};
+use neo_p2p::p2p::{
+    MessageCommand, MessageHandlerSubscription,
+    events::{MessageReceivedHandler, NetworkMessageRef},
+    local_node::RelayInventory,
+    payloads::InvPayload,
+    register_message_received_handler,
+};
 use neo_primitives::time_provider::TimeProvider;
 use neo_primitives::{ContainsTransactionType, InventoryType, UInt160, UInt256, VerifyResult};
 use neo_protocol::payloads::{
@@ -19,11 +26,6 @@ use neo_protocol::payloads::{
 };
 use neo_smart_contract::contract::Contract;
 use neo_storage::persistence::Store;
-use neo_system::i_event_handlers::MessageReceivedHandler;
-use neo_system::network::p2p::{
-    Message, MessageCommand, MessageHandlerSubscription, local_node::RelayInventory,
-    payloads::InvPayload, register_message_received_handler,
-};
 use neo_vm::{OpCode, ScriptBuilder};
 use neo_wallets::Wallet;
 use parking_lot::Mutex;
@@ -269,7 +271,11 @@ impl DbftMessageFilter {
 }
 
 impl MessageReceivedHandler for DbftMessageFilter {
-    fn remote_node_message_received_handler(&self, _system: &dyn Any, message: &Message) -> bool {
+    fn remote_node_message_received_handler(
+        &self,
+        _system: &dyn Any,
+        message: &NetworkMessageRef,
+    ) -> bool {
         if message.command != MessageCommand::Transaction {
             return true;
         }
@@ -1300,7 +1306,7 @@ impl ConsensusActor {
         self.pending_block = None;
     }
 
-    fn on_relay_result(&mut self, result: neo_system::network::p2p::ports::RelayOutcome) {
+    fn on_relay_result(&mut self, result: neo_p2p::p2p::ports::RelayOutcome) {
         if result.result != VerifyResult::Succeed {
             return;
         }
@@ -1480,7 +1486,7 @@ impl Actor for ConsensusActor {
     async fn pre_start(&mut self, ctx: &mut ActorContext) -> ActorResult {
         let stream = self.system.event_stream();
         stream.subscribe::<PersistCompleted>(ctx.self_ref());
-        stream.subscribe::<neo_system::network::p2p::ports::RelayOutcome>(ctx.self_ref());
+        stream.subscribe::<neo_p2p::p2p::ports::RelayOutcome>(ctx.self_ref());
         self.start_timer(ctx);
         if self.settings.auto_start {
             self.start_from_chain(ctx);
@@ -1510,7 +1516,7 @@ impl Actor for ConsensusActor {
             Err(envelope) => envelope,
         };
 
-        let envelope = match envelope.downcast::<neo_system::network::p2p::ports::RelayOutcome>() {
+        let envelope = match envelope.downcast::<neo_p2p::p2p::ports::RelayOutcome>() {
             Ok(message) => {
                 self.on_relay_result(*message);
                 return Ok(());

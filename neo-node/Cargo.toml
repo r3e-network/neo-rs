@@ -55,6 +55,8 @@ neo-rpc = { path = "../neo-rpc", features = ["server"] }
 # The neo-system crate re-exports the identical canonical types (TypeId-preserving).
 # Task 208: enable the state root verification service moved from neo-core.
 neo-system = { workspace = true, features = ["state-verifier"] }
+# Phase 1 S1: P2P surface bound directly from the extracted crate.
+neo-p2p = { workspace = true }
 # Wallet primitives (task D4): consumers bind to neo-wallets directly.
 neo-wallets = { workspace = true }
 neo-ledger = { path = "../neo-ledger" }

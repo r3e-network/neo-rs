@@ -1,9 +1,9 @@
 //! Integration tests for node startup and initialization
 
 use anyhow::Result;
+use neo_p2p::p2p::ChannelsConfig;
 use neo_protocol::ProtocolSettings;
 use neo_system::NeoSystem;
-use neo_system::network::p2p::ChannelsConfig;
 use tempfile::TempDir;
 
 /// Channels configuration that keeps the P2P layer dormant in tests.

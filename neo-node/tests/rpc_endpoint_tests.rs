@@ -1,10 +1,10 @@
 //! Integration tests for RPC endpoints and server
 
 use anyhow::Result;
+use neo_p2p::p2p::ChannelsConfig;
 use neo_protocol::ProtocolSettings;
 use neo_rpc::server::{RpcServer, RpcServerConfig, RpcServerSettings};
 use neo_system::NeoSystem;
-use neo_system::network::p2p::ChannelsConfig;
 use std::net::{IpAddr, Ipv4Addr};
 use tokio::time::Duration;
 

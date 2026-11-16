@@ -37,6 +37,8 @@ members = [
     "neo-ledger",
     # Smart contract application engine, manifests, and storage
     "neo-smart-contract",
+    # P2P networking actors and wire protocol (Phase 1 S1 extraction)
+    "neo-p2p",
     # Actor runtime and system adapters
     "neo-system",
     # Wallet primitives (BIP-32 / BIP-39) and signing service
@@ -145,6 +147,7 @@ neo-actors = { path = "neo-actors", version = "0.20.0" }
 # Application layer crates (task 89).
 neo-ledger = { path = "neo-ledger" }
 neo-smart-contract = { path = "neo-smart-contract" }
+neo-p2p = { path = "neo-p2p" }
 neo-system = { path = "neo-system" }
 neo-wallets = { path = "neo-wallets" }
 neo-oracle = { path = "neo-oracle" }

@@ -1,0 +1,63 @@
+[package]
+name = "neo-p2p"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "P2P networking actors and wire protocol for neo-rs"
+
+[features]
+default = []
+# Task W3-C2: moved P2P peer discovery UPnP transport support.
+upnp = ["dep:quick-xml", "dep:reqwest", "dep:url"]
+
+[dependencies]
+# Internal crates (registered in workspace.dependencies)
+neo-primitives = { workspace = true }
+neo-crypto = { workspace = true }
+neo-actors = { workspace = true }
+neo-protocol = { workspace = true }
+neo-smart-contract = { workspace = true }
+neo-native-contracts = { workspace = true }
+
+# Internal crates (path deps, mirroring neo-system)
+neo-ledger = { path = "../neo-ledger" }
+neo-storage = { path = "../neo-storage" }
+# Shared caches (HashSetCache/RelayCache) used by the P2P actors. Bound under
+# the historical `neo_io_crate` alias used throughout the moved code.
+neo_io_crate = { path = "../neo-io", package = "neo-io" }
+
+# Third-party
+async-trait = { workspace = true }
+bitvec = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+governor = { workspace = true }
+hex = { workspace = true }
+if-addrs = "0.10"
+indexmap = { workspace = true }
+parking_lot = { workspace = true }
+quick-xml = { workspace = true, optional = true }
+rand = { workspace = true }
+reqwest = { workspace = true, optional = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true, features = ["codec", "rt"] }
+tracing = { workspace = true }
+url = { workspace = true, optional = true }
+
+[dev-dependencies]
+# OpCode is test-only (remote_node + bloom_filter unit tests).
+neo-vm = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

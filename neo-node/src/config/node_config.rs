@@ -4,12 +4,12 @@
 //! along with free utility functions.
 
 use anyhow::{Context, Result, bail};
+use neo_p2p::p2p::ChannelsConfig;
 use neo_primitives::constants::{MAINNET_MAGIC, TESTNET_MAGIC};
 use neo_protocol::ProtocolSettings;
 use neo_rpc::application_logs::ApplicationLogsSettings;
 use neo_rpc::tokens_tracker::TokensTrackerSettings;
 use neo_storage::persistence::storage::{CompressionAlgorithm, StorageConfig};
-use neo_system::network::p2p::ChannelsConfig;
 use neo_system::oracle_service::OracleServiceSettings;
 use neo_system::state_service::StateServiceSettings;
 use serde_json::{Value, json};

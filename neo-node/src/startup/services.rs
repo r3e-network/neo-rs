@@ -9,6 +9,7 @@ use crate::consensus::{DbftConsensusController, ensure_wallet_can_validate};
 use crate::wallet_provider::NodeWalletProvider;
 use anyhow::{Context, Result, bail};
 use neo_native_contracts::native::ContractManagement;
+use neo_p2p::p2p::ChannelsConfig;
 use neo_protocol::ProtocolSettings;
 use neo_rpc::application_logs::ApplicationLogsService;
 use neo_rpc::server::{
@@ -17,7 +18,6 @@ use neo_rpc::server::{
 };
 use neo_rpc::tokens_tracker::{TokensTracker, TokensTrackerService};
 use neo_system::i_event_handlers::{CommittedHandler, CommittingHandler, WalletChangedHandler};
-use neo_system::network::p2p::ChannelsConfig;
 use neo_system::oracle_service::OracleService;
 use neo_system::state_service::StateServiceSettings;
 use neo_system::{NeoSystem, StateServiceVerification};
