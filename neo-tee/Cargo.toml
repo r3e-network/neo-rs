@@ -18,12 +18,21 @@ path = "src/mod.rs"
 
 [features]
 default = []
+# Phase 3 S6c: gates the runtime + wallet_adapter modules that sank from
+# neo-node (formerly its `tee` feature). Default off to keep the workspace
+# baseline build/test surface unchanged.
+integration = []
 tee-sgx = ["dep:sgx-isa"]
 attestation = ["tee-sgx"]
 
 [dependencies]
 neo-crypto = { workspace = true }
 neo-primitives = { workspace = true }
+# Phase 3 S6c: wallet adapter binds the wallet/protocol/contract vocabulary
+# directly (TypeId-preserving move, same rationale as neo-hsm).
+neo-wallets = { workspace = true }
+neo-protocol = { workspace = true }
+neo-smart-contract = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
@@ -44,6 +53,8 @@ sgx-isa = { version = "0.4", optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# Test-only: wallet witness tests use OpCode.
+neo-vm = { workspace = true }
 
 [lints]
 workspace = true

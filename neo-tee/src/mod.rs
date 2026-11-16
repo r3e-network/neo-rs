@@ -47,13 +47,21 @@
 //! ```
 
 pub mod attestation;
+pub mod config;
 pub mod enclave;
 pub mod error;
 pub(crate) mod fs_acl;
 pub mod mempool;
+// Phase 3 S6c: node tee_integration runtime + tee_wallet adapter sank here,
+// gated behind the default-off `integration` feature to preserve the pre-move
+// default build surface (these were `cfg(feature = "tee")` in neo-node).
+#[cfg(feature = "integration")]
+pub mod runtime;
 #[cfg(feature = "tee-sgx")]
 pub(crate) mod sgx;
 pub mod wallet;
+#[cfg(feature = "integration")]
+pub mod wallet_adapter;
 
 pub use attestation::{AttestationReport, AttestationService};
 pub use enclave::{EnclaveConfig, TeeEnclave};

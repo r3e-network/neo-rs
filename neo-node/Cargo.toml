@@ -25,7 +25,7 @@ profiling = []
 # Full profiling with CPU profiler (Unix only, requires pprof)
 profiling-full = ["profiling", "pprof", "tracing-timing", "tracing-flame"]
 # Enable TEE (Trusted Execution Environment) support
-tee = ["dep:neo-tee"]
+tee = ["neo-tee/integration"]
 # Enable TEE with SGX hardware
 tee-sgx = ["tee", "neo-tee/tee-sgx"]
 # Enable HSM (Hardware Security Module) support
@@ -71,8 +71,10 @@ neo-probe = { workspace = true }
 # TEMPORARILY DISABLED: neo-plugins being refactored
 # neo-plugins = { path = "../neo-plugins" }
 
-# Canonical TEE implementation (optional, enabled with tee feature)
-neo-tee = { workspace = true, optional = true }
+# Canonical TEE implementation (Phase 3 S6c: now a required dep because
+# `PrivacySection` sank into neo-tee::config and NodeConfig references it
+# unconditionally; the runtime/wallet modules stay behind the tee feature).
+neo-tee = { workspace = true }
 
 # Phase 3 S6b: HSM runtime/wallet sank into neo-hsm (optional, hsm feature).
 # The former direct rpassword/hidapi/cryptoki deps moved with it; byteorder

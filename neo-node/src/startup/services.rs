@@ -327,7 +327,7 @@ pub(crate) fn install_privacy_rpc_endpoint(
         return Ok(false);
     }
 
-    let submitter = runtime.privacy_submitter().context(
+    let submitter = crate::tee_integration::privacy_submitter(runtime).context(
         "privacy mode is enabled but the encrypted submission submitter could not be built",
     )?;
     server.set_privacy_submitter(Some(submitter));
