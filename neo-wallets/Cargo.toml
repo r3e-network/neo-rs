@@ -36,6 +36,11 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
 
+# Phase 3 S6a: dedicated mTLS remote-signer transport (signing::remote_client).
+# rustls-tls mirrors the node's reqwest feature selection (platform roots are
+# deliberately disabled by the transport itself).
+reqwest = { workspace = true, features = ["rustls-tls"] }
+
 # Transaction / fee construction helpers
 num-bigint = { workspace = true }
 rand = { workspace = true }
@@ -64,6 +69,8 @@ scrypt = "0.11"
 
 [dev-dependencies]
 chrono = { workspace = true }
+# Phase 3 S6a: local HTTP fault-injection servers in remote_client tests.
+hyper = { workspace = true }
 tempfile = { workspace = true }
 
 [lints]

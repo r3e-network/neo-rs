@@ -1,10 +1,7 @@
 //! Dedicated mTLS remote signer and remotely attested TEE adapter.
 
-use crate::config::{RemoteAttestationPolicySection, SignerProviderKind, SignerProviderSection};
-use anyhow::{Context, Result, bail};
-use async_trait::async_trait;
-use neo_crypto::Secp256r1Crypto;
-use neo_wallets::signing::{
+use super::config::{RemoteAttestationPolicySection, SignerProviderKind, SignerProviderSection};
+use crate::signing::{
     ALGORITHM_ECDSA_P256_SHA256, AttestationChallenge, AttestationEvidence,
     AttestationExpectations, AuthorizedSignRequest, CollateralStatus, KeyInfo, KeyRef,
     ProviderCapabilities, ProviderOperationStatus, ProviderOutcomeProvenance, ProviderSignature,
@@ -13,6 +10,9 @@ use neo_wallets::signing::{
     RemoteSignRequest, RemoteSignResponse, RemoteSignerTransport, SignError, SignErrorCode,
     SignResult, SignerProvider, TcbStatus, VerifiedAttestation, validate_remote_schema,
 };
+use anyhow::{Context, Result, bail};
+use async_trait::async_trait;
+use neo_crypto::Secp256r1Crypto;
 use parking_lot::RwLock;
 use rand::{RngCore, rngs::OsRng};
 use reqwest::{Certificate, Client, Identity, StatusCode, Url, redirect::Policy};
@@ -50,7 +50,7 @@ fn provider_error(message: impl Into<String>) -> SignError {
     SignError::new(SignErrorCode::ProviderFailure, message)
 }
 
-pub(crate) fn validate_remote_provider_config(provider: &SignerProviderSection) -> Result<()> {
+pub fn validate_remote_provider_config(provider: &SignerProviderSection) -> Result<()> {
     let endpoint = provider
         .endpoint
         .as_deref()
@@ -139,13 +139,13 @@ pub(crate) fn validate_remote_provider_config(provider: &SignerProviderSection) 
 }
 
 /// HTTPS transport isolated from wallet and node RPC clients.
-pub(crate) struct MtlsRemoteSignerTransport {
+pub struct MtlsRemoteSignerTransport {
     client: Client,
     endpoint: Url,
 }
 
 impl MtlsRemoteSignerTransport {
-    pub(crate) fn from_config(provider: &SignerProviderSection) -> Result<Self> {
+    pub fn from_config(provider: &SignerProviderSection) -> Result<Self> {
         let remote = provider
             .remote
             .as_ref()
@@ -333,7 +333,7 @@ impl AttestedSession {
 }
 
 /// Strict adapter from the unified signer service to a dedicated remote signer.
-pub(crate) struct RemoteSignerProvider {
+pub struct RemoteSignerProvider {
     capabilities: ProviderCapabilities,
     service_identity: String,
     policy_version: String,
@@ -349,7 +349,7 @@ struct RemoteAttestationRuntime {
 }
 
 impl RemoteSignerProvider {
-    pub(crate) fn new(
+    pub fn new(
         provider: &SignerProviderSection,
         policy_version: &str,
         transport: Arc<dyn RemoteSignerTransport>,
@@ -770,9 +770,9 @@ impl RemoteSignerProvider {
             request_id: request_id.to_string(),
             key_ref: key_ref.clone(),
             network: 0,
-            purpose: neo_wallets::signing::SignPurpose::Custom("query".to_string()),
-            payload: neo_wallets::signing::SignPayload::Digest {
-                algorithm: neo_wallets::signing::DigestAlgorithm::Sha256,
+            purpose: crate::signing::SignPurpose::Custom("query".to_string()),
+            payload: crate::signing::SignPayload::Digest {
+                algorithm: crate::signing::DigestAlgorithm::Sha256,
                 digest: [0; 32],
             },
             request_digest,
@@ -891,15 +891,15 @@ impl SignerProvider for RemoteSignerProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{RemoteSignerSection, SignerKeySection};
-    use hyper::service::{make_service_fn, service_fn};
-    use hyper::{Body, Request as HttpRequest, Response as HttpResponse, Server};
-    use neo_wallets::signing::{
+    use crate::signing::config::{RemoteSignerSection, SignerKeySection};
+    use crate::signing::{
         AuthenticatedContext, DefaultSignerService, DurableSigningStore, IdempotencyInfo,
         PolicyLimits, ProtocolContext, SIGNING_SCHEMA_VERSION, SecurityLevel, SignPayload,
         SignPurpose, SignRequest, SignerService, SigningKeyBinding, SigningKeyResolver,
         SigningPolicy, SigningRequestStatus, SigningStore,
     };
+    use hyper::service::{make_service_fn, service_fn};
+    use hyper::{Body, Request as HttpRequest, Response as HttpResponse, Server};
     use parking_lot::Mutex;
     use std::convert::Infallible;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -2207,8 +2207,8 @@ mod tests {
             key_ref: key_ref.clone(),
             network: 1,
             purpose: SignPurpose::Transaction,
-            payload: neo_wallets::signing::SignPayload::Digest {
-                algorithm: neo_wallets::signing::DigestAlgorithm::Sha256,
+            payload: crate::signing::SignPayload::Digest {
+                algorithm: crate::signing::DigestAlgorithm::Sha256,
                 digest: [3; 32],
             },
             request_digest: [4; 32],

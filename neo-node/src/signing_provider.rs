@@ -1,9 +1,6 @@
 //! Unified signer providers and node-local signing runtime.
 
 use crate::config::{SignerProviderKind, SignerServiceSection};
-use crate::remote_signer::{
-    MtlsRemoteSignerTransport, RemoteSignerProvider, validate_remote_provider_config,
-};
 use crate::wallet_provider::NodeWalletProvider;
 use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
@@ -11,11 +8,12 @@ use neo_primitives::UInt160;
 use neo_smart_contract::helper::Helper as ContractHelper;
 use neo_wallets::signing::{
     ALGORITHM_ECDSA_P256_SHA256, AuthenticatedContext, AuthorizedSignRequest, DefaultSignerService,
-    DurableSigningStore, KeyInfo, KeyRef, PolicyLimits, ProviderCapabilities,
-    ProviderOutcomeProvenance, ProviderSignature, RemoteSignerTransport, SIGNING_SCHEMA_VERSION,
-    SecurityLevel, SignError, SignErrorCode, SignPayload, SignPurpose, SignResult, SignerProvider,
-    SignerProviderRegistry, SignerService, SigningKeyBinding, SigningKeyResolver, SigningPolicy,
-    SigningStore, TrustedSignerClient,
+    DurableSigningStore, KeyInfo, KeyRef, MtlsRemoteSignerTransport, PolicyLimits,
+    ProviderCapabilities, ProviderOutcomeProvenance, ProviderSignature, RemoteSignerProvider,
+    RemoteSignerTransport, SIGNING_SCHEMA_VERSION, SecurityLevel, SignError, SignErrorCode,
+    SignPayload, SignPurpose, SignResult, SignerProvider, SignerProviderRegistry, SignerService,
+    SigningKeyBinding, SigningKeyResolver, SigningPolicy, SigningStore, TrustedSignerClient,
+    validate_remote_provider_config,
 };
 use neo_wallets::{Wallet, WalletProvider};
 use std::collections::{BTreeMap, BTreeSet};

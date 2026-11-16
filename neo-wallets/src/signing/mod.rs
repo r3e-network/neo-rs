@@ -4,10 +4,12 @@
 //! quota state, and provider execution. It intentionally exposes no production
 //! shortcut for arbitrary blind signing.
 
+pub mod config;
 mod durable_store;
 mod error;
 mod policy;
 mod remote;
+mod remote_client;
 mod service;
 mod store;
 mod types;
@@ -17,6 +19,10 @@ mod memory_store;
 #[cfg(test)]
 mod tests;
 
+pub use config::{
+    Pkcs11ProviderSection, RemoteAttestationPolicySection, RemoteSignerSection, SignerKeySection,
+    SignerProviderKind, SignerProviderSection, SignerServiceSection,
+};
 pub use durable_store::DurableSigningStore;
 pub use error::{SIGN_ERROR_SCHEMA_VERSION, SignError, SignErrorCode, SignResult};
 pub use policy::{PolicyDecision, PolicyLimits, PolicySelector, QuotaReservation, SigningPolicy};
@@ -26,6 +32,9 @@ pub use remote::{
     RemoteKeyInfoResponse, RemoteOperationQuery, RemoteOperationStatus, RemoteSignDispatchResult,
     RemoteSignRejection, RemoteSignRequest, RemoteSignResponse, RemoteSignerTransport, TcbStatus,
     VerifiedAttestation, validate_remote_schema,
+};
+pub use remote_client::{
+    MtlsRemoteSignerTransport, RemoteSignerProvider, validate_remote_provider_config,
 };
 pub use service::{
     AuthorizedSignRequest, DefaultSignerService, ProviderOperationStatus, SignerProvider,

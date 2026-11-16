@@ -56,7 +56,6 @@ mod metrics;
 // mod pkcs11;
 mod probe_containment;
 mod probe_controller;
-mod remote_signer;
 mod rpc_consensus;
 mod services;
 mod signing_provider;
