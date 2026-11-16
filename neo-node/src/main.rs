@@ -15,8 +15,6 @@ mod config;
 mod consensus;
 mod health;
 #[cfg(feature = "hsm")]
-mod hsm;
-#[cfg(feature = "hsm")]
 mod hsm_integration;
 #[cfg(feature = "hsm")]
 mod hsm_wallet;
@@ -65,7 +63,6 @@ mod tee_integration;
 #[cfg(feature = "tee")]
 mod tee_wallet;
 mod wallet_provider;
-mod wallet_scripts;
 
 use anyhow::Result;
 use clap::Parser;

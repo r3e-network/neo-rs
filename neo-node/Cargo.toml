@@ -29,11 +29,11 @@ tee = ["dep:neo-tee"]
 # Enable TEE with SGX hardware
 tee-sgx = ["tee", "neo-tee/tee-sgx"]
 # Enable HSM (Hardware Security Module) support
-hsm = ["dep:rpassword", "dep:hidapi", "dep:byteorder", "dep:cryptoki"]
+hsm = ["dep:neo-hsm", "neo-hsm/hsm"]
 # Enable HSM with Ledger hardware wallet
-hsm-ledger = ["hsm", "dep:hidapi", "dep:byteorder"]
+hsm-ledger = ["hsm", "neo-hsm/hsm-ledger"]
 # Enable HSM with PKCS#11 interface
-hsm-pkcs11 = ["hsm", "dep:cryptoki"]
+hsm-pkcs11 = ["hsm", "neo-hsm/hsm-pkcs11"]
 
 [dependencies]
 # Task 206: consensus binds directly to neo-actors instead of the neo-core
@@ -74,13 +74,10 @@ neo-probe = { workspace = true }
 # Canonical TEE implementation (optional, enabled with tee feature)
 neo-tee = { workspace = true, optional = true }
 
-# PIN input for HSM
-rpassword = { version = "7.3", optional = true }
-
-# HSM dependencies (optional)
-hidapi = { version = "2.6", optional = true }
-byteorder = { version = "1.5", optional = true }
-cryptoki = { version = "0.6", optional = true }
+# Phase 3 S6b: HSM runtime/wallet sank into neo-hsm (optional, hsm feature).
+# The former direct rpassword/hidapi/cryptoki deps moved with it; byteorder
+# was vestigial (zero usage) and dropped.
+neo-hsm = { workspace = true, optional = true }
 
 # Oracle dependencies
 percent-encoding = "2.3"

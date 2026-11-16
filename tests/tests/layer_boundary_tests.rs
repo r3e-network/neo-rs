@@ -165,6 +165,16 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("neo-tee", "neo-crypto"),
     ("neo-tee", "neo-primitives"),
     ("neo-hsm", "neo-crypto"),
+    // Phase 3 S6b: neo-hsm extracted from neo-node's hsm tree + hsm_wallet +
+    // hsm_integration runtime. Reviewed downward edges: the HSM wallet adapter
+    // binds the wallet/protocol/contract vocabulary directly (TypeId-preserving
+    // move, same rationale as neo-rpc-client).
+    ("neo-hsm", "neo-primitives"),
+    ("neo-hsm", "neo-protocol"),
+    ("neo-hsm", "neo-smart-contract"),
+    ("neo-hsm", "neo-wallets"),
+    // Test-only edge (kind dev): wallet witness tests use OpCode.
+    ("neo-hsm", "neo-vm"),
     ("neo-probe", "neo-ai-agent"),
     ("neo-probe", "neo-storage"),
     ("neo-probe", "neo-vm"),

@@ -10,6 +10,7 @@ mod error;
 mod policy;
 mod remote;
 mod remote_client;
+pub mod scripts;
 mod service;
 mod store;
 mod types;
@@ -36,6 +37,7 @@ pub use remote::{
 pub use remote_client::{
     MtlsRemoteSignerTransport, RemoteSignerProvider, validate_remote_provider_config,
 };
+pub use scripts::signature_invocation;
 pub use service::{
     AuthorizedSignRequest, DefaultSignerService, ProviderOperationStatus, SignerProvider,
     SignerProviderRegistry, SignerService, SigningDeadlineRegistry, TrustedSignerClient,

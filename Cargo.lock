@@ -2587,6 +2587,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "neo-hsm"
+version = "0.20.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "cryptoki",
+ "futures",
+ "hex",
+ "hidapi",
+ "neo-crypto",
+ "neo-primitives",
+ "neo-protocol",
+ "neo-smart-contract",
+ "neo-vm",
+ "neo-wallets",
+ "parking_lot",
+ "rpassword",
+ "serde",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "zeroize",
+]
+
+[[package]]
 name = "neo-io"
 version = "0.20.0"
 dependencies = [
@@ -2698,21 +2723,19 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "bincode",
- "byteorder",
  "chrono",
  "clap",
- "cryptoki",
  "dashmap",
  "env_logger",
  "futures",
  "hex",
- "hidapi",
  "hyper 0.14.32",
  "mimalloc",
  "neo-actors",
  "neo-ai-agent",
  "neo-consensus",
  "neo-crypto",
+ "neo-hsm",
  "neo-io",
  "neo-ledger",
  "neo-mempool",
@@ -2738,7 +2761,6 @@ dependencies = [
  "rand 0.8.8",
  "reqwest",
  "rocksdb",
- "rpassword",
  "serde",
  "serde_json",
  "serde_yaml",

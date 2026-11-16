@@ -1,7 +1,7 @@
 //! HSM Signer trait definition
 
-use crate::hsm::device::HsmDeviceInfo;
-use crate::hsm::error::{HsmError, HsmResult};
+use crate::device::HsmDeviceInfo;
+use crate::error::{HsmError, HsmResult};
 use async_trait::async_trait;
 use neo_crypto::{Base58, Crypto};
 use serde::{Deserialize, Serialize};
@@ -106,12 +106,12 @@ pub trait HsmSigner: Send + Sync {
     }
 }
 
-pub(crate) fn script_hash_from_public_key(public_key: &[u8]) -> HsmResult<[u8; 20]> {
+pub fn script_hash_from_public_key(public_key: &[u8]) -> HsmResult<[u8; 20]> {
     let script = signature_redeem_script(public_key)?;
     Ok(Crypto::hash160(&script))
 }
 
-pub(crate) fn signature_redeem_script(public_key: &[u8]) -> HsmResult<Vec<u8>> {
+pub fn signature_redeem_script(public_key: &[u8]) -> HsmResult<Vec<u8>> {
     let compressed = normalize_public_key(public_key)?;
     if compressed.len() != 33 || (compressed[0] != 0x02 && compressed[0] != 0x03) {
         return Err(HsmError::InvalidKeyFormat(
@@ -128,7 +128,7 @@ pub(crate) fn signature_redeem_script(public_key: &[u8]) -> HsmResult<Vec<u8>> {
     Ok(script)
 }
 
-pub(crate) fn normalize_public_key(public_key: &[u8]) -> HsmResult<Vec<u8>> {
+pub fn normalize_public_key(public_key: &[u8]) -> HsmResult<Vec<u8>> {
     match public_key.len() {
         33 if public_key[0] == 0x02 || public_key[0] == 0x03 => Ok(public_key.to_vec()),
         65 if public_key[0] == 0x04 => Ok(compress_uncompressed_key(&public_key[1..])?),

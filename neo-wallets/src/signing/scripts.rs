@@ -1,10 +1,13 @@
 //! Shared wallet witness script helpers.
+//!
+//! Phase 3 S6b: sank from neo-node::wallet_scripts (shared by the HSM and
+//! TEE wallet adapters).
 
+use crate::{WalletError, WalletResult};
 use neo_vm::ScriptBuilder;
-use neo_wallets::{WalletError, WalletResult};
 
-#[allow(dead_code)]
-pub(crate) fn signature_invocation(signature: &[u8]) -> WalletResult<Vec<u8>> {
+/// Builds the invocation script pushing a 64-byte signature (PUSHDATA1).
+pub fn signature_invocation(signature: &[u8]) -> WalletResult<Vec<u8>> {
     if signature.len() != 64 {
         return Err(WalletError::SigningFailed(
             "Signature must be 64 bytes".to_string(),

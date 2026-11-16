@@ -57,6 +57,8 @@ members = [
     "neo-consensus",
     # Canonical TEE sealing, attestation, wallet and fair-ordering implementation
     "neo-tee",
+    # Hardware Security Module signing (Ledger / PKCS#11), Phase 3 S6b
+    "neo-hsm",
     # Dedicated mTLS remote signer reference service
     "neo-signer-server",
     # Capability-limited diagnostics and detached probe protocol
@@ -164,6 +166,7 @@ neo-wallets = { path = "neo-wallets" }
 neo-oracle = { path = "neo-oracle" }
 neo-consensus = { path = "neo-consensus" }
 neo-tee = { path = "neo-tee" }
+neo-hsm = { path = "neo-hsm" }
 neo-signer-server = { path = "neo-signer-server" }
 neo-ai-agent = { path = "neo-ai-agent", version = "0.20.0" }
 neo-probe = { path = "neo-probe", version = "0.20.0" }

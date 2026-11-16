@@ -1,10 +1,8 @@
 //! Ledger hardware wallet signer implementation
 
-use crate::hsm::device::{HsmDeviceInfo, HsmDeviceType};
-use crate::hsm::error::{HsmError, HsmResult};
-use crate::hsm::signer::{
-    HsmKeyInfo, HsmSigner, normalize_public_key, script_hash_from_public_key,
-};
+use crate::device::{HsmDeviceInfo, HsmDeviceType};
+use crate::error::{HsmError, HsmResult};
+use crate::signer::{HsmKeyInfo, HsmSigner, normalize_public_key, script_hash_from_public_key};
 use async_trait::async_trait;
 use parking_lot::RwLock;
 
@@ -233,7 +231,7 @@ impl LedgerSigner {
             payload.extend_from_slice(chunk);
             expected_sequence = expected_sequence.wrapping_add(1);
 
-            if expected_len.map_or(true, |total| payload.len() >= total) {
+            if expected_len.is_none_or(|total| payload.len() >= total) {
                 break;
             }
         }

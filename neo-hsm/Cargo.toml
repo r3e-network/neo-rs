@@ -1,0 +1,62 @@
+[package]
+name = "neo-hsm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Hardware Security Module signing (Ledger / PKCS#11) for neo-rs"
+
+[features]
+default = []
+# Enable HSM support (mirrors the node's historical opt-in gating; the whole
+# crate stays empty in default builds so no hardware code compiles unasked).
+hsm = ["dep:rpassword"]
+# Enable HSM with Ledger hardware wallet
+hsm-ledger = ["hsm", "dep:hidapi"]
+# Enable HSM with PKCS#11 interface
+hsm-pkcs11 = ["hsm", "dep:cryptoki"]
+
+[dependencies]
+# Internal crates (registered in workspace.dependencies). The HSM wallet
+# adapter binds the wallet/protocol/contract vocabulary directly
+# (TypeId-preserving move from neo-node, Phase 3 S6b).
+neo-crypto = { workspace = true }
+neo-primitives = { workspace = true }
+neo-protocol = { workspace = true }
+neo-smart-contract = { workspace = true }
+neo-wallets = { workspace = true }
+
+# Async / serialization / error handling
+async-trait = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+futures = { workspace = true }
+tracing = { workspace = true }
+
+# Utilities and secret zeroization
+parking_lot = { workspace = true }
+zeroize = { workspace = true }
+# Key-id / script-hash hex encoding in the PKCS#11 backend and signer tests.
+hex = { workspace = true }
+
+# HSM backends (optional; pinned with explicit versions to match the node's
+# former declaration style; not centralized in workspace.dependencies).
+rpassword = { version = "7.3", optional = true }
+hidapi = { version = "2.6", optional = true }
+cryptoki = { version = "0.6", optional = true }
+
+[dev-dependencies]
+# Witness-script assertions in the wallet adapter tests (test-only edge).
+neo-vm = { workspace = true }
+tokio = { workspace = true }
+
+[lints]
+workspace = true
