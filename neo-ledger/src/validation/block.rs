@@ -170,9 +170,22 @@ mod tests {
         verify_block_with_cache(block, &default_settings(), &store_cache, header_cache)
     }
 
+    /// Merkle root of a transaction list; the zero hash for an empty list, as
+    /// in C# where an empty block carries `UInt256.Zero`.
     fn merkle_root_of(transactions: &[Transaction]) -> UInt256 {
         let hashes: Vec<UInt256> = transactions.iter().map(Transaction::hash).collect();
-        MerkleTree::compute_root(&hashes).expect("non-empty transaction list")
+        MerkleTree::compute_root(&hashes).unwrap_or_else(UInt256::zero)
+    }
+
+    #[test]
+    fn merkle_root_of_empty_transaction_list_is_zero() {
+        assert_eq!(merkle_root_of(&[]), UInt256::zero());
+        assert_ne!(merkle_root_of(&[Transaction::new()]), UInt256::zero());
+
+        // An empty block built through the helper is body-consistent.
+        let (header_cache, block) = verifiable_block(Vec::new());
+        assert_eq!(verify_block_integrity(&block), Ok(()));
+        assert!(verify_with(&header_cache, &block));
     }
 
     #[test]
