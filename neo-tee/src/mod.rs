@@ -16,9 +16,15 @@
 //!
 //! # Features
 //!
-//! - `simulation` (default): Run in simulation mode without real SGX hardware
+//! No feature is enabled by default, and a default build fails closed:
+//! [`TeeEnclave::initialize`] refuses to derive a sealing key.
+//!
 //! - `tee-sgx`: Enable real Intel SGX hardware support
 //! - `attestation`: Enable remote attestation (requires `tee-sgx`)
+//! - `tee-sgx-sim`: Compile the software (simulated) sealing key into a build
+//!   without `tee-sgx`. Test-only: enable it from `[dev-dependencies]`, never
+//!   from `[dependencies]`, because any host process can recompute the key.
+//! - `integration`: Node runtime and wallet adapter modules
 //!
 //! # Architecture
 //!

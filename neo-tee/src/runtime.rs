@@ -606,7 +606,10 @@ mod tests {
             "secret leaked: {rendered}"
         );
 
-        assert_eq!(format!("{:?}", PrivacyEncryption::TeeSealedKey), "TeeSealedKey");
+        assert_eq!(
+            format!("{:?}", PrivacyEncryption::TeeSealedKey),
+            "TeeSealedKey"
+        );
     }
 
     #[cfg(not(feature = "tee-sgx"))]

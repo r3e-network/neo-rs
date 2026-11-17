@@ -1,19 +1,13 @@
 //! Enclave runtime implementation
 
-// C-2: the software (simulated) sealing-key path is gated behind the opt-in
-// `tee-sgx-sim` cfg, which is intentionally not part of the default feature
-// set. Referencing it here is expected, so silence the cfg-check lint for this
-// module only.
-#![allow(unexpected_cfgs)]
-
 use crate::error::{EnclaveInitError, TeeError, TeeResult};
 #[cfg(feature = "tee-sgx")]
 use crate::sgx::VerifiedSgxEvidence;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 #[cfg(any(feature = "tee-sgx", test, feature = "tee-sgx-sim"))]
 use std::path::Path;
+use std::path::PathBuf;
 use tracing::{debug, error, info, warn};
 
 /// Enclave configuration
@@ -482,11 +476,7 @@ impl TeeEnclave {
             self.derive_simulated_sealing_key()
         }
 
-        #[cfg(all(
-            not(feature = "tee-sgx"),
-            not(test),
-            not(feature = "tee-sgx-sim")
-        ))]
+        #[cfg(all(not(feature = "tee-sgx"), not(test), not(feature = "tee-sgx-sim")))]
         {
             Err(TeeError::FeatureNotEnabled(
                 "enclave sealing key derivation unavailable: hardware sealing requires the \

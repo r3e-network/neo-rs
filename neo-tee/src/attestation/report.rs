@@ -897,9 +897,8 @@ mod tests {
         mrsigner: [u8; 32],
         report_data: [u8; 64],
     ) -> AttestationReport {
-        let mut report = AttestationReport::simulated_with_measurements(
-            report_data, mrenclave, mrsigner,
-        );
+        let mut report =
+            AttestationReport::simulated_with_measurements(report_data, mrenclave, mrsigner);
         report.report_type = ReportType::Remote;
         report.quote = Some(build_quote(mrenclave, mrsigner, report_data, 1, 1, false));
         report
@@ -912,10 +911,7 @@ mod tests {
         let report_data = [0x33u8; 64];
 
         let report = quote_backed_report(mrenclave, mrsigner, report_data);
-        assert_eq!(
-            report.verify_quote_binding(),
-            QuoteValidationResult::Valid
-        );
+        assert_eq!(report.verify_quote_binding(), QuoteValidationResult::Valid);
     }
 
     #[test]

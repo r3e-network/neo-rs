@@ -451,9 +451,15 @@ mod tests {
         assert!(rendered.contains("wallet-key"), "unexpected: {rendered}");
         // No raw key/salt bytes may appear in any rendering (decimal lists or hex).
         assert!(!rendered.contains("195, 195"), "key leaked: {rendered}");
-        assert!(!rendered.contains(&hex::encode(base_key)), "key leaked: {rendered}");
+        assert!(
+            !rendered.contains(&hex::encode(base_key)),
+            "key leaked: {rendered}"
+        );
         assert!(!rendered.contains("126, 126"), "salt leaked: {rendered}");
-        assert!(!rendered.contains(&hex::encode(salt)), "salt leaked: {rendered}");
+        assert!(
+            !rendered.contains(&hex::encode(salt)),
+            "salt leaked: {rendered}"
+        );
 
         let no_salt = KeyDerivationParams {
             base_key: &base_key,

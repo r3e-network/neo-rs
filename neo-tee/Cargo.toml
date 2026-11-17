@@ -24,6 +24,14 @@ default = []
 integration = []
 tee-sgx = ["dep:sgx-isa"]
 attestation = ["tee-sgx"]
+# C-2: compiles the software (simulated) sealing-key derivation into a build
+# without `tee-sgx`. The key is recomputable by any host process, so this must
+# never be a default feature and must never be enabled by a `[dependencies]`
+# edge: downstream crates opt in from `[dev-dependencies]` only, which under
+# resolver 2 keeps it out of every non-test build. Without it (and without
+# `tee-sgx`) `TeeEnclave::initialize` fails closed; see
+# `tests/sealing_fail_closed.rs`.
+tee-sgx-sim = []
 
 [dependencies]
 neo-crypto = { workspace = true }
