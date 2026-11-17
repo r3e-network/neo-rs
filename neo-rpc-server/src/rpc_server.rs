@@ -1,6 +1,6 @@
 use futures::stream;
 use hyper::server::accept::from_stream;
-use hyper::service::{Service, make_service_fn, service_fn};
+use hyper::service::{make_service_fn, service_fn};
 use neo_system::NeoSystem;
 use neo_wallets::Wallet;
 use neo_wallets::signing::{
@@ -29,7 +29,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use super::routes::{BasicAuth, build_rpc_routes, build_ws_route};
+use super::routes::{BasicAuth, HttpGate, build_rpc_routes, build_ws_route};
 use super::rpc_error::RpcError;
 use super::rpc_server_privacy::EncryptedTransactionSubmitter;
 use super::rpc_server_settings::RpcServerConfig;
@@ -181,6 +181,8 @@ pub struct RpcServer {
     /// concurrent reads that would cause undefined behavior. See session.rs for details.
     sessions: Arc<Mutex<HashMap<Uuid, Session>>>,
     server_task: Option<JoinHandle<()>>,
+    /// Address the listener is bound to while the server is started.
+    local_addr: Option<SocketAddr>,
     shutdown_signal: Option<oneshot::Sender<()>>,
     session_purge_task: Option<JoinHandle<()>>,
     session_purge_shutdown: Option<oneshot::Sender<()>>,
@@ -204,6 +206,7 @@ impl RpcServer {
             privacy_submitter: None,
             sessions: Arc::new(Mutex::new(HashMap::new())),
             server_task: None,
+            local_addr: None,
             shutdown_signal: None,
             session_purge_task: None,
             session_purge_shutdown: None,
@@ -255,6 +258,13 @@ impl RpcServer {
     #[must_use]
     pub const fn is_websocket_enabled(&self) -> bool {
         self.ws_bridge.is_some()
+    }
+
+    /// Address the RPC listener is bound to, once started. With `port: 0`
+    /// this is the only way to learn the port the OS assigned.
+    #[must_use]
+    pub const fn local_addr(&self) -> Option<SocketAddr> {
+        self.local_addr
     }
 
     pub fn start_rpc_server(
@@ -319,6 +329,9 @@ impl RpcServer {
             rpc_routes.boxed()
         };
         let svc = warp::service(routes);
+        // R-9: admission limit and Basic auth run on the request head, ahead
+        // of the routes and therefore ahead of any body read or parse.
+        let gate = Arc::new(HttpGate::new(auth, &self.settings));
         let (task, bound_addr) = if let Some(tls_config) = tls_config {
             if self.settings.trusted_authorities.is_empty() {
                 info!("RPC TLS enabled (client certificates optional)");
@@ -423,21 +436,15 @@ impl RpcServer {
             let make_svc = make_service_fn(move |conn: &TlsConnection| {
                 let remote_addr = conn.remote_addr();
                 let svc = svc.clone();
+                let gate = Arc::clone(&gate);
 
                 async move {
-                    Ok::<_, Infallible>(service_fn(move |mut req: hyper::Request<hyper::Body>| {
-                        req.extensions_mut().insert(remote_addr);
-                        let mut svc = svc.clone();
-                        async move {
-                            // R-7(d): bind the peer identity so handlers that
-                            // create iterator sessions can enforce per-client
-                            // quotas without access to the HTTP request.
-                            client_identity::scope_client_key(
-                                remote_addr.ip().to_string(),
-                                async move { svc.call(req).await },
-                            )
-                            .await
-                        }
+                    Ok::<_, Infallible>(service_fn(move |req: hyper::Request<hyper::Body>| {
+                        // R-7(d): the gate binds the peer identity around the
+                        // whole call so handlers that create iterator sessions
+                        // can enforce per-client quotas without access to the
+                        // HTTP request.
+                        Arc::clone(&gate).serve_scoped(remote_addr, req, svc.clone())
                     }))
                 }
             });
@@ -520,21 +527,15 @@ impl RpcServer {
             let make_svc = make_service_fn(move |conn: &PlainConnection| {
                 let remote_addr = conn.remote_addr();
                 let svc = svc.clone();
+                let gate = Arc::clone(&gate);
 
                 async move {
-                    Ok::<_, Infallible>(service_fn(move |mut req: hyper::Request<hyper::Body>| {
-                        req.extensions_mut().insert(remote_addr);
-                        let mut svc = svc.clone();
-                        async move {
-                            // R-7(d): bind the peer identity so handlers that
-                            // create iterator sessions can enforce per-client
-                            // quotas without access to the HTTP request.
-                            client_identity::scope_client_key(
-                                remote_addr.ip().to_string(),
-                                async move { svc.call(req).await },
-                            )
-                            .await
-                        }
+                    Ok::<_, Infallible>(service_fn(move |req: hyper::Request<hyper::Body>| {
+                        // R-7(d): the gate binds the peer identity around the
+                        // whole call so handlers that create iterator sessions
+                        // can enforce per-client quotas without access to the
+                        // HTTP request.
+                        Arc::clone(&gate).serve_scoped(remote_addr, req, svc.clone())
                     }))
                 }
             });
@@ -561,6 +562,7 @@ impl RpcServer {
 
         self.shutdown_signal = Some(shutdown_tx);
         self.server_task = Some(task);
+        self.local_addr = Some(bound_addr);
         self.started = true;
 
         // Background purge of expired sessions to avoid leaks when clients drop without cleanup.
@@ -625,6 +627,7 @@ impl RpcServer {
         self.set_wallet(None);
 
         info!("Stopping RPC server for network {}", self.settings.network);
+        self.local_addr = None;
         self.started = false;
     }
 

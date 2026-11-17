@@ -16,6 +16,10 @@ use warp::http::header::{CONTENT_TYPE, HeaderValue, WWW_AUTHENTICATE};
 use warp::reply::Response as HttpResponse;
 
 mod cors;
+mod gate;
+#[cfg(test)]
+#[path = "gate_tests.rs"]
+mod gate_tests;
 mod handlers;
 #[cfg(test)]
 #[path = "tests.rs"]
@@ -23,6 +27,7 @@ mod tests;
 
 pub use cors::BasicAuth;
 use cors::{CorsConfig, apply_cors};
+pub(crate) use gate::HttpGate;
 use handlers::handle_post_request;
 #[cfg(feature = "jsonrpsee-server")]
 pub(crate) use handlers::{invoke_rpc_handler, resolve_rpc_handler};

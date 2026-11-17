@@ -67,6 +67,20 @@ pub struct RpcServerConfig {
         alias = "RateLimitBurst"
     )]
     pub rate_limit_burst: u32,
+    /// HTTP requests per second admitted per peer IP before authentication
+    /// and before the request body is read.
+    ///
+    /// This is a budget of its own: it is never drawn from the per-method
+    /// limiter above, so an admitted call is still charged exactly once, at
+    /// its method tier. Unset derives it from `max_requests_per_second` (see
+    /// [`RpcServerConfig::admission_rate_limit`]); 0 disables it.
+    #[serde(default, alias = "AdmissionRequestsPerSecond")]
+    pub admission_requests_per_second: Option<u32>,
+    /// Burst capacity of the admission limiter. Unset or 0 uses
+    /// `admission_requests_per_second` when that is set, otherwise the
+    /// derived default.
+    #[serde(default, alias = "AdmissionBurst")]
+    pub admission_burst: Option<u32>,
     #[serde(
         default = "RpcServerConfig::default_max_request_body_size",
         alias = "MaxRequestBodySize"
@@ -254,6 +268,40 @@ impl RpcServerConfig {
         1024
     }
 
+    /// Headroom of the derived admission budget over the per-method limiter.
+    ///
+    /// The method tiers together allow 3.3x the configured rate (Cheap x2,
+    /// Standard x1, Expensive /5, Write /10), so 4x never binds before a
+    /// method tier does for a client that stays within them.
+    const ADMISSION_HEADROOM: u32 = 4;
+
+    /// Resolved `(requests per second, burst)` of the pre-authentication
+    /// admission limiter, or `None` when it is disabled.
+    ///
+    /// With `admission_requests_per_second` unset the budget is four times
+    /// the per-method limiter (rate and effective burst), and is disabled
+    /// when that limiter is disabled.
+    #[must_use]
+    pub fn admission_rate_limit(&self) -> Option<(u32, u32)> {
+        let explicit_burst = self.admission_burst.filter(|burst| *burst > 0);
+        let (rate, default_burst) = match self.admission_requests_per_second {
+            Some(rate) => (rate, rate),
+            None => {
+                let method_burst = if self.rate_limit_burst == 0 {
+                    self.max_requests_per_second
+                } else {
+                    self.rate_limit_burst
+                };
+                (
+                    self.max_requests_per_second
+                        .saturating_mul(Self::ADMISSION_HEADROOM),
+                    method_burst.saturating_mul(Self::ADMISSION_HEADROOM),
+                )
+            }
+        };
+        (rate > 0).then(|| (rate, explicit_burst.unwrap_or(default_burst)))
+    }
+
     #[must_use]
     pub const fn request_headers_timeout_duration(&self) -> Duration {
         Duration::from_secs(self.request_headers_timeout)
@@ -372,6 +420,8 @@ impl Default for RpcServerConfig {
             max_concurrent_connections: Self::default_max_concurrent_connections(),
             max_requests_per_second: Self::default_max_requests_per_second(),
             rate_limit_burst: Self::default_rate_limit_burst(),
+            admission_requests_per_second: None,
+            admission_burst: None,
             max_request_body_size: Self::default_max_request_body_size(),
             rpc_user: String::new(),
             rpc_pass: String::new(),
@@ -541,5 +591,62 @@ mod tests {
         assert!(!config.session_enabled);
         assert_eq!(config.session_expiration_time, 60);
         assert_eq!(config.find_storage_page_size, 50);
+    }
+
+    #[test]
+    fn admission_limit_defaults_to_headroom_over_the_method_limiter() {
+        let config = RpcServerConfig::default();
+        assert_eq!(config.admission_requests_per_second, None);
+        assert_eq!(config.admission_burst, None);
+        assert_eq!(config.admission_rate_limit(), Some((400, 800)));
+
+        // `rate_limit_burst: 0` means "use the rate", for both limiters.
+        let config = RpcServerConfig {
+            max_requests_per_second: 10,
+            rate_limit_burst: 0,
+            ..Default::default()
+        };
+        assert_eq!(config.admission_rate_limit(), Some((40, 40)));
+    }
+
+    #[test]
+    fn admission_limit_follows_explicit_settings() {
+        let config: RpcServerConfig = serde_json::from_value(serde_json::json!({
+            "AdmissionRequestsPerSecond": 7,
+            "AdmissionBurst": 9,
+        }))
+        .expect("deserialize config");
+        assert_eq!(config.admission_rate_limit(), Some((7, 9)));
+
+        let config: RpcServerConfig = serde_json::from_value(serde_json::json!({
+            "admission_requests_per_second": 7,
+        }))
+        .expect("deserialize config");
+        assert_eq!(config.admission_rate_limit(), Some((7, 7)));
+    }
+
+    #[test]
+    fn admission_limit_can_be_disabled() {
+        // Explicitly, while the method limiter stays on.
+        let config = RpcServerConfig {
+            admission_requests_per_second: Some(0),
+            ..Default::default()
+        };
+        assert_eq!(config.admission_rate_limit(), None);
+
+        // Implicitly, by disabling rate limiting altogether.
+        let config = RpcServerConfig {
+            max_requests_per_second: 0,
+            ..Default::default()
+        };
+        assert_eq!(config.admission_rate_limit(), None);
+
+        // An explicit budget does not depend on the method limiter.
+        let config = RpcServerConfig {
+            max_requests_per_second: 0,
+            admission_requests_per_second: Some(50),
+            ..Default::default()
+        };
+        assert_eq!(config.admission_rate_limit(), Some((50, 50)));
     }
 }

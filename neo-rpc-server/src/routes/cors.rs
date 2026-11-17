@@ -43,6 +43,40 @@ pub(super) struct CorsConfig {
 
 impl CorsConfig {
     pub(super) fn from_settings(settings: &RpcServerConfig, has_auth: bool) -> Option<Self> {
+        let (config, invalid_origins) = Self::parse(settings)?;
+
+        if invalid_origins > 0 {
+            tracing::warn!(
+                invalid_origins,
+                "Ignoring invalid CORS origin entries in allow_origins"
+            );
+        }
+        if !config.allow_any && config.origins.is_empty() {
+            tracing::warn!(
+                "CORS is enabled but allow_origins contains no valid entries; CORS will be \
+                 effectively disabled"
+            );
+        }
+
+        if config.allow_any && has_auth {
+            tracing::warn!(
+                "SECURITY WARNING: CORS is configured to allow all origins ('*') while \
+                authentication is enabled. This combination is insecure and may expose \
+                your RPC server to CSRF attacks. Consider specifying explicit allowed \
+                origins in the 'allow_origins' configuration."
+            );
+        }
+
+        Some(config)
+    }
+
+    /// The same configuration as [`Self::from_settings`], without repeating
+    /// its startup warnings.
+    pub(super) fn from_settings_quiet(settings: &RpcServerConfig) -> Option<Self> {
+        Self::parse(settings).map(|(config, _)| config)
+    }
+
+    fn parse(settings: &RpcServerConfig) -> Option<(Self, usize)> {
         if !settings.enable_cors {
             return None;
         }
@@ -62,29 +96,7 @@ impl CorsConfig {
             })
             .collect::<Vec<_>>();
 
-        if invalid_origins > 0 {
-            tracing::warn!(
-                invalid_origins,
-                "Ignoring invalid CORS origin entries in allow_origins"
-            );
-        }
-        if !allow_any && origins.is_empty() {
-            tracing::warn!(
-                "CORS is enabled but allow_origins contains no valid entries; CORS will be \
-                 effectively disabled"
-            );
-        }
-
-        if allow_any && has_auth {
-            tracing::warn!(
-                "SECURITY WARNING: CORS is configured to allow all origins ('*') while \
-                authentication is enabled. This combination is insecure and may expose \
-                your RPC server to CSRF attacks. Consider specifying explicit allowed \
-                origins in the 'allow_origins' configuration."
-            );
-        }
-
-        Some(Self { allow_any, origins })
+        Some((Self { allow_any, origins }, invalid_origins))
     }
 
     pub(super) fn origin_header(
