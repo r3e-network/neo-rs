@@ -38,6 +38,15 @@ pub trait Store: ReadOnlyStore + WriteStore<Vec<u8>, Vec<u8>> + Send + Sync + An
         false
     }
 
+    /// Returns a monotonic version of the store's committed contents.
+    ///
+    /// Caches fronting a mutable store use it to detect commits performed by
+    /// other writers and to drop values those commits superseded. Backends that
+    /// cannot report a version fall back to `0`, which disables that check.
+    fn state_generation(&self) -> u64 {
+        0
+    }
+
     /// Downcast support for concrete implementations.
     fn as_any(&self) -> &dyn Any;
 }

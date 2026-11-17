@@ -22,7 +22,7 @@ use std::{
     fs, mem,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 use tracing::{debug, error, warn};
@@ -39,6 +39,16 @@ pub struct RocksDbStore {
     pub(crate) batch_config: RwLock<WriteBatchConfig>,
     pub(crate) read_cache: Option<Arc<StorageReadCache>>,
     pub(crate) read_ahead_config: ReadAheadConfig,
+    /// Commit version of the database contents. Every write path advances it so
+    /// readers can tell whether a value they just read predates a commit.
+    cache_generation: Arc<AtomicU64>,
+    /// Serializes cache invalidation against cache fills: a fill may only
+    /// publish a value whose observed generation is still current.
+    cache_gate: Arc<RwLock<()>>,
+    /// Set when a write was accepted with the WAL disabled. Such a write has no
+    /// durable copy until its memtable is flushed, even after the batch
+    /// configuration is restored to WAL-backed mode.
+    memtable_only_writes: Arc<AtomicBool>,
 }
 
 impl RocksDbStore {
@@ -86,6 +96,9 @@ impl RocksDbStore {
             batch_config: RwLock::new(batch_config),
             read_cache,
             read_ahead_config,
+            cache_generation: Arc::new(AtomicU64::new(0)),
+            cache_gate: Arc::new(RwLock::new(())),
+            memtable_only_writes: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -101,6 +114,51 @@ impl RocksDbStore {
             direction,
             &self.read_ahead_config,
         )
+    }
+
+    /// Returns the commit generation that cache fills must match to be published.
+    fn read_cache_generation(&self) -> u64 {
+        self.cache_generation.load(Ordering::Acquire)
+    }
+
+    /// Publishes a value read from the database if no commit raced the read.
+    fn fill_read_cache(&self, key: &StorageKey, item: &StorageItem, expected_generation: u64) {
+        fill_read_cache_if_current(
+            self.read_cache.as_deref(),
+            &self.cache_gate,
+            &self.cache_generation,
+            expected_generation,
+            key,
+            item,
+        );
+    }
+
+    /// Advances the commit generation and drops the superseded keys.
+    ///
+    /// The generation bump and the key removal happen under the write side of
+    /// the invalidation gate, so no in-flight reader that observed an older
+    /// generation can republish a pre-commit value after this returns.
+    fn invalidate_read_cache(&self, keys: impl IntoIterator<Item = StorageKey>) {
+        let _gate = self.cache_gate.write();
+        self.cache_generation.fetch_add(1, Ordering::AcqRel);
+        if let Some(cache) = &self.read_cache {
+            for key in keys {
+                cache.remove(&key);
+            }
+        }
+    }
+
+    /// Drops every cached read after a write path that did not report its keys.
+    ///
+    /// Batched commits write through the batch buffer, which knows nothing about
+    /// this store's cache entries. Clearing them wholesale is the only sound
+    /// option, and it advances the generation so racing fills are discarded too.
+    fn invalidate_all_reads(&self) {
+        let _gate = self.cache_gate.write();
+        self.cache_generation.fetch_add(1, Ordering::AcqRel);
+        if let Some(cache) = &self.read_cache {
+            cache.clear();
+        }
     }
 
     /// Creates the same raw snapshot while preserving a caller's callback identity.
@@ -145,6 +203,33 @@ impl RocksDbStore {
 fn fail_fast_read(op: &str, err: &rocksdb::Error) -> ! {
     error!(target: "neo", error = %err, op, "rocksdb read failed; failing fast");
     panic!("RocksDB {op} failed: {err}");
+}
+
+/// Publishes a read-cache entry only when no invalidation happened since the
+/// value was read from the database.
+///
+/// The generation check and the insertion happen under the read side of the
+/// invalidation gate, while [`RocksDbStore::invalidate_read_cache`] advances the
+/// generation and clears superseded keys under its write side. A reader that
+/// observed an older generation therefore cannot re-insert a pre-commit value
+/// after the invalidation ran.
+fn fill_read_cache_if_current(
+    read_cache: Option<&StorageReadCache>,
+    gate: &RwLock<()>,
+    generation: &AtomicU64,
+    expected_generation: u64,
+    key: &StorageKey,
+    item: &StorageItem,
+) {
+    let Some(cache) = read_cache else {
+        return;
+    };
+    let _gate = gate.read();
+    if generation.load(Ordering::Acquire) != expected_generation {
+        return;
+    }
+    let size = item.value_bytes().len() + std::mem::size_of::<StorageKey>();
+    cache.put(key.clone(), item.clone(), size);
 }
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
@@ -193,11 +278,16 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
 
 impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
-        // Check read cache first (bloom filter will be checked inside)
-        if let Some(ref cache) = self.read_cache
-            && let Some(item) = cache.get(key)
-        {
-            return Some(item);
+        // Capture the generation before the value is read. A cache fill may
+        // only publish it while this generation is still current.
+        let generation = self.read_cache_generation();
+
+        // Check read cache first (bloom filter will be checked inside).
+        if let Some(ref cache) = self.read_cache {
+            let _gate = self.cache_gate.read();
+            if let Some(item) = cache.get(key) {
+                return Some(item);
+            }
         }
 
         let raw = key.to_array();
@@ -207,10 +297,8 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
             Err(err) => fail_fast_read("get", &err),
         };
 
-        // Cache the result if found
-        if let (Some(cache), Some(item)) = (&self.read_cache, &result) {
-            let size = item.value_bytes().len() + std::mem::size_of::<StorageKey>();
-            cache.put(key.clone(), item.clone(), size);
+        if let Some(item) = &result {
+            self.fill_read_cache(key, item, generation);
         }
 
         result
@@ -223,6 +311,13 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
     ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
         let prefix_bytes = key_prefix.map(|k| k.to_array());
 
+        // Capture the generation before iterating so a scan that raced a commit
+        // cannot publish pre-commit rows into the shared cache.
+        let generation = self.read_cache_generation();
+        let read_cache = self.read_cache.clone();
+        let gate = Arc::clone(&self.cache_gate);
+        let cache_generation = Arc::clone(&self.cache_generation);
+
         if direction == SeekDirection::Backward
             && let Some(prefix) = prefix_bytes.as_ref()
         {
@@ -232,7 +327,6 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
                 prefix.as_slice(),
                 &self.read_ahead_config,
             );
-            let read_cache = self.read_cache.clone();
             return Box::new(iter.map(move |res| {
                 let (key, value) = match res {
                     Ok(entry) => entry,
@@ -241,10 +335,14 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
                 let key_vec: Vec<u8> = key.into();
                 let storage_key = StorageKey::from_bytes(&key_vec);
                 let storage_item = StorageItem::from_bytes(value.into());
-                if let Some(ref cache) = read_cache {
-                    let size = storage_item.value_bytes().len() + std::mem::size_of::<StorageKey>();
-                    cache.put(storage_key.clone(), storage_item.clone(), size);
-                }
+                fill_read_cache_if_current(
+                    read_cache.as_deref(),
+                    &gate,
+                    &cache_generation,
+                    generation,
+                    &storage_key,
+                    &storage_item,
+                );
                 (storage_key, storage_item)
             }));
         }
@@ -260,8 +358,6 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
         });
 
         // Create an iterator that also caches results
-        let read_cache = self.read_cache.clone();
-
         Box::new(iter.filter_map(move |res| {
             let (key, value) = match res {
                 Ok(entry) => entry,
@@ -276,11 +372,15 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
             let storage_key = StorageKey::from_bytes(&key_vec);
             let storage_item = StorageItem::from_bytes(value.into());
 
-            // Cache the result
-            if let Some(ref cache) = read_cache {
-                let size = storage_item.value_bytes().len() + std::mem::size_of::<StorageKey>();
-                cache.put(storage_key.clone(), storage_item.clone(), size);
-            }
+            // Cache the result only if no commit raced this scan.
+            fill_read_cache_if_current(
+                read_cache.as_deref(),
+                &gate,
+                &cache_generation,
+                generation,
+                &storage_key,
+                &storage_item,
+            );
 
             Some((storage_key, storage_item))
         }))
@@ -298,9 +398,7 @@ impl RocksDbStore {
                 message: format!("RocksDB delete failed: {}", err),
             }
         })?;
-        if let Some(ref cache) = self.read_cache {
-            cache.remove(&StorageKey::from_bytes(&key));
-        }
+        self.invalidate_read_cache(std::iter::once(StorageKey::from_bytes(&key)));
         Ok(())
     }
 
@@ -312,9 +410,7 @@ impl RocksDbStore {
                 message: format!("RocksDB put failed: {}", err),
             }
         })?;
-        if let Some(ref cache) = self.read_cache {
-            cache.remove(&StorageKey::from_bytes(&key));
-        }
+        self.invalidate_read_cache(std::iter::once(StorageKey::from_bytes(&key)));
         Ok(())
     }
 
@@ -328,9 +424,7 @@ impl RocksDbStore {
                 message: format!("RocksDB put_sync failed: {}", err),
             }
         })?;
-        if let Some(ref cache) = self.read_cache {
-            cache.remove(&StorageKey::from_bytes(&key));
-        }
+        self.invalidate_read_cache(std::iter::once(StorageKey::from_bytes(&key)));
         Ok(())
     }
 }
@@ -381,6 +475,10 @@ impl Store for RocksDbStore {
         true
     }
 
+    fn state_generation(&self) -> u64 {
+        self.read_cache_generation()
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -395,6 +493,9 @@ impl Clone for RocksDbStore {
             batch_config: RwLock::new(*self.batch_config.read()),
             read_cache: self.read_cache.clone(),
             read_ahead_config: self.read_ahead_config,
+            cache_generation: Arc::clone(&self.cache_generation),
+            cache_gate: Arc::clone(&self.cache_gate),
+            memtable_only_writes: Arc::clone(&self.memtable_only_writes),
         }
     }
 }
@@ -547,10 +648,10 @@ impl RocksDbSnapshot {
         for res in iterator {
             let (key, value) = match res {
                 Ok(entry) => entry,
-                Err(err) => {
-                    warn!(target: "neo", error = %err, "rocksdb iterator error");
-                    continue;
-                }
+                // R11: an iterator error means the merged view is incomplete.
+                // Silently skipping the row would let callers treat absent
+                // data as authoritative, so the scan fails closed instead.
+                Err(err) => fail_fast_read("snapshot iterator", &err),
             };
             let key_vec = key.to_vec();
             if !prefix.is_empty() && !key_vec.starts_with(prefix) {
@@ -587,6 +688,7 @@ impl RocksDbSnapshot {
         }
 
         let mut write_opts = WriteOptions::default();
+        let mut wal_disabled = false;
         if force_durable {
             write_opts.set_sync(true);
         } else {
@@ -594,6 +696,7 @@ impl RocksDbSnapshot {
             write_opts.set_sync(batch_config.sync_on_flush);
             if batch_config.disable_wal {
                 write_opts.disable_wal(true);
+                wal_disabled = true;
             }
         }
 
@@ -626,20 +729,31 @@ impl RocksDbSnapshot {
                 err
             )));
         }
+        if wal_disabled {
+            // No WAL record exists for this commit, so it only becomes durable
+            // once the memtable is flushed.
+            self.store
+                .memtable_only_writes
+                .store(true, Ordering::Release);
+        }
 
         // Invalidate only after the atomic database write succeeds. Invalidating
         // before the write lets a concurrent latest-state read repopulate the
-        // cache with the old value, which would then survive the commit.
+        // cache with the old value, which would then survive the commit. The
+        // generation bump also prevents an in-flight read that already fetched
+        // the pre-commit value from publishing it afterwards.
         {
             let _stage = StoreCommitTimer::new(
                 self.commit_profiler.as_deref(),
                 StoreCommitStage::CacheInvalidation,
             );
-            if let Some(ref cache) = self.read_cache {
-                for key in self.pending_changes.get_mut().keys() {
-                    cache.remove(&StorageKey::from_bytes(key));
-                }
-            }
+            self.store.invalidate_read_cache(
+                self.pending_changes
+                    .get_mut()
+                    .keys()
+                    .map(|key| StorageKey::from_bytes(key))
+                    .collect::<Vec<_>>(),
+            );
         }
         self.pending_changes.get_mut().clear();
         self.has_pending_changes.store(false, Ordering::Release);
@@ -861,13 +975,36 @@ impl RocksDbStore {
         debug!(target: "neo", "disabled fast sync mode optimizations (WAL restored)");
     }
 
-    /// Flushes buffered writes and synchronizes the WAL without discarding it.
-    /// Memtable flushing is unnecessary for WAL-backed crash durability.
+    /// Flushes buffered writes and makes them durable.
+    ///
+    /// WAL-backed writes are already crash-durable once the WAL is synced, so a
+    /// WAL sync suffices. Fast-sync batches disable the WAL, which means the only
+    /// durable copy lives in the memtable; those require a checked memtable flush
+    /// instead, otherwise a crash silently loses the writes that were reported as
+    /// durable.
     pub fn try_flush_durable(&self) -> StorageResult<()> {
         self.flush_batch_writes()?;
+
         self.db.flush_wal(true).map_err(|err| {
             StorageError::CommitFailed(format!("RocksDB durable WAL flush failed: {err}"))
-        })
+        })?;
+
+        // WAL-disabled writes have no durable copy until their memtable reaches
+        // disk. The flag also covers writes made before the batch configuration
+        // was restored to WAL-backed mode, which a plain WAL sync would miss.
+        let memtable_only = self.batch_config.read().disable_wal
+            || self.memtable_only_writes.load(Ordering::Acquire);
+        if !memtable_only {
+            return Ok(());
+        }
+
+        let mut flush_options = rocksdb::FlushOptions::default();
+        flush_options.set_wait(true);
+        self.db.flush_opt(&flush_options).map_err(|err| {
+            StorageError::CommitFailed(format!("RocksDB durable memtable flush failed: {err}"))
+        })?;
+        self.memtable_only_writes.store(false, Ordering::Release);
+        Ok(())
     }
 
     /// Force flush all memtables to disk.
@@ -895,6 +1032,12 @@ impl RocksDbStore {
                     .unwrap_or(0);
                 (active, total)
             })
+    }
+
+    /// Enables or disables block checksum verification for reads and scans.
+    /// Verification is on by default; disabling it weakens corruption detection.
+    pub fn set_verify_checksums(&mut self, enable: bool) {
+        self.read_ahead_config.verify_checksums = enable;
     }
 
     /// Enables read caching with the specified configuration.
@@ -930,8 +1073,22 @@ impl RocksDbStore {
     }
 
     /// Forces a flush of pending batch writes.
+    ///
+    /// A batch that carried writes supersedes cached reads, and the buffer does
+    /// not report which keys it wrote, so the cache is dropped wholesale once the
+    /// write succeeded. A failed flush leaves both the buffer and the cache
+    /// untouched so the caller can retry.
     pub fn flush_batch_writes(&self) -> StorageResult<()> {
-        self.batch_committer.buffer.force_flush()
+        let pending = self.batch_committer.buffer.pending_count();
+        if pending == 0 {
+            return Ok(());
+        }
+        if self.batch_committer.buffer.config().disable_wal {
+            self.memtable_only_writes.store(true, Ordering::Release);
+        }
+        self.batch_committer.buffer.force_flush()?;
+        self.invalidate_all_reads();
+        Ok(())
     }
 }
 

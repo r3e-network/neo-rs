@@ -44,6 +44,8 @@ pub struct RocksDBStoreProvider {
     enable_bloom_filters: bool,
     /// Enable read-ahead for sequential scans
     enable_read_ahead: bool,
+    /// Verify block checksums on every read (safety default).
+    verify_checksums: bool,
 }
 
 impl RocksDBStoreProvider {
@@ -56,6 +58,7 @@ impl RocksDBStoreProvider {
             read_cache_config: Some(ReadCacheConfig::default()),
             enable_bloom_filters: true,
             enable_read_ahead: true,
+            verify_checksums: true,
         }
     }
 
@@ -89,6 +92,15 @@ impl RocksDBStoreProvider {
         self
     }
 
+    /// Enables or disables block checksum verification on reads.
+    ///
+    /// Verification is on by default. Disabling it trades corruption detection
+    /// for scan throughput and must only be used on trusted, non-consensus data.
+    pub fn with_checksum_verification(mut self, enable: bool) -> Self {
+        self.verify_checksums = enable;
+        self
+    }
+
     /// Returns a shared handle to the batch commit statistics.
     pub fn batch_stats(&self) -> Arc<BatchCommitStats> {
         Arc::clone(&self.batch_stats)
@@ -109,7 +121,7 @@ impl RocksDBStoreProvider {
             path: resolved,
             ..self.base_config.clone()
         };
-        RocksDbStore::open(
+        let mut store = RocksDbStore::open(
             &config,
             self.batch_config,
             &self.read_cache_config,
@@ -121,7 +133,9 @@ impl RocksDBStoreProvider {
                 "failed to open RocksDB store at {}: {err}",
                 config.path.display()
             ),
-        })
+        })?;
+        store.set_verify_checksums(self.verify_checksums);
+        Ok(store)
     }
 }
 
@@ -153,7 +167,10 @@ impl Default for ReadAheadConfig {
         Self {
             enabled: true,
             read_ahead_size: 256 * 1024, // 256KB
-            verify_checksums: false,
+            // Verification is on by default: a corrupt block that is read as
+            // data silently forks consensus state. Throughput-sensitive callers
+            // opt out explicitly via `with_checksum_verification(false)`.
+            verify_checksums: true,
             fill_cache: true,
         }
     }

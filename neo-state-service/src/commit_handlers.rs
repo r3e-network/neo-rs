@@ -32,7 +32,9 @@
 //! - Blockchain_Committed event handler notifies and persists state roots
 
 use super::context::StateCommitContext;
+use super::state_root::CURRENT_VERSION;
 use super::{StateRoot, ValidatedRootPersisted};
+use crate::store::PREFIX_LOCAL_ROOT_INDEX;
 use neo_crypto::mpt_trie::{
     GlobalNodeCache, MptError, MptProfile, MptProfileSnapshot, MptResult, MptStoreSnapshot, Trie,
 };
@@ -91,6 +93,11 @@ pub(crate) const PREFIX_STATE_ROOT: u8 = 0xf0;
 /// Key prefix for persisted MPT trie nodes, followed by the trie-internal
 /// node key (which already carries the MPT node prefix byte).
 pub(crate) const PREFIX_TRIE_NODE: u8 = 0xf1;
+
+/// Prefix `neo_crypto::mpt_trie::Trie` prepends to a node hash when addressing
+/// the MPT node store (its private `CACHE_PREFIX`). Recovery uses it to look up
+/// the root node of a persisted root.
+const TRIE_NODE_CACHE_PREFIX: u8 = 0xf0;
 
 /// Builds the storage key under which the state-root record for `index` is
 /// persisted.
@@ -168,6 +175,25 @@ pub fn read_state_root_record(
     deserialize_state_root_record(index, item.value())
         .map(Some)
         .ok_or_else(|| format!("malformed persisted state-root record at height {index}"))
+}
+
+/// Reads the durable local-commit cursor (`PREFIX_LOCAL_ROOT_INDEX`).
+///
+/// The cursor is advanced only inside a block commit, so it names the highest
+/// height whose backing block exists locally.
+fn read_local_root_cursor(store_cache: &StoreCache) -> Result<Option<u32>, StateServiceError> {
+    let key = StorageKey::new(STATE_ROOT_STORAGE_ID, vec![PREFIX_LOCAL_ROOT_INDEX]);
+    let Some(item) = store_cache.get(&key) else {
+        return Ok(None);
+    };
+    let bytes: [u8; 8] = item
+        .value()
+        .try_into()
+        .map_err(|_| StateServiceError::new("malformed persisted local state-root cursor"))?;
+    let index = u32::try_from(u64::from_be_bytes(bytes)).map_err(|_| {
+        StateServiceError::new("persisted local state-root cursor exceeds u32 heights")
+    })?;
+    Ok(Some(index))
 }
 
 /// Reads a `u32` little-endian length followed by that many bytes.
@@ -675,13 +701,73 @@ impl StateServiceCommitHandlers {
     /// Re-seeds the incremental trie baseline from persisted state-root records.
     ///
     /// After a restart the handler has no in-memory root, but root records and
-    /// trie nodes persisted by earlier runs live in the store. This method
-    /// locates the highest valid record and adopts its root hash so subsequent
-    /// blocks extend the historical trie instead of starting a fresh one.
+    /// trie nodes persisted by earlier runs live in the store. Recovery adopts
+    /// **only the locally committed root**:
+    ///
+    /// 1. the durable local cursor ([`PREFIX_LOCAL_ROOT_INDEX`]) names the last
+    ///    height whose block this node actually committed, so an unsigned root
+    ///    that arrived from the network for a block that does not exist locally
+    ///    can never be adopted (S-1);
+    /// 2. without a cursor (databases written before cursors existed) the
+    ///    highest *unsigned* record is used, because only a record without a
+    ///    witness proves this node computed the root itself;
+    /// 3. the root's backing trie node must exist locally, otherwise extending
+    ///    the trie would silently start from state that is not here.
     ///
     /// Returns the block index of the recovered root, or `None` when no valid
-    /// records exist.
+    /// local records exist.
     pub fn recover_from_storage(&self) -> Result<Option<u32>, StateServiceError> {
+        let Some(index) = self.recoverable_local_root_index()? else {
+            debug!(
+                target: "neo::state_service",
+                "no locally committed state roots found; starting from an empty trie"
+            );
+            return Ok(None);
+        };
+
+        let root = read_state_root_record(&self.store_cache, index)
+            .map_err(StateServiceError::new)?
+            .ok_or_else(|| {
+                StateServiceError::new(format!(
+                    "cannot recover state root: local progress names height {index} but no record is persisted"
+                ))
+            })?;
+
+        if root.version != CURRENT_VERSION {
+            return Err(StateServiceError::new(format!(
+                "cannot recover state root: unsupported version {} at height {index}",
+                root.version
+            )));
+        }
+
+        self.ensure_root_node_is_durable(&root.root_hash, index)?;
+
+        *self.current_root.lock().unwrap() = Some(root.root_hash);
+        // Recovery deliberately starts from a HashNode. Only a root whose nodes
+        // are known durable may become a warm baseline.
+        *self.current_root_node.lock().unwrap() = None;
+        *self.pending_root_node.lock().unwrap() = None;
+        debug!(
+            target: "neo::state_service",
+            index,
+            root = %root.root_hash,
+            "recovered state root baseline from storage"
+        );
+        Ok(Some(index))
+    }
+
+    /// Returns the height whose root may be adopted at startup.
+    ///
+    /// The local cursor wins unconditionally: it is the only durable proof that
+    /// the block backing the root was committed here. The legacy scan is a
+    /// fallback for databases without a cursor and considers unsigned records
+    /// only, since a signed record may describe a network height this node has
+    /// not reached.
+    fn recoverable_local_root_index(&self) -> Result<Option<u32>, StateServiceError> {
+        if let Some(index) = read_local_root_cursor(&self.store_cache)? {
+            return Ok(Some(index));
+        }
+
         let prefix_key = StorageKey::new(STATE_ROOT_STORAGE_ID, vec![PREFIX_STATE_ROOT]);
         let mut highest: Option<u32> = None;
         for (key, item) in self
@@ -694,50 +780,56 @@ impl StateServiceCommitHandlers {
                 continue;
             }
             let index = u32::from_be_bytes([raw[1], raw[2], raw[3], raw[4]]);
-            if deserialize_state_root_record(index, item.value()).is_none() {
+            let Some(record) = deserialize_state_root_record(index, item.value()) else {
                 warn!(
                     target: "neo::state_service",
                     index,
                     "skipping malformed persisted state root record"
                 );
                 continue;
+            };
+            if record.witness.is_some() {
+                // Quorum-validated network root: it proves nothing about local
+                // block progress and must never seed the local trie.
+                continue;
             }
             if highest.is_none_or(|current| index > current) {
                 highest = Some(index);
             }
         }
+        Ok(highest)
+    }
 
-        match highest {
-            Some(index) => {
-                let root = self
-                    .get_state_root(index)
-                    .map(|record| record.root_hash)
-                    .ok_or_else(|| {
-                        StateServiceError::new(format!(
-                            "failed to re-read persisted state root at index {index}"
-                        ))
-                    })?;
-                *self.current_root.lock().unwrap() = Some(root);
-                // Recovery deliberately starts from a HashNode. Only a root
-                // whose nodes are known durable may become a warm baseline.
-                *self.current_root_node.lock().unwrap() = None;
-                *self.pending_root_node.lock().unwrap() = None;
-                debug!(
-                    target: "neo::state_service",
-                    index,
-                    %root,
-                    "recovered state root baseline from storage"
-                );
-                Ok(Some(index))
-            }
-            None => {
-                debug!(
-                    target: "neo::state_service",
-                    "no persisted state roots found; starting from an empty trie"
-                );
-                Ok(None)
-            }
+    /// Fails unless the root node of `root_hash` is present in the local store.
+    ///
+    /// A root record can be persisted without its trie (a network root, a
+    /// partially written batch, or pruned history). Adopting such a root makes
+    /// every later trie operation fail or, worse, extend a nonexistent state.
+    fn ensure_root_node_is_durable(
+        &self,
+        root_hash: &UInt256,
+        index: u32,
+    ) -> Result<(), StateServiceError> {
+        let mut mpt_key = Vec::with_capacity(1 + std::mem::size_of::<UInt256>());
+        // Mirrors the prefix `neo_crypto::mpt_trie::Trie` prepends to node
+        // hashes when addressing the node store.
+        mpt_key.push(TRIE_NODE_CACHE_PREFIX);
+        mpt_key.extend_from_slice(root_hash.as_ref());
+
+        let node = self
+            .node_store
+            .try_get(&mpt_key)
+            .map_err(|e| {
+                StateServiceError::new(format!(
+                    "cannot recover state root: failed to read trie node {root_hash} for height {index}: {e}"
+                ))
+            })?;
+        if node.is_none() {
+            return Err(StateServiceError::new(format!(
+                "cannot recover state root: trie node {root_hash} for height {index} is missing from local storage"
+            )));
         }
+        Ok(())
     }
 
     /// Rolls back uncommitted state changes.
@@ -1094,6 +1186,41 @@ mod tests {
             .merge_tracked_items(&snapshot.tracked_items());
         snapshot.commit();
         handlers.persist_pending_state_root(index).unwrap();
+    }
+
+    /// Writes everything the handler staged into the backing store, mirroring a
+    /// real block commit.
+    fn persist_to_store(handlers: &StateServiceCommitHandlers, store: &Arc<dyn Store>) {
+        let mut persisted = store.snapshot();
+        let writer = Arc::get_mut(&mut persisted).expect("exclusive store snapshot");
+        handlers
+            .store_cache
+            .data_cache()
+            .apply_tracked_to_writer(writer)
+            .expect("persist tracked state-service entries");
+        writer.try_commit().expect("store commit");
+    }
+
+    /// Persists the local-commit cursor the way `StateRootStore` does.
+    fn stage_local_cursor(handlers: &StateServiceCommitHandlers, index: u32) {
+        let key = StorageKey::new(STATE_ROOT_STORAGE_ID, vec![PREFIX_LOCAL_ROOT_INDEX]);
+        let item = StorageItem::from_bytes(u64::from(index).to_be_bytes().to_vec());
+        let result = if handlers.store_cache.get(&key).is_some() {
+            handlers.store_cache.data_cache().try_update(key, item)
+        } else {
+            handlers.store_cache.data_cache().try_add(key, item)
+        };
+        result.expect("stage local root cursor");
+    }
+
+    /// Builds a record carrying a witness, i.e. a quorum-validated network root.
+    fn network_root_record(index: u32, root_hash: UInt256) -> StateRoot {
+        let mut record = StateRoot::new_current(index, root_hash);
+        record.witness = Some(neo_protocol::witness::Witness::new_with_scripts(
+            vec![0x00],
+            vec![0x51],
+        ));
+        record
     }
 
     #[test]
@@ -1567,31 +1694,132 @@ mod tests {
     #[test]
     fn test_recover_from_storage_seeds_baseline() {
         let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
-        let root = UInt256::from([9u8; 32]);
+        let handlers = StateServiceCommitHandlers::new(
+            Arc::new(StoreCache::new(store.clone())),
+            true,
+        )
+        .unwrap();
 
-        // Simulate records persisted by an earlier run (committed to the store).
-        let mut writer = StoreCache::new(store.clone());
-        for index in [3u32, 5u32] {
-            writer
-                .data_cache()
-                .try_add(
-                    state_root_record_key(index),
-                    StorageItem::from_bytes(serialize_state_root_record(&StateRoot::new_current(
-                        index, root,
-                    ))),
-                )
-                .unwrap();
+        // Commit two real blocks: root records, trie nodes and the local cursor
+        // are all persisted by the commit path.
+        let mut committed_root = None;
+        for (height, value) in [(3u32, b"three".as_slice()), (5, b"five".as_slice())] {
+            let snapshot = snapshot_with_changes(&[(1, b"account".to_vec(), value.to_vec())]);
+            handlers.commit_block(height, &snapshot).unwrap();
+            committed_root = Some(pending_root(&handlers));
+            finish_commit(&handlers, height, &snapshot);
         }
+        stage_local_cursor(&handlers, 5);
+        persist_to_store(&handlers, &store);
+        let root = committed_root.expect("committed root");
+
+        // A fresh handler over a fresh cache recovers the locally committed root.
+        let cache = Arc::new(StoreCache::new(store));
+        let recovered = StateServiceCommitHandlers::new(cache, true).unwrap();
+        assert_eq!(recovered.current_root_hash(), None);
+        assert_eq!(recovered.recover_from_storage().unwrap(), Some(5));
+        assert_eq!(recovered.current_root_hash(), Some(root));
+        assert_eq!(recovered.get_state_root(5).unwrap().root_hash, root);
+        assert!(recovered.get_state_root(4).is_none());
+
+        // The recovered baseline extends the hydrated trie, so the next block
+        // derives the same root as the original handler would.
+        let changes = [(1, b"account".to_vec(), b"six".to_vec())];
+        handlers.commit_block(6, &snapshot_with_changes(&changes)).unwrap();
+        recovered.commit_block(6, &snapshot_with_changes(&changes)).unwrap();
+        assert_eq!(pending_root(&handlers), pending_root(&recovered));
+    }
+
+    #[test]
+    fn recovery_never_adopts_a_network_root_above_the_local_cursor() {
+        let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+        let handlers = StateServiceCommitHandlers::new(
+            Arc::new(StoreCache::new(store.clone())),
+            true,
+        )
+        .unwrap();
+
+        let snapshot = snapshot_with_changes(&[(1, b"account".to_vec(), b"local".to_vec())]);
+        handlers.commit_block(7, &snapshot).unwrap();
+        let local_root = pending_root(&handlers);
+        finish_commit(&handlers, 7, &snapshot);
+        stage_local_cursor(&handlers, 7);
+
+        // A quorum-validated root was persisted for a height whose block does
+        // not exist locally yet. It must not become the trie baseline.
+        let network = network_root_record(42, UInt256::from([0xAB; 32]));
+        handlers
+            .store_cache
+            .data_cache()
+            .try_add(
+                state_root_record_key(42),
+                StorageItem::from_bytes(serialize_state_root_record(&network)),
+            )
+            .unwrap();
+        persist_to_store(&handlers, &store);
+
+        let recovered =
+            StateServiceCommitHandlers::new(Arc::new(StoreCache::new(store)), true).unwrap();
+        assert_eq!(recovered.recover_from_storage().unwrap(), Some(7));
+        assert_eq!(recovered.current_root_hash(), Some(local_root));
+    }
+
+    #[test]
+    fn recovery_without_a_cursor_ignores_network_only_records() {
+        let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+        let mut writer = StoreCache::new(store.clone());
+        let network = network_root_record(9, UInt256::from([0xCD; 32]));
+        writer
+            .data_cache()
+            .try_add(
+                state_root_record_key(9),
+                StorageItem::from_bytes(serialize_state_root_record(&network)),
+            )
+            .unwrap();
         writer.commit();
 
-        // A fresh handler over a fresh cache recovers the highest record.
-        let cache = Arc::new(StoreCache::new(store));
-        let handlers = StateServiceCommitHandlers::new(cache, true).unwrap();
+        // No local cursor and no unsigned record: this node has no locally
+        // committed state, so recovery must start from an empty trie.
+        let handlers =
+            StateServiceCommitHandlers::new(Arc::new(StoreCache::new(store)), true).unwrap();
+        assert_eq!(handlers.recover_from_storage().unwrap(), None);
         assert_eq!(handlers.current_root_hash(), None);
-        assert_eq!(handlers.recover_from_storage().unwrap(), Some(5));
-        assert_eq!(handlers.current_root_hash(), Some(root));
-        assert_eq!(handlers.get_state_root(5).unwrap().root_hash, root);
-        assert!(handlers.get_state_root(4).is_none());
+    }
+
+    #[test]
+    fn recovery_refuses_a_cursor_whose_trie_node_is_missing() {
+        let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+        let mut writer = StoreCache::new(store.clone());
+        let root = UInt256::from([0x5A; 32]);
+        writer
+            .data_cache()
+            .try_add(
+                state_root_record_key(11),
+                StorageItem::from_bytes(serialize_state_root_record(&StateRoot::new_current(
+                    11, root,
+                ))),
+            )
+            .unwrap();
+        writer
+            .data_cache()
+            .try_add(
+                StorageKey::new(STATE_ROOT_STORAGE_ID, vec![PREFIX_LOCAL_ROOT_INDEX]),
+                StorageItem::from_bytes(11u64.to_be_bytes().to_vec()),
+            )
+            .unwrap();
+        writer.commit();
+
+        let handlers =
+            StateServiceCommitHandlers::new(Arc::new(StoreCache::new(store)), true).unwrap();
+        let error = handlers
+            .recover_from_storage()
+            .expect_err("a root without its trie must not be adopted");
+        assert!(
+            error.message.contains("missing from local storage"),
+            "unexpected error: {}",
+            error.message
+        );
+        assert_eq!(handlers.current_root_hash(), None);
     }
 
     #[test]

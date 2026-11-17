@@ -192,13 +192,25 @@ impl WriteBatchConfig {
     }
 }
 
+/// A staged write operation that has not been written to RocksDB yet.
+///
+/// Operations are kept as plain values (instead of a `WriteBatch`) so a failed
+/// flush can leave them buffered for a retry. Dropping them on error would
+/// silently discard acknowledged writes.
+#[cfg(feature = "rocksdb")]
+#[derive(Debug, Clone)]
+enum BatchOp {
+    Put(Vec<u8>, Vec<u8>),
+    Delete(Vec<u8>),
+}
+
 /// Buffered write batch for RocksDB.
 #[cfg(feature = "rocksdb")]
 pub struct WriteBatchBuffer {
     config: WriteBatchConfig,
     stats: Arc<WriteBatchStats>,
     db: Arc<DB>,
-    batch: Mutex<WriteBatch>,
+    ops: Mutex<Vec<BatchOp>>,
     pending_count: AtomicUsize,
     pending_bytes: AtomicUsize,
     last_flush: Mutex<Instant>,
@@ -214,7 +226,7 @@ impl WriteBatchBuffer {
             config,
             stats,
             db,
-            batch: Mutex::new(WriteBatch::default()),
+            ops: Mutex::new(Vec::new()),
             pending_count: AtomicUsize::new(0),
             pending_bytes: AtomicUsize::new(0),
             last_flush: Mutex::new(Instant::now()),
@@ -243,65 +255,44 @@ impl WriteBatchBuffer {
     }
 
     /// Adds a put operation to the batch.
-    pub fn put(&self, key: &[u8], value: &[u8]) {
-        let key_len = key.len();
-        let value_len = value.len();
-
-        {
-            let mut batch = self.batch.lock();
-            batch.put(key, value);
-        }
-
-        let new_count = self.pending_count.fetch_add(1, Ordering::Relaxed) + 1;
-        let new_bytes = self
-            .pending_bytes
-            .fetch_add(key_len + value_len, Ordering::Relaxed)
-            + key_len
-            + value_len;
-
-        self.stats.set_pending(new_count);
-
-        trace!(
-            target: "neo",
-            key_len,
-            value_len,
-            pending_ops = new_count,
-            pending_bytes = new_bytes,
-            "write batch put"
-        );
-
-        // Check if we should flush
-        if self.should_flush(new_count, new_bytes) {
-            let _ = self.flush();
-        }
+    ///
+    /// Returns the auto-flush error when the batch size or age threshold was
+    /// crossed: the caller must learn that the write is not durably staged
+    /// instead of assuming it succeeded.
+    pub fn put(&self, key: &[u8], value: &[u8]) -> StorageResult<()> {
+        let op_bytes = key.len() + value.len();
+        self.push(BatchOp::Put(key.to_vec(), value.to_vec()), op_bytes)
     }
 
     /// Adds a delete operation to the batch.
-    pub fn delete(&self, key: &[u8]) {
-        let key_len = key.len();
+    ///
+    /// Returns the auto-flush error for the same reason as [`Self::put`].
+    pub fn delete(&self, key: &[u8]) -> StorageResult<()> {
+        let op_bytes = key.len();
+        self.push(BatchOp::Delete(key.to_vec()), op_bytes)
+    }
 
-        {
-            let mut batch = self.batch.lock();
-            batch.delete(key);
-        }
+    fn push(&self, op: BatchOp, op_bytes: usize) -> StorageResult<()> {
+        self.ops.lock().push(op);
 
         let new_count = self.pending_count.fetch_add(1, Ordering::Relaxed) + 1;
-        let new_bytes = self.pending_bytes.fetch_add(key_len, Ordering::Relaxed) + key_len;
+        let new_bytes = self.pending_bytes.fetch_add(op_bytes, Ordering::Relaxed) + op_bytes;
 
         self.stats.set_pending(new_count);
 
         trace!(
             target: "neo",
-            key_len,
+            op_bytes,
             pending_ops = new_count,
             pending_bytes = new_bytes,
-            "write batch delete"
+            "write batch staged"
         );
 
         // Check if we should flush
         if self.should_flush(new_count, new_bytes) {
-            let _ = self.flush();
+            self.flush()?;
         }
+        Ok(())
     }
 
     /// Checks if the batch should be flushed.
@@ -331,10 +322,14 @@ impl WriteBatchBuffer {
     }
 
     /// Flushes the batch to the database.
+    ///
+    /// The staged operations are only released after RocksDB accepted the write.
+    /// On failure they stay buffered so the caller can retry instead of losing
+    /// data that was already reported as staged.
     pub fn flush(&self) -> StorageResult<()> {
-        let mut batch = self.batch.lock();
+        let mut ops = self.ops.lock();
 
-        if batch.is_empty() {
+        if ops.is_empty() {
             return Ok(());
         }
 
@@ -350,14 +345,21 @@ impl WriteBatchBuffer {
             write_opts.disable_wal(true);
         }
 
-        // Take ownership of the batch and create a new one
-        let batch_to_write = std::mem::take(&mut *batch);
+        // Build the RocksDB batch from the staged operations without consuming
+        // them, so a failed write can be retried from the same buffer.
+        let mut batch = WriteBatch::default();
+        for op in ops.iter() {
+            match op {
+                BatchOp::Put(key, value) => batch.put(key, value),
+                BatchOp::Delete(key) => batch.delete(key),
+            }
+        }
 
         // Write the batch
-        match self.db.write_opt(batch_to_write, &write_opts) {
+        match self.db.write_opt(batch, &write_opts) {
             Ok(()) => {
-                let duration = start.elapsed();
-                let duration_ms = duration.as_millis() as u64;
+                ops.clear();
+                let duration_ms = start.elapsed().as_millis() as u64;
 
                 // Reset counters
                 self.pending_count.store(0, Ordering::Relaxed);
@@ -384,7 +386,14 @@ impl WriteBatchBuffer {
                 Ok(())
             }
             Err(e) => {
-                error!(target: "neo", error = %e, "write batch flush failed");
+                // Keep the staged operations for a retry and leave the pending
+                // counters untouched so they still describe the real backlog.
+                error!(
+                    target: "neo",
+                    error = %e,
+                    pending_ops = count,
+                    "write batch flush failed; operations retained for retry"
+                );
                 Err(StorageError::Io {
                     message: format!("RocksDB write batch flush failed: {}", e),
                 })
@@ -425,8 +434,7 @@ impl WriteBatchBuffer {
 
     /// Clears all pending operations without flushing.
     pub fn clear(&self) {
-        let mut batch = self.batch.lock();
-        *batch = WriteBatch::default();
+        self.ops.lock().clear();
         self.pending_count.store(0, Ordering::Relaxed);
         self.pending_bytes.store(0, Ordering::Relaxed);
         self.stats.set_pending(0);
@@ -483,13 +491,13 @@ impl AutoFlushBatchBuffer {
     }
 
     /// Adds a put operation.
-    pub fn put(&self, key: &[u8], value: &[u8]) {
-        self.inner.put(key, value);
+    pub fn put(&self, key: &[u8], value: &[u8]) -> StorageResult<()> {
+        self.inner.put(key, value)
     }
 
     /// Adds a delete operation.
-    pub fn delete(&self, key: &[u8]) {
-        self.inner.delete(key);
+    pub fn delete(&self, key: &[u8]) -> StorageResult<()> {
+        self.inner.delete(key)
     }
 
     /// Forces a flush.
@@ -519,8 +527,8 @@ mod tests {
         let (db, _tmp) = create_test_db();
         let buffer = WriteBatchBuffer::with_defaults(db);
 
-        buffer.put(b"key1", b"value1");
-        buffer.put(b"key2", b"value2");
+        buffer.put(b"key1", b"value1").unwrap();
+        buffer.put(b"key2", b"value2").unwrap();
 
         assert_eq!(buffer.pending_count(), 2);
 
@@ -534,16 +542,49 @@ mod tests {
     }
 
     #[test]
+    fn failed_flush_retains_operations_for_retry() {
+        let (db, tmp) = create_test_db();
+        let path = tmp.path().join("test_db");
+        drop(db);
+
+        // A read-only handle rejects writes, which is exactly the failure mode a
+        // crashing or full disk produces. The buffer must keep the operations so
+        // the caller can retry instead of silently losing them.
+        let mut opts = rocksdb::Options::default();
+        opts.create_if_missing(false);
+        let read_only = Arc::new(DB::open_for_read_only(&opts, &path, false).unwrap());
+        let buffer = WriteBatchBuffer::with_defaults(read_only);
+
+        buffer.put(b"key1", b"value1").unwrap();
+        buffer.put(b"key2", b"value2").unwrap();
+
+        let error = buffer
+            .flush()
+            .expect_err("a read-only database cannot accept the batch");
+        assert!(
+            error.to_string().contains("write batch flush failed"),
+            "unexpected error: {error}"
+        );
+        assert_eq!(buffer.pending_count(), 2, "failed flush must retain the batch");
+        assert_eq!(buffer.pending_bytes(), b"key1".len() + b"value1".len() + b"key2".len() + b"value2".len());
+        assert!(buffer.has_pending());
+
+        // Clearing is the only path that discards staged writes.
+        buffer.clear();
+        assert_eq!(buffer.pending_count(), 0);
+    }
+
+    #[test]
     fn write_batch_buffer_delete() {
         let (db, _tmp) = create_test_db();
         let buffer = WriteBatchBuffer::with_defaults(db.clone());
 
         // First put a value
-        buffer.put(b"key1", b"value1");
+        buffer.put(b"key1", b"value1").unwrap();
         buffer.flush().unwrap();
 
         // Then delete it
-        buffer.delete(b"key1");
+        buffer.delete(b"key1").unwrap();
         buffer.flush().unwrap();
 
         // Verify it's gone
@@ -567,13 +608,13 @@ mod tests {
 
         // Add 4 items - should not flush yet
         for i in 0..4 {
-            buffer.put(format!("key{}", i).as_bytes(), b"value");
+            buffer.put(format!("key{}", i).as_bytes(), b"value").unwrap();
         }
 
         assert_eq!(buffer.pending_count(), 4);
 
         // Add 5th item - should trigger auto-flush
-        buffer.put(b"key5", b"value");
+        buffer.put(b"key5", b"value").unwrap();
 
         // May need a small delay for the flush to complete
         std::thread::sleep(Duration::from_millis(10));
@@ -587,8 +628,8 @@ mod tests {
         let (db, _tmp) = create_test_db();
         let buffer = WriteBatchBuffer::with_defaults(db);
 
-        buffer.put(b"key1", b"value1");
-        buffer.put(b"key2", b"value2");
+        buffer.put(b"key1", b"value1").unwrap();
+        buffer.put(b"key2", b"value2").unwrap();
 
         assert_eq!(buffer.pending_count(), 2);
 

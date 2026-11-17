@@ -45,6 +45,7 @@ impl StoreCache {
     ) -> Self {
         let store_for_get = store.clone();
         let store_for_find = store.clone();
+        let store_generation = store.clone();
         let store_get: Arc<StoreGetFn> =
             Arc::new(move |key: &StorageKey| store_for_get.try_get(key));
         let store_find: Arc<StoreFindFn> = Arc::new(move |prefix, direction| {
@@ -52,13 +53,18 @@ impl StoreCache {
                 .find(prefix, direction)
                 .collect::<Vec<(StorageKey, StorageItem)>>()
         });
+        let mut data_cache = DataCache::new_with_config(
+            read_only,
+            Some(store_get),
+            Some(store_find),
+            config,
+        );
+        // A store-backed cache is a latest-state view: other writers may commit
+        // to the same store, so cached reads must be revalidated against the
+        // store's version before they are returned.
+        data_cache.set_generation_source(move || store_generation.state_generation());
         Self {
-            data_cache: DataCache::new_with_config(
-                read_only,
-                Some(store_get),
-                Some(store_find),
-                config,
-            ),
+            data_cache,
             commit_profiler: None,
             store: Some(store),
             snapshot: None,

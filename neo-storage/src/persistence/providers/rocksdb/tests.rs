@@ -67,6 +67,46 @@ fn durable_snapshot_commit_survives_reopen_with_high_throughput_profile() {
 }
 
 #[test]
+fn durable_flush_persists_wal_disabled_writes_across_reopen() {
+    let tmp = TempDir::new().expect("tempdir");
+    let db_path = tmp.path().join("rocksdb-wal-disabled-durable");
+    let key = vec![0xF5];
+    let value = vec![0x3C; 96];
+
+    {
+        let provider = RocksDBStoreProvider::new(StorageConfig {
+            path: db_path.clone(),
+            ..Default::default()
+        })
+        .with_batch_config(WriteBatchConfig::high_throughput());
+        let store = provider.get_store("").expect("rocksdb store");
+
+        // A non-durable commit with the WAL disabled leaves the only copy in the
+        // memtable, so a WAL sync alone would not survive a restart.
+        let mut snapshot = store.snapshot();
+        let snapshot = Arc::get_mut(&mut snapshot).expect("exclusive snapshot");
+        snapshot
+            .put_sync(key.clone(), value.clone())
+            .expect("stage state");
+        snapshot.try_commit().expect("commit without WAL record");
+        store.try_flush_durable().expect("durable flush");
+    }
+
+    let reopened = RocksDBStoreProvider::new(StorageConfig {
+        path: db_path,
+        ..Default::default()
+    })
+    .with_batch_config(WriteBatchConfig::high_throughput())
+    .get_store("")
+    .expect("reopen rocksdb store");
+    assert_eq!(
+        reopened.snapshot().try_get(&key),
+        Some(value),
+        "a WAL-disabled write reported as durable must survive a restart"
+    );
+}
+
+#[test]
 fn returns_error_when_path_is_file() {
     let tmp = TempDir::new().expect("tempdir");
     let file_path = tmp.path().join("not-a-dir");

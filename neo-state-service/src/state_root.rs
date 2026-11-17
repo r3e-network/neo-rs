@@ -38,7 +38,22 @@ pub struct StateRoot {
     pub witness: Option<Witness>,
     /// Cached hash of the state root.
     #[serde(skip)]
-    cached_hash: Option<UInt256>,
+    cached_hash: Option<CachedHash>,
+}
+
+/// Digest of the signed payload together with the exact signed field values it
+/// was derived from.
+///
+/// `version`, `index` and `root_hash` are public and mutable, so a bare
+/// `Option<UInt256>` cache would keep returning the digest of a payload that no
+/// longer exists after a mutation — making `hash()` and `get_unsigned_data()`
+/// disagree. Storing the inputs lets `hash()` detect an out-of-date entry.
+#[derive(Debug, Clone)]
+struct CachedHash {
+    version: u8,
+    index: u32,
+    root_hash: UInt256,
+    digest: UInt256,
 }
 
 impl StateRoot {
@@ -60,14 +75,23 @@ impl StateRoot {
 
     /// Gets the hash of this state root (excluding witness).
     pub fn hash(&mut self) -> UInt256 {
-        if let Some(hash) = &self.cached_hash {
-            return *hash;
+        if let Some(cached) = &self.cached_hash
+            && cached.version == self.version
+            && cached.index == self.index
+            && cached.root_hash == self.root_hash
+        {
+            return cached.digest;
         }
 
         let unsigned_data = self.get_unsigned_data();
-        let hash = UInt256::from(Crypto::hash256(&unsigned_data));
-        self.cached_hash = Some(hash);
-        hash
+        let digest = UInt256::from(Crypto::hash256(&unsigned_data));
+        self.cached_hash = Some(CachedHash {
+            version: self.version,
+            index: self.index,
+            root_hash: self.root_hash,
+            digest,
+        });
+        digest
     }
 
     /// Gets the unsigned serialized data (for hashing).
@@ -251,5 +275,83 @@ impl Verifiable for StateRoot {
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn root_one() -> UInt256 {
+        UInt256::from([0x11u8; 32])
+    }
+
+    fn root_two() -> UInt256 {
+        UInt256::from([0x22u8; 32])
+    }
+
+    #[test]
+    fn repeated_hash_returns_cached_digest() {
+        let mut root = StateRoot::new_current(7, root_one());
+        let first = StateRoot::hash(&mut root);
+        assert_eq!(first, StateRoot::hash(&mut root));
+    }
+
+    #[test]
+    fn mutating_index_invalidates_the_cached_hash() {
+        let mut root = StateRoot::new_current(7, root_one());
+        let original = StateRoot::hash(&mut root);
+
+        root.index = 8;
+
+        let recomputed = StateRoot::hash(&mut root);
+        assert_eq!(
+            recomputed,
+            UInt256::from(Crypto::hash256(&root.get_unsigned_data())),
+            "hash() must follow the current unsigned payload"
+        );
+        assert_ne!(recomputed, original);
+    }
+
+    #[test]
+    fn mutating_root_hash_invalidates_the_cached_hash() {
+        let mut root = StateRoot::new_current(7, root_one());
+        let original = StateRoot::hash(&mut root);
+
+        root.root_hash = root_two();
+
+        let recomputed = StateRoot::hash(&mut root);
+        assert_eq!(
+            recomputed,
+            UInt256::from(Crypto::hash256(&root.get_unsigned_data()))
+        );
+        assert_ne!(recomputed, original);
+    }
+
+    #[test]
+    fn mutating_version_invalidates_the_cached_hash() {
+        let mut root = StateRoot::new_current(7, root_one());
+        let original = StateRoot::hash(&mut root);
+
+        root.version = CURRENT_VERSION + 1;
+
+        let recomputed = StateRoot::hash(&mut root);
+        assert_eq!(
+            recomputed,
+            UInt256::from(Crypto::hash256(&root.get_unsigned_data()))
+        );
+        assert_ne!(recomputed, original);
+    }
+
+    #[test]
+    fn restoring_signed_fields_restores_the_cached_digest() {
+        let mut root = StateRoot::new_current(7, root_one());
+        let original = StateRoot::hash(&mut root);
+
+        root.index = 99;
+        let _ = StateRoot::hash(&mut root);
+        root.index = 7;
+
+        assert_eq!(StateRoot::hash(&mut root), original);
     }
 }

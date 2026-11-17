@@ -20,6 +20,9 @@ pub(crate) type StoreGetFn = dyn Fn(&StorageKey) -> Option<StorageItem> + Send +
 pub(crate) type StoreFindFn =
     dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)> + Send + Sync;
 pub(crate) type CommitApplyFn = dyn Fn(&[(StorageKey, Trackable)]) + Send + Sync;
+/// Monotonic version probe of a mutable backing store. Values must change on
+/// every commit that can alter previously read entries.
+pub(crate) type GenerationSource = dyn Fn() -> u64 + Send + Sync;
 
 /// Represents a cache for the underlying storage of the NEO blockchain.
 pub struct DataCache {
@@ -50,6 +53,11 @@ pub struct DataCache {
     /// Optional commit sink used by cloned overlays to propagate tracked
     /// changes into their parent cache (mirrors Neo C# ClonedCache semantics).
     commit_apply: Option<Arc<CommitApplyFn>>,
+    /// Optional backing-store version probe. Store-backed caches set this so
+    /// reads served from mirrors/LRU cannot outlive an external commit.
+    generation_source: Option<Arc<GenerationSource>>,
+    /// Last backing-store generation this cache's read state was validated for.
+    observed_generation: AtomicU64,
 }
 
 fn key_matches_prefix(key: &StorageKey, prefix: Option<&[u8]>) -> bool {
@@ -90,6 +98,8 @@ impl Clone for DataCache {
             access_seq: AtomicU64::new(0),
             prefetch_window: RwLock::new(HashSet::new()),
             commit_apply: self.commit_apply.as_ref().map(Arc::clone),
+            generation_source: self.generation_source.as_ref().map(Arc::clone),
+            observed_generation: AtomicU64::new(self.observed_generation.load(Ordering::Acquire)),
         }
     }
 }
@@ -176,7 +186,55 @@ impl DataCache {
             access_seq: AtomicU64::new(0),
             prefetch_window: RwLock::new(HashSet::new()),
             commit_apply: None,
+            generation_source: None,
+            observed_generation: AtomicU64::new(0),
         }
+    }
+
+    /// Binds this cache to a mutable backing store's version probe.
+    ///
+    /// Caches created over an immutable snapshot must not call this: a snapshot
+    /// view never changes underneath its readers. Latest-state caches do change,
+    /// so every read validates that no external commit happened since the
+    /// previous one and drops mirrors and LRU entries when it did.
+    pub fn set_generation_source<F>(&mut self, source: F)
+    where
+        F: Fn() -> u64 + Send + Sync + 'static,
+    {
+        let observed = source();
+        self.generation_source = Some(Arc::new(source));
+        self.observed_generation.store(observed, Ordering::Release);
+    }
+
+    /// Discards cached reads after the backing store changed outside this cache.
+    ///
+    /// Only `TrackState::None` mirrors are dropped: `Added`/`Changed`/`Deleted`
+    /// entries are pending writes owned by this cache and must survive.
+    #[inline]
+    fn refresh_if_store_changed(&self) {
+        let Some(source) = &self.generation_source else {
+            return;
+        };
+        let current = source();
+        if current == self.observed_generation.load(Ordering::Acquire) {
+            return;
+        }
+
+        {
+            let mut state = self.state.write();
+            state
+                .dictionary
+                .retain(|_, trackable| !matches!(trackable.state, TrackState::None));
+        }
+        if let Some(ref cache) = self.read_cache {
+            cache.clear();
+        }
+        self.observed_generation.store(current, Ordering::Release);
+        debug!(
+            target: "neo",
+            generation = current,
+            "DataCache dropped stale read state after an external commit"
+        );
     }
 
     /// Returns true if DataCache is read-only.
@@ -278,12 +336,21 @@ impl DataCache {
     }
 
     /// Creates an isolated writable fork backed by the same underlying store.
+    ///
+    /// The fork owns its write dictionary *and* its read cache. Sharing the
+    /// parent's LRU would let speculative fork writes (and speculative reads
+    /// that the parent can never invalidate) leak into the parent's view.
     pub fn fork_isolated(&self) -> Self {
         let state = self.state.read();
         let cloned_state = InnerState {
             dictionary: state.dictionary.clone(),
         };
         drop(state);
+
+        let read_cache = self
+            .config
+            .enable_read_cache
+            .then(|| Arc::new(ReadCache::new(self.config.read_cache_config)));
 
         Self {
             state: Arc::new(RwLock::new(cloned_state)),
@@ -293,18 +360,22 @@ impl DataCache {
             store_get: self.store_get.as_ref().map(Arc::clone),
             store_find: self.store_find.as_ref().map(Arc::clone),
             ref_count: Arc::new(AtomicUsize::new(1)),
-            read_cache: self.read_cache.clone(),
+            read_cache,
             config: self.config,
             pattern_tracker: RwLock::new(AccessPatternTracker::new()),
             access_seq: AtomicU64::new(0),
             prefetch_window: RwLock::new(HashSet::new()),
             commit_apply: None,
+            generation_source: self.generation_source.as_ref().map(Arc::clone),
+            observed_generation: AtomicU64::new(self.observed_generation.load(Ordering::Acquire)),
         }
     }
 
     /// Gets an item from the cache.
     #[inline]
     pub fn get(&self, key: &StorageKey) -> Option<StorageItem> {
+        self.refresh_if_store_changed();
+
         let should_track_pattern = self.config.enable_prefetching && self.read_cache.is_some();
         let pattern = if should_track_pattern {
             self.record_access_pattern(key)
@@ -395,6 +466,7 @@ impl DataCache {
     /// Gets an item from the cache as a reference.
     #[inline]
     pub fn get_ref(&self, key: &StorageKey) -> Option<StorageItem> {
+        self.refresh_if_store_changed();
         {
             let state = self.state.read();
             if let Some(trackable) = state.dictionary.get(key)
@@ -509,10 +581,14 @@ impl DataCache {
         match state.dictionary.entry(key) {
             Entry::Occupied(mut occupied) => {
                 let prev_state = occupied.get().state;
+                // A tombstone that is re-populated modifies pre-existing data:
+                // tracking it as `Added` would make a later delete cancel the
+                // entry entirely and lose the tombstone.
                 let new_state = match prev_state {
                     TrackState::Added => TrackState::Added,
-                    TrackState::Changed | TrackState::None => TrackState::Changed,
-                    TrackState::Deleted => TrackState::Added,
+                    TrackState::Changed | TrackState::None | TrackState::Deleted => {
+                        TrackState::Changed
+                    }
                     TrackState::NotFound => TrackState::Changed,
                 };
                 log_watched_storage_event(
@@ -1031,5 +1107,110 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for DataCache {
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
         self.find(key_prefix, direction)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn item(value: &[u8]) -> StorageItem {
+        StorageItem::from_bytes(value.to_vec())
+    }
+
+    fn state_of(cache: &DataCache, key: &StorageKey) -> Option<TrackState> {
+        cache
+            .state
+            .read()
+            .dictionary
+            .get(key)
+            .map(|entry| entry.state)
+    }
+
+    fn untracked_read_config() -> DataCacheConfig {
+        DataCacheConfig {
+            track_reads_in_write_cache: false,
+            enable_prefetching: false,
+            ..DataCacheConfig::default()
+        }
+    }
+
+    #[test]
+    fn delete_update_delete_preserves_the_tombstone() {
+        let cache = DataCache::new(false);
+        let key = StorageKey::new(1, b"k".to_vec());
+
+        cache.add(key.clone(), item(b"v1"));
+        cache.commit();
+        cache.delete(&key);
+        assert_eq!(state_of(&cache, &key), Some(TrackState::Deleted));
+
+        // Re-populating a tombstone modifies pre-existing data, so the entry
+        // must remain tracked as a modification rather than a fresh add.
+        cache.update(key.clone(), item(b"v2"));
+        assert_eq!(state_of(&cache, &key), Some(TrackState::Changed));
+
+        // The second delete must leave a real tombstone behind instead of
+        // cancelling the entry (which would resurrect the old value on commit).
+        cache.delete(&key);
+        assert_eq!(state_of(&cache, &key), Some(TrackState::Deleted));
+        assert_eq!(
+            cache.extract_raw_changes(),
+            vec![(key.to_array(), None)],
+            "a re-deleted key must still emit a deletion"
+        );
+    }
+
+    #[test]
+    fn isolated_fork_does_not_share_the_parent_read_cache() {
+        let key = StorageKey::new(1, b"shared".to_vec());
+        let store_get: Arc<StoreGetFn> =
+            Arc::new(|_key: &StorageKey| Some(StorageItem::from_bytes(b"parent".to_vec())));
+        let parent = DataCache::new_with_config(
+            false,
+            Some(store_get),
+            None,
+            untracked_read_config(),
+        );
+        assert_eq!(parent.get(&key).unwrap().to_value(), b"parent".to_vec());
+
+        let fork = parent.fork_isolated();
+        fork.update(key.clone(), item(b"fork"));
+
+        assert_eq!(fork.get(&key).unwrap().to_value(), b"fork".to_vec());
+        // A speculative fork write must never become visible to the parent.
+        assert_eq!(parent.get(&key).unwrap().to_value(), b"parent".to_vec());
+    }
+
+    #[test]
+    fn external_commit_generation_drops_stale_reads() {
+        let backing = Arc::new(parking_lot::Mutex::new(b"v1".to_vec()));
+        let backing_get = Arc::clone(&backing);
+        let store_get: Arc<StoreGetFn> = Arc::new(move |_key: &StorageKey| {
+            Some(StorageItem::from_bytes(backing_get.lock().clone()))
+        });
+        let mut cache = DataCache::new_with_config(
+            false,
+            Some(store_get),
+            None,
+            DataCacheConfig::default(),
+        );
+        let generation = Arc::new(AtomicU64::new(0));
+        let generation_probe = Arc::clone(&generation);
+        cache.set_generation_source(move || generation_probe.load(Ordering::Acquire));
+
+        let key = StorageKey::new(9, b"k".to_vec());
+        let pending = StorageKey::new(9, b"pending".to_vec());
+        assert_eq!(cache.get(&key).unwrap().to_value(), b"v1".to_vec());
+        cache.try_add(pending.clone(), item(b"pending")).unwrap();
+
+        // A sibling writer commits a new value and advances the store version.
+        *backing.lock() = b"v2".to_vec();
+        generation.fetch_add(1, Ordering::AcqRel);
+
+        assert_eq!(cache.get(&key).unwrap().to_value(), b"v2".to_vec());
+        // Pending writes are owned by this cache and survive the refresh.
+        assert_eq!(cache.get(&pending).unwrap().to_value(), b"pending".to_vec());
+        assert_eq!(cache.pending_change_count(), 1);
     }
 }

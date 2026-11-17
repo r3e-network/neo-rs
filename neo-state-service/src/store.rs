@@ -18,7 +18,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tracing::warn;
 
-const PREFIX_LOCAL_ROOT_INDEX: u8 = 0xf2;
+/// Progress cursor holding the highest state root this node computed and
+/// committed locally. Only an actually committed block advances it, so recovery
+/// may adopt the root it points at and nothing newer.
+pub(crate) const PREFIX_LOCAL_ROOT_INDEX: u8 = 0xf2;
 const PREFIX_VALIDATED_ROOT_INDEX: u8 = 0xf3;
 
 /// Stores quorum-validated network roots and tracks locally committed roots.

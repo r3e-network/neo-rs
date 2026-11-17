@@ -12,6 +12,7 @@ use parking_lot::RwLock;
 use std::collections::BTreeMap;
 use std::ops::Bound;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Shared immutable map used by snapshots. Writes take a copy-on-write path
 /// only when a snapshot still holds the previous map.
@@ -35,6 +36,8 @@ pub(crate) fn prefix_bounds(prefix: &[u8]) -> (Bound<Vec<u8>>, Bound<Vec<u8>>) {
 pub struct MemoryStore {
     inner_data: Arc<RwLock<SharedMap>>,
     on_new_snapshot: Arc<RwLock<Vec<OnNewSnapshotDelegate>>>,
+    /// Monotonic commit version shared by every clone and snapshot of this store.
+    generation: Arc<AtomicU64>,
 }
 
 impl MemoryStore {
@@ -43,12 +46,14 @@ impl MemoryStore {
         Self {
             inner_data: Arc::new(RwLock::new(Arc::new(BTreeMap::new()))),
             on_new_snapshot: Arc::new(RwLock::new(Vec::new())),
+            generation: Arc::new(AtomicU64::new(0)),
         }
     }
 
     /// Resets the store, clearing all data.
     pub fn reset(&self) {
         *self.inner_data.write() = Arc::new(BTreeMap::new());
+        self.generation.fetch_add(1, Ordering::AcqRel);
     }
 }
 
@@ -133,12 +138,16 @@ impl WriteStore<Vec<u8>, Vec<u8>> for MemoryStore {
     fn delete(&mut self, key: Vec<u8>) -> crate::error::StorageResult<()> {
         let mut guard = self.inner_data.write();
         Arc::make_mut(&mut guard).remove(&key);
+        drop(guard);
+        self.generation.fetch_add(1, Ordering::AcqRel);
         Ok(())
     }
 
     fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> crate::error::StorageResult<()> {
         let mut guard = self.inner_data.write();
         Arc::make_mut(&mut guard).insert(key, value);
+        drop(guard);
+        self.generation.fetch_add(1, Ordering::AcqRel);
         Ok(())
     }
 }
@@ -165,6 +174,10 @@ impl Store for MemoryStore {
         self.on_new_snapshot.write().push(handler);
     }
 
+    fn state_generation(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -175,6 +188,7 @@ impl Clone for MemoryStore {
         Self {
             inner_data: self.inner_data.clone(),
             on_new_snapshot: Arc::new(RwLock::new(Vec::new())),
+            generation: Arc::clone(&self.generation),
         }
     }
 }
@@ -182,18 +196,21 @@ impl Clone for MemoryStore {
 impl MemoryStore {
     /// Applies a batch of write operations to the underlying store.
     pub fn apply_batch(&self, batch: &std::collections::BTreeMap<Vec<u8>, Option<Vec<u8>>>) {
-        let mut guard = self.inner_data.write();
-        let data = Arc::make_mut(&mut guard);
-        for (key, value) in batch {
-            match value {
-                Some(v) => {
-                    data.insert(key.clone(), v.clone());
-                }
-                None => {
-                    data.remove(key);
+        {
+            let mut guard = self.inner_data.write();
+            let data = Arc::make_mut(&mut guard);
+            for (key, value) in batch {
+                match value {
+                    Some(v) => {
+                        data.insert(key.clone(), v.clone());
+                    }
+                    None => {
+                        data.remove(key);
+                    }
                 }
             }
         }
+        self.generation.fetch_add(1, Ordering::AcqRel);
     }
 }
 
