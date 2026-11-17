@@ -282,7 +282,7 @@ Environment overrides:
 
 Hardened RPC preset:
 
-- Use `--rpc-hardened` (or set via CLI) to disable CORS, require auth, and disable `openwallet`, `closewallet`, `listplugins`, `dumpprivkey`, `importprivkey`, `getnewaddress`, `sendfrom`, `sendtoaddress`, `sendmany`, `canceltransaction`, `sendrawtransaction`, and `startconsensus` by default; combine with `NEO_RPC_USER/NEO_RPC_PASS`.
+- Use `--rpc-hardened` (or set via CLI) to disable CORS, require auth, and disable `openwallet`, `closewallet`, `listplugins`, `dumpprivkey`, `importprivkey`, `getnewaddress`, `getwalletbalance`, `getwalletunclaimedgas`, `listaddress`, `sendfrom`, `sendtoaddress`, `sendmany`, `canceltransaction`, `sendrawtransaction`, and `startconsensus` by default; combine with `NEO_RPC_USER/NEO_RPC_PASS`.
 
 Example hardened run:
 
