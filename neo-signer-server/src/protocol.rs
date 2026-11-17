@@ -21,9 +21,7 @@
 //!   the [`crate::config::ClientAuthorizationPolicy`] maps certificate common
 //!   names to the key IDs and purposes they may use.
 
-use crate::config::{
-    ClientAuthorizationPolicy, SignerServerConfig, key_selector,
-};
+use crate::config::{ClientAuthorizationPolicy, SignerServerConfig, key_selector};
 use crate::identity::ClientIdentity;
 use crate::journal::{ConsensusSlot, Journal, JournalState};
 use crate::keys::SealedSigningKey;
@@ -422,8 +420,7 @@ impl SignerService {
 
         // A CA-accepted certificate says who the client is, not what it may
         // sign: the identity must be scoped to this key and purpose.
-        if let Err(error) =
-            self.authorize(Some(identity), &request.key_ref, Some(&request.purpose))
+        if let Err(error) = self.authorize(Some(identity), &request.key_ref, Some(&request.purpose))
         {
             return SignOutcome::Unauthorized(error.to_string());
         }
@@ -684,12 +681,14 @@ impl SignerService {
         })?;
         response.session_signature = Some(session_signature.to_vec());
 
-        journal.record_succeeded(request, &response, slot).map_err(|error| {
-            SignError::new(
-                SignErrorCode::StorageFailure,
-                format!("failed to journal the completed operation durably: {error}"),
-            )
-        })?;
+        journal
+            .record_succeeded(request, &response, slot)
+            .map_err(|error| {
+                SignError::new(
+                    SignErrorCode::StorageFailure,
+                    format!("failed to journal the completed operation durably: {error}"),
+                )
+            })?;
         self.signatures_issued.fetch_add(1, Ordering::SeqCst);
         Ok(response)
     }
@@ -889,7 +888,10 @@ mod tests {
             panic!("the first dispatch must sign")
         };
         assert_eq!(first.signatures_issued(), 1);
-        assert!(first.journal_path().exists(), "the journal must live on disk");
+        assert!(
+            first.journal_path().exists(),
+            "the journal must live on disk"
+        );
         drop(first);
 
         // Restart on the same sealed-data directory: the journal is replayed
@@ -1013,7 +1015,11 @@ mod tests {
             service.sign(&stranger, &allowed_request),
             SignOutcome::Unauthorized(_)
         ));
-        assert!(service.query(&stranger, &query_for(&allowed_request)).is_err());
+        assert!(
+            service
+                .query(&stranger, &query_for(&allowed_request))
+                .is_err()
+        );
         assert_eq!(service.signatures_issued(), 1);
     }
 
@@ -1023,8 +1029,16 @@ mod tests {
         let key = config.key_ref.clone();
         let policy = ClientAuthorizationPolicy {
             grants: vec![
-                ClientGrant::new("neo-node-1", vec![key_selector(&key)], vec![SignPurpose::Consensus]),
-                ClientGrant::new("neo-node-2", vec![key_selector(&key)], vec![SignPurpose::Consensus]),
+                ClientGrant::new(
+                    "neo-node-1",
+                    vec![key_selector(&key)],
+                    vec![SignPurpose::Consensus],
+                ),
+                ClientGrant::new(
+                    "neo-node-2",
+                    vec![key_selector(&key)],
+                    vec![SignPurpose::Consensus],
+                ),
             ],
         };
         let service = SignerService::with_client_authorization(config, policy).expect("service");

@@ -149,9 +149,13 @@ async fn main() -> Result<()> {
 
     let server = match args.client_authorization {
         Some(path) => {
-            let authorization = ClientAuthorizationPolicy::from_json_file(&path).with_context(
-                || format!("failed to load the client-authorization policy {}", path.display()),
-            )?;
+            let authorization =
+                ClientAuthorizationPolicy::from_json_file(&path).with_context(|| {
+                    format!(
+                        "failed to load the client-authorization policy {}",
+                        path.display()
+                    )
+                })?;
             spawn_signer_server_with(config, authorization).await?
         }
         None => {

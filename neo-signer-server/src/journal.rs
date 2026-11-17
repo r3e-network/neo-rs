@@ -12,8 +12,9 @@
 //! * every record that belongs to a consensus slot carries the slot, so the
 //!   slot → request binding is rebuilt on startup and a conflicting request
 //!   for the same `(network, height, view, phase)` is refused;
-//! * a torn trailing record (crash during `write`) is truncated on startup; a
-//!   corrupted record anywhere else fails the boot closed.
+//! * a torn trailing record (crash during `write`) is truncated on startup,
+//!   never past a complete record; a corrupted record anywhere else fails the
+//!   boot closed.
 //!
 //! ## Consensus slot encoding
 //!
@@ -193,29 +194,36 @@ impl Journal {
 
         let mut entries = BTreeMap::new();
         let mut slots = BTreeMap::new();
-        let mut truncate_at = None;
+        let mut tail = JournalTail::Clean;
         if path.exists() {
             let data = std::fs::read(&path)
                 .with_context(|| format!("failed to read the journal {}", path.display()))?;
             let replayed = replay(&data, &path)?;
             entries = replayed.entries;
             slots = replayed.slots;
-            truncate_at = replayed.truncate_at;
+            tail = replayed.tail;
+            if let JournalTail::Torn { valid_length } = tail {
+                drop_torn_tail(&path, data.len() as u64, valid_length)?;
+            }
         }
 
-        let file = OpenOptions::new()
+        let mut file = OpenOptions::new()
             .create(true)
             .read(true)
             .append(true)
             .open(&path)
             .with_context(|| format!("failed to open the journal {}", path.display()))?;
-        if let Some(length) = truncate_at {
-            file.set_len(length).with_context(|| {
-                format!(
-                    "failed to drop the incomplete trailing journal record in {}",
-                    path.display()
-                )
-            })?;
+        if tail == JournalTail::Unterminated {
+            // Without the terminator the next append would share a line with
+            // this record and both would be unreadable on the next boot.
+            file.write_all(b"\n")
+                .and_then(|()| file.sync_data())
+                .with_context(|| {
+                    format!(
+                        "failed to terminate the last journal record in {}",
+                        path.display()
+                    )
+                })?;
         }
         Ok(Self {
             path,
@@ -310,8 +318,8 @@ impl Journal {
     /// in-memory view. A failed append leaves memory untouched, so the caller
     /// answers ambiguously instead of diverging from the disk.
     fn append(&mut self, record: JournalRecord) -> Result<()> {
-        let mut line = serde_json::to_vec(&record)
-            .context("failed to encode an operation journal record")?;
+        let mut line =
+            serde_json::to_vec(&record).context("failed to encode an operation journal record")?;
         line.push(b'\n');
         self.file
             .write_all(&line)
@@ -333,7 +341,48 @@ impl Journal {
 struct ReplayedJournal {
     entries: BTreeMap<String, JournalEntry>,
     slots: BTreeMap<ConsensusSlot, String>,
-    truncate_at: Option<u64>,
+    tail: JournalTail,
+}
+
+/// State of the end of the journal file after a replay.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JournalTail {
+    /// The file is empty or ends with a terminated record.
+    Clean,
+    /// The last record is complete but its line terminator is missing.
+    Unterminated,
+    /// An incomplete record follows the first `valid_length` bytes.
+    Torn { valid_length: u64 },
+}
+
+/// Cuts a torn trailing record off the journal and forces the cut to disk.
+///
+/// `valid_length` is the start of the torn record, so every byte that is kept
+/// belongs to a complete, terminated record.
+fn drop_torn_tail(path: &Path, replayed_length: u64, valid_length: u64) -> Result<()> {
+    let context = || {
+        format!(
+            "failed to drop the incomplete trailing journal record in {}",
+            path.display()
+        )
+    };
+    // The append handle cannot do this: on Windows `append` grants no right
+    // to change the file length.
+    let file = OpenOptions::new()
+        .write(true)
+        .open(path)
+        .with_context(context)?;
+    let current_length = file.metadata().with_context(context)?.len();
+    if current_length != replayed_length {
+        bail!(
+            "the journal {} changed while it was being replayed ({replayed_length} bytes read, \
+             {current_length} bytes on disk); refusing to truncate it",
+            path.display()
+        );
+    }
+    file.set_len(valid_length).with_context(context)?;
+    file.sync_all().with_context(context)?;
+    Ok(())
 }
 
 /// Replays the journal, tolerating (and truncating) only a torn trailing
@@ -341,13 +390,14 @@ struct ReplayedJournal {
 fn replay(data: &[u8], path: &Path) -> Result<ReplayedJournal> {
     let mut entries = BTreeMap::new();
     let mut slots = BTreeMap::new();
+    let mut tail = JournalTail::Clean;
     let total = data.len();
     let mut offset = 0usize;
     while offset < total {
         let remaining = &data[offset..];
-        let (line, next) = match remaining.iter().position(|byte| *byte == b'\n') {
-            Some(index) => (&remaining[..index], offset + index + 1),
-            None => (remaining, total),
+        let (line, next, terminated) = match remaining.iter().position(|byte| *byte == b'\n') {
+            Some(index) => (&remaining[..index], offset + index + 1, true),
+            None => (remaining, total, false),
         };
         let start = offset;
         offset = next;
@@ -362,7 +412,16 @@ fn replay(data: &[u8], path: &Path) -> Result<ReplayedJournal> {
             continue;
         }
         match serde_json::from_str::<JournalRecord>(text) {
-            Ok(record) => apply_record(&mut entries, &mut slots, record),
+            Ok(record) => {
+                apply_record(&mut entries, &mut slots, record);
+                if !terminated {
+                    warn!(
+                        "the last record at byte {start} of {} has no line terminator",
+                        path.display()
+                    );
+                    tail = JournalTail::Unterminated;
+                }
+            }
             Err(error) => {
                 if !data[next..].iter().all(u8::is_ascii_whitespace) {
                     bail!(
@@ -377,7 +436,9 @@ fn replay(data: &[u8], path: &Path) -> Result<ReplayedJournal> {
                 return Ok(ReplayedJournal {
                     entries,
                     slots,
-                    truncate_at: Some(start as u64),
+                    tail: JournalTail::Torn {
+                        valid_length: start as u64,
+                    },
                 });
             }
         }
@@ -385,7 +446,7 @@ fn replay(data: &[u8], path: &Path) -> Result<ReplayedJournal> {
     Ok(ReplayedJournal {
         entries,
         slots,
-        truncate_at: None,
+        tail,
     })
 }
 
@@ -470,13 +531,20 @@ mod tests {
 
     #[test]
     fn consensus_slots_are_derived_from_the_canonical_position() {
-        let request = slot_request("req-slot", "neo-consensus/v1/commit", &[0, 0, 0, 7, 3, 0xAA]);
+        let request = slot_request(
+            "req-slot",
+            "neo-consensus/v1/commit",
+            &[0, 0, 0, 7, 3, 0xAA],
+        );
         let slot = ConsensusSlot::from_request(&request).expect("slot");
         assert_eq!(slot.network_id, 860_833_102);
         assert_eq!(slot.block_height, 7);
         assert_eq!(slot.view_number, 3);
         assert_eq!(slot.phase, "commit");
-        assert_eq!(slot.describe(), "network 860833102 height 7 view 3 phase 'commit'");
+        assert_eq!(
+            slot.describe(),
+            "network 860833102 height 7 view 3 phase 'commit'"
+        );
     }
 
     #[test]
@@ -492,12 +560,20 @@ mod tests {
     #[test]
     fn short_or_foreign_payloads_are_not_slot_bound() {
         assert!(
-            ConsensusSlot::from_request(&slot_request("req-short", "neo-consensus/v1/commit", &[1, 2]))
-                .is_none()
+            ConsensusSlot::from_request(&slot_request(
+                "req-short",
+                "neo-consensus/v1/commit",
+                &[1, 2]
+            ))
+            .is_none()
         );
         assert!(
-            ConsensusSlot::from_request(&slot_request("req-foreign", "neo-batch/v1", &[0, 0, 0, 7, 3]))
-                .is_none()
+            ConsensusSlot::from_request(&slot_request(
+                "req-foreign",
+                "neo-batch/v1",
+                &[0, 0, 0, 7, 3]
+            ))
+            .is_none()
         );
     }
 
@@ -512,11 +588,7 @@ mod tests {
                 .record_in_flight(&request, Some(&slot))
                 .expect("in-flight record");
             journal
-                .record_failed(
-                    &request,
-                    &rejection(&request),
-                    None,
-                )
+                .record_failed(&request, &rejection(&request), None)
                 .expect("failed record");
             assert_eq!(journal.slot_owner(&slot), Some("req-durable"));
         }
@@ -555,11 +627,89 @@ mod tests {
         );
     }
 
-    fn slot_request(
-        request_id: &str,
-        encoding: &str,
-        bytes: &[u8],
-    ) -> RemoteSignRequest {
+    #[test]
+    fn truncation_stops_at_the_last_complete_record() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let slot = ConsensusSlot::new(860_833_102, 4, 0, "commit");
+        let first = slot_request("req-first", "neo-consensus/v1/commit", &[0, 0, 0, 4, 0]);
+        let second = slot_request("req-second", "neo-consensus/v1/commit", &[0, 0, 0, 5, 0]);
+        {
+            let mut journal = Journal::open(dir.path()).expect("journal");
+            journal
+                .record_in_flight(&first, Some(&slot))
+                .expect("first record");
+            journal
+                .record_in_flight(&second, None)
+                .expect("second record");
+        }
+        let path = dir.path().join(JOURNAL_FILE_NAME);
+        let intact = std::fs::read(&path).expect("read journal");
+        let mut torn = intact.clone();
+        torn.extend_from_slice(b"{\"record\":\"in_flight\",\"request_id\":\"req-th");
+        std::fs::write(&path, torn).expect("write torn journal");
+
+        let journal = Journal::open(dir.path()).expect("reopened journal");
+        assert_eq!(journal.len(), 2);
+        assert_eq!(journal.slot_owner(&slot), Some("req-first"));
+        // Only the torn bytes are gone; both complete records are untouched.
+        assert_eq!(std::fs::read(&path).expect("read journal"), intact);
+    }
+
+    #[test]
+    fn a_complete_record_without_its_terminator_survives_later_appends() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let slot = ConsensusSlot::new(860_833_102, 9, 2, "commit");
+        let first = slot_request("req-first", "neo-consensus/v1/commit", &[0, 0, 0, 9, 2]);
+        let second = slot_request("req-second", "neo-consensus/v1/commit", &[0, 0, 0, 10, 0]);
+        {
+            let mut journal = Journal::open(dir.path()).expect("journal");
+            journal
+                .record_in_flight(&first, Some(&slot))
+                .expect("first record");
+        }
+        let path = dir.path().join(JOURNAL_FILE_NAME);
+        let intact = std::fs::read(&path).expect("read journal");
+        assert_eq!(intact.last(), Some(&b'\n'));
+        std::fs::write(&path, &intact[..intact.len() - 1]).expect("drop the terminator");
+
+        {
+            let mut journal = Journal::open(dir.path()).expect("reopened journal");
+            assert_eq!(journal.len(), 1);
+            assert_eq!(journal.slot_owner(&slot), Some("req-first"));
+            assert_eq!(std::fs::read(&path).expect("read journal"), intact);
+            journal.record_in_flight(&second, None).expect("append");
+        }
+
+        // The append did not fuse with the unterminated record, so neither is
+        // mistaken for a torn tail on the next boot.
+        let journal = Journal::open(dir.path()).expect("journal after the append");
+        assert_eq!(journal.len(), 2);
+        assert_eq!(journal.slot_owner(&slot), Some("req-first"));
+        assert!(journal.get("req-second").is_some());
+    }
+
+    #[test]
+    fn a_corrupted_record_before_the_tail_fails_closed_and_keeps_the_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let request = slot_request("req-kept", "neo-consensus/v1/commit", &[0, 0, 0, 6, 0]);
+        {
+            let mut journal = Journal::open(dir.path()).expect("journal");
+            journal.record_in_flight(&request, None).expect("record");
+        }
+        let path = dir.path().join(JOURNAL_FILE_NAME);
+        let record = std::fs::read(&path).expect("read journal");
+        let mut corrupted = b"{\"record\":\"succeeded\",\"request_id\":\"trunc\n".to_vec();
+        corrupted.extend_from_slice(&record);
+        std::fs::write(&path, &corrupted).expect("write corrupted journal");
+
+        let error = Journal::open(dir.path())
+            .err()
+            .expect("a corrupted journal must not open");
+        assert!(error.to_string().contains("corrupted at byte 0"), "{error}");
+        assert_eq!(std::fs::read(&path).expect("read journal"), corrupted);
+    }
+
+    fn slot_request(request_id: &str, encoding: &str, bytes: &[u8]) -> RemoteSignRequest {
         RemoteSignRequest {
             schema_version: REMOTE_SIGNER_PROTOCOL_VERSION,
             request_id: request_id.to_string(),

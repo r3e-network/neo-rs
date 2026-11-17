@@ -180,7 +180,10 @@ impl ClientGrant {
             // purpose of a dispatch is checked against the server policy.
             None => true,
             Some(_) if self.allowed_purposes.is_empty() => true,
-            Some(purpose) => self.allowed_purposes.iter().any(|allowed| allowed == purpose),
+            Some(purpose) => self
+                .allowed_purposes
+                .iter()
+                .any(|allowed| allowed == purpose),
         }
     }
 }
@@ -282,9 +285,9 @@ impl ClientAuthorizationPolicy {
         key_ref: &KeyRef,
         purpose: Option<&SignPurpose>,
     ) -> bool {
-        self.grants.iter().any(|grant| {
-            grant.covers_identity(common_name) && grant.allows(key_ref, purpose)
-        })
+        self.grants
+            .iter()
+            .any(|grant| grant.covers_identity(common_name) && grant.allows(key_ref, purpose))
     }
 }
 
@@ -348,8 +351,7 @@ mod tests {
             Some(&SignPurpose::Consensus)
         ));
         assert!(!policy.is_authorized("neo-node-1", &key, Some(&SignPurpose::Transaction)));
-        assert!(!ClientAuthorizationPolicy::default()
-            .is_authorized("neo-node-1", &key, None));
+        assert!(!ClientAuthorizationPolicy::default().is_authorized("neo-node-1", &key, None));
     }
 
     #[test]
@@ -382,7 +384,11 @@ mod tests {
         let key = KeyRef::new("remote", "validator-1", 2);
         // An empty purpose list means "no per-identity narrowing".
         let unrestricted = ClientAuthorizationPolicy {
-            grants: vec![ClientGrant::new("neo-node-1", vec![key_selector(&key)], Vec::new())],
+            grants: vec![ClientGrant::new(
+                "neo-node-1",
+                vec![key_selector(&key)],
+                Vec::new(),
+            )],
         };
         assert!(unrestricted.is_authorized("neo-node-1", &key, Some(&SignPurpose::Transaction)));
         // Listing purposes narrows the identity to exactly those purposes.

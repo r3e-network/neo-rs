@@ -166,7 +166,10 @@ pub async fn spawn_signer_server_with(
                 let identity = peer_identity(&tls_stream);
                 match &identity {
                     Some(identity) => {
-                        debug!("accepted mTLS client '{}' from {peer}", identity.common_name());
+                        debug!(
+                            "accepted mTLS client '{}' from {peer}",
+                            identity.common_name()
+                        );
                     }
                     None => warn!(
                         "accepted mTLS peer {peer} without a subject common name; \
@@ -196,7 +199,9 @@ pub async fn spawn_signer_server_with(
 }
 
 /// Extracts the authenticated client identity from a completed TLS handshake.
-fn peer_identity(tls_stream: &tokio_rustls::server::TlsStream<tokio::net::TcpStream>) -> Option<ClientIdentity> {
+fn peer_identity(
+    tls_stream: &tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
+) -> Option<ClientIdentity> {
     let (_socket, connection) = tls_stream.get_ref();
     let certificate = connection.peer_certificates()?.first()?;
     ClientIdentity::from_certificate_der(&certificate.0)
@@ -222,7 +227,7 @@ async fn route(
     }
     let body_bytes = match read_body(request).await {
         Ok(bytes) => bytes,
-        Err(response) => return response,
+        Err(rejection) => return rejection.into_response(),
     };
     match path.as_str() {
         "/v1/signer/key-info" => {
@@ -232,7 +237,9 @@ async fn route(
                         return forbidden(error);
                     }
                     match service.key_info(
-                        identity.as_ref().expect("authorized requests carry an identity"),
+                        identity
+                            .as_ref()
+                            .expect("authorized requests carry an identity"),
                         &key_ref,
                     ) {
                         Ok(response) => json_response(StatusCode::OK, &response),
@@ -249,13 +256,16 @@ async fn route(
             match serde_json::from_slice::<neo_wallets::signing::AttestationChallenge>(&body_bytes)
             {
                 Ok(challenge) => {
-                    if let Err(error) = service.authorize(identity.as_ref(), &challenge.key_ref, None)
+                    if let Err(error) =
+                        service.authorize(identity.as_ref(), &challenge.key_ref, None)
                     {
                         return forbidden(error);
                     }
                     match service
                         .attest(
-                            identity.as_ref().expect("authorized requests carry an identity"),
+                            identity
+                                .as_ref()
+                                .expect("authorized requests carry an identity"),
                             &challenge,
                         )
                         .await
@@ -284,16 +294,16 @@ async fn route(
                 return forbidden(error);
             }
             match service.sign(
-                identity.as_ref().expect("authorized requests carry an identity"),
+                identity
+                    .as_ref()
+                    .expect("authorized requests carry an identity"),
                 &sign_request,
             ) {
                 SignOutcome::Succeeded(response) => json_response(StatusCode::OK, &response),
                 SignOutcome::Rejected(rejection) => {
                     json_response(StatusCode::FORBIDDEN, &rejection)
                 }
-                SignOutcome::Unauthorized(reason) => {
-                    error_response(StatusCode::FORBIDDEN, reason)
-                }
+                SignOutcome::Unauthorized(reason) => error_response(StatusCode::FORBIDDEN, reason),
                 // Ambiguous dispatch: the node classifies 5xx after dispatch
                 // as ResultUnknown and recovers through the query endpoint.
                 SignOutcome::Ambiguous(reason) => {
@@ -311,7 +321,9 @@ async fn route(
                 return forbidden(error);
             }
             match service.query(
-                identity.as_ref().expect("authorized requests carry an identity"),
+                identity
+                    .as_ref()
+                    .expect("authorized requests carry an identity"),
                 &query,
             ) {
                 Ok(status) => json_response(StatusCode::OK, &status),
@@ -322,15 +334,34 @@ async fn route(
     }
 }
 
+/// Why a request body was refused.
+///
+/// The response is built by the caller: carrying a whole `Response` in the
+/// error would make every `read_body` result as large as a response.
+struct BodyRejection {
+    status: StatusCode,
+    message: String,
+}
+
+impl BodyRejection {
+    fn new(status: StatusCode, message: String) -> Self {
+        Self { status, message }
+    }
+
+    fn into_response(self) -> Response<Body> {
+        error_response(self.status, self.message)
+    }
+}
+
 /// Reads a request body with a hard size cap and a read deadline.
 ///
 /// `Content-Length` is checked before the first byte of the body is consumed;
 /// the streaming cap catches chunked bodies that declare no length.
-async fn read_body(request: Request<Body>) -> Result<Vec<u8>, Response<Body>> {
+async fn read_body(request: Request<Body>) -> Result<Vec<u8>, BodyRejection> {
     if let Some(length) = content_length(&request)
         && length > DEFAULT_MAX_REQUEST_BODY_BYTES as u64
     {
-        return Err(error_response(
+        return Err(BodyRejection::new(
             StatusCode::PAYLOAD_TOO_LARGE,
             format!(
                 "request body of {length} bytes exceeds the {DEFAULT_MAX_REQUEST_BODY_BYTES} byte limit"
@@ -343,17 +374,15 @@ async fn read_body(request: Request<Body>) -> Result<Vec<u8>, Response<Body>> {
         let mut collected: Vec<u8> = Vec::new();
         while let Some(chunk) = body.data().await {
             let chunk = chunk.map_err(|error| {
-                error_response(
+                BodyRejection::new(
                     StatusCode::BAD_REQUEST,
                     format!("failed to read request body: {error}"),
                 )
             })?;
             if collected.len() + chunk.len() > DEFAULT_MAX_REQUEST_BODY_BYTES {
-                return Err(error_response(
+                return Err(BodyRejection::new(
                     StatusCode::PAYLOAD_TOO_LARGE,
-                    format!(
-                        "request body exceeds the {DEFAULT_MAX_REQUEST_BODY_BYTES} byte limit"
-                    ),
+                    format!("request body exceeds the {DEFAULT_MAX_REQUEST_BODY_BYTES} byte limit"),
                 ));
             }
             collected.extend_from_slice(&chunk);
@@ -363,11 +392,9 @@ async fn read_body(request: Request<Body>) -> Result<Vec<u8>, Response<Body>> {
 
     match tokio::time::timeout(DEFAULT_REQUEST_READ_TIMEOUT, read).await {
         Ok(result) => result,
-        Err(_) => Err(error_response(
+        Err(_) => Err(BodyRejection::new(
             StatusCode::REQUEST_TIMEOUT,
-            format!(
-                "request body was not received within {DEFAULT_REQUEST_READ_TIMEOUT:?}"
-            ),
+            format!("request body was not received within {DEFAULT_REQUEST_READ_TIMEOUT:?}"),
         )),
     }
 }

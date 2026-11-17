@@ -192,11 +192,12 @@ fn decode_directory_string(tag: u8, value: &[u8]) -> Option<String> {
                 Some(text.to_string())
             }
         }
-        TAG_BMP_STRING if value.len() % 2 == 0 => {
-            let units: Vec<u16> = value
-                .chunks_exact(2)
-                .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
-                .collect();
+        TAG_BMP_STRING => {
+            let (pairs, remainder) = value.as_chunks::<2>();
+            if !remainder.is_empty() {
+                return None;
+            }
+            let units: Vec<u16> = pairs.iter().map(|pair| u16::from_be_bytes(*pair)).collect();
             let text = String::from_utf16(&units).ok()?.trim().to_string();
             if text.is_empty() { None } else { Some(text) }
         }
@@ -223,7 +224,10 @@ mod tests {
     }
 
     fn certificate(subject_attributes: &[Vec<u8>]) -> Vec<u8> {
-        let issuer = tlv(TAG_SEQUENCE, &[attribute(&[0x55, 0x04, 0x0A], TAG_UTF8_STRING, b"issuer")].concat());
+        let issuer = tlv(
+            TAG_SEQUENCE,
+            &[attribute(&[0x55, 0x04, 0x0A], TAG_UTF8_STRING, b"issuer")].concat(),
+        );
         let validity = tlv(TAG_SEQUENCE, &[]);
         let subject = tlv(TAG_SEQUENCE, &subject_attributes.concat());
         let mut tbs = tlv(TAG_CONTEXT_0, &tlv(0x02, &[0x02]));
@@ -233,6 +237,28 @@ mod tests {
         tbs.extend_from_slice(&validity);
         tbs.extend_from_slice(&subject);
         tlv(TAG_SEQUENCE, &tlv(TAG_SEQUENCE, &tbs))
+    }
+
+    /// X.509 v1 leaf certificate (no `[0]` version field) issued by OpenSSL
+    /// 3.5 for `O=Neo, CN=legacy-client` under `O=Neo, CN=legacy-root`.
+    const OPENSSL_V1_CERTIFICATE: &str = "\
+        308201323081da020107300a06082a8648ce3d0403023024310c300a06035504\
+        0a0c034e656f3114301206035504030c0b6c65676163792d726f6f743020170d\
+        3236313131373138303335325a180f32313236313032343138303335325a3026\
+        310c300a060355040a0c034e656f3116301406035504030c0d6c65676163792d\
+        636c69656e743059301306072a8648ce3d020106082a8648ce3d030107034200\
+        0445f7e8dc3ea1e67ee0d857cdd23458e330f83da91599f8b05048634f1db2bb\
+        5bcc7c04e35d1b97d9784093c98ff0c1c96c2a7e30c8da9d9a15a1d3b9a51553\
+        1b300a06082a8648ce3d040302034700304402200526c082a8f978fa4597f648\
+        ed00f880f0eb076a278b44118923b4af17bb76830220672da1987e4e42d6be45\
+        23278e462c56317db536180f151afcd15f0876bc9634";
+
+    fn openssl_v1_certificate() -> Vec<u8> {
+        hex::decode(OPENSSL_V1_CERTIFICATE).expect("certificate hex")
+    }
+
+    fn common_name_certificate(tag: u8, value: &[u8]) -> Vec<u8> {
+        certificate(&[tlv(TAG_SET, &attribute(&OID_COMMON_NAME, tag, value))])
     }
 
     #[test]
@@ -255,11 +281,17 @@ mod tests {
     fn extracts_the_common_name_of_a_v1_certificate() {
         let issuer = tlv(
             TAG_SEQUENCE,
-            &[attribute(&[0x55, 0x04, 0x03], TAG_PRINTABLE_STRING, b"root")].concat(),
+            &tlv(
+                TAG_SET,
+                &attribute(&[0x55, 0x04, 0x03], TAG_PRINTABLE_STRING, b"root"),
+            ),
         );
         let subject = tlv(
             TAG_SEQUENCE,
-            &[attribute(&[0x55, 0x04, 0x03], TAG_PRINTABLE_STRING, b"legacy-client")].concat(),
+            &tlv(
+                TAG_SET,
+                &attribute(&[0x55, 0x04, 0x03], TAG_PRINTABLE_STRING, b"legacy-client"),
+            ),
         );
         let mut tbs = tlv(0x02, &[0x01]);
         tbs.extend_from_slice(&tlv(TAG_SEQUENCE, &[]));
@@ -271,6 +303,70 @@ mod tests {
             common_name_from_certificate(&cert).as_deref(),
             Some("legacy-client")
         );
+    }
+
+    #[test]
+    fn extracts_the_common_name_of_an_openssl_v1_certificate() {
+        let cert = openssl_v1_certificate();
+        let (_, certificate, _) = read_tlv(&cert).expect("certificate");
+        let (_, tbs_certificate, _) = read_tlv(certificate).expect("tbsCertificate");
+        assert_ne!(
+            tbs_certificate[0], TAG_CONTEXT_0,
+            "a v1 certificate carries no version field"
+        );
+        // The subject, not the issuer (`legacy-root`).
+        assert_eq!(
+            common_name_from_certificate(&cert).as_deref(),
+            Some("legacy-client")
+        );
+    }
+
+    #[test]
+    fn a_relative_distinguished_name_must_be_a_set() {
+        // `Name ::= SEQUENCE OF SET OF AttributeTypeAndValue`: an attribute
+        // placed directly in the name is not a subject common name.
+        let cert = certificate(&[attribute(&OID_COMMON_NAME, TAG_UTF8_STRING, b"neo-node-1")]);
+        assert!(common_name_from_certificate(&cert).is_none());
+    }
+
+    #[test]
+    fn decodes_a_bmp_string_common_name() {
+        let utf16: Vec<u8> = "neo-node-1"
+            .encode_utf16()
+            .flat_map(u16::to_be_bytes)
+            .collect();
+        assert_eq!(
+            common_name_from_certificate(&common_name_certificate(TAG_BMP_STRING, &utf16))
+                .as_deref(),
+            Some("neo-node-1")
+        );
+        // A dangling byte or an unpaired surrogate is not a name.
+        for malformed in [&utf16[..utf16.len() - 1], &[0xD8, 0x00][..]] {
+            assert!(
+                common_name_from_certificate(&common_name_certificate(TAG_BMP_STRING, malformed))
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn undecodable_common_names_yield_no_identity() {
+        const TAG_T61_STRING: u8 = 0x14;
+        const TAG_UNIVERSAL_STRING: u8 = 0x1C;
+        for (tag, value) in [
+            (TAG_T61_STRING, &b"neo-node-1"[..]),
+            (TAG_UNIVERSAL_STRING, &[0, 0, 0, b'n'][..]),
+            (TAG_UTF8_STRING, &[b'n', 0xFF, 0xFE][..]),
+            (TAG_PRINTABLE_STRING, &[0xC3][..]),
+            (TAG_UTF8_STRING, &b""[..]),
+            (TAG_UTF8_STRING, &b"  "[..]),
+        ] {
+            let cert = common_name_certificate(tag, value);
+            assert!(
+                ClientIdentity::from_certificate_der(&cert).is_none(),
+                "tag {tag:#04x} value {value:?}"
+            );
+        }
     }
 
     #[test]
@@ -287,7 +383,12 @@ mod tests {
     fn truncated_certificates_are_rejected() {
         let cert = certificate(&[tlv(
             TAG_SET,
-            &[attribute(&[0x55, 0x04, 0x03], TAG_UTF8_STRING, b"neo-node-1")].concat(),
+            &[attribute(
+                &[0x55, 0x04, 0x03],
+                TAG_UTF8_STRING,
+                b"neo-node-1",
+            )]
+            .concat(),
         )]);
         for length in [0, 1, cert.len() / 2, cert.len() - 1] {
             assert!(common_name_from_certificate(&cert[..length]).is_none());
@@ -295,10 +396,43 @@ mod tests {
     }
 
     #[test]
+    fn no_prefix_of_a_certificate_yields_an_identity() {
+        for cert in [
+            openssl_v1_certificate(),
+            common_name_certificate(TAG_UTF8_STRING, b"neo-node-1"),
+        ] {
+            for length in 0..cert.len() {
+                assert!(
+                    common_name_from_certificate(&cert[..length]).is_none(),
+                    "prefix of {length} bytes"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn corrupted_certificates_never_panic_the_parser() {
+        let pristine = openssl_v1_certificate();
+        let mut cert = pristine.clone();
+        for index in 0..cert.len() {
+            for byte in 0..=u8::MAX {
+                cert[index] = byte;
+                let _ = common_name_from_certificate(&cert);
+            }
+            cert[index] = pristine[index];
+        }
+    }
+
+    #[test]
     fn identity_fingerprints_the_presented_certificate() {
         let cert = certificate(&[tlv(
             TAG_SET,
-            &[attribute(&[0x55, 0x04, 0x03], TAG_UTF8_STRING, b"neo-node-1")].concat(),
+            &[attribute(
+                &[0x55, 0x04, 0x03],
+                TAG_UTF8_STRING,
+                b"neo-node-1",
+            )]
+            .concat(),
         )]);
         let identity = ClientIdentity::from_certificate_der(&cert).expect("identity");
         assert_eq!(identity.common_name(), "neo-node-1");
