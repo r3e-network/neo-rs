@@ -234,10 +234,11 @@ impl Blockchain {
     ///
     /// Blocks parked in the unverified cache were deliberately not verified
     /// when they arrived (their predecessor was not yet known). Before they are
-    /// persisted we must either match them against a header that was already
-    /// verified, or run full header verification (index/prev-hash/timestamp/
-    /// witness). Without this check any peer can inject an arbitrary block for
-    /// a future height and have it committed once the chain catches up.
+    /// persisted we re-check body integrity, then either match them against a
+    /// header that was already verified, or run full header verification
+    /// (index/prev-hash/timestamp/witness). Without this check any peer can
+    /// inject an arbitrary block for a future height and have it committed
+    /// once the chain catches up.
     fn verify_block_for_persistence(&self, block: &Block, context: &NeoSystemContext) -> bool {
         let current_height = context.ledger().current_height();
         if block.index() != current_height.saturating_add(1) {
@@ -266,10 +267,28 @@ impl Blockchain {
             }
         };
 
+        // Body integrity first, unconditionally. Ingress already checks it, so
+        // this is defence in depth for the fast path below: a header hash
+        // commits to the merkle root, not to the transactions actually
+        // supplied, so a matching hash alone says nothing about the body.
+        let payload_block = match neo_ledger::verify_execution_block_integrity(block) {
+            Ok(payload_block) => payload_block,
+            Err(error) => {
+                warn!(
+                    target: "neo",
+                    index = block.index(),
+                    %block_hash,
+                    %error,
+                    "refusing to persist block that failed body integrity check"
+                );
+                return false;
+            }
+        };
+
         // Fast path: this height was already validated when its header was
-        // accepted (header sync / contiguous block receive). The block hash
-        // commits to the merkle root, so hash equality proves the transaction
-        // set matches the verified header.
+        // accepted (header sync / contiguous block receive). Hash equality
+        // proves the header is the verified one; together with the integrity
+        // check above, the body is the one that header's merkle root commits to.
         if let Some(mut header) = header_cache.get(block.index())
             && header.index() == block.index()
         {
@@ -299,8 +318,6 @@ impl Blockchain {
         let header_height = header_cache
             .last()
             .map_or(current_height, |header| header.index());
-        // Convert to payload block for validation
-        let payload_block = block.to_payload_block();
         let verified = if block.index() == header_height.saturating_add(1) {
             neo_ledger::verify_block_with_cache(
                 &payload_block,

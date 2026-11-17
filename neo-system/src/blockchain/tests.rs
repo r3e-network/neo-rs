@@ -996,11 +996,50 @@ mod tests {
         assert!(context.header_cache().add(header));
 
         // Same height, different header hash: must not be persisted just
-        // because a header for this height happens to be cached.
+        // because a header for this height happens to be cached. The block is
+        // body-consistent (one witness, empty body, zero root), so only the
+        // hash comparison can reject it.
         let mut block = neo_protocol::execution::Block::default();
         block.header.index = index;
         block.header.nonce = 2;
+        block.header.witnesses = vec![Witness::new()];
+        assert!(neo_ledger::verify_execution_block_integrity(&block).is_ok());
         assert!(!blockchain.verify_block_for_persistence(&block, &context));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn pre_persist_verification_rejects_substituted_body_under_verified_cached_header() {
+        let settings = ProtocolSettings::mainnet();
+        let system = NeoSystem::new(settings, None, None).expect("NeoSystem::new");
+        let context = system.context();
+        let blockchain = Blockchain::new(system.ledger_context());
+        let index = context.ledger().current_height().saturating_add(1);
+
+        let mut transactions = distinct_transactions(2, 1);
+        let substitute = transactions.split_off(1);
+        let mut payload_block = PayloadBlock::new();
+        payload_block.header.set_index(index);
+        payload_block.header.set_nonce(7);
+        payload_block.transactions = transactions;
+        payload_block.rebuild_merkle_root();
+        assert!(context.header_cache().add(payload_block.header.clone()));
+
+        // The genuine body under the verified cached header takes the fast path.
+        let genuine = neo_protocol::execution::Block::from(&payload_block);
+        assert!(blockchain.verify_block_for_persistence(&genuine, &context));
+
+        // Same header, so the same block hash as the verified cached header,
+        // but a body the merkle root does not commit to. A header hash match
+        // must not be enough to persist it.
+        let mut substituted = genuine.clone();
+        substituted.transactions = substitute;
+        assert_eq!(substituted.hash(), genuine.hash());
+        assert!(!blockchain.verify_block_for_persistence(&substituted, &context));
+
+        let mut emptied = genuine.clone();
+        emptied.transactions.clear();
+        assert_eq!(emptied.hash(), genuine.hash());
+        assert!(!blockchain.verify_block_for_persistence(&emptied, &context));
     }
 
     #[tokio::test(flavor = "multi_thread")]
