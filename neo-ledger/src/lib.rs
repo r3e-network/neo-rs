@@ -1,5 +1,6 @@
 //! Ledger persistence and block/transaction validation subsystem.
 
+pub mod block_cache_budget;
 pub mod blockchain;
 pub mod events;
 pub mod ledger_context;
@@ -8,6 +9,11 @@ pub mod services;
 pub mod validation;
 
 // Re-export key types at the crate root
+pub use block_cache_budget::{
+    BLOCK_CACHE_ENTRY_OVERHEAD, BlockCacheBudget, BlockCacheReservation,
+    DEFAULT_BLOCK_CACHE_BUDGET_BYTES, block_cache_cost, execution_block_cache_cost,
+    payload_block_cache_cost,
+};
 pub use ledger_context::LedgerContext;
 pub use services::LedgerService;
 pub use validation::{HeaderCache, HeaderCacheIter};

@@ -16,7 +16,11 @@
 //!   and a jump to a height beyond the retained window is refused instead of
 //!   being allocated: a single block claiming a far-future height can neither
 //!   grow the index vector to that height nor evict the legitimate window.
-//! * Block bodies form an insertion-ordered FIFO of the same capacity.
+//! * Block bodies form an insertion-ordered FIFO of the same capacity. They are
+//!   also charged to a [`BlockCacheBudget`] shared with the blockchain actor's
+//!   block caches (see [`crate::block_cache_budget`]): a body is cached only
+//!   while its bytes fit, the oldest bodies make room for a newer one, and a
+//!   body that cannot fit is not cached at all.
 //! * Extensible payloads are an LRU of [`DEFAULT_EXTENSIBLE_CACHE_CAPACITY`]
 //!   entries.
 //! * The transaction cache is bounded by the memory pool that feeds it.
@@ -35,6 +39,9 @@
 //!
 //! See `docs/LOCK_ORDERING.md` for the global lock hierarchy.
 
+use crate::block_cache_budget::{
+    BlockCacheBudget, BlockCacheReservation, payload_block_cache_cost,
+};
 use lru::LruCache;
 use neo_io::IoResult;
 use neo_primitives::UInt256;
@@ -45,6 +52,7 @@ use neo_protocol::payloads::transaction::Transaction;
 use parking_lot::RwLock;
 use std::collections::{HashMap, VecDeque};
 use std::num::NonZeroUsize;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 /// Default number of block bodies and headers retained in memory.
@@ -164,41 +172,122 @@ impl<T: Clone> HeightWindow<T> {
     }
 }
 
-/// Insertion-ordered, capacity-bounded block body cache.
+/// A cached block body together with the budget bytes it pays for.
+struct CachedBody {
+    // Declared before the reservation so the body is freed before its bytes
+    // are returned to the budget.
+    block: Block,
+    reservation: BlockCacheReservation,
+}
+
+/// Insertion-ordered block body cache, bounded by entry count and by the
+/// shared block cache budget.
 struct BlockBodyCache {
-    blocks: HashMap<UInt256, Block>,
+    blocks: HashMap<UInt256, CachedBody>,
     order: VecDeque<UInt256>,
     capacity: usize,
+    budget: Arc<BlockCacheBudget>,
+    /// Sum of the reservations held by `blocks`.
+    retained_bytes: usize,
 }
 
 impl BlockBodyCache {
-    fn new(capacity: usize) -> Self {
+    fn new(capacity: usize, budget: Arc<BlockCacheBudget>) -> Self {
         Self {
             blocks: HashMap::new(),
             order: VecDeque::new(),
             capacity: capacity.max(1),
+            budget,
+            retained_bytes: 0,
         }
     }
 
-    fn insert(&mut self, hash: UInt256, block: Block) {
-        if self.blocks.insert(hash, block).is_none() {
+    /// Caches `block`, evicting the oldest bodies of this cache as needed.
+    ///
+    /// Returns false when the body was not cached because the budget cannot
+    /// hold it even with every other body of this cache evicted. Bytes held by
+    /// other caches are never reclaimed from here.
+    fn insert(&mut self, hash: UInt256, block: Block) -> bool {
+        let cost = payload_block_cache_cost(&block);
+        // A body cached again under the same hash keeps its place in the
+        // eviction order; its old bytes are returned first so it is charged
+        // once.
+        let existed = self.remove_body(&hash);
+
+        let reservation = if cost > self.retained_bytes.saturating_add(self.budget.available()) {
+            // Evicting this cache empty would still not make room.
+            None
+        } else {
+            loop {
+                if let Some(reservation) = self.budget.try_reserve(cost) {
+                    break Some(reservation);
+                }
+                if !self.evict_oldest_except(&hash) {
+                    break None;
+                }
+            }
+        };
+
+        let Some(reservation) = reservation else {
+            if existed {
+                self.order.retain(|cached| cached != &hash);
+            }
+            return false;
+        };
+
+        self.retained_bytes = self.retained_bytes.saturating_add(reservation.bytes());
+        self.blocks.insert(hash, CachedBody { block, reservation });
+        if !existed {
             self.order.push_back(hash);
         }
+        // Never evict the entry that was just inserted.
         while self.order.len() > self.capacity {
+            if !self.evict_oldest_except(&hash) {
+                break;
+            }
+        }
+        true
+    }
+
+    /// Drops the body cached under `hash`, leaving its eviction-order slot.
+    fn remove_body(&mut self, hash: &UInt256) -> bool {
+        let Some(cached) = self.blocks.remove(hash) else {
+            return false;
+        };
+        self.retained_bytes = self
+            .retained_bytes
+            .saturating_sub(cached.reservation.bytes());
+        true
+    }
+
+    /// Evicts the oldest body other than `keep`. Returns false when there is
+    /// none.
+    fn evict_oldest_except(&mut self, keep: &UInt256) -> bool {
+        let Some(position) = self.order.iter().position(|cached| cached != keep) else {
+            return false;
+        };
+        let Some(oldest) = self.order.remove(position) else {
+            return false;
+        };
+        self.remove_body(&oldest);
+        true
+    }
+
+    /// Evicts the oldest bodies until `bytes_needed` bytes were returned to
+    /// the budget or the cache is empty. Returns the bytes returned.
+    fn evict_bytes(&mut self, bytes_needed: usize) -> usize {
+        let before = self.retained_bytes;
+        while before.saturating_sub(self.retained_bytes) < bytes_needed {
             let Some(oldest) = self.order.pop_front() else {
                 break;
             };
-            if oldest == hash {
-                // Never evict the entry that was just inserted.
-                self.order.push_back(oldest);
-                break;
-            }
-            self.blocks.remove(&oldest);
+            self.remove_body(&oldest);
         }
+        before.saturating_sub(self.retained_bytes)
     }
 
     fn get(&self, hash: &UInt256) -> Option<&Block> {
-        self.blocks.get(hash)
+        self.blocks.get(hash).map(|cached| &cached.block)
     }
 
     fn len(&self) -> usize {
@@ -230,6 +319,7 @@ pub struct LedgerContext {
     transactions_by_hash: RwLock<HashMap<UInt256, Transaction>>,
     block_capacity: usize,
     extensible_capacity: usize,
+    block_cache_budget: Arc<BlockCacheBudget>,
 }
 
 impl Default for LedgerContext {
@@ -252,6 +342,20 @@ impl LedgerContext {
     ///
     /// A zero capacity is raised to one so the caches stay usable.
     pub fn with_capacities(block_capacity: usize, extensible_capacity: usize) -> Self {
+        Self::with_capacities_and_budget(
+            block_capacity,
+            extensible_capacity,
+            BlockCacheBudget::with_default_limit(),
+        )
+    }
+
+    /// Like [`Self::with_capacities`], charging cached block bodies to
+    /// `block_cache_budget` instead of a budget of the default size.
+    pub fn with_capacities_and_budget(
+        block_capacity: usize,
+        extensible_capacity: usize,
+        block_cache_budget: Arc<BlockCacheBudget>,
+    ) -> Self {
         let block_capacity = block_capacity.max(1);
         let extensible_capacity = NonZeroUsize::new(extensible_capacity.max(1))
             .expect("extensible cache capacity is non-zero");
@@ -263,12 +367,24 @@ impl LedgerContext {
                 block_capacity,
                 None,
             )),
-            blocks_by_hash: RwLock::new(BlockBodyCache::new(block_capacity)),
+            blocks_by_hash: RwLock::new(BlockBodyCache::new(
+                block_capacity,
+                Arc::clone(&block_cache_budget),
+            )),
             extensibles_by_hash: RwLock::new(LruCache::new(extensible_capacity)),
             transactions_by_hash: RwLock::new(HashMap::new()),
             block_capacity,
             extensible_capacity: extensible_capacity.get(),
+            block_cache_budget,
         }
+    }
+
+    /// Byte budget the cached block bodies are charged to.
+    ///
+    /// The blockchain actor charges its own block caches to the same budget,
+    /// so the bytes all of them retain stay within one limit.
+    pub fn block_cache_budget(&self) -> Arc<BlockCacheBudget> {
+        Arc::clone(&self.block_cache_budget)
     }
 
     /// Number of block bodies / headers this context retains.
@@ -284,6 +400,22 @@ impl LedgerContext {
     /// Number of block bodies currently cached.
     pub fn cached_block_count(&self) -> usize {
         self.blocks_by_hash.read().len()
+    }
+
+    /// Budget bytes currently held by the cached block bodies.
+    pub fn cached_block_bytes(&self) -> usize {
+        self.blocks_by_hash.read().retained_bytes
+    }
+
+    /// Evicts the oldest cached block bodies until at least `bytes_needed`
+    /// bytes were returned to the block cache budget, or none are left.
+    /// Returns the number of bytes returned.
+    ///
+    /// Bodies cached here are a fast path only (see the module
+    /// documentation), so the blockchain actor reclaims them before it gives
+    /// up any block that is still waiting to be persisted.
+    pub fn evict_block_bodies(&self, bytes_needed: usize) -> usize {
+        self.blocks_by_hash.write().evict_bytes(bytes_needed)
     }
 
     /// Returns the highest block index recorded in memory.
@@ -320,6 +452,10 @@ impl LedgerContext {
     /// bounded index window, so a refused far-future height cannot advertise
     /// itself as the local tip.
     ///
+    /// Caching the body is best effort: when the shared block cache budget
+    /// cannot hold it, the hash, header and tip are recorded all the same and
+    /// the body is left to the persistent store.
+    ///
     /// # Lock Ordering
     ///
     /// This method acquires locks in the correct order: hashes_by_index,
@@ -332,7 +468,14 @@ impl LedgerContext {
         // Lock order: 1. hashes_by_index, 2. headers_by_index, 3. blocks_by_hash
         let indexed = self.hashes_by_index.write().insert(index, hash);
         self.headers_by_index.write().insert(index, Some(header));
-        self.blocks_by_hash.write().insert(hash, block);
+        if !self.blocks_by_hash.write().insert(hash, block) {
+            tracing::debug!(
+                target: "neo::ledger",
+                index,
+                %hash,
+                "block cache budget cannot hold this block body; not cached"
+            );
+        }
 
         match indexed {
             WindowInsert::Indexed => {
@@ -491,6 +634,20 @@ mod tests {
         block
     }
 
+    /// A block whose serialized size is dominated by `script_len`.
+    fn block_with_body(index: u32, script_len: usize) -> Block {
+        let mut block = block_with_index(index);
+        block.transactions = vec![transaction_with_script(vec![
+            OpCode::NOP.byte();
+            script_len
+        ])];
+        block
+    }
+
+    fn context_with_budget(block_capacity: usize, limit: usize) -> LedgerContext {
+        LedgerContext::with_capacities_and_budget(block_capacity, 4, BlockCacheBudget::new(limit))
+    }
+
     fn extensible_with_data(data: u8) -> Extensible {
         let mut payload = Extensible::new();
         payload.category = "test".to_string();
@@ -611,5 +768,206 @@ mod tests {
         assert_eq!(headers.len(), 2);
         assert_eq!(headers[0].index(), 4);
         assert_eq!(headers[1].index(), 5);
+    }
+
+    #[test]
+    fn cached_bodies_are_charged_to_the_budget_and_count_eviction_returns_them() {
+        let context = context_with_budget(2, 1 << 20);
+        let budget = context.block_cache_budget();
+        let costs: Vec<usize> = (0..3u32)
+            .map(|index| {
+                payload_block_cache_cost(&block_with_body(index, 100 * (index as usize + 1)))
+            })
+            .collect();
+
+        context.insert_block(block_with_body(0, 100)).expect("hash");
+        assert_eq!(budget.retained(), costs[0]);
+        context.insert_block(block_with_body(1, 200)).expect("hash");
+        assert_eq!(budget.retained(), costs[0] + costs[1]);
+
+        // The entry-count bound evicts block 0; its bytes must come back.
+        context.insert_block(block_with_body(2, 300)).expect("hash");
+        assert_eq!(context.cached_block_count(), 2);
+        assert_eq!(budget.retained(), costs[1] + costs[2]);
+        assert_eq!(context.cached_block_bytes(), budget.retained());
+    }
+
+    #[test]
+    fn oldest_bodies_make_room_for_a_newer_body() {
+        let cost = payload_block_cache_cost(&block_with_body(0, 500));
+        // Room for two bodies and a bit, far below the entry-count bound.
+        let context = context_with_budget(64, cost * 2 + cost / 2);
+        let budget = context.block_cache_budget();
+
+        let mut hashes = Vec::new();
+        for index in 0..5u32 {
+            hashes.push(
+                context
+                    .insert_block(block_with_body(index, 500))
+                    .expect("hash"),
+            );
+            assert!(budget.retained() <= budget.limit());
+        }
+
+        assert_eq!(context.cached_block_count(), 2);
+        assert_eq!(budget.retained(), cost * 2);
+        assert!(context.get_block(&hashes[2]).is_none());
+        assert!(context.get_block(&hashes[3]).is_some());
+        assert!(context.get_block(&hashes[4]).is_some());
+        // Eviction is a memory decision only: every height is still indexed.
+        assert_eq!(context.block_hash_at(0), Some(hashes[0]));
+        assert_eq!(context.current_height(), 4);
+    }
+
+    #[test]
+    fn body_larger_than_the_budget_is_indexed_but_not_cached() {
+        let small = block_with_body(0, 100);
+        let small_cost = payload_block_cache_cost(&small);
+        let context = context_with_budget(64, small_cost * 2);
+        let budget = context.block_cache_budget();
+        let small_hash = context.insert_block(small).expect("hash");
+
+        let oversize = block_with_body(1, 4_000);
+        assert!(payload_block_cache_cost(&oversize) > budget.limit());
+        let oversize_hash = context.insert_block(oversize).expect("hash");
+
+        // The ledger still advanced; only the body was left out.
+        assert_eq!(context.block_hash_at(1), Some(oversize_hash));
+        assert_eq!(context.headers_from_index(1, 1).len(), 1);
+        assert_eq!(context.current_height(), 1);
+        assert!(context.get_block(&oversize_hash).is_none());
+        // Nothing was evicted for a body that could never fit.
+        assert!(context.get_block(&small_hash).is_some());
+        assert_eq!(budget.retained(), small_cost);
+    }
+
+    #[test]
+    fn body_is_not_cached_when_other_caches_hold_the_budget() {
+        let cost = payload_block_cache_cost(&block_with_body(0, 300));
+        let context = context_with_budget(64, cost * 3);
+        let budget = context.block_cache_budget();
+        let first = context.insert_block(block_with_body(0, 300)).expect("hash");
+
+        // Another cache takes everything that is left.
+        let other = budget.try_reserve(budget.available()).expect("rest");
+        let second = context.insert_block(block_with_body(1, 300)).expect("hash");
+        // One own body made room; the other cache was not touched.
+        assert!(context.get_block(&first).is_none());
+        assert!(context.get_block(&second).is_some());
+        assert_eq!(budget.retained(), budget.limit());
+
+        // A body twice the size cannot fit even with this cache emptied, so
+        // the cached body is kept instead of being evicted for nothing.
+        let third = context.insert_block(block_with_body(2, 700)).expect("hash");
+        assert!(context.get_block(&third).is_none());
+        assert!(context.get_block(&second).is_some());
+        assert_eq!(context.current_height(), 2);
+        assert_eq!(budget.retained(), budget.limit());
+
+        drop(other);
+        assert_eq!(budget.retained(), cost);
+    }
+
+    #[test]
+    fn reinserting_a_block_charges_it_once() {
+        let context = context_with_budget(64, 1 << 20);
+        let budget = context.block_cache_budget();
+        let cost = payload_block_cache_cost(&block_with_body(0, 300));
+
+        let hash = context.insert_block(block_with_body(0, 300)).expect("hash");
+        let again = context.insert_block(block_with_body(0, 300)).expect("hash");
+        assert_eq!(hash, again);
+        assert_eq!(context.cached_block_count(), 1);
+        assert_eq!(budget.retained(), cost);
+    }
+
+    #[test]
+    fn evict_block_bodies_returns_bytes_oldest_first() {
+        let context = context_with_budget(64, 1 << 20);
+        let budget = context.block_cache_budget();
+        let cost = payload_block_cache_cost(&block_with_body(0, 300));
+        let hashes: Vec<UInt256> = (0..4u32)
+            .map(|index| {
+                context
+                    .insert_block(block_with_body(index, 300))
+                    .expect("hash")
+            })
+            .collect();
+
+        assert_eq!(context.evict_block_bodies(0), 0);
+        assert_eq!(context.cached_block_count(), 4);
+
+        // One byte more than a body: two bodies have to go.
+        assert_eq!(context.evict_block_bodies(cost + 1), cost * 2);
+        assert!(context.get_block(&hashes[0]).is_none());
+        assert!(context.get_block(&hashes[1]).is_none());
+        assert!(context.get_block(&hashes[2]).is_some());
+        assert_eq!(budget.retained(), cost * 2);
+
+        assert_eq!(context.evict_block_bodies(usize::MAX), cost * 2);
+        assert_eq!(context.cached_block_count(), 0);
+        assert_eq!(context.cached_block_bytes(), 0);
+        assert_eq!(budget.retained(), 0);
+        // The index is untouched: these heights are served from the store.
+        assert_eq!(context.block_hash_at(3), Some(hashes[3]));
+    }
+
+    #[test]
+    fn dropping_the_context_returns_every_byte() {
+        let budget = BlockCacheBudget::new(1 << 20);
+        let context = LedgerContext::with_capacities_and_budget(64, 4, Arc::clone(&budget));
+        for index in 0..8u32 {
+            context
+                .insert_block(block_with_body(index, 200))
+                .expect("hash");
+        }
+        assert!(budget.retained() > 0);
+
+        drop(context);
+        assert_eq!(budget.retained(), 0);
+    }
+
+    #[test]
+    fn contexts_sharing_a_budget_stay_within_it_under_concurrent_inserts() {
+        let cost = payload_block_cache_cost(&block_with_body(0, 400));
+        let budget = BlockCacheBudget::new(cost * 5);
+        let contexts: Vec<Arc<LedgerContext>> = (0..4)
+            .map(|_| {
+                Arc::new(LedgerContext::with_capacities_and_budget(
+                    64,
+                    4,
+                    Arc::clone(&budget),
+                ))
+            })
+            .collect();
+
+        let workers: Vec<_> = contexts
+            .iter()
+            .map(|context| {
+                let context = Arc::clone(context);
+                let budget = Arc::clone(&budget);
+                std::thread::spawn(move || {
+                    for index in 0..400u32 {
+                        context
+                            .insert_block(block_with_body(index, 400))
+                            .expect("hash");
+                        assert!(budget.retained() <= budget.limit());
+                    }
+                })
+            })
+            .collect();
+        for worker in workers {
+            worker.join().expect("worker");
+        }
+
+        let cached: usize = contexts
+            .iter()
+            .map(|context| context.cached_block_bytes())
+            .sum();
+        assert_eq!(budget.retained(), cached);
+        assert!(cached <= budget.limit());
+
+        drop(contexts);
+        assert_eq!(budget.retained(), 0);
     }
 }
