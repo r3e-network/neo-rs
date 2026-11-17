@@ -341,9 +341,8 @@ async fn credentialed_config_requires_external_authentication() {
         ..Default::default()
     };
 
-    let error = match build_jsonrpsee_module(Arc::downgrade(&server), &config) {
-        Ok(_) => panic!("adapter must refuse to build without an auth gate"),
-        Err(error) => error,
+    let Err(error) = build_jsonrpsee_module(Arc::downgrade(&server), &config) else {
+        panic!("adapter must refuse to build without an auth gate");
     };
     assert!(matches!(
         error,
