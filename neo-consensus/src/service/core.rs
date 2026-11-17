@@ -38,6 +38,15 @@ pub struct ConsensusService {
     /// unable to reach M commits after recovery installed the proposal.
     /// Key: validator index; value: (view, signature, invocation script).
     pub(super) pending_commits: HashMap<u8, (u8, Vec<u8>, Vec<u8>)>,
+    /// Set once the commit quorum is reached but `BlockCommitted` has not been
+    /// delivered yet.
+    ///
+    /// Publication uses a bounded event channel, so `try_send` can fail
+    /// transiently. While this flag is set the round is already decided: the
+    /// finalization must be retried instead of being replaced by a view change,
+    /// and `ConsensusState::Committed` must not be recorded until the event is
+    /// actually published.
+    pub(super) finalization_pending: bool,
 }
 
 impl ConsensusService {
@@ -64,6 +73,7 @@ impl ConsensusService {
             #[cfg(test)]
             signature_verification_count: std::cell::Cell::new(0),
             pending_commits: HashMap::new(),
+            finalization_pending: false,
         }
     }
 
@@ -89,6 +99,7 @@ impl ConsensusService {
             #[cfg(test)]
             signature_verification_count: std::cell::Cell::new(0),
             pending_commits: HashMap::new(),
+            finalization_pending: false,
         }
     }
 }

@@ -45,11 +45,6 @@ impl ConsensusService {
         // Validate the parsed message
         change_view_msg.validate()?;
 
-        // Track transactions rejected by >F validators so a later primary can
-        // avoid re-proposing them (C# InvalidTransactions).
-        self.context
-            .record_rejected_hashes(payload.validator_index, &change_view_msg.rejected_hashes);
-
         let new_view = change_view_msg.new_view_number()?;
         let timestamp = change_view_msg.timestamp;
         let reason = change_view_msg.reason;
@@ -69,12 +64,12 @@ impl ConsensusService {
             return Ok(());
         }
 
-        let commit_sent = self
-            .context
-            .my_index
-            .and_then(|idx| self.context.commits.get(&idx))
-            .is_some();
-        if commit_sent {
+        // SECURITY: every gate below runs *before* the sender's rejected hashes
+        // are recorded. Accumulating them first let a Byzantine validator grow
+        // `rejected_tx_validators` without bound by sending ChangeViews that
+        // never pass these checks (stale view, duplicate view, commit sent),
+        // each carrying fresh hashes.
+        if self.context.has_sent_commit() {
             return Ok(());
         }
 
@@ -82,6 +77,24 @@ impl ConsensusService {
             && new_view <= *expected_view
         {
             return Ok(());
+        }
+
+        // Track transactions rejected by >F validators so a later primary can
+        // avoid re-proposing them (C# InvalidTransactions). The per-validator
+        // budget bounds how much a single sender can add within one block.
+        let offered = change_view_msg.rejected_hashes.len();
+        let (recorded, budget_exhausted) = self
+            .context
+            .record_rejected_hashes(payload.validator_index, &change_view_msg.rejected_hashes);
+        if budget_exhausted {
+            warn!(
+                block_index = self.context.block_index,
+                validator = payload.validator_index,
+                recorded,
+                offered,
+                limit = crate::context::MAX_REJECTED_HASHES_PER_VALIDATOR_PER_BLOCK,
+                "Dropped rejected transaction hashes: per-validator budget exhausted"
+            );
         }
 
         self.context
@@ -113,6 +126,21 @@ impl ConsensusService {
         reason: ChangeViewReason,
         timestamp: u64,
     ) -> ConsensusResult<()> {
+        // C# `RequestChangeView` is unreachable after `CommitSent`: committing
+        // is final for the round. Without this guard this public entry point
+        // (unlike `on_change_view` and the timer handler) would broadcast a
+        // ChangeView and could adopt a later view, letting this node sign a
+        // second block at the same height.
+        if self.context.has_sent_commit() {
+            warn!(
+                block_index = self.context.block_index,
+                view = self.context.view_number,
+                ?reason,
+                "Ignoring view change request: local Commit already sent"
+            );
+            return Ok(());
+        }
+
         let new_view = self
             .context
             .view_number
@@ -248,6 +276,20 @@ impl ConsensusService {
     fn change_view(&mut self, new_view: u8) -> ConsensusResult<()> {
         let old_view = self.context.view_number;
         let timestamp = current_timestamp();
+
+        // The block is already decided once the commit quorum is reached; only
+        // its publication is outstanding. Advancing the view would discard the
+        // proposal the pending `BlockCommitted` refers to, so the finalization
+        // is retried instead (see `check_commits` and the timer handler).
+        if self.finalization_pending {
+            warn!(
+                block_index = self.context.block_index,
+                old_view,
+                new_view,
+                "Ignoring view change: block finalization is pending publication"
+            );
+            return Ok(());
+        }
 
         // The view number must be monotonic; ignore any attempt to regress it.
         if new_view <= old_view {

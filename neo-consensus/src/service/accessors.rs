@@ -25,7 +25,9 @@ impl ConsensusService {
     /// TxRejectedByPolicy)` so the network can converge on skipping it.
     pub fn record_rejected_transaction(&mut self, hash: neo_primitives::UInt256) {
         if let Some(index) = self.context.my_index {
-            self.context.record_rejected_hashes(index, &[hash]);
+            // The per-validator budget applies to this node as well; it is only
+            // reachable with far more rejected transactions than a block holds.
+            let _ = self.context.record_rejected_hashes(index, &[hash]);
         }
     }
 

@@ -40,6 +40,16 @@ pub const MAX_MESSAGE_CACHE_SIZE: usize = 10_000;
 /// are attacker-supplied, so the cache they populate must stay cheap.
 pub const MAX_REJECTED_MESSAGE_CACHE_SIZE: usize = 1_024;
 
+/// Maximum number of distinct rejected transaction hashes a single validator
+/// may contribute to `rejected_tx_validators` within one block.
+///
+/// SECURITY: rejected hashes travel in `ChangeView` messages, so they are
+/// attacker-controlled. C# keys `InvalidTransactions` by validator public key
+/// without a bound; here the per-validator budget keeps the round state
+/// bounded (at most `MAX_VALIDATORS * budget` retained hashes) while leaving
+/// room for every transaction a block can legitimately contain.
+pub const MAX_REJECTED_HASHES_PER_VALIDATOR_PER_BLOCK: usize = 1_000;
+
 /// How long (ms) a verification-rejected message hash suppresses replays of
 /// that payload. The hash covers only the unsigned payload bytes, so a longer
 /// TTL would also suppress a legitimate retransmission carrying a different
@@ -237,6 +247,10 @@ pub struct ConsensusContext {
     /// Validators that rejected each transaction in a `ChangeView` (C#
     /// `InvalidTransactions`: hash -> set of validator public keys).
     pub rejected_tx_validators: HashMap<UInt256, std::collections::HashSet<u8>>,
+    /// Number of distinct hashes each validator already contributed to
+    /// `rejected_tx_validators` in this block. Enforces
+    /// [`MAX_REJECTED_HASHES_PER_VALIDATOR_PER_BLOCK`].
+    rejected_hash_counts: HashMap<u8, usize>,
     /// Nonce for the block
     pub nonce: u64,
 
@@ -323,6 +337,7 @@ impl ConsensusContext {
             proposed_tx_hashes: Vec::new(),
             transactions_available: false,
             rejected_tx_validators: HashMap::new(),
+            rejected_hash_counts: HashMap::new(),
             nonce: 0,
             prepare_request_received: false,
             prepare_responses: HashMap::new(),
@@ -459,13 +474,49 @@ impl ConsensusContext {
     }
 
     /// Records transactions rejected by a `ChangeView` sender.
-    pub fn record_rejected_hashes(&mut self, validator_index: u8, hashes: &[UInt256]) {
+    ///
+    /// SECURITY: a single validator may contribute at most
+    /// [`MAX_REJECTED_HASHES_PER_VALIDATOR_PER_BLOCK`] distinct hashes per
+    /// block. Without that budget a Byzantine validator could keep sending
+    /// `ChangeView` messages carrying fresh hashes to grow
+    /// [`Self::rejected_tx_validators`] without bound. Re-reporting a hash that
+    /// is already attributed to the sender is free and does not consume budget.
+    ///
+    /// Returns the number of hashes newly attributed to `validator_index` and
+    /// whether the sender's budget was exhausted before every offered hash was
+    /// recorded.
+    pub fn record_rejected_hashes(
+        &mut self,
+        validator_index: u8,
+        hashes: &[UInt256],
+    ) -> (usize, bool) {
+        let mut recorded = 0;
+        let mut exhausted = false;
         for hash in hashes {
+            let already_attributed = self
+                .rejected_tx_validators
+                .get(hash)
+                .is_some_and(|validators| validators.contains(&validator_index));
+            if already_attributed {
+                continue;
+            }
+            let used = self
+                .rejected_hash_counts
+                .get(&validator_index)
+                .copied()
+                .unwrap_or(0);
+            if used >= MAX_REJECTED_HASHES_PER_VALIDATOR_PER_BLOCK {
+                exhausted = true;
+                break;
+            }
             self.rejected_tx_validators
                 .entry(*hash)
                 .or_default()
                 .insert(validator_index);
+            self.rejected_hash_counts.insert(validator_index, used + 1);
+            recorded += 1;
         }
+        (recorded, exhausted)
     }
 
     /// Returns hashes rejected by more than F validators.
@@ -576,6 +627,7 @@ impl ConsensusContext {
         self.proposed_tx_hashes.clear();
         self.transactions_available = false;
         self.rejected_tx_validators.clear();
+        self.rejected_hash_counts.clear();
         self.nonce = 0;
         self.prepare_request_received = false;
         self.prepare_responses.clear();
@@ -865,6 +917,19 @@ impl ConsensusContext {
     #[must_use]
     pub fn count_committed(&self) -> usize {
         self.commits.len()
+    }
+
+    /// Returns true once this validator has sent a `Commit` for the round.
+    ///
+    /// Mirrors C# `DBFTPlugin` `CommitSent`: `CommitPayloads[MyIndex] != null`.
+    /// The flag is sticky for the whole round — Commit payloads from earlier
+    /// views are retained as recovery evidence — so a node that has committed
+    /// never agrees to advance the view, which is what keeps it from signing a
+    /// second block at the same height.
+    #[must_use]
+    pub fn has_sent_commit(&self) -> bool {
+        self.my_index
+            .is_some_and(|index| self.commits.contains_key(&index))
     }
 
     /// Returns the number of validators that have failed or are lost
@@ -1220,6 +1285,7 @@ impl ConsensusContext {
             proposed_tx_hashes: state.proposed_tx_hashes,
             transactions_available: false,
             rejected_tx_validators: HashMap::new(),
+            rejected_hash_counts: HashMap::new(),
             nonce: state.nonce,
             prepare_request_received: state.prepare_request_received,
             prepare_responses: state.prepare_responses,

@@ -21,6 +21,7 @@ impl ConsensusService {
         info!(block_index, "Starting consensus");
         self.context.reset_for_new_block(block_index, timestamp);
         self.pending_commits.clear();
+        self.finalization_pending = false;
         self.context.prev_hash = prev_hash;
         self.context.version = version;
         self.running = true;
@@ -191,6 +192,20 @@ impl ConsensusService {
             return Ok(());
         }
 
+        // A round whose commit quorum was already reached but whose
+        // `BlockCommitted` event could not be published (bounded channel) is
+        // retried first. The round is decided, so advancing the view here would
+        // abandon a finalized block.
+        if self.finalization_pending {
+            self.check_commits()?;
+            if !self.running {
+                // Publication succeeded; the block is now committed.
+                return Ok(());
+            }
+            // The quorum was lost again (e.g. commits were purged as invalid),
+            // so the round continues with the normal timer handling below.
+        }
+
         if self.context.is_timed_out(timestamp) {
             if self.context.is_primary()
                 && !self.context.proposal_requested()
@@ -203,11 +218,7 @@ impl ConsensusService {
                 return Ok(());
             }
 
-            let commit_sent = self
-                .context
-                .my_index
-                .and_then(|index| self.context.commits.get(&index))
-                .is_some();
+            let commit_sent = self.context.has_sent_commit();
             if commit_sent {
                 // C# resends a RecoveryMessage after CommitSent instead of
                 // initiating another view change, then gives the network 2T.

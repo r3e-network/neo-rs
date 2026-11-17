@@ -128,11 +128,7 @@ impl ConsensusService {
         );
 
         let message_view = payload.view_number;
-        let commit_sent = self
-            .context
-            .my_index
-            .and_then(|idx| self.context.commits.get(&idx))
-            .is_some();
+        let commit_sent = self.context.has_sent_commit();
 
         if message_view > self.context.view_number {
             if commit_sent {

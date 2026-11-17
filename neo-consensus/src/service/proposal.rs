@@ -106,6 +106,13 @@ impl ConsensusService {
             self.context
                 .change_timer(current_timestamp(), self.context.prepare_request_timeout());
 
+            // The primary's own `PrepareRequest` is its preparation vote, so a
+            // small validator set can already satisfy the quorum right here and
+            // nothing else would ever trigger the check: with N=1, M=1 no
+            // backup exists to send a `PrepareResponse`. Backups run the same
+            // check from `on_prepare_request`.
+            self.check_prepare_responses()?;
+
             return Ok(());
         }
 

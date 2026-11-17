@@ -197,9 +197,16 @@ impl ConsensusService {
     /// Checks if we have enough commits to finalize the block
     pub(in crate::service) fn check_commits(&mut self) -> ConsensusResult<()> {
         if !self.context.has_enough_commits() {
+            // A pending finalization whose quorum disappeared (e.g. commits were
+            // purged as invalid) must not pin the round forever.
+            self.finalization_pending = false;
             return Ok(());
         }
 
+        // SECURITY/LIVENESS: `Committed` is only recorded *after* the
+        // `BlockCommitted` event was published (see below), so it is a reliable
+        // "finalization already delivered" flag. Recording it earlier made a
+        // single failed publication permanently suppress every retry.
         if self.context.state == ConsensusState::Committed {
             return Ok(());
         }
@@ -276,16 +283,23 @@ impl ConsensusService {
             "Block committed! Preparing block data for assembly..."
         );
 
-        self.context.state = ConsensusState::Committed;
-
         // Prepare block data for upper layer to assemble the final Block structure
         let block_data = self.prepare_block_data()?;
 
+        // Publication is not atomic: the event channel is bounded, so
+        // `try_send` fails while the consumer is behind. Keep the round in a
+        // pending-finalization state and only record `Committed` once the event
+        // is really delivered; otherwise the failure would silently drop the
+        // finalized block for the rest of the round (every later quorum check
+        // would see `Committed` and return immediately).
+        self.finalization_pending = true;
         self.send_event(ConsensusEvent::BlockCommitted {
             block_index: self.context.block_index,
             block_hash,
             block_data,
         })?;
+        self.finalization_pending = false;
+        self.context.state = ConsensusState::Committed;
 
         self.running = false;
 
