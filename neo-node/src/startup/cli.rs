@@ -9,6 +9,9 @@ use zeroize::Zeroizing;
 /// The RPC server refuses a request whose whole method name equals a disabled
 /// name, ignoring ASCII case; there is no prefix or pattern matching. An entry
 /// that is not the name of a registered handler therefore disables nothing.
+///
+/// `calculatenetworkfee` is the one protected method left out on purpose: it is
+/// a read-only estimate that works without an opened wallet.
 const HARDENED_DISABLED_METHODS: &[&str] = &[
     "openwallet",
     "closewallet",
@@ -16,6 +19,9 @@ const HARDENED_DISABLED_METHODS: &[&str] = &[
     "dumpprivkey",
     "importprivkey",
     "getnewaddress",
+    "getwalletbalance",
+    "getwalletunclaimedgas",
+    "listaddress",
     "sendfrom",
     "sendtoaddress",
     "sendmany",
