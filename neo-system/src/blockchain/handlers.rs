@@ -140,11 +140,18 @@ impl Blockchain {
         );
 
         {
-            self._block_cache.insert(hash, Arc::clone(&block));
-
             let prev_hash = *block.prev_hash();
             if !prev_hash.is_zero() {
                 self._block_cache.remove(&prev_hash);
+            }
+
+            // The entry of the new tip keeps the charge the block was cached
+            // with. A block that was persisted without having been cached is
+            // only retained when the budget has room for it as things stand.
+            if !self._block_cache.contains_key(&hash)
+                && let Some(retained) = self.try_retain_block(Arc::clone(&block), hash)
+            {
+                self._block_cache.insert(hash, retained);
             }
         }
 

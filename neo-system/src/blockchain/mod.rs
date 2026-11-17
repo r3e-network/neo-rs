@@ -49,6 +49,38 @@
 //! - **Block Cache**: Verified blocks awaiting persistence
 //! - **Unverified Cache**: Blocks received out of order, pending verification
 //! - **Extensible Whitelist**: Authorized senders for extensible payloads
+//!
+//! # Block Cache Budget
+//!
+//! Both block caches charge every block they hold to the
+//! [`BlockCacheBudget`] they share with the block body cache of
+//! [`LedgerContext`], so the three together never retain more bytes than its
+//! limit. A block held by both actor caches is charged once.
+//!
+//! The caches only save a download: every block taken from them is verified
+//! again before it is persisted, and a block that is not cached is fetched
+//! again. Giving up a cached block therefore never changes what is valid or
+//! the order in which blocks are persisted.
+//!
+//! When a block does not fit, room is made in this order, and admission is
+//! refused if that is not enough:
+//!
+//! 1. cached blocks at or below the persisted height, which are of no use;
+//! 2. persisted block bodies in the ledger context, oldest first, which the
+//!    store can still serve;
+//! 3. cached blocks at heights above the incoming block, highest first.
+//!
+//! The budget never makes a block give way to one at the same or a greater
+//! height. The chain needs the lowest missing height next, and blocks nobody
+//! can verify yet sit above every height a verified header exists for, so
+//! filling the budget with far-future blocks cannot keep a block the chain
+//! needs sooner out.
+//!
+//! The next block to persist does not depend on admission at all: it is
+//! persisted even when the budget has no room for it or it is larger than the
+//! whole budget, it is just not retained, and nothing is given up for it. Any
+//! other block that cannot be admitted is not kept, and is reported as
+//! `OutOfMemory` if it was verified.
 
 use crate::events::PluginEvent;
 use crate::neo_system::NeoSystemContext;
@@ -62,7 +94,9 @@ use dashmap::DashMap;
 use lru::LruCache;
 use neo_actors::{Actor, ActorContext, ActorResult, Props, ScheduleHandle};
 use neo_io_crate::{MemoryReader, Serializable};
-use neo_ledger::LedgerContext;
+use neo_ledger::{
+    BlockCacheBudget, BlockCacheReservation, LedgerContext, execution_block_cache_cost,
+};
 use neo_native_contracts::LedgerContract;
 use neo_primitives::{UInt160, UInt256};
 use neo_protocol::execution::Block;
@@ -72,16 +106,14 @@ use neo_smart_contract::error::CoreResult;
 use neo_storage::persistence::DataCache;
 use neo_storage::persistence::StoreCache;
 use std::any::Any;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
-use neo_ledger::blockchain::types::{
-    ImportDisposition, UnverifiedBlocksList, classify_import_block,
-};
+use neo_ledger::blockchain::types::{ImportDisposition, classify_import_block};
 use neo_primitives::VerifyResult;
 
 /// System-attachment command accepted by the blockchain actor.
@@ -139,19 +171,46 @@ const MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT: usize = 3;
 /// own: a P2P payload may be up to 32 MiB, so 20k cached blocks could pin
 /// hundreds of gigabytes of RAM. 256 MiB covers the fast-sync window while
 /// bounding worst-case memory under byzantine peers.
+///
+/// This is a share of the block cache budget, not an addition to it: blocks
+/// in the unverified cache are charged to the budget as well.
 const MAX_UNVERIFIED_CACHE_BYTES: usize = 256 * 1024 * 1024;
 
-/// Per-entry accounting overhead (hash map/list bookkeeping), used to keep the
-/// byte budget honest for very small blocks.
-const UNVERIFIED_BLOCK_OVERHEAD: usize = 64;
+// Beside a full unverified cache the default budget must still have room for
+// the largest block a peer can send and for the body the ledger context keeps
+// of it once it is persisted.
+const _: () = assert!(
+    neo_ledger::DEFAULT_BLOCK_CACHE_BUDGET_BYTES
+        >= MAX_UNVERIFIED_CACHE_BYTES + 2 * crate::network::p2p::PAYLOAD_MAX_SIZE
+);
+
+/// A block held by the verified block cache, the unverified block cache, or
+/// both, together with the bytes it holds in the block cache budget.
+///
+/// A verified block that cannot be persisted yet sits in both caches. The two
+/// entries are clones sharing one reservation, so the block is charged once
+/// and its bytes are returned when the last of them is dropped.
+#[derive(Clone)]
+struct RetainedBlock {
+    // Declared before the reservation so the block is released before its
+    // bytes are returned to the budget.
+    block: Arc<Block>,
+    hash: UInt256,
+    /// Budget cost of the block, computed once when it was admitted.
+    cost: usize,
+    _reservation: Arc<BlockCacheReservation>,
+}
 
 /// Rust analogue of `Neo.Ledger.Blockchain` using the async actor runtime.
 pub struct Blockchain {
     ledger: Arc<LedgerContext>,
     system_context: Option<Arc<NeoSystemContext>>,
-    _block_cache: Arc<DashMap<UInt256, Arc<Block>>>,
-    _block_cache_unverified: Arc<DashMap<u32, UnverifiedBlocksList>>,
-    /// Total approximate serialized bytes currently held in
+    _block_cache: Arc<DashMap<UInt256, RetainedBlock>>,
+    _block_cache_unverified: Arc<DashMap<u32, Vec<RetainedBlock>>>,
+    /// Byte budget both block caches share with the block body cache of
+    /// `ledger`.
+    _block_cache_budget: Arc<BlockCacheBudget>,
+    /// Total budget cost of the blocks currently held in
     /// `_block_cache_unverified`. Guarded by atomics because the cache is
     /// shared through `Arc` even though the actor processes messages serially.
     _unverified_cache_bytes: Arc<AtomicUsize>,
@@ -172,11 +231,13 @@ pub struct Blockchain {
 impl Blockchain {
     /// Creates the blockchain actor over the given ledger context.
     pub fn new(ledger: Arc<LedgerContext>) -> Self {
+        let block_cache_budget = ledger.block_cache_budget();
         Self {
             ledger,
             system_context: None,
             _block_cache: Arc::new(DashMap::with_capacity(1024)),
             _block_cache_unverified: Arc::new(DashMap::with_capacity(256)),
+            _block_cache_budget: block_cache_budget,
             _unverified_cache_bytes: Arc::new(AtomicUsize::new(0)),
             _unverified_cache_blocks: Arc::new(AtomicUsize::new(0)),
             _extensible_witness_white_list: Arc::new(RwLock::new(HashSet::new())),
@@ -198,27 +259,111 @@ impl Blockchain {
         Ok(block.hash())
     }
 
-    /// Approximate memory cost of one cached unverified block.
-    fn unverified_block_cost(block: &Block) -> usize {
-        // Convert to payload block to get serialized size
-        let payload_block = block.to_payload_block();
-        payload_block
-            .size()
-            .saturating_add(UNVERIFIED_BLOCK_OVERHEAD)
+    /// Charges `block` to the block cache budget if it fits as things stand,
+    /// without making room for it.
+    fn try_retain_block(&self, block: Arc<Block>, hash: UInt256) -> Option<RetainedBlock> {
+        let cost = execution_block_cache_cost(block.as_ref());
+        let reservation = self._block_cache_budget.try_reserve(cost)?;
+        Some(RetainedBlock {
+            block,
+            hash,
+            cost,
+            _reservation: Arc::new(reservation),
+        })
     }
 
-    /// Removes every unverified candidate at `index`, keeping the cache byte
-    /// and block counters consistent.
-    fn remove_unverified_index(&self, index: u32) -> Option<UnverifiedBlocksList> {
-        let removed = self
-            ._block_cache_unverified
-            .remove(&index)
-            .map(|(_, list)| list)?;
-        let bytes = removed
+    /// Charges `block` to the block cache budget, making room for it as
+    /// described in the module documentation. Returns `None` when the block
+    /// must not be retained.
+    fn retain_block(&self, block: Arc<Block>, hash: UInt256) -> Option<RetainedBlock> {
+        let cost = execution_block_cache_cost(block.as_ref());
+        let reservation = self.reserve_block_bytes(block.index(), cost)?;
+        Some(RetainedBlock {
+            block,
+            hash,
+            cost,
+            _reservation: Arc::new(reservation),
+        })
+    }
+
+    /// Reserves `cost` bytes for a block at height `index`, giving up cached
+    /// blocks of lower priority when the budget is short.
+    fn reserve_block_bytes(&self, index: u32, cost: usize) -> Option<BlockCacheReservation> {
+        let budget = &self._block_cache_budget;
+        if let Some(reservation) = budget.try_reserve(cost) {
+            return Some(reservation);
+        }
+        if cost > budget.limit() {
+            // Nothing that could be given up would make this block fit.
+            return None;
+        }
+
+        self.evict_blocks_up_to(self.ledger.current_height());
+        if let Some(reservation) = budget.try_reserve(cost) {
+            return Some(reservation);
+        }
+
+        self.ledger
+            .evict_block_bodies(cost.saturating_sub(budget.available()));
+        if let Some(reservation) = budget.try_reserve(cost) {
+            return Some(reservation);
+        }
+
+        for (height, hashes) in self.cached_heights_above(index).into_iter().rev() {
+            self.remove_unverified_index(height);
+            for hash in hashes {
+                self._block_cache.remove(&hash);
+            }
+            if let Some(reservation) = budget.try_reserve(cost) {
+                return Some(reservation);
+            }
+        }
+        None
+    }
+
+    /// Drops every cached block at or below `height`. Those are persisted
+    /// already, or lost to the block that was, and are never looked up again.
+    fn evict_blocks_up_to(&self, height: u32) {
+        let stale: Vec<UInt256> = self
+            ._block_cache
             .iter()
-            .map(|block| Self::unverified_block_cost(block.as_ref()))
-            .fold(0usize, usize::saturating_add);
-        let count = removed.len();
+            .filter(|entry| entry.value().block.index() <= height)
+            .map(|entry| *entry.key())
+            .collect();
+        for hash in stale {
+            self._block_cache.remove(&hash);
+        }
+        let stale: Vec<u32> = self
+            ._block_cache_unverified
+            .iter()
+            .map(|entry| *entry.key())
+            .filter(|index| *index <= height)
+            .collect();
+        for index in stale {
+            self.remove_unverified_index(index);
+        }
+    }
+
+    /// Heights above `index` at which either cache holds a block, each with
+    /// the hashes the verified cache holds there.
+    fn cached_heights_above(&self, index: u32) -> BTreeMap<u32, Vec<UInt256>> {
+        let mut heights: BTreeMap<u32, Vec<UInt256>> = BTreeMap::new();
+        for entry in self._block_cache_unverified.iter() {
+            if *entry.key() > index {
+                heights.entry(*entry.key()).or_default();
+            }
+        }
+        for entry in self._block_cache.iter() {
+            let height = entry.value().block.index();
+            if height > index {
+                heights.entry(height).or_default().push(*entry.key());
+            }
+        }
+        heights
+    }
+
+    /// Takes `count` blocks costing `bytes` off the unverified cache counters.
+    fn release_unverified(&self, bytes: usize, count: usize) {
         self._unverified_cache_bytes
             .update(Ordering::Relaxed, Ordering::Relaxed, |current| {
                 current.saturating_sub(bytes)
@@ -227,6 +372,20 @@ impl Blockchain {
             .update(Ordering::Relaxed, Ordering::Relaxed, |current| {
                 current.saturating_sub(count)
             });
+    }
+
+    /// Removes every unverified candidate at `index`, keeping the cache byte
+    /// and block counters consistent.
+    fn remove_unverified_index(&self, index: u32) -> Option<Vec<RetainedBlock>> {
+        let removed = self
+            ._block_cache_unverified
+            .remove(&index)
+            .map(|(_, list)| list)?;
+        let bytes = removed
+            .iter()
+            .map(|entry| entry.cost)
+            .fold(0usize, usize::saturating_add);
+        self.release_unverified(bytes, removed.len());
         Some(removed)
     }
 
@@ -436,6 +595,8 @@ pub use neo_ledger::blockchain::{
     PreverifyCompleted, RelayResult, Reverify, ReverifyItem,
 };
 
+#[cfg(test)]
+mod block_cache_budget_tests;
 #[cfg(test)]
 mod import_integrity_tests;
 #[cfg(test)]
