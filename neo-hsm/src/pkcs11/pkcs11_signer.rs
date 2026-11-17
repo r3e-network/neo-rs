@@ -4,7 +4,7 @@ use crate::device::{HsmDeviceInfo, HsmDeviceType};
 use crate::error::{HsmError, HsmResult};
 use crate::signer::{HsmKeyInfo, HsmSigner, normalize_public_key, script_hash_from_public_key};
 use async_trait::async_trait;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use std::path::Path;
 
 use cryptoki::{
@@ -29,10 +29,10 @@ unsafe impl Sync for ThreadSafePkcs11 {}
 
 /// Thread-safe wrapper around cryptoki's `Session`.
 ///
-/// Safety: sessions are only ever accessed through the
-/// `RwLock<Option<ThreadSafeSession>>` on `Pkcs11Signer`, and the underlying
-/// PKCS#11 library is initialized with `CKF_OS_LOCKING_OK` (see
-/// [`ThreadSafePkcs11`]), making session entry points thread-safe.
+/// Safety: the session is only ever reached through the
+/// `Mutex<Option<ThreadSafeSession>>` on `Pkcs11Signer`, which serializes every
+/// PKCS#11 call made through it, and the underlying PKCS#11 library is
+/// initialized with `CKF_OS_LOCKING_OK` (see [`ThreadSafePkcs11`]).
 struct ThreadSafeSession(Session);
 unsafe impl Send for ThreadSafeSession {}
 unsafe impl Sync for ThreadSafeSession {}
@@ -42,7 +42,20 @@ pub struct Pkcs11Signer {
     device_info: HsmDeviceInfo,
     ctx: ThreadSafePkcs11,
     slot_index: u64,
-    session: RwLock<Option<ThreadSafeSession>>,
+    /// The single open session handle, guarded by a `Mutex`.
+    ///
+    /// A PKCS#11 session is a stateful handle into the token: object searches,
+    /// attribute reads and `C_Sign*` calls all address the same session state.
+    /// Issuing them concurrently on one handle is a data race inside the
+    /// provider - the results (or the handle itself) may be corrupted, and the
+    /// `!Send` FFI pointers are not protected by `CKF_OS_LOCKING_OK` (that flag
+    /// only makes *distinct* entry points safe to call from different threads).
+    ///
+    /// The guard is therefore a `Mutex`, not a `RwLock`: every operation that
+    /// touches the session holds it exclusively for its whole duration, so
+    /// compound sequences such as "find the key object, then sign with it"
+    /// cannot interleave with another caller's PKCS#11 calls.
+    session: Mutex<Option<ThreadSafeSession>>,
     is_ready: RwLock<bool>,
     is_locked: RwLock<bool>,
 }
@@ -94,7 +107,7 @@ impl Pkcs11Signer {
             device_info,
             ctx: ThreadSafePkcs11(ctx),
             slot_index: slot,
-            session: RwLock::new(None),
+            session: Mutex::new(None),
             is_ready: RwLock::new(false),
             is_locked: RwLock::new(true),
         })
@@ -352,7 +365,7 @@ impl HsmSigner for Pkcs11Signer {
                 }
             })?;
 
-        *self.session.write() = Some(ThreadSafeSession(session));
+        *self.session.lock() = Some(ThreadSafeSession(session));
         *self.is_locked.write() = false;
         *self.is_ready.write() = true;
 
@@ -367,7 +380,7 @@ impl HsmSigner for Pkcs11Signer {
     }
 
     fn lock(&self) {
-        if let Some(session) = self.session.write().take() {
+        if let Some(session) = self.session.lock().take() {
             let _ = session.0.logout();
         }
         *self.is_locked.write() = true;
@@ -379,7 +392,8 @@ impl HsmSigner for Pkcs11Signer {
     }
 
     async fn list_keys(&self) -> HsmResult<Vec<HsmKeyInfo>> {
-        let session_guard = self.session.read();
+        // Exclusive access: object enumeration walks the session's object list.
+        let session_guard = self.session.lock();
         let session = session_guard
             .as_ref()
             .map(|guarded| &guarded.0)
@@ -403,7 +417,8 @@ impl HsmSigner for Pkcs11Signer {
     }
 
     async fn get_key(&self, key_id: &str) -> HsmResult<HsmKeyInfo> {
-        let session_guard = self.session.read();
+        // Exclusive access: object lookup and attribute reads share the session.
+        let session_guard = self.session.lock();
         let session = session_guard
             .as_ref()
             .map(|guarded| &guarded.0)
@@ -418,7 +433,10 @@ impl HsmSigner for Pkcs11Signer {
             return Err(HsmError::PinRequired);
         }
 
-        let session_guard = self.session.read();
+        // The guard is held across both the private-key lookup and the signing
+        // call: two callers must never operate on the same session handle at the
+        // same time.
+        let session_guard = self.session.lock();
         let session = session_guard
             .as_ref()
             .map(|guarded| &guarded.0)

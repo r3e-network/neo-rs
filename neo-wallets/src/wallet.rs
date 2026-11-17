@@ -24,6 +24,13 @@ pub enum WalletError {
     #[error("Invalid password")]
     InvalidPassword,
 
+    /// The wallet holds key material it cannot encrypt before persisting.
+    ///
+    /// NEP-6 stores private keys only in encrypted form, so writing a wallet
+    /// that has no password available would silently discard them.
+    #[error("Wallet password required to encrypt private keys before saving")]
+    MissingPassword,
+
     /// The requested account does not exist in the wallet.
     #[error("Account not found: {0}")]
     AccountNotFound(UInt160),

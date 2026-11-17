@@ -30,7 +30,7 @@ pub mod wallet_provider;
 pub use bip39::{get_mnemonic_code, get_mnemonic_code_with_language, mnemonic_to_entropy};
 
 // Core wallet types re-exported at the crate root for ergonomic access.
-pub use account::{Contract, StandardWalletAccount, WalletAccount, Witness};
+pub use account::{Contract, StandardWalletAccount, UnlockState, WalletAccount, Witness};
 pub use bip32::{ExtendedKey, KeyPath};
 pub use helper::{AccountScriptResolver, Base58CheckDecode, Helper};
 pub use key_pair::KeyPair;

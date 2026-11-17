@@ -19,6 +19,22 @@
 //! pre-computed *signature preimage* (`sign_data`) instead. Callers obtain that
 //! preimage via `neo_protocol::get_sign_data_vec`, keeping the witness bytes
 //! identical while removing the ledger/protocol-payload coupling.
+//!
+//! # Revocable account handles
+//!
+//! Wallets hand out cheap account handles (`Arc<dyn WalletAccount>`) that can
+//! outlive the call which produced them. Two sharing rules keep locking a
+//! wallet authoritative:
+//!
+//! * Key material lives in an `Arc<RwLock<Secret>>` shared by the wallet's
+//!   canonical account entry and every handle, so locking the wallet drops the
+//!   decrypted key everywhere at once instead of only in the wallet's copy.
+//! * Every account also shares an [`UnlockState`] flag with its wallet. Secret
+//!   revealing operations ([`WalletAccount::get_key`],
+//!   [`WalletAccount::export_wif`], [`WalletAccount::export_nep2`] and
+//!   [`WalletAccount::create_witness`]) fail closed as soon as the wallet clears
+//!   that flag, which covers key material the wallet cannot drop (an account
+//!   created from a raw private key has no NEP-2 payload to fall back on).
 
 use crate::helper::Helper;
 use crate::key_pair::KeyPair;
@@ -27,7 +43,9 @@ use async_trait::async_trait;
 use neo_primitives::UInt160;
 use neo_protocol::ProtocolSettings;
 use neo_smart_contract::helper::Helper as ContractHelper;
+use parking_lot::RwLock;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 // Re-export types from their canonical locations
 pub use neo_protocol::witness::Witness;
@@ -122,6 +140,60 @@ pub trait WalletAccount: Send + Sync {
     fn create_witness(&self, sign_data: &[u8]) -> WalletResult<Witness>;
 }
 
+/// Wallet-wide unlock flag shared between a wallet and every account handle it
+/// has handed out.
+///
+/// An account handle is a cheap clone that keeps its own copy of the account,
+/// so clearing the wallet's canonical entries on lock is *not* enough to revoke
+/// access through handles obtained earlier. Wallets therefore share this flag
+/// with their accounts and every secret-revealing operation fails closed once
+/// the flag is cleared.
+#[derive(Debug)]
+pub struct UnlockState {
+    unlocked: AtomicBool,
+}
+
+impl UnlockState {
+    /// Creates a state with the supplied initial unlock flag.
+    #[must_use]
+    pub const fn new(unlocked: bool) -> Self {
+        Self {
+            unlocked: AtomicBool::new(unlocked),
+        }
+    }
+
+    /// Returns whether secret access is currently permitted.
+    #[must_use]
+    pub fn is_unlocked(&self) -> bool {
+        self.unlocked.load(Ordering::Acquire)
+    }
+
+    /// Sets the unlock flag, granting or revoking secret access.
+    pub fn set_unlocked(&self, unlocked: bool) {
+        self.unlocked.store(unlocked, Ordering::Release);
+    }
+}
+
+impl Default for UnlockState {
+    fn default() -> Self {
+        // A stand-alone account manages its own lock state; only wallets wire
+        // in a flag that can revoke access behind the account's back.
+        Self::new(true)
+    }
+}
+
+/// Decrypted key material plus its NEP-2 payload for a single account.
+///
+/// Shared (`Arc<RwLock<..>>`) between the wallet's canonical account entry and
+/// every handle handed out for it, so locking the wallet physically drops the
+/// decrypted key in all copies.
+#[derive(Debug, Default)]
+struct Secret {
+    key_pair: Option<KeyPair>,
+    nep2_key: Option<String>,
+    is_locked: bool,
+}
+
 /// Concrete wallet account implementation providing the same ergonomics as the
 /// C# `WalletAccount` class.
 #[derive(Debug, Clone)]
@@ -129,10 +201,11 @@ pub struct StandardWalletAccount {
     script_hash: UInt160,
     label: Option<String>,
     is_default: bool,
-    is_locked: bool,
     contract: Option<Contract>,
-    key_pair: Option<KeyPair>,
-    nep2_key: Option<String>,
+    /// Key material shared with every clone of this account.
+    secrets: Arc<RwLock<Secret>>,
+    /// Unlock flag shared with the owning wallet.
+    unlock_state: Arc<UnlockState>,
     protocol_settings: Arc<ProtocolSettings>,
 }
 
@@ -153,10 +226,13 @@ impl StandardWalletAccount {
             script_hash,
             label: None,
             is_default: false,
-            is_locked: false,
             contract,
-            key_pair: Some(key_pair),
-            nep2_key,
+            secrets: Arc::new(RwLock::new(Secret {
+                key_pair: Some(key_pair),
+                nep2_key,
+                is_locked: false,
+            })),
+            unlock_state: Arc::new(UnlockState::default()),
             protocol_settings,
         }
     }
@@ -172,10 +248,9 @@ impl StandardWalletAccount {
             script_hash,
             label: None,
             is_default: false,
-            is_locked: false,
             contract,
-            key_pair: None,
-            nep2_key: None,
+            secrets: Arc::new(RwLock::new(Secret::default())),
+            unlock_state: Arc::new(UnlockState::default()),
             protocol_settings,
         }
     }
@@ -192,23 +267,57 @@ impl StandardWalletAccount {
             script_hash,
             label: None,
             is_default: false,
-            is_locked: true,
             contract,
-            key_pair: None,
-            nep2_key: Some(nep2_key),
+            secrets: Arc::new(RwLock::new(Secret {
+                key_pair: None,
+                nep2_key: Some(nep2_key),
+                is_locked: true,
+            })),
+            unlock_state: Arc::new(UnlockState::default()),
             protocol_settings,
         }
     }
 
     /// Returns the stored NEP-2 key (if any).
     #[must_use]
-    pub fn nep2_key(&self) -> Option<&str> {
-        self.nep2_key.as_deref()
+    pub fn nep2_key(&self) -> Option<String> {
+        self.secrets.read().nep2_key.clone()
     }
 
     /// Replaces the stored NEP-2 payload.
     pub fn set_nep2_key(&mut self, nep2: Option<String>) {
-        self.nep2_key = nep2;
+        self.secrets.write().nep2_key = nep2;
+    }
+
+    /// Attaches the wallet-wide unlock flag that gates secret access.
+    ///
+    /// Wallets call this for every account they store so that a later lock also
+    /// revokes access through handles that were already handed out.
+    pub fn set_unlock_state(&mut self, state: Arc<UnlockState>) {
+        self.unlock_state = state;
+    }
+
+    /// Returns the unlock flag shared with the owning wallet.
+    #[must_use]
+    pub fn unlock_state(&self) -> &Arc<UnlockState> {
+        &self.unlock_state
+    }
+
+    /// Returns the decrypted key pair regardless of the wallet unlock flag.
+    ///
+    /// Only used to persist key material: the value is handed straight to NEP-2
+    /// encryption and never leaves the crate.
+    pub(crate) fn key_for_persistence(&self) -> Option<KeyPair> {
+        self.secrets.read().key_pair.clone()
+    }
+
+    /// Fails closed when the owning wallet has been locked.
+    fn ensure_unlocked(&self) -> WalletResult<()> {
+        if self.unlock_state.is_unlocked() {
+            Ok(())
+        } else {
+            Err(WalletError::WalletLocked)
+        }
     }
 }
 
@@ -238,15 +347,19 @@ impl WalletAccount for StandardWalletAccount {
     }
 
     fn is_locked(&self) -> bool {
-        self.is_locked
+        self.secrets.read().is_locked || !self.unlock_state.is_unlocked()
     }
 
     fn has_key(&self) -> bool {
-        self.key_pair.is_some() || self.nep2_key.is_some()
+        let secret = self.secrets.read();
+        secret.key_pair.is_some() || secret.nep2_key.is_some()
     }
 
     fn get_key(&self) -> Option<KeyPair> {
-        self.key_pair.clone()
+        // Handles outlive the wallet call that produced them: report no key once
+        // the wallet is locked even though this copy may still hold one.
+        self.ensure_unlocked().ok()?;
+        self.secrets.read().key_pair.clone()
     }
 
     fn contract(&self) -> Option<&Contract> {
@@ -267,19 +380,24 @@ impl WalletAccount for StandardWalletAccount {
     }
 
     fn unlock(&mut self, password: &str) -> WalletResult<bool> {
-        if !self.is_locked {
-            return Ok(true);
-        }
+        let nep2 = {
+            let secret = self.secrets.read();
+            if !secret.is_locked {
+                return Ok(true);
+            }
+            secret.nep2_key.clone()
+        };
 
-        let Some(nep2) = &self.nep2_key else {
+        let Some(nep2) = nep2 else {
             return Ok(false);
         };
 
         let version = self.protocol_settings.address_version;
-        match KeyPair::from_nep2_string(nep2, password, version) {
+        match KeyPair::from_nep2_string(&nep2, password, version) {
             Ok(key_pair) => {
-                self.key_pair = Some(key_pair);
-                self.is_locked = false;
+                let mut secret = self.secrets.write();
+                secret.key_pair = Some(key_pair);
+                secret.is_locked = false;
                 Ok(true)
             }
             Err(_) => Ok(false),
@@ -287,40 +405,58 @@ impl WalletAccount for StandardWalletAccount {
     }
 
     fn lock(&mut self) {
-        if self.nep2_key.is_some() {
-            self.key_pair = None;
-            self.is_locked = true;
+        let mut secret = self.secrets.write();
+        // Only accounts with an encrypted payload can be re-opened; dropping a
+        // transient raw key here would destroy the only copy of it.
+        if secret.nep2_key.is_some() {
+            secret.key_pair = None;
+            secret.is_locked = true;
         }
     }
 
     fn verify_password(&self, password: &str) -> WalletResult<bool> {
-        if let Some(nep2) = &self.nep2_key {
-            let version = self.protocol_settings.address_version;
-            Ok(KeyPair::from_nep2_string(nep2, password, version).is_ok())
-        } else {
-            Ok(self.key_pair.is_some())
+        let (nep2, has_key) = {
+            let secret = self.secrets.read();
+            (secret.nep2_key.clone(), secret.key_pair.is_some())
+        };
+        match nep2 {
+            Some(nep2) => {
+                let version = self.protocol_settings.address_version;
+                Ok(KeyPair::from_nep2_string(&nep2, password, version).is_ok())
+            }
+            None => Ok(has_key),
         }
     }
 
     fn export_wif(&self) -> WalletResult<String> {
-        match &self.key_pair {
+        self.ensure_unlocked()?;
+        let secret = self.secrets.read();
+        match &secret.key_pair {
             Some(key) => Ok(key.to_wif()),
             None => Err(WalletError::AccountLocked),
         }
     }
 
     fn export_nep2(&self, password: &str) -> WalletResult<String> {
-        if let Some(nep2) = &self.nep2_key {
-            return Ok(nep2.clone());
+        {
+            let secret = self.secrets.read();
+            // The encrypted payload is safe to hand out while locked.
+            if let Some(nep2) = &secret.nep2_key {
+                return Ok(nep2.clone());
+            }
         }
 
-        let key = self.key_pair.as_ref().ok_or(WalletError::AccountLocked)?;
+        self.ensure_unlocked()?;
+        let secret = self.secrets.read();
+        let key = secret.key_pair.as_ref().ok_or(WalletError::AccountLocked)?;
         let version = self.protocol_settings.address_version;
         key.to_nep2(password, version)
     }
 
     fn create_witness(&self, sign_data: &[u8]) -> WalletResult<Witness> {
-        let key = self.key_pair.as_ref().ok_or(WalletError::AccountLocked)?;
+        self.ensure_unlocked()?;
+        let secret = self.secrets.read();
+        let key = secret.key_pair.as_ref().ok_or(WalletError::AccountLocked)?;
 
         // Fail closed on verification scripts a single key cannot satisfy:
         // an m-of-n script needs m signature parameters (collected through
