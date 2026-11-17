@@ -222,9 +222,12 @@ async fn rejects_non_array_params_with_neo_error() {
 async fn disabled_method_uses_neo_access_denied() {
     let server = build_server_with_handlers();
     let disabled = Arc::new(HashSet::from(["getblockcount".to_string()]));
-    let module =
-        build_jsonrpsee_module_with_disabled(Arc::downgrade(&server), &RpcServerConfig::default(), disabled)
-            .expect("module");
+    let module = build_jsonrpsee_module_with_disabled(
+        Arc::downgrade(&server),
+        &RpcServerConfig::default(),
+        disabled,
+    )
+    .expect("module");
     let response = raw_response(
         &module,
         json!({

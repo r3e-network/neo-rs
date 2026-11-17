@@ -200,8 +200,8 @@ mod tests {
     #[test]
     fn find_prefix_stops_once_max_results_is_reached() {
         let store = seeded_store(50);
-        let found = find_prefix::<UInt256, UInt160>(&store as &dyn Store, &[0x01], 5)
-            .expect("prefix scan");
+        let found =
+            find_prefix::<UInt256, UInt160>(&store as &dyn Store, &[0x01], 5).expect("prefix scan");
         assert_eq!(found.len(), 5);
     }
 
@@ -210,21 +210,18 @@ mod tests {
         let store = seeded_store(50);
         // The page is not filled before the scan cap is hit, so the cap (not
         // max_results) must end the scan.
-        let found = find_prefix_with_limits::<UInt256, UInt160>(&store as &dyn Store, &[0x01], 50, 3)
-            .expect("prefix scan");
+        let found =
+            find_prefix_with_limits::<UInt256, UInt160>(&store as &dyn Store, &[0x01], 50, 3)
+                .expect("prefix scan");
         assert_eq!(found.len(), 3);
     }
 
     #[test]
     fn find_range_stops_once_max_results_is_reached() {
         let store = seeded_store(50);
-        let found = find_range::<UInt256, UInt160>(
-            &store as &dyn Store,
-            &key(0x01, 0),
-            &key(0x01, 49),
-            4,
-        )
-        .expect("range scan");
+        let found =
+            find_range::<UInt256, UInt160>(&store as &dyn Store, &key(0x01, 0), &key(0x01, 49), 4)
+                .expect("range scan");
         assert_eq!(found.len(), 4);
     }
 }

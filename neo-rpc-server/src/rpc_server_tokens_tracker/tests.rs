@@ -238,9 +238,8 @@ async fn get_nep17_balances_reports_asset_metadata() {
     let mut prefix = Vec::with_capacity(1 + UInt160::LENGTH);
     prefix.push(balance_prefix);
     prefix.extend_from_slice(&user.to_bytes());
-    let entries =
-        find_prefix::<Nep17BalanceKey, TokenBalance>(store.as_ref(), &prefix, 100)
-            .expect("find prefix");
+    let entries = find_prefix::<Nep17BalanceKey, TokenBalance>(store.as_ref(), &prefix, 100)
+        .expect("find prefix");
     assert_eq!(entries.len(), 1);
 
     let server = RpcServer::new(system, RpcServerConfig::default());

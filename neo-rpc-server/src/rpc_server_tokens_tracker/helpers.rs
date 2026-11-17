@@ -104,8 +104,9 @@ pub(super) fn collect_transfers(
 
     // R-6: the bound is pushed into the scan so the tracker never loads more
     // than a page worth of transfers into memory.
-    let pairs = find_range::<Nep17TransferKey, TokenTransfer>(store, &start_key, &end_key, max_results)
-        .map_err(internal_error)?;
+    let pairs =
+        find_range::<Nep17TransferKey, TokenTransfer>(store, &start_key, &end_key, max_results)
+            .map_err(internal_error)?;
 
     let mut limited = pairs.into_iter().enumerate().collect::<Vec<_>>();
     limited.sort_by(|(left_index, left), (right_index, right)| {
@@ -158,8 +159,9 @@ pub(super) fn collect_nep11_transfers(
 
     // R-6: the bound is pushed into the scan so the tracker never loads more
     // than a page worth of transfers into memory.
-    let pairs = find_range::<Nep11TransferKey, TokenTransfer>(store, &start_key, &end_key, max_results)
-        .map_err(internal_error)?;
+    let pairs =
+        find_range::<Nep11TransferKey, TokenTransfer>(store, &start_key, &end_key, max_results)
+            .map_err(internal_error)?;
 
     let mut limited = pairs.into_iter().enumerate().collect::<Vec<_>>();
     limited.sort_by(|(left_index, left), (right_index, right)| {

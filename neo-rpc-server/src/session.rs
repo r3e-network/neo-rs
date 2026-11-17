@@ -261,7 +261,8 @@ impl Session {
     /// lifetime cap.
     #[must_use]
     pub fn is_expired(&self, idle_timeout: Duration, max_lifetime: Duration) -> bool {
-        self.created_at.elapsed() >= max_lifetime || self.idle_since.lock().elapsed() >= idle_timeout
+        self.created_at.elapsed() >= max_lifetime
+            || self.idle_since.lock().elapsed() >= idle_timeout
     }
 }
 

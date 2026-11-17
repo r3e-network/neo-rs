@@ -209,12 +209,22 @@ fn json_value_size(value: &Value) -> usize {
         Value::Bool(_) => 5,
         Value::Number(number) => number.to_string().len(),
         Value::String(text) => text.len().saturating_add(2),
-        Value::Array(items) => items.iter().fold(items.len().saturating_add(2), |total, item| {
-            total.saturating_add(json_value_size(item)).saturating_add(1)
-        }),
-        Value::Object(entries) => entries.values().fold(entries.len().saturating_add(2), |total, entry| {
-            total.saturating_add(json_value_size(entry)).saturating_add(4)
-        }),
+        Value::Array(items) => items
+            .iter()
+            .fold(items.len().saturating_add(2), |total, item| {
+                total
+                    .saturating_add(json_value_size(item))
+                    .saturating_add(1)
+            }),
+        Value::Object(entries) => {
+            entries
+                .values()
+                .fold(entries.len().saturating_add(2), |total, entry| {
+                    total
+                        .saturating_add(json_value_size(entry))
+                        .saturating_add(4)
+                })
+        }
     }
 }
 

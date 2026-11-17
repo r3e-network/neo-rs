@@ -763,7 +763,11 @@ impl RpcServer {
         self.purge_expired_sessions();
         let client_key = client_key.unwrap_or(client_identity::ANONYMOUS_CLIENT_KEY);
         let max_sessions = self.settings.max_sessions.max(1);
-        let max_per_client = self.settings.max_sessions_per_client.max(1).min(max_sessions);
+        let max_per_client = self
+            .settings
+            .max_sessions_per_client
+            .max(1)
+            .min(max_sessions);
         let mut guard = self.sessions.lock();
         if guard.len() >= max_sessions {
             return Err(RpcError::session_capacity_exceeded()
