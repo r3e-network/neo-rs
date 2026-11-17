@@ -1,16 +1,69 @@
-//! Unit tests for TokenManagement state projections.
+//! Unit tests for TokenManagement state projections and Boolean argument
+//! conversion.
 //!
 //! Migrated from `neo-core/src/smart_contract/native/token_management/tests.rs`.
-//! The test body is unchanged; `use super::*` continues to pull the state types
-//! (`TokenState`, `AccountState`, `NFTState`, `TokenType`), `UInt160`, and
-//! `BigInt` into scope from the parent `token_management` module, and only
-//! `neo_vm::StackValue` needs an explicit import.
+//! The state-projection test bodies are unchanged; `use super::*` continues to
+//! pull the state types (`TokenState`, `AccountState`, `NFTState`, `TokenType`),
+//! `UInt160`, and `BigInt` into scope from the parent `token_management` module.
+//! The `mintable` tests at the end of the file invoke `create` and
+//! `createNonFungible` through `invoke_method` and read the stored token state.
 
 use super::*;
+use neo_primitives::TriggerType;
+use neo_storage::persistence::DataCache;
 use neo_vm::StackValue;
+use std::sync::Arc;
 
 fn sample_uint160(seed: u8) -> UInt160 {
     UInt160::from_bytes(&[seed; 20]).expect("valid UInt160")
+}
+
+/// Builds an engine with TokenManagement attached to that engine only; the
+/// contract is deliberately absent from the standard registry.
+fn make_engine() -> ApplicationEngine {
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Application,
+        None,
+        Arc::new(DataCache::new(false)),
+        None,
+        ProtocolSettings::default(),
+        400_000_000,
+        None,
+        crate::native::composition::default_native_services(),
+    )
+    .expect("engine");
+    engine.register_native_contract(Arc::new(TokenManagement::new()));
+    engine
+}
+
+/// Raw `mintable` argument bytes paired with the Boolean Neo derives from them.
+fn mintable_cases() -> Vec<(&'static str, Vec<u8>, bool)> {
+    vec![
+        ("empty", vec![], false),
+        ("Integer(0)", vec![0], false),
+        ("two zero bytes", vec![0, 0], false),
+        ("Integer(1)", vec![1], true),
+        ("Integer(256)", vec![0, 1], true),
+        ("Integer(-1)", BigInt::from(-1).to_signed_bytes_le(), true),
+        (
+            "Integer(-256)",
+            BigInt::from(-256).to_signed_bytes_le(),
+            true,
+        ),
+    ]
+}
+
+/// Reads back the token state persisted by a create call that returned `result`.
+fn stored_token_state(
+    contract: &TokenManagement,
+    engine: &ApplicationEngine,
+    result: &[u8],
+) -> TokenState {
+    let asset_id = UInt160::from_bytes(result).expect("asset id");
+    contract
+        .get_token_state(engine, &asset_id)
+        .expect("read token state")
+        .expect("token state stored")
 }
 
 #[test]
@@ -163,4 +216,63 @@ fn test_account_state_new() {
 fn test_nft_state_new() {
     let nft = NFTState::new();
     assert!(nft.properties.is_empty());
+}
+
+#[test]
+fn create_reads_mintable_as_neo_boolean() {
+    let contract = TokenManagement::new();
+    let owner = sample_uint160(7);
+
+    for (label, mintable, expected) in mintable_cases() {
+        let mut engine = make_engine();
+        let args = vec![
+            vec![0],
+            owner.to_bytes(),
+            b"Token".to_vec(),
+            b"TKN".to_vec(),
+            vec![8],
+            vec![],
+            mintable,
+        ];
+
+        let result = contract
+            .invoke_method(&mut engine, "create", &args)
+            .unwrap_or_else(|err| panic!("create with mintable {label}: {err}"));
+        let state = stored_token_state(&contract, &engine, &result);
+
+        assert_eq!(state.token_type, TokenType::Fungible, "mintable {label}");
+        assert_eq!(
+            state.mintable_address,
+            expected.then_some(owner),
+            "mintable {label}"
+        );
+    }
+}
+
+#[test]
+fn create_non_fungible_reads_mintable_as_neo_boolean() {
+    let contract = TokenManagement::new();
+    let owner = sample_uint160(8);
+
+    for (label, mintable, expected) in mintable_cases() {
+        let mut engine = make_engine();
+        let args = vec![
+            owner.to_bytes(),
+            b"Collectible".to_vec(),
+            b"NFT".to_vec(),
+            mintable,
+        ];
+
+        let result = contract
+            .invoke_method(&mut engine, "createNonFungible", &args)
+            .unwrap_or_else(|err| panic!("createNonFungible with mintable {label}: {err}"));
+        let state = stored_token_state(&contract, &engine, &result);
+
+        assert_eq!(state.token_type, TokenType::NonFungible, "mintable {label}");
+        assert_eq!(
+            state.mintable_address,
+            expected.then_some(owner),
+            "mintable {label}"
+        );
+    }
 }

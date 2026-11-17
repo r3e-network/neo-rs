@@ -24,7 +24,7 @@ use super::{
     PREFIX_NFT_OWNER_UNIQUE_ID_INDEX, TokenManagement, TokenState, TokenType,
 };
 use crate::native::NativeContract;
-use crate::native::helpers::parse_uint160_arg;
+use crate::native::helpers::{parse_bool_arg, parse_uint160_arg};
 use neo_primitives::FindOptions;
 use neo_primitives::UInt160;
 use neo_smart_contract::application_engine::ApplicationEngine;
@@ -55,7 +55,9 @@ impl TokenManagement {
         let name = String::from_utf8_lossy(&args[1]).to_string();
         let symbol = String::from_utf8_lossy(&args[2]).to_string();
 
-        let mintable = !args[3].is_empty() && args[3][0] != 0;
+        // Neo converts Boolean arguments through StackItem truthiness, so any
+        // non-zero integer value (e.g. Integer(256) encoded as [0x00, 0x01]) is true.
+        let mintable = parse_bool_arg(&args[3]);
 
         let asset_id = TokenManagement::get_asset_id(&owner, &name);
 

@@ -9,7 +9,7 @@
 //! reached through `super::` (i.e. `crate::native::`). This module is standalone
 //! library code and is intentionally not registered in the standard registry.
 
-use super::helpers::parse_uint160_arg;
+use super::helpers::{parse_bool_arg, parse_uint160_arg};
 use super::{NativeContract, NativeMethod};
 use neo_primitives::FindOptions;
 use neo_primitives::UInt160;
@@ -221,7 +221,9 @@ impl TokenManagement {
         };
 
         let max_supply = BigInt::from_signed_bytes_le(&args[5]);
-        let mintable = !args[6].is_empty() && args[6][0] != 0;
+        // Neo converts Boolean arguments through StackItem truthiness, so any
+        // non-zero integer value (e.g. Integer(256) encoded as [0x00, 0x01]) is true.
+        let mintable = parse_bool_arg(&args[6]);
 
         let asset_id = TokenManagement::get_asset_id(&owner, &name);
 
