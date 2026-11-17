@@ -1,4 +1,4 @@
-use super::super::runtime_types::{StackValue, release_values, to_abi_stack};
+use super::super::runtime_types::{StackValue, discard_values, release_values, to_abi_stack};
 use super::super::state::{
     LAST_RESULT_LIMIT, LAST_RESULT_STACK_LEN, LAST_RESULT_STAGE, PendingException,
 };
@@ -19,21 +19,6 @@ pub(super) fn fault_result(
         fault_message: Some(fault_message),
         fault_ip: Some(ip as u32),
         fault_locals: Some(crate::abi::fast_codec::encode_stack(&to_abi_stack(locals))),
-    }
-}
-
-/// Disposes of interpreter values that the halt result no longer needs.
-#[inline]
-fn discard_values(values: Vec<StackValue>) {
-    if cfg!(target_arch = "riscv32") {
-        // The PolkaVM/riscv32 guest allocator is reset per execution, so the
-        // guest skips walking and freeing state it is about to abandon.
-        core::mem::forget(values);
-    } else {
-        // Hosts keep running after the execution, so the memory has to be
-        // returned. Compound values can nest arbitrarily deep; release them
-        // without recursive Drop.
-        release_values(values);
     }
 }
 

@@ -202,7 +202,7 @@ pub(crate) fn invoke_syscall<H: SyscallProvider>(
                 retained
                     .restore_stack_best_effort(stack, stack.len().max(POST_SYSCALL_STACK_HEADROOM));
             }
-            core::mem::forget(abi_args);
+            discard_abi_values(abi_args);
             Err(e)
         }
     }
@@ -292,7 +292,7 @@ fn invoke_full_stack_syscall<H: SyscallProvider>(
                 retained
                     .restore_stack_best_effort(stack, stack.len().max(POST_SYSCALL_STACK_HEADROOM));
             }
-            core::mem::forget(abi_stack);
+            discard_abi_values(abi_stack);
             Err(e)
         }
     }
@@ -388,8 +388,9 @@ fn restore_retained_values(
 ) -> Result<(), String> {
     match retained_len {
         Some(retained_len) => {
-            let retired = core::mem::take(values);
-            core::mem::forget(retired);
+            // Only the riscv32 guest retains state across host calls, so only
+            // it reaches this branch; the values are abandoned there.
+            discard_values(core::mem::take(values));
 
             let mut restored = Vec::with_capacity(min_capacity);
             decode_retained_prefix_into(unsafe { buf.as_slice(retained_len) }, &mut restored)?;
@@ -483,8 +484,7 @@ pub(crate) fn invoke_callt<H: SyscallProvider>(
                 retained
                     .restore_stack_best_effort(stack, stack.len().max(POST_SYSCALL_STACK_HEADROOM));
             }
-            // Leak abi_stack on error to avoid talc free-list corruption on RISC-V/PolkaVM
-            core::mem::forget(abi_stack);
+            discard_abi_values(abi_stack);
             Err(e)
         }
     }

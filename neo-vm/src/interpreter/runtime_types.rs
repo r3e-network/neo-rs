@@ -54,6 +54,62 @@ pub(crate) fn release_values(values: Vec<StackValue>) {
     }
 }
 
+/// Disposes of interpreter values that the execution no longer needs.
+#[inline]
+pub(crate) fn discard_values(values: Vec<StackValue>) {
+    if cfg!(target_arch = "riscv32") {
+        // The PolkaVM/riscv32 guest allocator is reset per execution, so the
+        // guest skips walking and freeing state it is about to abandon.
+        core::mem::forget(values);
+    } else {
+        // Hosts keep running after the execution, so the memory has to be
+        // returned. Compound values can nest arbitrarily deep; release them
+        // without recursive Drop.
+        release_values(values);
+    }
+}
+
+/// ABI counterpart of [`release_values`].
+pub(crate) fn release_abi_values(values: Vec<AbiStackValue>) {
+    let mut pending = values;
+    while let Some(mut value) = pending.pop() {
+        match &mut value {
+            AbiStackValue::Array(items) | AbiStackValue::Struct(items) => pending.append(items),
+            AbiStackValue::Map(items) => {
+                pending.reserve(items.len().saturating_mul(2));
+                for (key, value) in items.drain(..) {
+                    pending.push(key);
+                    pending.push(value);
+                }
+            }
+            AbiStackValue::Buffer(_)
+            | AbiStackValue::Integer(_)
+            | AbiStackValue::BigInteger(_)
+            | AbiStackValue::ByteString(_)
+            | AbiStackValue::Boolean(_)
+            | AbiStackValue::Pointer(_)
+            | AbiStackValue::Interop(_)
+            | AbiStackValue::Iterator(_)
+            | AbiStackValue::Null => {}
+        }
+    }
+}
+
+/// Disposes of ABI values that were lent to a host call and not imported back.
+#[inline]
+pub(crate) fn discard_abi_values(values: Vec<AbiStackValue>) {
+    if cfg!(target_arch = "riscv32") {
+        // The PolkaVM/riscv32 guest leaks these to avoid talc free-list
+        // corruption after a failed host call. Its allocator is reset per
+        // execution, so nothing accumulates.
+        core::mem::forget(values);
+    } else {
+        // The host only borrowed the values, so they are still owned here and
+        // nothing else frees them.
+        release_abi_values(values);
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct CompoundIds {
     next: u64,
@@ -407,5 +463,40 @@ fn replace_alias(target: &mut StackValue, updated: &StackValue) {
         | StackValue::Interop(_)
         | StackValue::Iterator(_)
         | StackValue::Null => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::vec;
+
+    #[test]
+    fn discarding_abi_values_does_not_recurse_on_nesting_depth() {
+        const DEPTH: usize = 100_000;
+        // Far too small for one native frame per nesting level.
+        const THREAD_STACK_BYTES: usize = 256 * 1024;
+
+        let nested = |wrap: fn(AbiStackValue) -> AbiStackValue| {
+            let mut value = AbiStackValue::ByteString(vec![0xaa; 8]);
+            for _ in 0..DEPTH {
+                value = wrap(value);
+            }
+            value
+        };
+        let values = vec![
+            nested(|inner| AbiStackValue::Array(vec![inner])),
+            nested(|inner| AbiStackValue::Struct(vec![inner])),
+            nested(|inner| AbiStackValue::Map(vec![(AbiStackValue::Integer(0), inner)])),
+            nested(|inner| AbiStackValue::Map(vec![(inner, AbiStackValue::Integer(0))])),
+            AbiStackValue::Buffer(vec![0xbb; 8]),
+        ];
+
+        std::thread::Builder::new()
+            .stack_size(THREAD_STACK_BYTES)
+            .spawn(move || discard_abi_values(values))
+            .expect("spawn small-stack thread")
+            .join()
+            .expect("release completes");
     }
 }
