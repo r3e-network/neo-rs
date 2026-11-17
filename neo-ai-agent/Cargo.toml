@@ -14,13 +14,15 @@ readme.workspace = true
 description = "Capability-limited AI-assisted diagnostics for Neo N3 node operations"
 
 [dependencies]
+anyhow = { workspace = true }
 async-trait = { workspace = true }
+parking_lot = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["sync", "time"] }
+tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
 url = { workspace = true }
 
 [dev-dependencies]

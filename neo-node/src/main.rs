@@ -8,8 +8,8 @@
 // intentionally unreachable there. Integration tests exercise that graph.
 #![cfg_attr(test, allow(dead_code, unused_imports, unused_variables, unused_mut))]
 
-mod action_store;
 mod ai_agent;
+mod ai_agent_host;
 mod cli;
 mod config;
 mod consensus;

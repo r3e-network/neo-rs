@@ -15,6 +15,7 @@ mod evidence;
 mod operations;
 mod probe;
 mod provider;
+mod runtime;
 mod stall;
 
 pub use action_store::{
@@ -61,6 +62,20 @@ pub use provider::{
     AnthropicProvider, CircuitBreakerConfig, CredentialEnv, GovernedProvider, HttpProviderConfig,
     ModelProvider, ModelRequest, ModelResponse, OllamaProvider, OpenAiCompatibleProvider,
     ProviderError, ProviderKind, RuntimeLimits,
+};
+pub use runtime::{
+    ActionResult, AiAgentRuntime, ChainBlockHash, ChainHost, EvidenceSubmitResult,
+    ExecutionObservation, ExecutionObservationHost, MempoolHost, PeerObservation, ProbeCompletion,
+    ProbeControl, ProbeHost, ProbeSession, ProbeSessionConfig, ProbeSubmissionError,
+    QuarantineConfig, QuarantineMetadata, RuntimeHost,
+    TRANSACTION_EXECUTION_OBSERVATION_RULE_VERSION,
+    TRANSACTION_EXECUTION_OBSERVATION_SCHEMA_VERSION, UnsignedTransaction,
+};
+#[doc(hidden)]
+pub use runtime::{
+    EvidenceRegistry, NodeModelProvider, RuntimeConfig, RuntimeInner, WorkerEvent, WorkerInput,
+    WorkerState, action_request, advance_last_progress, build_model_provider, receive_worker_event,
+    unix_time_ms,
 };
 pub use stall::{
     ConsensusObservation, DetectionResult, StallDetector, StallLevel, StallPolicy,

@@ -18,6 +18,7 @@ use super::services::{maybe_enable_tee_runtime, maybe_enable_tee_wallet};
 use super::signal::{parse_live_stop_height, wait_for_live_stop_height, wait_for_shutdown_signal};
 use super::tasks::{BackgroundTasks, DEFAULT_BACKGROUND_TASK_SHUTDOWN};
 use crate::ai_agent::AiAgentRuntime;
+use crate::ai_agent_host::runtime_host;
 use crate::cli::NodeCli;
 use crate::config::{NodeConfig, SignerProviderKind};
 use crate::rpc_consensus::RpcServerConsensus;
@@ -177,7 +178,7 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
 
     let diagnostics_config = node_config.diagnostics.clone().unwrap_or_default();
     let ai_agent_runtime = Arc::new(
-        AiAgentRuntime::new(&diagnostics_config, system.clone())
+        AiAgentRuntime::new_with_host(&diagnostics_config, runtime_host(system.clone()))
             .context("failed to initialize AI diagnostics runtime")?,
     );
     ai_agent_runtime

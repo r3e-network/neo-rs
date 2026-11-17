@@ -2495,7 +2495,9 @@ dependencies = [
 name = "neo-ai-agent"
 version = "0.20.0"
 dependencies = [
+ "anyhow",
  "async-trait",
+ "parking_lot",
  "reqwest",
  "serde",
  "serde_json",

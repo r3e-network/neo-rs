@@ -4,7 +4,9 @@
 
 // Phase 3 S6d2: diagnostics config sank into neo-ai-agent; re-exported here
 // for NodeConfig and the historical crate::config paths.
-pub use neo_ai_agent::{DiagnosticsSection, ModelProviderSection};
+pub use neo_ai_agent::DiagnosticsSection;
+#[cfg(test)]
+pub use neo_ai_agent::ModelProviderSection;
 use neo_primitives::UnhandledExceptionPolicy;
 // Phase 3 S6c: PrivacySection sank into neo-tee::config; re-exported here
 // (used intra-file by NodeConfig and re-exported via `pub use sections::*`) so
