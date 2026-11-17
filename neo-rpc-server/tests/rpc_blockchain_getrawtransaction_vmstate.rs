@@ -90,7 +90,7 @@ fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerB
         neo_storage::StorageItem::from_bytes(hash.to_bytes().clone()),
     );
 
-    let trimmed = TrimmedBlock::from_block(block);
+    let trimmed = TrimmedBlock::try_from_block(block).expect("trimmed block from fixture");
     let trimmed_bytes = trimmed.to_array().expect("serialize trimmed block");
     let mut block_key_bytes = Vec::with_capacity(1 + 32);
     block_key_bytes.push(PREFIX_BLOCK);

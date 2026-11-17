@@ -22,12 +22,6 @@ impl TrimmedBlock {
         Self { header, hashes }
     }
 
-    /// Creates a trimmed block from a full block.
-    pub fn from_block(block: &Block) -> Self {
-        Self::try_from_block(block)
-            .expect("block transactions must be serializable to create a trimmed block")
-    }
-
     /// Creates a trimmed block from a full block, failing closed if any
     /// transaction hash cannot be computed.
     pub fn try_from_block(block: &Block) -> CoreResult<Self> {

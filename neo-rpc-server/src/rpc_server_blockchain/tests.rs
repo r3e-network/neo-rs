@@ -2,7 +2,7 @@ use super::*;
 use crate::rpc_server_settings::RpcServerConfig;
 use neo_protocol::witness::Witness as LedgerWitness;
 use neo_rpc_client::models::RpcRawMemPool;
-// `TrimmedBlock::from_block` and the RPC converters operate on the execution block
+// `TrimmedBlock::try_from_block` and the RPC converters operate on the execution block
 // representation owned by `neo-protocol`, matching the native `LedgerContract` API.
 use neo_io::SerializableExtensions as SerializableExt;
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
@@ -172,7 +172,7 @@ fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerB
     let hash_key = StorageKey::new(LedgerContract::ID, hash_key_bytes);
     store.add(hash_key, StorageItem::from_bytes(hash.to_bytes().clone()));
 
-    let trimmed = TrimmedBlock::from_block(block);
+    let trimmed = TrimmedBlock::try_from_block(block).expect("trimmed block from fixture");
     let trimmed_bytes = trimmed.to_array().expect("serialize trimmed block");
     let mut block_key_bytes = Vec::with_capacity(1 + 32);
     block_key_bytes.push(PREFIX_BLOCK);

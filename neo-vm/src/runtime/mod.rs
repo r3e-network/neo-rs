@@ -8,12 +8,16 @@ use alloc::{format, string::String, string::ToString, vec, vec::Vec};
 pub(crate) use pending_exception::{PendingException, PendingExceptionValue};
 use try_frame::TryFrame;
 
-use crate::{ExecutionResult, StackValue, VmState};
+use crate::{ExecutionResult, StackValue, VmError, VmState};
 
 /// Minimal stack/fault interface required by shared runtime opcode adapters.
 pub trait RuntimeStack {
     /// Pop one value from the evaluation stack.
-    fn pop_value(&mut self) -> StackValue;
+    ///
+    /// Returns [`VmError::StackUnderflow`] instead of panicking when the
+    /// evaluation stack is empty; callers must translate that error into a VM
+    /// fault.
+    fn pop_value(&mut self) -> Result<StackValue, VmError>;
 
     /// Push one value to the evaluation stack.
     fn push_value(&mut self, value: StackValue);
@@ -32,17 +36,26 @@ pub trait RuntimeStack {
 
     /// Pop an integer-compatible value that fits in `i64`.
     ///
-    /// This intentionally preserves the existing compiled-runtime behavior:
-    /// invalid generated stacks are programmer/runtime faults and panic in the
-    /// same way the previous per-runtime wrappers did.
-    fn pop_i64(&mut self) -> i64 {
-        let value = self.pop_value();
-        value
+    /// Returns `None` and faults the runtime when the stack is empty or the top
+    /// value is not integer-compatible, so a malformed generated stack never
+    /// panics the host process.
+    fn pop_i64(&mut self) -> Option<i64> {
+        let value = match self.pop_value() {
+            Ok(value) => value,
+            Err(error) => {
+                self.fault(&error.to_string());
+                return None;
+            }
+        };
+        let integer = value
             .to_i128()
-            .and_then(|integer| i64::try_from(integer).ok())
-            .unwrap_or_else(|| {
-                panic!("expected integer-compatible StackValue fitting i64, got {value:?}")
-            })
+            .and_then(|integer| i64::try_from(integer).ok());
+        if integer.is_none() {
+            self.fault(&format!(
+                "expected integer-compatible StackValue fitting i64, got {value:?}"
+            ));
+        }
+        integer
     }
 
     /// Push a compact integer result.
@@ -97,7 +110,9 @@ impl VmContext {
         self.locals = vec![StackValue::Null; local_count];
         self.args = Vec::with_capacity(arg_count);
         for _ in 0..arg_count {
-            let value = self.pop_value();
+            let Some(value) = self.pop_value_or_fault() else {
+                return;
+            };
             self.args.push(value);
         }
         self.args.reverse();
@@ -160,10 +175,26 @@ impl VmContext {
         self.push_value(StackValue::Null);
     }
 
-    /// Pops the top value from the evaluation stack.
+    /// Pops the top value from the evaluation stack, faulting the context when
+    /// the stack is empty.
     #[must_use]
-    pub fn pop(&mut self) -> StackValue {
-        self.pop_value()
+    pub fn pop(&mut self) -> Option<StackValue> {
+        self.pop_value_or_fault()
+    }
+
+    /// Pops the top value, faulting the context when the stack is empty.
+    ///
+    /// An empty evaluation stack is a script fault, not a host bug: this
+    /// matches C# `EvaluationStack.Pop()` raising `InvalidOperationException`,
+    /// which the engine converts into a `FAULT` state.
+    pub fn pop_value_or_fault(&mut self) -> Option<StackValue> {
+        match self.pop_value() {
+            Ok(value) => Some(value),
+            Err(error) => {
+                self.fault(&error.to_string());
+                None
+            }
+        }
     }
 
     /// Pushes the value of argument slot `index`.
@@ -181,7 +212,9 @@ impl VmContext {
             self.fault("invalid argument index");
             return;
         }
-        let value = self.pop_value();
+        let Some(value) = self.pop_value_or_fault() else {
+            return;
+        };
         self.args[index] = value;
     }
 
@@ -200,7 +233,9 @@ impl VmContext {
             self.fault("invalid local index");
             return;
         }
-        let value = self.pop_value();
+        let Some(value) = self.pop_value_or_fault() else {
+            return;
+        };
         self.locals[index] = value;
     }
 
@@ -219,13 +254,17 @@ impl VmContext {
             self.fault("invalid static field index");
             return;
         }
-        let value = self.pop_value();
+        let Some(value) = self.pop_value_or_fault() else {
+            return;
+        };
         self.static_fields[index] = value;
     }
 
     /// Throws an exception with the top stack value as payload.
     pub fn throw_ex(&mut self) {
-        let value = self.pop_value();
+        let Some(value) = self.pop_value_or_fault() else {
+            return;
+        };
         if self.try_stack.iter().any(|frame| !frame.caught) {
             self.pending_error = Some(PendingException::thrown_value(value));
         } else {
@@ -249,7 +288,9 @@ impl VmContext {
 
     /// Faults the VM with a message from the top stack value.
     pub fn abort_msg(&mut self) {
-        let value = self.pop_value();
+        let Some(value) = self.pop_value_or_fault() else {
+            return;
+        };
         let message = match &value {
             StackValue::ByteString(bytes) => {
                 format!("ABORTMSG: {}", String::from_utf8_lossy(bytes))
@@ -265,8 +306,10 @@ impl VmContext {
 
     /// Pops a boolean-like value and faults when it is false.
     pub fn assert_top(&mut self) {
-        let is_true = self.pop_value().to_bool();
-        if !is_true {
+        let Some(value) = self.pop_value_or_fault() else {
+            return;
+        };
+        if !value.to_bool() {
             if self.try_stack.iter().any(|frame| !frame.caught) {
                 self.pending_error = Some(PendingException::message(
                     "ASSERT: assertion failed".to_string(),
@@ -279,8 +322,12 @@ impl VmContext {
 
     /// Pops a message then a boolean-like value and faults when it is false.
     pub fn assert_msg(&mut self) {
-        let message_value = self.pop_value();
-        let condition_value = self.pop_value();
+        let Some(message_value) = self.pop_value_or_fault() else {
+            return;
+        };
+        let Some(condition_value) = self.pop_value_or_fault() else {
+            return;
+        };
         if condition_value.to_bool() {
             return;
         }
@@ -382,10 +429,10 @@ impl VmContext {
 }
 
 impl RuntimeStack for VmContext {
-    fn pop_value(&mut self) -> StackValue {
+    fn pop_value(&mut self) -> Result<StackValue, VmError> {
         self.stack
             .pop()
-            .expect("stack underflow: pop on empty stack")
+            .ok_or_else(|| VmError::stack_underflow(1, 0))
     }
 
     fn push_value(&mut self, value: StackValue) {
@@ -429,6 +476,44 @@ mod tests {
         );
         assert_eq!(ctx.locals, vec![StackValue::Null, StackValue::Null]);
         assert_eq!(ctx.stack, vec![StackValue::Integer(100)]);
+    }
+
+    #[test]
+    fn pop_value_reports_underflow_instead_of_panicking() {
+        let mut ctx = VmContext::from_stack(Vec::new());
+
+        let error = ctx.pop_value().expect_err("empty stack must not panic");
+
+        assert!(matches!(
+            error,
+            VmError::StackUnderflow {
+                requested: 1,
+                available: 0
+            }
+        ));
+        assert_eq!(ctx.state, VmState::Halt);
+    }
+
+    #[test]
+    fn pop_faults_when_stack_is_empty() {
+        let mut ctx = VmContext::from_stack(Vec::new());
+
+        assert!(ctx.pop().is_none());
+        assert_eq!(ctx.state, VmState::Fault);
+        assert_eq!(
+            ctx.fault_message.as_deref(),
+            Some("Stack underflow: attempted to access 1 items, but only 0 available")
+        );
+    }
+
+    #[test]
+    fn init_slot_faults_instead_of_panicking_on_short_stack() {
+        let mut ctx = VmContext::from_stack(vec![StackValue::Integer(7)]);
+
+        ctx.init_slot(0, 2);
+
+        assert_eq!(ctx.state, VmState::Fault);
+        assert_eq!(ctx.args, vec![StackValue::Integer(7)]);
     }
 
     #[test]
