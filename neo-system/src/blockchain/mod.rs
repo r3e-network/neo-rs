@@ -421,4 +421,6 @@ pub use neo_ledger::blockchain::{
 };
 
 #[cfg(test)]
+mod import_integrity_tests;
+#[cfg(test)]
 mod tests;

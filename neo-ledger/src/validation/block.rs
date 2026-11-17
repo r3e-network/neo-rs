@@ -1,10 +1,69 @@
 use super::header::{verify_header, verify_header_with_cache};
 use super::header_cache::HeaderCache;
-use super::rules::{validate_block_size, validate_transaction_count};
-use neo_primitives::Verifiable;
+use super::rules::{
+    BlockValidationError, validate_block_size, validate_block_version, validate_transaction_count,
+    validate_wire_transaction_count_raw,
+};
+use neo_crypto::MerkleTree;
+use neo_primitives::{UInt256, Verifiable};
+use neo_protocol::execution::Block as ExecutionBlock;
 use neo_protocol::payloads::Block;
 use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_storage::persistence::{DataCache, StoreCache};
+
+/// Checks that a block body is the one its header commits to, using the rules
+/// C# `Block.Deserialize` enforces on the wire: supported version, at most
+/// `ushort.MaxValue` transactions, no duplicate transaction hashes, and a
+/// transaction merkle root equal to the header's (zero for an empty block).
+///
+/// Nothing here needs ledger state or executes a witness, so it is safe to run
+/// on every ingress path, including trusted import where header verification
+/// is skipped. The single-witness rule is only observable on the execution
+/// representation; see [`verify_execution_block_integrity`].
+pub fn verify_block_integrity(block: &Block) -> Result<(), BlockValidationError> {
+    validate_block_version(block.header.version())?;
+    validate_wire_transaction_count_raw(block.transactions.len())?;
+    if !block.verify_no_duplicate_transactions() {
+        return Err(BlockValidationError::DuplicateTransactions);
+    }
+    if !block.verify_merkle_root() {
+        let computed = block
+            .transactions
+            .iter()
+            .map(neo_protocol::payloads::Transaction::try_hash)
+            .collect::<Result<Vec<_>, _>>()
+            .ok()
+            .and_then(|hashes| MerkleTree::compute_root(&hashes))
+            .unwrap_or_else(UInt256::zero);
+        return Err(BlockValidationError::InvalidMerkleRoot {
+            expected: *block.header.merkle_root(),
+            computed,
+        });
+    }
+    Ok(())
+}
+
+/// [`verify_block_integrity`] for an execution block, plus the wire rule that a
+/// header carries exactly one witness.
+///
+/// The witness count must be checked here, before projecting: the payload
+/// projection keeps only the first witness and fabricates an empty one when the
+/// list is empty, so it cannot detect a bad count. This is an encoding check
+/// only; the witness is neither executed nor cryptographically verified.
+///
+/// On success returns the payload projection, which is faithful once the count
+/// is known to be one.
+pub fn verify_execution_block_integrity(
+    block: &ExecutionBlock,
+) -> Result<Block, BlockValidationError> {
+    let count = block.header.witnesses.len();
+    if count != 1 {
+        return Err(BlockValidationError::InvalidHeaderWitnessCount { count });
+    }
+    let payload_block = block.to_payload_block();
+    verify_block_integrity(&payload_block)?;
+    Ok(payload_block)
+}
 
 /// State-independent structural checks on a block payload: supported version,
 /// transaction merkle root, duplicate transactions, size and count bounds.
@@ -43,8 +102,6 @@ pub fn calculate_block_network_fee(block: &Block, _snapshot: &DataCache) -> i64 
 mod tests {
     use super::super::rules::MIN_TIMESTAMP_MS;
     use super::*;
-    use neo_crypto::MerkleTree;
-    use neo_primitives::UInt256;
     use neo_protocol::payloads::{Header, Transaction};
     use neo_protocol::witness::Witness;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
@@ -99,6 +156,132 @@ mod tests {
     fn merkle_root_of(transactions: &[Transaction]) -> UInt256 {
         let hashes: Vec<UInt256> = transactions.iter().map(Transaction::hash).collect();
         MerkleTree::compute_root(&hashes).expect("non-empty transaction list")
+    }
+
+    #[test]
+    fn verify_block_integrity_accepts_empty_block_with_zero_merkle_root() {
+        let (_, header) = header_with_cached_parent(UInt256::default());
+        let block = Block {
+            header,
+            transactions: Vec::new(),
+        };
+
+        assert_eq!(verify_block_integrity(&block), Ok(()));
+    }
+
+    #[test]
+    fn verify_block_integrity_rejects_non_zero_merkle_root_for_empty_block() {
+        let root = UInt256::from([0xab; 32]);
+        let (_, header) = header_with_cached_parent(root);
+        let block = Block {
+            header,
+            transactions: Vec::new(),
+        };
+
+        assert_eq!(
+            verify_block_integrity(&block),
+            Err(BlockValidationError::InvalidMerkleRoot {
+                expected: root,
+                computed: UInt256::zero(),
+            })
+        );
+    }
+
+    #[test]
+    fn verify_block_integrity_rejects_transactions_not_matching_merkle_root() {
+        let root = UInt256::from([0xab; 32]);
+        let transactions = vec![Transaction::new()];
+        let computed = merkle_root_of(&transactions);
+        let (_, header) = header_with_cached_parent(root);
+        let block = Block {
+            header,
+            transactions,
+        };
+
+        assert_eq!(
+            verify_block_integrity(&block),
+            Err(BlockValidationError::InvalidMerkleRoot {
+                expected: root,
+                computed,
+            })
+        );
+    }
+
+    #[test]
+    fn verify_block_integrity_rejects_duplicate_transactions() {
+        let tx = Transaction::new();
+        let transactions = vec![tx.clone(), tx];
+        // The root matches the duplicated list, so only the duplicate rule
+        // can reject this block.
+        let (_, header) = header_with_cached_parent(merkle_root_of(&transactions));
+        let block = Block {
+            header,
+            transactions,
+        };
+        assert!(block.verify_merkle_root());
+
+        assert_eq!(
+            verify_block_integrity(&block),
+            Err(BlockValidationError::DuplicateTransactions)
+        );
+    }
+
+    #[test]
+    fn verify_block_integrity_rejects_unsupported_version() {
+        let (_, mut header) = header_with_cached_parent(UInt256::default());
+        header.set_version(1);
+        let block = Block {
+            header,
+            transactions: Vec::new(),
+        };
+
+        assert_eq!(
+            verify_block_integrity(&block),
+            Err(BlockValidationError::UnsupportedVersion { version: 1 })
+        );
+    }
+
+    #[test]
+    fn verify_execution_block_integrity_requires_exactly_one_header_witness() {
+        let (_, header) = header_with_cached_parent(UInt256::default());
+        let block = Block {
+            header,
+            transactions: Vec::new(),
+        };
+        let mut execution = ExecutionBlock::from(&block);
+        assert_eq!(execution.header.witnesses.len(), 1);
+        assert!(verify_execution_block_integrity(&execution).is_ok());
+
+        // The payload projection fabricates an empty witness here, so the
+        // count has to be rejected on the execution header itself.
+        execution.header.witnesses.clear();
+        assert!(verify_block_integrity(&execution.to_payload_block()).is_ok());
+        assert_eq!(
+            verify_execution_block_integrity(&execution).map(|_| ()),
+            Err(BlockValidationError::InvalidHeaderWitnessCount { count: 0 })
+        );
+
+        execution.header.witnesses = vec![Witness::new(), Witness::new()];
+        assert_eq!(
+            verify_execution_block_integrity(&execution).map(|_| ()),
+            Err(BlockValidationError::InvalidHeaderWitnessCount { count: 2 })
+        );
+    }
+
+    #[test]
+    fn verify_execution_block_integrity_checks_body_against_header() {
+        let (_, header) = header_with_cached_parent(UInt256::default());
+        let block = Block {
+            header,
+            transactions: Vec::new(),
+        };
+        let mut execution = ExecutionBlock::from(&block);
+        execution.transactions = vec![Transaction::new()];
+
+        assert!(matches!(
+            verify_execution_block_integrity(&execution),
+            Err(BlockValidationError::InvalidMerkleRoot { .. })
+        ));
     }
 
     #[test]

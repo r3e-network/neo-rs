@@ -1,6 +1,8 @@
 use neo_crypto::MerkleTree;
 use neo_primitives::UInt256;
-use neo_primitives::constants::{MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
+use neo_primitives::constants::{
+    BLOCK_MAX_TX_WIRE_LIMIT, MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK,
+};
 use neo_primitives::time_provider::TimeProvider;
 use neo_protocol::payloads::{Header, Transaction};
 use thiserror::Error;
@@ -41,6 +43,8 @@ pub enum BlockValidationError {
     InvalidPrimaryIndex { index: u8, max: i32 },
     #[error("Header validation failed: {reason}")]
     HeaderValidationFailed { reason: String },
+    #[error("Block header carries {count} witnesses, expected exactly 1")]
+    InvalidHeaderWitnessCount { count: usize },
 }
 
 pub fn validate_block_size<B: BlockLike>(block: &B) -> Result<(), BlockValidationError> {
@@ -66,6 +70,19 @@ pub fn validate_transaction_count_raw(tx_count: usize) -> Result<(), BlockValida
         return Err(BlockValidationError::TooManyTransactions {
             count: tx_count,
             max_count: MAX_TRANSACTIONS_PER_BLOCK,
+        });
+    }
+    Ok(())
+}
+
+/// Wire-format transaction count limit (`ushort.MaxValue` in C#
+/// `Block.Deserialize`). Unlike [`validate_transaction_count_raw`], this is a
+/// block-acceptance rule, not consensus proposal policy.
+pub fn validate_wire_transaction_count_raw(tx_count: usize) -> Result<(), BlockValidationError> {
+    if tx_count > BLOCK_MAX_TX_WIRE_LIMIT {
+        return Err(BlockValidationError::TooManyTransactions {
+            count: tx_count,
+            max_count: BLOCK_MAX_TX_WIRE_LIMIT,
         });
     }
     Ok(())
@@ -292,6 +309,10 @@ mod tests {
             .to_string(),
             "Header validation failed: bad header"
         );
+        assert_eq!(
+            BlockValidationError::InvalidHeaderWitnessCount { count: 2 }.to_string(),
+            "Block header carries 2 witnesses, expected exactly 1"
+        );
     }
 
     #[test]
@@ -341,6 +362,21 @@ mod tests {
             Err(BlockValidationError::TooManyTransactions {
                 count: MAX_TRANSACTIONS_PER_BLOCK + 1,
                 max_count: MAX_TRANSACTIONS_PER_BLOCK
+            })
+        );
+    }
+
+    #[test]
+    fn validate_wire_transaction_count_raw_enforces_ushort_limit() {
+        assert_eq!(BLOCK_MAX_TX_WIRE_LIMIT, usize::from(u16::MAX));
+        assert!(validate_wire_transaction_count_raw(0).is_ok());
+        assert!(validate_wire_transaction_count_raw(MAX_TRANSACTIONS_PER_BLOCK + 1).is_ok());
+        assert!(validate_wire_transaction_count_raw(BLOCK_MAX_TX_WIRE_LIMIT).is_ok());
+        assert_eq!(
+            validate_wire_transaction_count_raw(BLOCK_MAX_TX_WIRE_LIMIT + 1),
+            Err(BlockValidationError::TooManyTransactions {
+                count: BLOCK_MAX_TX_WIRE_LIMIT + 1,
+                max_count: BLOCK_MAX_TX_WIRE_LIMIT
             })
         );
     }

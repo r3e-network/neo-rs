@@ -290,17 +290,36 @@ impl Blockchain {
                 ImportDisposition::NextExpected => {}
             }
 
-            if import.verify {
-                let payload_block = block.to_payload_block();
-                if !neo_ledger::verify_block(&payload_block, settings.as_ref(), &store_cache) {
+            // Body integrity is enforced for every imported block. A trusted
+            // import (`verify == false`) skips *header* verification, as C#
+            // `Blockchain.OnImport(blocks, verify: false)` does; it does not
+            // skip checking that the supplied body is the one the header
+            // commits to. Import carries already-typed blocks, so nothing else
+            // guarantees they went through the wire decoder.
+            let payload_block = match neo_ledger::verify_execution_block_integrity(&block) {
+                Ok(payload_block) => payload_block,
+                Err(error) => {
                     tracing::warn!(
                         target: "neo",
                         height = index,
-                        "import block failed verification"
+                        %error,
+                        "import block failed body integrity check"
                     );
                     failure = Some(ImportError::VerificationFailure { index });
                     break;
                 }
+            };
+
+            if import.verify
+                && !neo_ledger::verify_block(&payload_block, settings.as_ref(), &store_cache)
+            {
+                tracing::warn!(
+                    target: "neo",
+                    height = index,
+                    "import block failed verification"
+                );
+                failure = Some(ImportError::VerificationFailure { index });
+                break;
             }
 
             if !self.persist_block_via_system(&block) {
