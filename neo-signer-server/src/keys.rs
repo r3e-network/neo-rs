@@ -44,13 +44,13 @@ impl SealedSigningKey {
             SealedKey::load_from_file(key_path)
                 .with_context(|| format!("failed to load sealed key {}", key_path.display()))?
         } else {
-            let private_key = Secp256r1Crypto::generate_private_key();
+            let private_key = Zeroizing::new(Secp256r1Crypto::generate_private_key());
             let public_key = Secp256r1Crypto::derive_public_key(&private_key)
                 .context("failed to derive the signing public key")?;
             let script_hash = script_hash_for(&public_key);
             let sealed = SealedKey::seal(
                 &enclave,
-                &private_key,
+                private_key.as_slice(),
                 &public_key,
                 &script_hash,
                 Some(label.to_string()),
@@ -64,7 +64,7 @@ impl SealedSigningKey {
 
         // Fail closed: the persisted blob must unseal and reproduce exactly the
         // recorded public key before the server is allowed to start serving.
-        let private_key = sealed
+        let private_key: Zeroizing<Vec<u8>> = sealed
             .unseal(&enclave)
             .context("failed to unseal the signing key (rollback floor enforced)")?;
         let public_key = derive_public(&private_key)?;
@@ -89,24 +89,31 @@ impl SealedSigningKey {
 
     /// Signs a 32-byte digest, unsealing the private key only for the
     /// duration of this call.
+    ///
+    /// Every copy of the private key stays inside a [`Zeroizing`] guard, so the
+    /// plaintext is wiped when the signature is produced - the unsealed blob
+    /// and the fixed-size key buffer alike.
     pub fn sign_prehash(&self, digest: &[u8; 32]) -> Result<[u8; 64]> {
-        let private_key: Zeroizing<Vec<u8>> = self
+        let unsealed: Zeroizing<Vec<u8>> = self
             .sealed
             .unseal(&self.enclave)
             .context("failed to unseal the signing key for signing")?;
-        let private_key: [u8; 32] = private_key
-            .as_slice()
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("unsealed private key must be exactly 32 bytes"))?;
+        let private_key = Zeroizing::new(private_key_array(&unsealed)?);
         Secp256r1Crypto::sign_prehash(digest, &private_key)
             .context("failed to produce the P-256 signature")
     }
 }
 
-fn derive_public(private_key: &[u8]) -> Result<Vec<u8>> {
-    let private_key: [u8; 32] = private_key
+/// Copies unsealed private-key bytes into a fixed-size buffer that the caller
+/// must keep inside a [`Zeroizing`] guard.
+fn private_key_array(unsealed: &[u8]) -> Result<[u8; 32]> {
+    unsealed
         .try_into()
-        .map_err(|_| anyhow::anyhow!("unsealed private key must be exactly 32 bytes"))?;
+        .map_err(|_| anyhow::anyhow!("unsealed private key must be exactly 32 bytes"))
+}
+
+fn derive_public(private_key: &[u8]) -> Result<Vec<u8>> {
+    let private_key = Zeroizing::new(private_key_array(private_key)?);
     Secp256r1Crypto::derive_public_key(&private_key)
         .context("failed to re-derive the signing public key")
 }

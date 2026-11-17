@@ -7,8 +7,13 @@
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
-use neo_signer_server::config::{DEFAULT_SESSION_LIFETIME_MS, MAX_ATTESTATION_CLOCK_SKEW_MS};
-use neo_signer_server::{FaultPolicy, SignerServerConfig, TlsPaths, spawn_signer_server};
+use neo_signer_server::config::{
+    CLIENT_AUTHORIZATION_ENV, DEFAULT_SESSION_LIFETIME_MS, MAX_ATTESTATION_CLOCK_SKEW_MS,
+};
+use neo_signer_server::{
+    ClientAuthorizationPolicy, FaultPolicy, SignerServerConfig, TlsPaths, spawn_signer_server,
+    spawn_signer_server_with,
+};
 use neo_wallets::signing::{KeyRef, SignPurpose};
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -59,6 +64,13 @@ struct Args {
         default_value = "consensus"
     )]
     allowed_purposes: Vec<String>,
+    /// JSON policy mapping client-certificate common names to the key IDs and
+    /// purposes they may use. Defaults to the file named by
+    /// `NEO_SIGNER_CLIENT_AUTHORIZATION`, then to
+    /// `<sealed-data-dir>/client-authorization.json`; without either, every
+    /// CA-authenticated client is scoped to the single configured key.
+    #[arg(long)]
+    client_authorization: Option<PathBuf>,
 
     // === Fault injection (test/staging only; never enable in production) ===
     /// [TEST ONLY] Skew the attestation evidence timestamp by this many
@@ -135,7 +147,27 @@ async fn main() -> Result<()> {
         faults,
     };
 
-    let server = spawn_signer_server(config).await?;
+    let server = match args.client_authorization {
+        Some(path) => {
+            let authorization = ClientAuthorizationPolicy::from_json_file(&path).with_context(
+                || format!("failed to load the client-authorization policy {}", path.display()),
+            )?;
+            spawn_signer_server_with(config, authorization).await?
+        }
+        None => {
+            if std::env::var_os(CLIENT_AUTHORIZATION_ENV).is_none()
+                && !config.client_authorization_path().exists()
+            {
+                tracing::warn!(
+                    "no client-authorization policy configured; every CA-authenticated client \
+                     is scoped to key '{}:{}' and the configured purposes only",
+                    config.key_ref.provider,
+                    config.key_ref.key_id
+                );
+            }
+            spawn_signer_server(config).await?
+        }
+    };
     let addr = server.local_addr();
     tracing::info!(
         "neo-signer-server listening on https://{addr} (simulation attestation; reference implementation)"

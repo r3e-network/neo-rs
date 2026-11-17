@@ -53,10 +53,16 @@
 
 pub mod config;
 pub mod http;
+pub mod identity;
+pub mod journal;
 pub mod keys;
 pub mod protocol;
 
-pub use config::{FaultPolicy, SignerServerConfig, TlsPaths};
-pub use http::{SignerServerHandle, spawn_signer_server};
+pub use config::{
+    ClientAuthorizationPolicy, ClientGrant, FaultPolicy, SignerServerConfig, TlsPaths,
+};
+pub use http::{SignerServerHandle, spawn_signer_server, spawn_signer_server_with};
+pub use identity::ClientIdentity;
+pub use journal::ConsensusSlot;
 pub use keys::SealedSigningKey;
 pub use protocol::{SignOutcome, SignerService};
