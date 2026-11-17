@@ -23,6 +23,37 @@ impl crate::runtime::PendingExceptionValue for StackValue {
     }
 }
 
+/// Drops `values` without recursing on their nesting depth.
+///
+/// The drop glue derived for [`StackValue`] descends one native frame set per
+/// compound level, so deeply nested collections could exhaust the native
+/// stack. Children are moved onto an explicit work list instead, which leaves
+/// every value shallow by the time it is dropped.
+pub(crate) fn release_values(values: Vec<StackValue>) {
+    let mut pending = values;
+    while let Some(mut value) = pending.pop() {
+        match &mut value {
+            StackValue::Array(_, items) | StackValue::Struct(_, items) => pending.append(items),
+            StackValue::Map(_, items) => {
+                pending.reserve(items.len().saturating_mul(2));
+                for (key, value) in items.drain(..) {
+                    pending.push(key);
+                    pending.push(value);
+                }
+            }
+            StackValue::Buffer(_, _)
+            | StackValue::Integer(_)
+            | StackValue::BigInteger(_)
+            | StackValue::ByteString(_)
+            | StackValue::Boolean(_)
+            | StackValue::Pointer(_)
+            | StackValue::Interop(_)
+            | StackValue::Iterator(_)
+            | StackValue::Null => {}
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct CompoundIds {
     next: u64,
