@@ -5,7 +5,7 @@ use super::rules::{
     validate_wire_transaction_count_raw,
 };
 use neo_crypto::MerkleTree;
-use neo_primitives::{UInt256, Verifiable};
+use neo_primitives::UInt256;
 use neo_protocol::execution::Block as ExecutionBlock;
 use neo_protocol::payloads::Block;
 use neo_protocol::protocol_settings::ProtocolSettings;
@@ -18,8 +18,14 @@ use neo_storage::persistence::{DataCache, StoreCache};
 ///
 /// Nothing here needs ledger state or executes a witness, so it is safe to run
 /// on every ingress path, including trusted import where header verification
-/// is skipped. The single-witness rule is only observable on the execution
-/// representation; see [`verify_execution_block_integrity`].
+/// is skipped. Header signatures and witness execution live in
+/// [`verify_header`] / [`verify_header_with_cache`]. The single-witness rule is
+/// only observable on the execution representation; see
+/// [`verify_execution_block_integrity`].
+///
+/// There is intentionally no byte-size bound: C# has none at acceptance. The
+/// effective bounds are the transaction count above and whatever carried the
+/// block (32 MiB for a P2P payload).
 pub fn verify_block_integrity(block: &Block) -> Result<(), BlockValidationError> {
     validate_block_version(block.header.version())?;
     validate_wire_transaction_count_raw(block.transactions.len())?;
@@ -65,28 +71,36 @@ pub fn verify_execution_block_integrity(
     Ok(payload_block)
 }
 
-/// State-independent structural checks on a block payload: supported version,
-/// transaction merkle root, duplicate transactions, size and count bounds.
+/// Consensus proposal policy: at most `MAX_TRANSACTIONS_PER_BLOCK` (512)
+/// transactions and at most `MAX_BLOCK_SIZE` (2 MiB) serialized.
 ///
-/// Header signatures and witness execution need ledger state, so they live in
-/// [`verify_header`] / [`verify_header_with_cache`]; callers must run both.
-pub fn verify_block_structure(block: &Block) -> bool {
-    block.verify()
-        && validate_block_size(block).is_ok()
-        && validate_transaction_count(block).is_ok()
+/// These mirror C# `ProtocolSettings.MaxTransactionsPerBlock` and the dBFT
+/// plugin's `MaxBlockSize`, which bound what a consensus node will *propose* or
+/// agree to sign. They are deliberately not part of block acceptance: a block
+/// that carries a valid consensus witness is accepted by every C# node whatever
+/// its size, so rejecting it here would stall this node on the chain everyone
+/// else follows. Apply this only when building or validating a proposal; use
+/// [`verify_block_integrity`] for acceptance.
+pub fn verify_block_proposal_policy(block: &Block) -> Result<(), BlockValidationError> {
+    validate_transaction_count(block)?;
+    validate_block_size(block)
 }
 
+/// Block acceptance: body integrity plus full header verification against
+/// ledger state. Proposal-policy limits are not applied here; see
+/// [`verify_block_proposal_policy`].
 pub fn verify_block(block: &Block, settings: &ProtocolSettings, store_cache: &StoreCache) -> bool {
-    verify_block_structure(block) && verify_header(&block.header, settings, store_cache)
+    verify_block_integrity(block).is_ok() && verify_header(&block.header, settings, store_cache)
 }
 
+/// [`verify_block`] with the parent resolved through the header cache.
 pub fn verify_block_with_cache(
     block: &Block,
     settings: &ProtocolSettings,
     store_cache: &StoreCache,
     header_cache: &HeaderCache,
 ) -> bool {
-    verify_block_structure(block)
+    verify_block_integrity(block).is_ok()
         && verify_header_with_cache(&block.header, settings, store_cache, header_cache)
 }
 
@@ -100,8 +114,11 @@ pub fn calculate_block_network_fee(block: &Block, _snapshot: &DataCache) -> i64 
 
 #[cfg(test)]
 mod tests {
-    use super::super::rules::MIN_TIMESTAMP_MS;
+    use super::super::rules::{BlockLike, MIN_TIMESTAMP_MS};
     use super::*;
+    use neo_primitives::constants::{
+        BLOCK_MAX_TX_WIRE_LIMIT, MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK,
+    };
     use neo_protocol::payloads::{Header, Transaction};
     use neo_protocol::witness::Witness;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
@@ -285,42 +302,7 @@ mod tests {
     }
 
     #[test]
-    fn verify_block_structure_accepts_empty_block_with_zero_merkle_root() {
-        let (_, header) = header_with_cached_parent(UInt256::default());
-        let block = Block {
-            header,
-            transactions: Vec::new(),
-        };
-
-        assert!(verify_block_structure(&block));
-    }
-
-    #[test]
-    fn verify_block_structure_rejects_transactions_not_matching_merkle_root() {
-        let (_, header) = header_with_cached_parent(UInt256::from([0xab; 32]));
-        let block = Block {
-            header,
-            transactions: vec![Transaction::new()],
-        };
-
-        assert!(!verify_block_structure(&block));
-    }
-
-    #[test]
-    fn verify_block_structure_rejects_duplicate_transactions() {
-        let tx = Transaction::new();
-        let transactions = vec![tx.clone(), tx];
-        let (_, header) = header_with_cached_parent(merkle_root_of(&transactions));
-        let block = Block {
-            header,
-            transactions,
-        };
-
-        assert!(!verify_block_structure(&block));
-    }
-
-    #[test]
-    fn verify_block_structure_accepts_transactions_matching_merkle_root() {
+    fn verify_block_integrity_accepts_transactions_matching_merkle_root() {
         let transactions = vec![Transaction::new()];
         let (_, header) = header_with_cached_parent(merkle_root_of(&transactions));
         let block = Block {
@@ -328,7 +310,94 @@ mod tests {
             transactions,
         };
 
-        assert!(verify_block_structure(&block));
+        assert_eq!(verify_block_integrity(&block), Ok(()));
+    }
+
+    fn distinct_transactions(count: usize, script_len: usize) -> Vec<Transaction> {
+        (0..count)
+            .map(|nonce| {
+                let mut tx = Transaction::new();
+                tx.set_nonce(u32::try_from(nonce).expect("nonce fits u32"));
+                tx.set_script(vec![OpCode::NOP.byte(); script_len]);
+                tx
+            })
+            .collect()
+    }
+
+    /// Builds a body-consistent block whose header verifies against the
+    /// returned cache, so it exercises the full acceptance path.
+    fn verifiable_block(transactions: Vec<Transaction>) -> (HeaderCache, Block) {
+        let (header_cache, header) = header_with_cached_parent(merkle_root_of(&transactions));
+        (
+            header_cache,
+            Block {
+                header,
+                transactions,
+            },
+        )
+    }
+
+    #[test]
+    fn block_over_policy_transaction_count_is_accepted_but_fails_proposal_policy() {
+        let count = MAX_TRANSACTIONS_PER_BLOCK + 1;
+        let (header_cache, block) = verifiable_block(distinct_transactions(count, 1));
+
+        assert_eq!(verify_block_integrity(&block), Ok(()));
+        assert!(verify_with(&header_cache, &block));
+        assert_eq!(
+            verify_block_proposal_policy(&block),
+            Err(BlockValidationError::TooManyTransactions {
+                count,
+                max_count: MAX_TRANSACTIONS_PER_BLOCK,
+            })
+        );
+    }
+
+    #[test]
+    fn block_over_policy_size_is_accepted_but_fails_proposal_policy() {
+        // 36 x ~60 KB scripts: over 2 MiB, well under the 512-transaction
+        // policy count, so only the size limit can reject it.
+        let (header_cache, block) = verifiable_block(distinct_transactions(36, 60_000));
+        let size = BlockLike::size(&block);
+        assert!(size > MAX_BLOCK_SIZE, "block size {size} must exceed 2 MiB");
+
+        assert_eq!(verify_block_integrity(&block), Ok(()));
+        assert!(verify_with(&header_cache, &block));
+        assert_eq!(
+            verify_block_proposal_policy(&block),
+            Err(BlockValidationError::BlockTooLarge {
+                size,
+                max_size: MAX_BLOCK_SIZE,
+            })
+        );
+    }
+
+    #[test]
+    fn block_within_policy_passes_proposal_policy() {
+        let (_, block) = verifiable_block(distinct_transactions(MAX_TRANSACTIONS_PER_BLOCK, 1));
+        assert_eq!(verify_block_proposal_policy(&block), Ok(()));
+    }
+
+    #[test]
+    fn block_over_wire_transaction_count_is_rejected() {
+        // 65,536 clones of one transaction: cheap to build, and the count rule
+        // runs before the duplicate and merkle rules, so it is the one that
+        // must fire. The exact 65,535 boundary is covered on
+        // `validate_wire_transaction_count_raw`.
+        let count = BLOCK_MAX_TX_WIRE_LIMIT + 1;
+        let (_, header) = header_with_cached_parent(UInt256::default());
+        let block = Block {
+            header,
+            transactions: vec![Transaction::new(); count],
+        };
+
+        assert_eq!(
+            verify_block_integrity(&block),
+            Err(BlockValidationError::TooManyTransactions {
+                count,
+                max_count: BLOCK_MAX_TX_WIRE_LIMIT,
+            })
+        );
     }
 
     #[test]

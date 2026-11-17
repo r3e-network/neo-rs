@@ -12,8 +12,8 @@ pub mod witness_crypto;
 
 pub use attribute::{attribute_network_fee, oracle_fixed_script, verify_attribute};
 pub use block::{
-    calculate_block_network_fee, verify_block, verify_block_integrity, verify_block_structure,
-    verify_block_with_cache, verify_execution_block_integrity,
+    calculate_block_network_fee, verify_block, verify_block_integrity,
+    verify_block_proposal_policy, verify_block_with_cache, verify_execution_block_integrity,
 };
 pub use header::{
     HEADER_VERIFY_GAS, validate_header_against_previous, verify_header, verify_header_with_cache,

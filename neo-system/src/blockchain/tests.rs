@@ -785,6 +785,69 @@ mod tests {
         assert_eq!(system.ledger_context().current_height(), 0);
     }
 
+    /// A future-height block that passes body integrity is parked in the
+    /// unverified cache (`UnableToVerify`); one that fails it is `Invalid`.
+    async fn ingress_verdict_for_future_block(transactions: Vec<Transaction>) -> VerifyResult {
+        let settings = ProtocolSettings::default();
+        let system = NeoSystem::new(settings, None, None).expect("neo system");
+        let mut payload = PayloadBlock::new();
+        payload.header.set_index(5);
+        payload.header.witness = Witness::new();
+        payload.transactions = transactions;
+        payload.rebuild_merkle_root();
+
+        let mut blockchain = Blockchain::new(system.ledger_context());
+        blockchain.system_context = Some(system.context());
+        blockchain
+            .on_new_block(
+                Arc::new(neo_protocol::execution::Block::from(&payload)),
+                true,
+            )
+            .await
+    }
+
+    fn distinct_transactions(count: u32, script_len: usize) -> Vec<Transaction> {
+        (0..count)
+            .map(|nonce| {
+                let mut tx = Transaction::new();
+                tx.set_nonce(nonce);
+                tx.set_script(vec![OpCode::NOP.byte(); script_len]);
+                tx
+            })
+            .collect()
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn ingress_does_not_apply_proposal_transaction_count_limit() {
+        // 513 transactions exceed MaxTransactionsPerBlock, which C# applies
+        // only when proposing; a signed block this large must be accepted.
+        assert_eq!(
+            ingress_verdict_for_future_block(distinct_transactions(513, 1)).await,
+            VerifyResult::UnableToVerify
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn ingress_does_not_apply_proposal_block_size_limit() {
+        // 36 x ~60 KB scripts is over the 2 MiB dBFT MaxBlockSize.
+        let transactions = distinct_transactions(36, 60_000);
+        let size: usize = transactions.iter().map(Serializable::size).sum();
+        assert!(size > neo_primitives::constants::MAX_BLOCK_SIZE);
+        assert_eq!(
+            ingress_verdict_for_future_block(transactions).await,
+            VerifyResult::UnableToVerify
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn ingress_rejects_duplicate_transactions_before_caching() {
+        let tx = distinct_transactions(1, 1).remove(0);
+        assert_eq!(
+            ingress_verdict_for_future_block(vec![tx.clone(), tx]).await,
+            VerifyResult::Invalid
+        );
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn persist_block_with_underfunded_sender_and_no_standby_validators_does_not_panic() {
         // GasToken::on_persist logs the BFT address when a sender cannot cover

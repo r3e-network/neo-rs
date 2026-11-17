@@ -60,21 +60,31 @@ impl Blockchain {
             return VerifyResult::AlreadyExists;
         }
 
-        // Structural checks are state-independent and, unlike the `verify`
+        // Body-integrity checks are state-independent and, unlike the `verify`
         // flag, always apply: block identity is the header hash, so a peer that
         // reuses a genuine signed header with a substituted transaction list
         // would otherwise reach persistence (and be relayed) with a merkle root
         // that commits to nothing in the node's state.
-        let payload_block = block.to_payload_block();
-        if !neo_ledger::verify_block_structure(&payload_block) {
-            tracing::warn!(
-                target: "neo",
-                index = block_index,
-                %hash,
-                "block failed structural verification (merkle root, duplicate transactions or size bounds)"
-            );
-            return VerifyResult::Invalid;
-        }
+        //
+        // Only the wire rules are enforced here (version, one header witness,
+        // at most 65,535 transactions, no duplicates, merkle root). The
+        // 512-transaction and 2 MiB limits are consensus *proposal* policy in
+        // C# and are not checked on acceptance: a block the validators signed
+        // must be accepted whatever its size, or this node stalls on a chain
+        // every other node follows.
+        let payload_block = match neo_ledger::verify_execution_block_integrity(block.as_ref()) {
+            Ok(payload_block) => payload_block,
+            Err(error) => {
+                tracing::warn!(
+                    target: "neo",
+                    index = block_index,
+                    %hash,
+                    %error,
+                    "block failed body integrity check"
+                );
+                return VerifyResult::Invalid;
+            }
+        };
 
         if block_index > header_height + 1 {
             self.add_unverified_block(Arc::clone(&block)).await;

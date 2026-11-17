@@ -40,7 +40,7 @@ pub use validation::{
     validate_merkle_root, validate_no_duplicate_transactions, validate_primary_index,
     validate_timestamp_bounds, validate_timestamp_progression, validate_transaction_count,
     validate_transaction_count_raw, validate_wire_transaction_count_raw, validate_witness_scripts,
-    verify_attribute, verify_block, verify_block_integrity, verify_block_structure,
+    verify_attribute, verify_block, verify_block_integrity, verify_block_proposal_policy,
     verify_block_with_cache, verify_execution_block_integrity, verify_header,
     verify_header_with_cache, verify_header_witness_against_hash, verify_standard_witness,
     verify_transaction, verify_transaction_state_dependent,
