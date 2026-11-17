@@ -8,18 +8,57 @@ Status of the block-integrity audit items that touch `neo-ledger` and the
 | B-7  | Done   | commit `3044a5785` |
 | Wire integrity vs proposal policy | Done | commit `a33bb1173` |
 | B-6  | Closed: no per-transaction re-verification; one hardening applied | commit `341ee8235` |
-| V-3  | Done   | the commit that last touched this file |
-| B-4  | **Open** | not addressed here |
-
-## Still open
-
-### B-4
-
-Not addressed by any of the changes described in this file. It is owned by a
-separate work stream that starts after this one; this file only records that
-it is still open.
+| V-3  | Done   | commit `91dc74431` |
+| B-4  | Done   | the commits whose subject ends in `(B-4)` |
 
 ## Done
+
+### B-4: block caches share one retained-bytes budget
+
+Three caches keep whole blocks in memory: the block body cache of
+`LedgerContext` (`neo-ledger/src/ledger_context.rs`) and the verified and
+unverified block caches of the blockchain actor (`neo-system/src/blockchain`).
+Only the unverified cache had a byte bound (256 MiB); the other two were
+bounded by entry count, which stopped bounding memory once acceptance was
+limited by the 32 MiB payload size instead of 2 MiB.
+
+All three now charge one `BlockCacheBudget`
+(`neo-ledger/src/block_cache_budget.rs`), owned by the `LedgerContext` and
+picked up by `Blockchain::new`:
+
+* Metric: serialized block size plus 64 bytes, computed once when the block is
+  admitted. It approximates heap use and undercounts blocks made of many tiny
+  transactions.
+* Default: 512 MiB (`DEFAULT_BLOCK_CACHE_BUDGET_BYTES`), twice the existing
+  unverified cap, which stays in force inside the budget. The entry-count
+  limits are unchanged.
+* Accounting: a cached block owns a `BlockCacheReservation` that returns its
+  bytes when dropped. A block held by both actor caches shares one
+  reservation. Reserving uses checked addition and fails closed; a block
+  larger than the whole budget is never cached and evicts nothing.
+* Priority: the lower the height, the sooner the chain needs the block. To
+  admit a block the actor gives up, in order, cached blocks at or below the
+  persisted height, persisted bodies in the ledger context (oldest first), and
+  cached blocks above the incoming height (highest first). A block never makes
+  one at the same or a lower height give way.
+* The next block to persist does not need admission: it is persisted whether or
+  not it fits, so blocks far above the tip cannot stall the chain by filling
+  the budget.
+
+Caching decides only whether a block has to be downloaded again. A block taken
+from an actor cache is still checked by `verify_block_for_persistence` before
+it is persisted, and `NeoSystemContext::try_get_block` reads a body missing
+from the ledger context from the store.
+A verified block that cannot be admitted is answered with `OutOfMemory`, which
+the network layer does not treat as a peer fault.
+
+Tests: `neo-ledger/src/block_cache_budget.rs`, the budget tests in
+`neo-ledger/src/ledger_context.rs`, and
+`neo-system/src/blockchain/block_cache_budget_tests.rs`.
+
+Not covered: the inventory cache of the actor, the header cache, the actor
+mailbox, and blocks the P2P task manager holds per session have their own
+limits and are not charged to this budget.
 
 ### B-7: trusted import skipped body-integrity checks
 
