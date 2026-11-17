@@ -133,6 +133,55 @@ mod tests {
     }
 
     #[test]
+    fn pending_inbound_slots_count_toward_connection_caps() {
+        let settings = Arc::new(ProtocolSettings::default());
+        let node = LocalNode::new(settings, 10333, "/agent".to_string());
+
+        let config = ChannelsConfig {
+            max_connections: 2,
+            max_connections_per_address: 1,
+            ..Default::default()
+        };
+        node.apply_channels_config(&config);
+
+        let first: SocketAddr = "203.0.113.5:20301".parse().unwrap();
+        let second: SocketAddr = "203.0.113.5:20302".parse().unwrap();
+        let third: SocketAddr = "203.0.113.6:20303".parse().unwrap();
+        let fourth: SocketAddr = "198.51.100.7:20400".parse().unwrap();
+
+        // A connection that has not sent `version` yet still occupies a slot.
+        assert!(node.validate_inbound_connection(&first).is_ok());
+        assert_eq!(node.try_reserve_inbound_slot("actor-a", first), Ok(()));
+        assert_eq!(node.pending_inbound_count(), 1);
+        assert_eq!(node.occupied_connection_slots(), 1);
+
+        // The per-address cap applies before the handshake completes.
+        assert_eq!(
+            node.try_reserve_inbound_slot("actor-b", second),
+            Err("connection limit per address reached")
+        );
+        assert_eq!(
+            node.validate_inbound_connection(&second),
+            Err("connection limit per address reached")
+        );
+
+        // A different address fits the per-address cap but consumes the global cap.
+        assert_eq!(node.try_reserve_inbound_slot("actor-c", third), Ok(()));
+        assert_eq!(node.pending_inbound_count(), 2);
+        assert_eq!(
+            node.validate_inbound_connection(&fourth),
+            Err("connection limit reached")
+        );
+
+        // Reservations are tracked by actor name until the actor path is known,
+        // then released when the connection tears down.
+        assert!(node.rename_inbound_slot("actor-a", "/user/remote-a"));
+        assert!(node.release_inbound_slot("/user/remote-a"));
+        assert!(!node.release_inbound_slot("/user/remote-a"));
+        assert_eq!(node.pending_inbound_count(), 1);
+    }
+
+    #[test]
     fn ban_peer_rejects_inbound_until_unbanned() {
         let settings = Arc::new(ProtocolSettings::default());
         let node = LocalNode::new(settings, 10333, "/agent".to_string());

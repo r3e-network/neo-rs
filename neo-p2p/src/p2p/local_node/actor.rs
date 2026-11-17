@@ -107,6 +107,15 @@ impl LocalNodeActor {
                     return Ok(());
                 }
 
+                // SECURITY: Convert the reservation taken when the inbound TCP
+                // connection was accepted into an established slot. It is
+                // released before the policy check so the caps do not
+                // double-count this connection, and the slot is re-taken by the
+                // peer registry if registration succeeds.
+                if inbound {
+                    self.state.release_inbound_slot(&actor.path().to_string());
+                }
+
                 let allowed = self.state.allow_new_connection(&snapshot, &version);
                 if allowed {
                     let registered =
@@ -395,6 +404,19 @@ impl LocalNodeActor {
             trace!(target: "neo", error = %error, "failed to unwatch remote node");
         }
 
+        // SECURITY: Free the slot reserved when an inbound connection was
+        // accepted. Registered peers already released theirs at registration
+        // time, so this fires for connections that never completed the
+        // handshake (timeout, disconnect, protocol error).
+        let path_key = actor.path().to_string();
+        if self.state.release_inbound_slot(&path_key) {
+            debug!(
+                target: "neo",
+                actor = %path_key,
+                "released pre-Version inbound connection slot"
+            );
+        }
+
         if let Some((_, remote_endpoint)) = self.peer.unregister_connection(&actor) {
             let was_pending = self.state.is_pending(&remote_endpoint);
             self.state.remove_peer(&remote_endpoint);
@@ -555,9 +577,6 @@ impl LocalNodeActor {
         inbound: bool,
     ) -> ActorResult {
         let config = self.peer.config().clone();
-        let connection = Arc::new(Mutex::new(
-            crate::p2p::PeerConnection::from_channels_config(stream, remote, inbound, &config),
-        ));
         let actor_name = format!("remote-{:016x}", rand::random::<u64>());
 
         let version_payload = self.state.version_payload();
@@ -566,6 +585,26 @@ impl LocalNodeActor {
             warn!(target: "neo", "system context missing when spawning remote node");
             return Ok(());
         };
+
+        // SECURITY: Reserve a connection slot *before* the frame buffers, reader
+        // task, and remote node actor are created. Connections that withhold the
+        // `version` message previously consumed all of those resources without
+        // counting against `max_connections` / `max_connections_per_address`.
+        if inbound
+            && let Err(reason) = self.state.try_reserve_inbound_slot(&actor_name, remote)
+        {
+            debug!(
+                target: "neo",
+                endpoint = %remote,
+                reason = %reason,
+                "inbound connection rejected: no connection slot available"
+            );
+            return Ok(());
+        }
+
+        let connection = Arc::new(Mutex::new(
+            crate::p2p::PeerConnection::from_channels_config(stream, remote, inbound, &config),
+        ));
 
         let props = RemoteNode::props(
             Arc::clone(&system_context),
@@ -580,10 +619,40 @@ impl LocalNodeActor {
             inbound,
         );
 
-        match ctx.actor_of(props, actor_name) {
+        match ctx.actor_of(props, actor_name.clone()) {
             Ok(actor) => {
+                if inbound {
+                    // Re-key the reservation onto the actor path so every
+                    // teardown path can find and release it.
+                    let path_key = actor.path().to_string();
+                    self.state.rename_inbound_slot(&actor_name, &path_key);
+                    // The slot must never outlive the connection: watch the actor
+                    // even before registration so handshake timeouts, disconnects
+                    // and protocol errors all release it via `handle_terminated`.
+                    if let Err(err) = ctx.watch(&actor) {
+                        warn!(
+                            target: "neo",
+                            endpoint = %remote,
+                            error = %err,
+                            "failed to watch inbound remote node; dropping connection"
+                        );
+                        self.state.release_inbound_slot(&path_key);
+                        if let Err(stop_err) = ctx.stop(&actor) {
+                            warn!(
+                                target: "neo",
+                                endpoint = %remote,
+                                error = %stop_err,
+                                "failed to stop untracked inbound remote node"
+                            );
+                        }
+                        return Ok(());
+                    }
+                }
                 if let Err(err) = actor.tell(RemoteNodeCommand::StartProtocol) {
                     warn!(target: "neo", endpoint = %remote, error = %err, "failed to start protocol");
+                    if inbound {
+                        self.state.release_inbound_slot(&actor.path().to_string());
+                    }
                     if !inbound {
                         self.peer.connection_failed(remote);
                         self.state.clear_pending(&remote);
@@ -594,6 +663,9 @@ impl LocalNodeActor {
             }
             Err(err) => {
                 warn!(target: "neo", endpoint = %remote, error = %err, "failed to spawn remote node actor");
+                if inbound {
+                    self.state.release_inbound_slot(&actor_name);
+                }
                 if !inbound {
                     self.peer.connection_failed(remote);
                     self.state.clear_pending(&remote);

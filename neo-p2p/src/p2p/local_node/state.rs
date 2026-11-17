@@ -48,6 +48,12 @@ pub struct LocalNode {
     seed_list: Arc<RwLock<Vec<String>>>,
     /// Pending outbound connection attempts keyed by endpoint.
     pending_connections: Arc<RwLock<HashSet<SocketAddr>>>,
+    /// SECURITY: Inbound connections accepted at the TCP layer but not yet
+    /// registered, i.e. still waiting for the peer's `version` message. Each
+    /// entry holds a connection slot so a peer cannot dodge the connection
+    /// caps by withholding the handshake; keyed by remote node actor path so
+    /// the reservation can be released when that actor terminates.
+    pending_inbound: Arc<RwLock<HashMap<String, SocketAddr>>>,
     /// Shared system context providing access to global actors/services.
     system_context: RwLock<Option<Arc<dyn P2PContext>>>,
     /// SECURITY: Rate limiter for inbound connections to prevent DoS attacks.
@@ -88,6 +94,7 @@ impl LocalNode {
             broadcasts: Arc::new(RwLock::new(Vec::new())),
             seed_list: Arc::new(RwLock::new(Vec::new())),
             pending_connections: Arc::new(RwLock::new(HashSet::new())),
+            pending_inbound: Arc::new(RwLock::new(HashMap::new())),
             system_context: RwLock::new(None),
             inbound_rate_limiter: RwLock::new(InboundRateLimiter::default()),
             ban_list: RwLock::new(BanList::new()),
@@ -410,8 +417,11 @@ impl LocalNode {
         let remote_ip = Self::normalize_ip(snapshot.remote_address);
         let config = self.config();
         let peers = self.read_peers();
+        // SECURITY: Accepted-but-unregistered (pre-Version) inbound connections
+        // occupy slots too, so they must be counted against both caps.
+        let pending_total = self.pending_inbound.read().len();
 
-        if config.max_connections > 0 && peers.len() >= config.max_connections {
+        if config.max_connections > 0 && peers.len() + pending_total >= config.max_connections {
             return false;
         }
 
@@ -424,7 +434,8 @@ impl LocalNode {
                 .peers_by_ip
                 .read()
                 .get(&remote_ip)
-                .map_or(0, std::collections::HashSet::len);
+                .map_or(0, std::collections::HashSet::len)
+                + self.pending_inbound_for_ip(remote_ip);
 
             if per_address >= config.max_connections_per_address {
                 return false;
@@ -542,6 +553,96 @@ impl LocalNode {
         self.pending_connections.read().contains(endpoint)
     }
 
+    // SECURITY: Pre-Version inbound connection reservations
+
+    /// Returns the number of accepted inbound connections that have not yet
+    /// registered (no `version` exchanged).
+    pub fn pending_inbound_count(&self) -> usize {
+        self.pending_inbound.read().len()
+    }
+
+    /// Returns the total number of connection slots in use, counting both
+    /// registered peers and pre-Version inbound reservations.
+    pub fn occupied_connection_slots(&self) -> usize {
+        self.connected_peers_count() + self.pending_inbound_count()
+    }
+
+    /// Counts pre-Version inbound reservations originating from `ip`.
+    fn pending_inbound_for_ip(&self, ip: IpAddr) -> usize {
+        self.pending_inbound
+            .read()
+            .values()
+            .filter(|addr| Self::normalize_ip(**addr) == ip)
+            .count()
+    }
+
+    /// Reserves a connection slot for an accepted inbound connection before any
+    /// remote node actor, reader task, or frame buffer is created.
+    ///
+    /// `key` must uniquely identify the connection (the pre-spawn actor name is
+    /// renamed to the actor path via [`Self::rename_inbound_slot`] once known).
+    /// Enforces both the global and the per-address connection caps against
+    /// registered peers plus other pending reservations.
+    pub fn try_reserve_inbound_slot(
+        &self,
+        key: &str,
+        remote: SocketAddr,
+    ) -> Result<(), &'static str> {
+        let config = self.config();
+        let remote_ip = Self::normalize_ip(remote);
+
+        // Read the registered counts first so the pending lock is never held
+        // while acquiring the peers locks (keeps a single lock order).
+        let established_total = self.connected_peers_count();
+        let established_for_ip = self
+            .peers_by_ip
+            .read()
+            .get(&remote_ip)
+            .map_or(0, HashSet::len);
+
+        let mut pending = self.pending_inbound.write();
+
+        if config.max_connections > 0
+            && established_total + pending.len() >= config.max_connections
+        {
+            return Err("connection limit reached");
+        }
+
+        if config.max_connections_per_address > 0 {
+            let reserved_for_ip = pending
+                .values()
+                .filter(|addr| Self::normalize_ip(**addr) == remote_ip)
+                .count();
+            if established_for_ip + reserved_for_ip >= config.max_connections_per_address {
+                return Err("connection limit per address reached");
+            }
+        }
+
+        pending.insert(key.to_string(), remote);
+        Ok(())
+    }
+
+    /// Re-keys an inbound reservation once the remote node actor name is known.
+    /// Returns true when the reservation was found and moved.
+    pub fn rename_inbound_slot(&self, from: &str, to: &str) -> bool {
+        if from == to {
+            return true;
+        }
+        let mut pending = self.pending_inbound.write();
+        match pending.remove(from) {
+            Some(remote) => {
+                pending.insert(to.to_string(), remote);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Releases an inbound reservation, returning true when a slot was freed.
+    pub fn release_inbound_slot(&self, key: &str) -> bool {
+        self.pending_inbound.write().remove(key).is_some()
+    }
+
     // SECURITY: Rate limiting, ban list, and reputation methods
 
     /// Checks if an inbound connection should be allowed based on rate limits.
@@ -602,12 +703,29 @@ impl LocalNode {
             return Err("peer is banned");
         }
 
-        // Check existing connection count against limit
+        // Check existing connection count against limit. Pre-Version inbound
+        // reservations count so withholding `version` cannot bypass the caps.
         let config = self.config();
         if config.max_connections > 0 {
-            let current = self.connected_peers_count();
+            let current = self.occupied_connection_slots();
             if current >= config.max_connections {
                 return Err("connection limit reached");
+            }
+        }
+
+        // SECURITY: Enforce the per-address cap during acceptance, not only after
+        // the Version handshake, so pre-Version connections are bounded too.
+        if config.max_connections_per_address > 0 {
+            let remote_ip = Self::normalize_ip(*remote);
+            let established = self
+                .peers_by_ip
+                .read()
+                .get(&remote_ip)
+                .map_or(0, HashSet::len);
+            if established + self.pending_inbound_for_ip(remote_ip)
+                >= config.max_connections_per_address
+            {
+                return Err("connection limit per address reached");
             }
         }
 
