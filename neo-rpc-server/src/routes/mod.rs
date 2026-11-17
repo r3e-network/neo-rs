@@ -251,10 +251,8 @@ impl RequestOutcome {
         }
     }
 
-    pub(super) const fn notification() -> Self {
-        Self {
-            response: None,
-            unauthorized: false,
-        }
+    pub(super) fn without_response(mut self) -> Self {
+        self.response = None;
+        self
     }
 }

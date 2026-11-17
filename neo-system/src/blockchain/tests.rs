@@ -757,6 +757,64 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn ingress_rejects_block_with_transactions_not_matching_merkle_root() {
+        // Header verification is skipped when `verify == false` (relay and
+        // trusted import paths), and block identity is the header hash, so a
+        // peer could pair a genuine header with a substituted transaction list.
+        // Structural checks must still reject it before persistence or relay.
+        let settings = ProtocolSettings::default();
+        let system = NeoSystem::new(settings.clone(), None, None).expect("neo system");
+        let keypair = KeyPair::generate().expect("keypair");
+
+        let mut block = neo_protocol::execution::Block::default();
+        block.header.index = 1;
+        block.header.previous_hash = UInt256::zero();
+        block.header.merkle_root = UInt256::zero();
+        block.header.next_consensus = UInt160::zero();
+        block.header.timestamp = 1;
+        block.header.witnesses = vec![Witness::new()];
+        block.transactions = vec![build_signed_transaction(&settings, &keypair)];
+
+        let mut blockchain = Blockchain::new(system.ledger_context());
+        blockchain.system_context = Some(system.context());
+
+        assert_eq!(
+            blockchain.on_new_block(Arc::new(block), false).await,
+            VerifyResult::Invalid
+        );
+        assert_eq!(system.ledger_context().current_height(), 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn persist_block_with_underfunded_sender_and_no_standby_validators_does_not_panic() {
+        // GasToken::on_persist logs the BFT address when a sender cannot cover
+        // its fees; with no standby validators configured that diagnostic used
+        // to panic inside the multi-sig script builder and abort persistence.
+        let settings = ProtocolSettings::default();
+        assert!(settings.standby_validators().is_empty());
+        let system = NeoSystem::new(settings.clone(), None, None).expect("neo system");
+        let keypair = KeyPair::generate().expect("keypair");
+
+        let tx = build_signed_transaction(&settings, &keypair);
+        let mut block = neo_protocol::execution::Block::default();
+        block.header.index = 1;
+        block.header.previous_hash = UInt256::zero();
+        block.header.merkle_root = tx.hash();
+        block.header.next_consensus = UInt160::zero();
+        block.header.timestamp = 1;
+        block.header.witnesses = vec![Witness::new()];
+        block.transactions = vec![tx];
+
+        let result = system.persist_block(block);
+        let error = result.expect_err("underfunded sender must fail the gas burn");
+        assert!(
+            error.contains("Insufficient balance for burn"),
+            "unexpected error: {error}"
+        );
+        assert_eq!(system.ledger_context().current_height(), 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn reverify_accepts_raw_transaction_payload() {
         use crate::blockchain::{BlockchainCommand, InventoryPayload, Reverify, ReverifyItem};
 

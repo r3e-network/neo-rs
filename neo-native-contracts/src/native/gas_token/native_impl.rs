@@ -102,11 +102,17 @@ impl NativeContract for GasToken {
             if pre_balance < burn_amount {
                 // Diagnostic: dump key state to understand why sender has insufficient GAS
                 let total_supply = self.total_supply_snapshot(snapshot_ref);
+                // Diagnostics only: a configuration without standby validators
+                // has no BFT address to report, and constructing one would
+                // panic inside the multi-sig script builder.
                 let bft_account = {
                     let validators = engine.protocol_settings().standby_validators();
-                    crate::native::helpers::NativeHelpers::get_bft_address(&validators)
+                    (!validators.is_empty()).then(|| {
+                        crate::native::helpers::NativeHelpers::get_bft_address(&validators)
+                    })
                 };
-                let bft_balance = self.balance_of_snapshot(snapshot_ref, &bft_account);
+                let bft_balance =
+                    bft_account.map(|account| self.balance_of_snapshot(snapshot_ref, &account));
                 let ledger = LedgerContract::new();
                 let current_idx = ledger.current_index(snapshot_ref).unwrap_or(999999);
                 tracing::warn!(
@@ -120,8 +126,8 @@ impl NativeContract for GasToken {
                     burn_amount = %burn_amount,
                     pre_balance = %pre_balance,
                     total_supply = %total_supply,
-                    bft_address = %bft_account,
-                    bft_balance = %bft_balance,
+                    bft_address = ?bft_account,
+                    bft_balance = ?bft_balance,
                     ledger_current_index = current_idx,
                     "insufficient sender balance before gas burn"
                 );

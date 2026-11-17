@@ -514,6 +514,19 @@ impl MemoryPool {
         self.unverified.clear();
         self.conflicts.clear();
         self.verification_context = TransactionVerificationContext::new();
+        self.clear_quarantine_state();
+    }
+
+    fn remove_quarantine_state(&mut self, hash: &UInt256) {
+        self.quarantine.remove(hash);
+        self.quarantine_history.remove(hash);
+    }
+
+    fn clear_quarantine_state(&mut self) {
+        self.quarantine.clear();
+        self.quarantine_history.clear();
+        self.quarantine_expiry_reviews.clear();
+        self.proposal_scan_cursor = None;
     }
 
     #[cfg(test)]
@@ -589,7 +602,7 @@ impl MemoryPool {
             }
 
             let Ok(conflicts) = self.check_conflicts(&item.transaction) else {
-                self.unverified.remove(&hash);
+                let _ = self.try_remove_unverified(hash);
                 invalidated.push(unwrap_or_clone_arc(item.transaction));
                 continue;
             };
@@ -626,7 +639,7 @@ impl MemoryPool {
 
                 reverified.push(item);
             } else {
-                self.unverified.remove(&hash);
+                let _ = self.try_remove_unverified(hash);
                 invalidated.push(unwrap_or_clone_arc(item.transaction));
             }
         }
@@ -682,12 +695,14 @@ impl MemoryPool {
         self.verification_context
             .remove_transaction(&item.transaction);
         self.unregister_conflicts(&hash, &item.transaction);
+        self.remove_quarantine_state(&hash);
         Some(item)
     }
 
     fn try_remove_unverified(&mut self, hash: UInt256) -> Option<PoolItem> {
         let item = self.unverified.remove(&hash)?;
         self.unregister_conflicts(&hash, &item.transaction);
+        self.remove_quarantine_state(&hash);
         Some(item)
     }
 

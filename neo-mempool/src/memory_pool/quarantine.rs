@@ -131,8 +131,7 @@ impl MemoryPool {
             ..config
         };
         if !config.automatic_enabled {
-            self.quarantine.clear();
-            self.proposal_scan_cursor = None;
+            self.clear_quarantine_state();
             return Ok(());
         }
         if self.quarantine.len() > config.max_entries {

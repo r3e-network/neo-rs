@@ -154,3 +154,13 @@ impl CallStack {
         }
     }
 }
+
+impl Drop for CallStack {
+    fn drop(&mut self) {
+        for frame in &mut self.frames[..self.len] {
+            // SAFETY: every slot below `len` was initialized by a successful
+            // push and has not been removed by `pop_and_restore`.
+            unsafe { frame.assume_init_drop() };
+        }
+    }
+}

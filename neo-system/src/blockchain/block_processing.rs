@@ -60,6 +60,22 @@ impl Blockchain {
             return VerifyResult::AlreadyExists;
         }
 
+        // Structural checks are state-independent and, unlike the `verify`
+        // flag, always apply: block identity is the header hash, so a peer that
+        // reuses a genuine signed header with a substituted transaction list
+        // would otherwise reach persistence (and be relayed) with a merkle root
+        // that commits to nothing in the node's state.
+        let payload_block = block.to_payload_block();
+        if !neo_ledger::verify_block_structure(&payload_block) {
+            tracing::warn!(
+                target: "neo",
+                index = block_index,
+                %hash,
+                "block failed structural verification (merkle root, duplicate transactions or size bounds)"
+            );
+            return VerifyResult::Invalid;
+        }
+
         if block_index > header_height + 1 {
             self.add_unverified_block(Arc::clone(&block)).await;
             return VerifyResult::UnableToVerify;
@@ -68,7 +84,6 @@ impl Blockchain {
         if verify {
             if block_index == header_height + 1 {
                 // Convert to payload block for validation
-                let payload_block = block.to_payload_block();
                 if !neo_ledger::verify_block_with_cache(
                     &payload_block,
                     settings.as_ref(),
@@ -143,7 +158,6 @@ impl Blockchain {
             }
         } else {
             if block_index == header_height + 1 {
-                let payload_block = block.to_payload_block();
                 header_cache.add(payload_block.header);
             }
             self.add_unverified_block(Arc::clone(&block)).await;

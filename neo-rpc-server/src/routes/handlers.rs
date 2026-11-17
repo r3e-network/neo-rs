@@ -215,24 +215,28 @@ fn process_array(
 }
 
 fn process_object(
+    obj: Map<String, Value>,
+    filters: &RpcFilters,
+    auth_header: Option<&str>,
+    client_ip: Option<IpAddr>,
+) -> RequestOutcome {
+    let has_id = obj.contains_key("id");
+    let outcome = process_request(obj, filters, auth_header, client_ip);
+    if has_id {
+        outcome
+    } else {
+        outcome.without_response()
+    }
+}
+
+fn process_request(
     mut obj: Map<String, Value>,
     filters: &RpcFilters,
     auth_header: Option<&str>,
     client_ip: Option<IpAddr>,
 ) -> RequestOutcome {
     RPC_REQ_TOTAL.inc();
-    let has_id = obj.contains_key("id");
     let id = obj.get("id").cloned();
-
-    if !has_id {
-        // Notifications still consume bandwidth; charge Standard so they cannot
-        // bypass the method-tier limiter by omitting `id`.
-        if let Some(outcome) = charge_standard_rate_limit(filters, client_ip) {
-            return outcome;
-        }
-        return RequestOutcome::notification();
-    }
-
     let method_value = obj.remove("method");
     let Some(method) =
         method_value.and_then(|value| value.as_str().map(std::string::ToString::to_string))

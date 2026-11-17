@@ -15,6 +15,10 @@ use tracing::{debug, warn};
 /// between read steps (R11).
 const RECEIVE_STEP_YIELD: Duration = Duration::from_millis(1);
 
+fn should_retry_read_timeout(handshake_done: bool) -> bool {
+    !handshake_done
+}
+
 impl RemoteNode {
     pub(super) async fn start_protocol(&mut self, ctx: &mut ActorContext) -> ActorResult {
         debug!(
@@ -98,7 +102,9 @@ impl RemoteNode {
                                     // the next read step.
                                     tokio::time::sleep(RECEIVE_STEP_YIELD).await;
                                 }
-                                Err(err) => return Err(err),
+                                // Preserve the mode that selected this read's deadline. The
+                                // actor may complete the handshake while the read is in flight.
+                                Err(err) => return Err((err, done)),
                             }
                         }
                     } => result,
@@ -123,28 +129,25 @@ impl RemoteNode {
                             );
                         }
                     }
-                    Err(error) => {
-                        let done = handshake_done.load(Ordering::Relaxed);
+                    Err((error, done)) => {
                         let is_timeout = error.is_timeout();
+                        if is_timeout && should_retry_read_timeout(done) {
+                            warn!(
+                                target: "neo",
+                                endpoint = %endpoint,
+                                "handshake read timed out"
+                            );
+                            timeouts::inc_handshake_timeout();
+                            // Keep the reader alive; the explicit handshake timer owns teardown.
+                            continue;
+                        }
                         if is_timeout {
-                            if !done {
-                                warn!(
-                                    target: "neo",
-                                    endpoint = %endpoint,
-                                    "handshake read timed out"
-                                );
-                                timeouts::inc_handshake_timeout();
-                                // Keep the reader alive; the explicit handshake timer owns teardown.
-                                continue;
-                            } else {
-                                debug!(
-                                    target: "neo",
-                                    endpoint = %endpoint,
-                                    "read loop timed out during active session"
-                                );
-                                timeouts::inc_read_timeout();
-                                continue;
-                            }
+                            debug!(
+                                target: "neo",
+                                endpoint = %endpoint,
+                                "read loop timed out during active session"
+                            );
+                            timeouts::inc_read_timeout();
                         }
 
                         debug!(
@@ -204,5 +207,20 @@ impl RemoteNode {
         if let Some(timeout) = self.handshake_timeout.take() {
             timeout.cancel();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_retry_read_timeout;
+
+    #[test]
+    fn handshake_read_timeout_waits_for_explicit_deadline() {
+        assert!(should_retry_read_timeout(false));
+    }
+
+    #[test]
+    fn active_read_timeout_is_terminal() {
+        assert!(!should_retry_read_timeout(true));
     }
 }

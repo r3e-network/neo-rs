@@ -23,6 +23,7 @@ use neo_vm::VmState as VMState;
 use neo_wallets::KeyPair;
 use parking_lot::RwLock;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use warp::http::header::{ACCESS_CONTROL_ALLOW_ORIGIN, VARY};
 
 fn build_test_routes(
@@ -106,6 +107,31 @@ fn build_filters_with_panic_handler() -> (Arc<RwLock<RpcServer>>, RpcFilters) {
     server.register_handlers(vec![RpcHandler::new(
         RpcMethodDescriptor::new("panic"),
         Arc::new(|_, _| panic!("boom")),
+    )]);
+
+    let server = Arc::new(RwLock::new(server));
+    let filters = RpcFilters {
+        server: Arc::downgrade(&server),
+        disabled: Arc::new(HashSet::new()),
+        auth: Arc::new(None),
+        rate_limiter: None,
+        cors: None,
+        max_batch_size: 1024,
+    };
+    (server, filters)
+}
+
+fn build_filters_with_counting_handler(
+    invocations: Arc<AtomicUsize>,
+) -> (Arc<RwLock<RpcServer>>, RpcFilters) {
+    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let mut server = RpcServer::new(system, RpcServerConfig::default());
+    server.register_handlers(vec![RpcHandler::new(
+        RpcMethodDescriptor::new("ping"),
+        Arc::new(move |_, _| {
+            invocations.fetch_add(1, Ordering::SeqCst);
+            Ok(Value::Null)
+        }),
     )]);
 
     let server = Arc::new(RwLock::new(server));
@@ -330,6 +356,65 @@ async fn process_body_mixed_batch() {
     assert!(fourth.get("error").is_none());
     assert!(fourth.get("result").is_some());
     assert_eq!(fourth.get("id").and_then(Value::as_i64), Some(4));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn process_body_executes_notifications_without_response() {
+    let invocations = Arc::new(AtomicUsize::new(0));
+    let (_server, filters) = build_filters_with_counting_handler(Arc::clone(&invocations));
+    let body = br#"{"jsonrpc": "2.0", "method": "ping", "params": []}"#;
+
+    let (response, unauthorized) = process_body(&filters, None, body, None);
+
+    assert!(!unauthorized);
+    assert!(response.is_none());
+    assert_eq!(invocations.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn process_body_authenticates_notifications_without_json_response() {
+    let invocations = Arc::new(AtomicUsize::new(0));
+    let (_server, mut filters) = build_filters_with_counting_handler(Arc::clone(&invocations));
+    filters.auth = Arc::new(Some(BasicAuth {
+        user: b"testuser".to_vec(),
+        pass: b"testpass".to_vec(),
+    }));
+    let body = br#"{"jsonrpc": "2.0", "method": "ping", "params": []}"#;
+
+    let (response, unauthorized) = process_body(&filters, None, body, None);
+    assert!(unauthorized);
+    assert!(response.is_none());
+    assert_eq!(invocations.load(Ordering::SeqCst), 0);
+
+    let header = format!("Basic {}", BASE64_STANDARD.encode("testuser:testpass"));
+    let (response, unauthorized) = process_body(&filters, Some(&header), body, None);
+    assert!(!unauthorized);
+    assert!(response.is_none());
+    assert_eq!(invocations.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn process_body_applies_method_rate_limit_to_notifications() {
+    let invocations = Arc::new(AtomicUsize::new(0));
+    let (_server, mut filters) = build_filters_with_counting_handler(Arc::clone(&invocations));
+    filters.rate_limiter = Some(Arc::new(GovernorRateLimiter::new(RateLimitConfig {
+        max_rps: 1,
+        burst: 1,
+    })));
+    let client_ip = "127.0.0.1".parse().expect("client IP");
+    let body = br#"{"jsonrpc": "2.0", "method": "ping", "params": []}"#;
+
+    for expected in 1..=2 {
+        let (response, unauthorized) = process_body(&filters, None, body, Some(client_ip));
+        assert!(!unauthorized);
+        assert!(response.is_none());
+        assert_eq!(invocations.load(Ordering::SeqCst), expected);
+    }
+
+    let (response, unauthorized) = process_body(&filters, None, body, Some(client_ip));
+    assert!(!unauthorized);
+    assert!(response.is_none());
+    assert_eq!(invocations.load(Ordering::SeqCst), 2);
 }
 
 #[tokio::test(flavor = "multi_thread")]

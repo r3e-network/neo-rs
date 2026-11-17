@@ -49,8 +49,18 @@ impl TaskManager {
 
         for hash in &hashes {
             self.forget_hash(hash);
-            self.decrement_inv_task(hash);
         }
+        // Only release counts this session actually owns. `NotFound` is
+        // peer-controlled and may name a hash tracked by another session;
+        // decrementing unconditionally stole that session's task slot and let
+        // more than MAX_CONCURRENT_TASKS peers request the same inventory.
+        self.with_session_mut(&path, |entry, this| {
+            for hash in &hashes {
+                if entry.session.complete_inv_task(hash) {
+                    this.decrement_inv_task(hash);
+                }
+            }
+        });
         self.restart_tasks_for_session(&path, inventory_type, &hashes);
         self.request_tasks_for_path(&path);
     }

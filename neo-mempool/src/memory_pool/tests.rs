@@ -616,11 +616,18 @@ fn invalidate_all_clears_pool() {
 
     add_succeed(&mut pool, tx1.clone(), &snapshot, &settings);
     add_succeed(&mut pool, tx2.clone(), &snapshot, &settings);
+    enable_quarantine(&mut pool, 4, 2_048);
+    pool.quarantine_transaction(quarantine_metadata(tx1.hash(), 1_000), 1_000)
+        .expect("quarantine");
 
     pool.invalidate_all_transactions();
     assert_eq!(pool.count(), 0);
     assert!(!pool.contains_key(&tx1.hash()));
     assert!(!pool.contains_key(&tx2.hash()));
+    assert!(pool.quarantine.is_empty());
+    assert!(pool.quarantine_history.is_empty());
+    assert!(pool.quarantine_expiry_reviews.is_empty());
+    assert!(pool.proposal_scan_cursor.is_none());
 }
 
 #[test]
@@ -1354,6 +1361,39 @@ fn quarantine_metadata_does_not_replace_transaction_state() {
     assert_eq!(pool.verified_count(), 2);
     assert!(pool.try_get(&hash).is_some());
     assert_eq!(pool.quarantine_count(1_100), 1);
+}
+
+#[test]
+fn capacity_eviction_releases_quarantine_state() {
+    let settings = ProtocolSettings {
+        memory_pool_max_transactions: 2,
+        ..ProtocolSettings::default()
+    };
+    let mut pool = test_balance_pool(&settings);
+    let snapshot = DataCache::new(false);
+    let evicted = signed_tx(&settings, 129, 1_0000_0000);
+    let evicted_hash = evicted.hash();
+    add_succeed(&mut pool, evicted, &snapshot, &settings);
+    add_succeed(
+        &mut pool,
+        signed_tx(&settings, 130, 2_0000_0000),
+        &snapshot,
+        &settings,
+    );
+    enable_quarantine(&mut pool, 4, 2_048);
+    pool.quarantine_transaction(quarantine_metadata(evicted_hash, 1_000), 1_000)
+        .expect("quarantine");
+
+    add_succeed(
+        &mut pool,
+        signed_tx(&settings, 131, 3_0000_0000),
+        &snapshot,
+        &settings,
+    );
+
+    assert!(!pool.contains_key(&evicted_hash));
+    assert!(!pool.quarantine.contains_key(&evicted_hash));
+    assert!(!pool.quarantine_history.contains_key(&evicted_hash));
 }
 
 #[test]

@@ -1,6 +1,7 @@
 use super::*;
 use crate::p2p::payloads::{
-    extensible_payload::ExtensiblePayload, header::Header, transaction::Transaction,
+    InventoryType, extensible_payload::ExtensiblePayload, header::Header, inv_payload::InvPayload,
+    transaction::Transaction,
 };
 use async_trait::async_trait;
 use neo_actors::{ActorPath, ActorRuntimeResult, EventStreamHandle};
@@ -211,6 +212,61 @@ async fn request_tasks_rolls_back_header_and_index_tasks_when_peer_send_fails() 
     assert!(session.inv_tasks.is_empty());
     assert!(manager.global_index_tasks.is_empty());
     assert!(session.index_tasks.is_empty());
+}
+
+#[test]
+fn restart_tasks_from_non_owner_preserves_other_session_inventory_count() {
+    let mut manager = TaskManager::new();
+    let hash = UInt256::from([7u8; 32]);
+
+    let (owner_mailbox, _owner_rx) = mpsc::channel(8);
+    let owner = ActorRef::new(
+        ActorPath::root("test", "peer-inv-owner"),
+        owner_mailbox,
+        Weak::new(),
+    );
+    let owner_path = insert_session(&mut manager, &owner);
+    assert!(manager.increment_inv_task(hash));
+    manager
+        .sessions
+        .get_mut(&owner_path)
+        .expect("owner session")
+        .session
+        .register_inv_task(hash);
+
+    let (reporter_mailbox, mut reporter_rx) = mpsc::channel(8);
+    let reporter = ActorRef::new(
+        ActorPath::root("test", "peer-inv-not-found"),
+        reporter_mailbox,
+        Weak::new(),
+    );
+    let reporter_path = insert_session(&mut manager, &reporter);
+
+    // The reporting peer never owned the hash, so its NotFound must only add a
+    // request for itself; the owner's global task count has to survive.
+    manager.on_restart_tasks(&reporter, InvPayload::new(InventoryType::Block, vec![hash]));
+
+    assert_eq!(manager.global_inv_tasks.count(&hash), 2);
+    assert!(
+        manager
+            .sessions
+            .get(&owner_path)
+            .expect("owner session")
+            .session
+            .inv_tasks
+            .contains_key(&hash)
+    );
+    let reporter_session = &manager
+        .sessions
+        .get(&reporter_path)
+        .expect("reporter")
+        .session;
+    assert!(reporter_session.inv_tasks.contains_key(&hash));
+    assert!(reporter_rx.try_recv().is_ok());
+
+    // A retry from an owning session releases and re-acquires its own count.
+    manager.on_restart_tasks(&reporter, InvPayload::new(InventoryType::Block, vec![hash]));
+    assert_eq!(manager.global_inv_tasks.count(&hash), 2);
 }
 
 #[test]
