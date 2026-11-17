@@ -347,6 +347,15 @@ fn nesting_past_the_limit_faults_where_canonical_halts() {
 
 /// Shapes whose canonical count the interpreter cannot reproduce. It stops
 /// counting on them instead of guessing.
+///
+/// Task 52: on the cases marked below the canonical engine halts only because
+/// its reference counter stops following a compound once APPEND or SETITEM
+/// has stored it. That is a defect of the canonical engine, not behaviour to
+/// match, and nothing here asserts that it halts: `assert_not_stricter` holds
+/// either way and says nothing about a case the canonical engine faults on.
+/// Once the counter is fixed the marked cases should assert that both engines
+/// fault, which needs the interpreter to keep counting past APPEND and
+/// SETITEM.
 #[test]
 fn shapes_the_canonical_counter_undercounts_never_fault_on_the_item_count() {
     let append_array = [
@@ -357,7 +366,9 @@ fn shapes_the_canonical_counter_undercounts_never_fault_on_the_item_count() {
     ]
     .concat();
     let cases: Vec<(&str, Vec<u8>)> = vec![
-        // The appended array is released while it is still reachable.
+        // Task 52: the canonical engine halts on the next three only through
+        // the undercount. The stored array is released while it is still
+        // reachable.
         (
             "array appended to an array",
             [append_array.repeat(30), pushes(1900)].concat(),
@@ -394,6 +405,7 @@ fn shapes_the_canonical_counter_undercounts_never_fault_on_the_item_count() {
             ]
             .concat(),
         ),
+        // The canonical engine counts this one in full and faults.
         (
             "buffer appended to an array",
             [
@@ -426,6 +438,8 @@ fn shapes_the_canonical_counter_undercounts_never_fault_on_the_item_count() {
             .repeat(1500),
         ),
         // A chain grown from the inside never raises the canonical count.
+        // Task 52: the same undercount, on a chain short enough to halt
+        // without it.
         (
             "chain grown by APPEND",
             [
@@ -450,6 +464,8 @@ fn shapes_the_canonical_counter_undercounts_never_fault_on_the_item_count() {
             ]
             .concat(),
         ),
+        // Task 52: the canonical engine halts on this one only through the
+        // undercount.
         (
             "struct appended to an array",
             [
@@ -479,6 +495,8 @@ fn shapes_the_canonical_counter_undercounts_never_fault_on_the_item_count() {
             ]
             .concat(),
         ),
+        // The canonical counter keeps the children of each removed array and
+        // faults.
         (
             "children removed from a packed array",
             [
@@ -635,6 +653,11 @@ const COLLECTIONS: &[Kind] = &[Kind::Array, Kind::Struct, Kind::Map];
 /// not reproduce: storing one compound into another, removing children, and
 /// the two places where exactly one of the engines copies a struct (PACK and
 /// PACKSTRUCT here, VALUES there).
+///
+/// Task 52: for a stored compound that canonical count is an undercount, a
+/// defect. Scripts generated with `mutating` are only ever checked one way,
+/// never for the canonical state; the others never store a compound with
+/// APPEND or SETITEM.
 fn random_script(rng: &mut Rng, mutating: bool) -> Vec<u8> {
     let mut script = [init_static_slot(2), init_slot(3, 0)].concat();
     let mut stack: Vec<Shape> = Vec::new();
