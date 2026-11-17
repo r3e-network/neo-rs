@@ -104,6 +104,21 @@ pub struct RpcServerConfig {
         alias = "RequestHeadersTimeout"
     )]
     pub request_headers_timeout: u64,
+    /// Seconds allowed for receiving a whole request body, counted from the
+    /// end of the headers (0 disables). Progress does not extend it, so it
+    /// bounds how long a slowly dribbled body can hold a connection. It
+    /// covers the body only, never the execution of the call.
+    #[serde(
+        default = "RpcServerConfig::default_request_body_timeout",
+        alias = "RequestBodyTimeout"
+    )]
+    pub request_body_timeout: u64,
+    /// Seconds a request body may go without receiving any data (0 disables).
+    #[serde(
+        default = "RpcServerConfig::default_request_body_idle_timeout",
+        alias = "RequestBodyIdleTimeout"
+    )]
+    pub request_body_idle_timeout: u64,
     #[serde(
         default = "RpcServerConfig::default_max_gas_invocation",
         deserialize_with = "deserialize_max_gas_invoke",
@@ -236,6 +251,17 @@ impl RpcServerConfig {
         15
     }
 
+    // A maximum-size transaction (102,400 bytes) is about 137 KB as a
+    // base64 `sendrawtransaction` body, which fits in 120 s at 1.2 KB/s; a
+    // body at the default 5 MiB size limit needs about 44 KB/s.
+    const fn default_request_body_timeout() -> u64 {
+        120
+    }
+
+    const fn default_request_body_idle_timeout() -> u64 {
+        30
+    }
+
     const fn gas_datoshi_factor() -> i64 {
         100_000_000
     }
@@ -305,6 +331,27 @@ impl RpcServerConfig {
     #[must_use]
     pub const fn request_headers_timeout_duration(&self) -> Duration {
         Duration::from_secs(self.request_headers_timeout)
+    }
+
+    /// Deadline for receiving a whole request body, or `None` when disabled.
+    #[must_use]
+    pub const fn request_body_timeout_duration(&self) -> Option<Duration> {
+        if self.request_body_timeout == 0 {
+            None
+        } else {
+            Some(Duration::from_secs(self.request_body_timeout))
+        }
+    }
+
+    /// Longest pause tolerated while receiving a request body, or `None`
+    /// when disabled.
+    #[must_use]
+    pub const fn request_body_idle_timeout_duration(&self) -> Option<Duration> {
+        if self.request_body_idle_timeout == 0 {
+            None
+        } else {
+            Some(Duration::from_secs(self.request_body_idle_timeout))
+        }
     }
 
     #[must_use]
@@ -429,6 +476,8 @@ impl Default for RpcServerConfig {
             allow_origins: Vec::new(),
             keep_alive_timeout: Self::default_keep_alive_timeout(),
             request_headers_timeout: Self::default_request_headers_timeout(),
+            request_body_timeout: Self::default_request_body_timeout(),
+            request_body_idle_timeout: Self::default_request_body_idle_timeout(),
             max_gas_invoke: Self::default_max_gas_invocation(),
             max_fee: Self::default_max_fee(),
             max_iterator_result_items: Self::default_max_iterator_result_items(),
@@ -581,6 +630,9 @@ mod tests {
         assert!(config.allow_origins.is_empty());
         assert_eq!(config.keep_alive_timeout, 60);
         assert_eq!(config.request_headers_timeout, 15);
+        // The C# file has no body deadlines; omitted keys take the defaults.
+        assert_eq!(config.request_body_timeout, 120);
+        assert_eq!(config.request_body_idle_timeout, 30);
         assert_eq!(config.max_gas_invoke, 2_000_000_000);
         assert_eq!(config.max_fee, 10_000_000);
         assert_eq!(config.max_concurrent_connections, 40);
@@ -591,6 +643,50 @@ mod tests {
         assert!(!config.session_enabled);
         assert_eq!(config.session_expiration_time, 60);
         assert_eq!(config.find_storage_page_size, 50);
+    }
+
+    #[test]
+    fn request_body_deadlines_default_to_finite_values() {
+        let config = RpcServerConfig::default();
+        assert_eq!(
+            config.request_body_timeout_duration(),
+            Some(Duration::from_secs(120))
+        );
+        assert_eq!(
+            config.request_body_idle_timeout_duration(),
+            Some(Duration::from_secs(30))
+        );
+
+        // A config file written before these settings existed still loads,
+        // and gets the same deadlines.
+        let config: RpcServerConfig =
+            serde_json::from_value(serde_json::json!({ "Port": 10332 })).expect("deserialize");
+        assert_eq!(config, RpcServerConfig::default());
+    }
+
+    #[test]
+    fn request_body_deadlines_follow_explicit_settings() {
+        let config: RpcServerConfig = serde_json::from_value(serde_json::json!({
+            "RequestBodyTimeout": 45,
+            "RequestBodyIdleTimeout": 5,
+        }))
+        .expect("deserialize config");
+        assert_eq!(
+            config.request_body_timeout_duration(),
+            Some(Duration::from_secs(45))
+        );
+        assert_eq!(
+            config.request_body_idle_timeout_duration(),
+            Some(Duration::from_secs(5))
+        );
+
+        let config: RpcServerConfig = serde_json::from_value(serde_json::json!({
+            "request_body_timeout": 0,
+            "request_body_idle_timeout": 0,
+        }))
+        .expect("deserialize config");
+        assert_eq!(config.request_body_timeout_duration(), None);
+        assert_eq!(config.request_body_idle_timeout_duration(), None);
     }
 
     #[test]

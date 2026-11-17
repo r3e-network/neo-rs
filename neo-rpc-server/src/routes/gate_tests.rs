@@ -1,10 +1,12 @@
 //! Tests for the checks applied at the HTTP boundary, ahead of the routes.
 
+use super::gate::BodyReadError;
 use super::*;
 use crate::client_identity;
 use crate::rpc_method_attribute::RpcMethodDescriptor;
 use crate::rpc_server::RpcHandler;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use bytes::Bytes;
 use hyper::header::{AUTHORIZATION, CONTENT_LENGTH, HeaderMap};
 use hyper::service::{Service, service_fn};
 use hyper::{Body, Request, Response};
@@ -12,7 +14,7 @@ use neo_protocol::ProtocolSettings;
 use neo_system::NeoSystem;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 const USER: &str = "testuser";
@@ -546,6 +548,9 @@ async fn client_identity_is_the_tcp_peer_not_a_forwarding_header() {
     assert_eq!(calls.load(Ordering::SeqCst), 0);
 }
 
+/// How long the `nap` method of a server from `start_server` takes.
+const NAP: Duration = Duration::from_millis(1500);
+
 /// Starts a real server on an ephemeral loopback port.
 fn start_server(settings: RpcServerConfig) -> (Arc<RwLock<RpcServer>>, SocketAddr) {
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
@@ -556,10 +561,19 @@ fn start_server(settings: RpcServerConfig) -> (Arc<RwLock<RpcServer>>, SocketAdd
             ..settings
         },
     );
-    server.register_handlers(vec![RpcHandler::new(
-        RpcMethodDescriptor::new("echo"),
-        Arc::new(|_, _| Ok(Value::String("pong".to_string()))),
-    )]);
+    server.register_handlers(vec![
+        RpcHandler::new(
+            RpcMethodDescriptor::new("echo"),
+            Arc::new(|_, _| Ok(Value::String("pong".to_string()))),
+        ),
+        RpcHandler::new(
+            RpcMethodDescriptor::new("nap"),
+            Arc::new(|_, _| {
+                std::thread::sleep(NAP);
+                Ok(Value::String("rested".to_string()))
+            }),
+        ),
+    ]);
     let server = Arc::new(RwLock::new(server));
     server
         .write()
@@ -569,7 +583,7 @@ fn start_server(settings: RpcServerConfig) -> (Arc<RwLock<RpcServer>>, SocketAdd
 }
 
 /// Reads until the server closes the connection. A reset counts as closed.
-async fn read_until_closed(stream: &mut TcpStream) -> Vec<u8> {
+async fn read_until_closed<R: AsyncRead + Unpin>(stream: &mut R) -> Vec<u8> {
     let mut received = Vec::new();
     let mut chunk = [0u8; 1024];
     loop {
@@ -631,6 +645,475 @@ Content-Length: {}\r
         .expect("server must answer");
     let received = String::from_utf8_lossy(&received);
     assert!(received.starts_with("HTTP/1.1 200 "), "got: {received}");
+
+    server.write().stop_rpc_server();
+}
+
+/// A gate with no credentials and the given body limits, in seconds and
+/// bytes.
+fn body_gate(total: u64, idle: u64, max_len: usize) -> Arc<HttpGate> {
+    let settings = RpcServerConfig {
+        request_body_timeout: total,
+        request_body_idle_timeout: idle,
+        max_request_body_size: max_len,
+        ..Default::default()
+    };
+    Arc::new(HttpGate::new(Arc::new(None), &settings))
+}
+
+/// Runs `request` through `gate` and reports how long the gate took.
+async fn timed<S>(
+    gate: &Arc<HttpGate>,
+    request: Request<Body>,
+    service: S,
+) -> (Result<Response<Body>, BodyReadError>, Duration)
+where
+    S: Service<Request<Body>, Response = Response<Body>, Error = Infallible>,
+{
+    let started = tokio::time::Instant::now();
+    let result = Arc::clone(gate)
+        .serve_scoped(peer(), request, service)
+        .await;
+    (result, started.elapsed())
+}
+
+/// Paused time moves from one timer to the next, each rounded up to a
+/// millisecond.
+fn assert_took(elapsed: Duration, expected: Duration) {
+    assert!(
+        elapsed >= expected && elapsed < expected + Duration::from_millis(50),
+        "took {elapsed:?}, expected {expected:?}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn idle_deadline_restarts_only_when_data_arrives() {
+    let gate = body_gate(0, 2, 1024);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let (mut sender, body) = Body::channel();
+    let feed = async move {
+        for piece in ["ab", "cd"] {
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            sender
+                .send_data(Bytes::from(piece))
+                .await
+                .expect("body is being read");
+        }
+        // Handed back still open: the body is never completed.
+        sender
+    };
+
+    // Without a deadline this body would be awaited for ever; fail instead.
+    let ((result, elapsed), _sender) = tokio::time::timeout(Duration::from_secs(600), async {
+        tokio::join!(
+            timed(&gate, post(body, 64, None), draining_service(&calls)),
+            feed
+        )
+    })
+    .await
+    .expect("gate must give up on a stalled body");
+
+    // Pieces 1.5 s apart keep a 2 s limit from passing. The stall after the
+    // second piece, which arrived at 3 s, does not.
+    assert!(
+        matches!(result, Err(BodyReadError::Idle)),
+        "got: {result:?}"
+    );
+    assert_took(elapsed, Duration::from_secs(5));
+    assert_eq!(calls.load(Ordering::SeqCst), 0, "routes must not run");
+}
+
+#[tokio::test(start_paused = true)]
+async fn empty_chunks_do_not_count_as_progress() {
+    let gate = body_gate(0, 2, 1024);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let (mut sender, body) = Body::channel();
+    let feed = async move {
+        for _ in 0..10 {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            if sender.send_data(Bytes::new()).await.is_err() {
+                break;
+            }
+        }
+    };
+
+    let ((result, elapsed), ()) = tokio::join!(
+        timed(&gate, post(body, 64, None), draining_service(&calls)),
+        feed
+    );
+
+    assert!(
+        matches!(result, Err(BodyReadError::Idle)),
+        "got: {result:?}"
+    );
+    assert_took(elapsed, Duration::from_secs(2));
+    assert_eq!(calls.load(Ordering::SeqCst), 0, "routes must not run");
+}
+
+#[tokio::test(start_paused = true)]
+async fn total_deadline_is_not_extended_by_progress() {
+    let gate = body_gate(5, 2, 1024);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let (mut sender, body) = Body::channel();
+    let feed = async move {
+        for _ in 0..60 {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            if sender.send_data(Bytes::from(" ")).await.is_err() {
+                break;
+            }
+        }
+    };
+
+    let ((result, elapsed), ()) = tokio::join!(
+        timed(&gate, post(body, 64, None), draining_service(&calls)),
+        feed
+    );
+
+    // A byte a second never trips the 2 s idle limit.
+    assert!(
+        matches!(result, Err(BodyReadError::Deadline)),
+        "got: {result:?}"
+    );
+    assert_took(elapsed, Duration::from_secs(5));
+    assert_eq!(calls.load(Ordering::SeqCst), 0, "routes must not run");
+}
+
+#[tokio::test(start_paused = true)]
+async fn body_deadlines_end_once_the_body_is_complete() {
+    const HANDLING: Duration = Duration::from_secs(3600);
+    let gate = body_gate(1, 1, 1024);
+    let slow = service_fn(|request: Request<Body>| async move {
+        let body = hyper::body::to_bytes(request.into_body())
+            .await
+            .expect("buffered body");
+        tokio::time::sleep(HANDLING).await;
+        Ok::<_, Infallible>(Response::new(Body::from(body)))
+    });
+
+    let (result, elapsed) = timed(&gate, post(Body::from(ECHO), ECHO.len(), None), slow).await;
+
+    let response = result.expect("handling a received request is not timed");
+    assert_took(elapsed, HANDLING);
+    let echoed = hyper::body::to_bytes(response.into_body())
+        .await
+        .expect("response body");
+    assert_eq!(&echoed[..], ECHO);
+}
+
+#[tokio::test(start_paused = true)]
+async fn body_deadlines_can_be_disabled() {
+    const DELAY: Duration = Duration::from_secs(24 * 3600);
+    let gate = body_gate(0, 0, 1024);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let (mut sender, body) = Body::channel();
+    let feed = async move {
+        tokio::time::sleep(DELAY).await;
+        sender
+            .send_data(Bytes::from(ECHO))
+            .await
+            .expect("body is being read");
+    };
+
+    let ((result, elapsed), ()) = tokio::join!(
+        timed(
+            &gate,
+            post(body, ECHO.len(), None),
+            draining_service(&calls)
+        ),
+        feed
+    );
+
+    assert_eq!(result.expect("gate").status(), StatusCode::OK);
+    assert_took(elapsed, DELAY);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn body_received_in_pieces_reaches_the_routes_whole() {
+    let harness = Harness::new(RpcServerConfig::default());
+    let (mut sender, body) = Body::channel();
+    let feed = async move {
+        for piece in ECHO.chunks(7) {
+            sender
+                .send_data(Bytes::from(piece))
+                .await
+                .expect("body is being read");
+        }
+    };
+
+    let (answer, ()) = tokio::join!(harness.send(post(body, ECHO.len(), None)), feed);
+
+    assert_eq!(answer.status, StatusCode::OK);
+    assert_eq!(answer.json().get("result"), Some(&json!("pong")));
+    assert_eq!(answer.json().get("id"), Some(&json!(7)));
+    assert_eq!(harness.handler_calls(), 1);
+}
+
+#[tokio::test]
+async fn body_is_measured_as_it_arrives_not_as_declared() {
+    let gate = body_gate(0, 0, 16);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let pieces = |pieces: [&'static str; 2]| {
+        Body::wrap_stream(futures::stream::iter(pieces.map(Ok::<_, Infallible>)))
+    };
+
+    // Sixteen bytes are allowed, however they arrive.
+    let (result, _) = timed(
+        &gate,
+        post(pieces(["12345678", "12345678"]), 8, None),
+        draining_service(&calls),
+    )
+    .await;
+    assert_eq!(result.expect("gate").status(), StatusCode::OK);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    // Seventeen are not, whatever length was declared.
+    let (result, _) = timed(
+        &gate,
+        post(pieces(["12345678", "123456789"]), 8, None),
+        draining_service(&calls),
+    )
+    .await;
+    assert!(
+        matches!(result, Err(BodyReadError::TooLarge)),
+        "got: {result:?}"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "routes must not run");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn post_without_content_length_is_rejected_unread() {
+    let harness = Harness::new(RpcServerConfig::default());
+    let reads = Arc::new(AtomicUsize::new(0));
+    let request = Request::post("/")
+        .body(counted_body(ECHO, &reads))
+        .expect("request");
+
+    let answer = harness.send(request).await;
+
+    // Same answer as before the gate received bodies.
+    assert_eq!(answer.status, StatusCode::LENGTH_REQUIRED);
+    assert_eq!(reads.load(Ordering::SeqCst), 0, "body must stay unread");
+    assert_eq!(harness.handler_calls(), 0);
+}
+
+const POST_HEAD: &str = "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n\
+                         Connection: close\r\n";
+
+/// The head of a POST that declares `content_length` body bytes.
+fn post_head(content_length: usize) -> String {
+    format!("{POST_HEAD}Content-Length: {content_length}\r\n\r\n")
+}
+
+/// A complete POST of `body`.
+fn post_request(body: &[u8]) -> Vec<u8> {
+    let mut request = post_head(body.len()).into_bytes();
+    request.extend_from_slice(body);
+    request
+}
+
+/// Everything the server sends before it closes the connection. The wait is
+/// far shorter than any deadline a test wants to show was not the cause.
+async fn response_of<R: AsyncRead + Unpin>(stream: &mut R) -> String {
+    let received = tokio::time::timeout(Duration::from_secs(20), read_until_closed(stream))
+        .await
+        .expect("server must close the connection");
+    String::from_utf8_lossy(&received).into_owned()
+}
+
+/// Sends `request` on a new connection and returns the server's response.
+async fn exchange(address: SocketAddr, request: &[u8]) -> String {
+    let mut stream = TcpStream::connect(address).await.expect("connect");
+    // A connection the server does not want may already be closed.
+    let _ = stream.write_all(request).await;
+    response_of(&mut stream).await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn stalled_body_is_cut_off_at_the_idle_deadline() {
+    let (server, address) = start_server(RpcServerConfig {
+        request_body_timeout: 60,
+        request_body_idle_timeout: 1,
+        ..Default::default()
+    });
+
+    let started = std::time::Instant::now();
+    let mut stream = TcpStream::connect(address).await.expect("connect");
+    let mut sent = post_head(ECHO.len()).into_bytes();
+    sent.extend_from_slice(&ECHO[..ECHO.len() / 2]);
+    stream.write_all(&sent).await.expect("send partial request");
+
+    // The rest never comes. The connection is closed without a response.
+    let received = response_of(&mut stream).await;
+    assert_eq!(received, "");
+    assert!(
+        started.elapsed() >= Duration::from_secs(1),
+        "closed after {:?}",
+        started.elapsed()
+    );
+
+    server.write().stop_rpc_server();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn dribbled_body_is_cut_off_at_the_total_deadline() {
+    let (server, address) = start_server(RpcServerConfig {
+        request_body_timeout: 2,
+        request_body_idle_timeout: 1,
+        ..Default::default()
+    });
+
+    let started = std::time::Instant::now();
+    let mut stream = TcpStream::connect(address).await.expect("connect");
+    stream
+        .write_all(post_head(4096).as_bytes())
+        .await
+        .expect("send request head");
+    let (mut reader, mut writer) = stream.into_split();
+    let dribble = tokio::spawn(async move {
+        // Whitespace is valid ahead of a JSON value, so nothing but the
+        // deadline can end this body early.
+        while writer.write_all(b" ").await.is_ok() {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    });
+
+    // A byte every 100 ms keeps the 1 s idle limit from passing, which the
+    // connection outliving it shows. The total limit closes it regardless.
+    let received = response_of(&mut reader).await;
+    assert_eq!(received, "");
+    assert!(
+        started.elapsed() >= Duration::from_secs(2),
+        "closed after {:?}",
+        started.elapsed()
+    );
+
+    dribble.abort();
+    server.write().stop_rpc_server();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn timely_body_sent_in_pieces_is_served() {
+    let (server, address) = start_server(RpcServerConfig {
+        request_body_timeout: 2,
+        request_body_idle_timeout: 1,
+        ..Default::default()
+    });
+
+    let mut stream = TcpStream::connect(address).await.expect("connect");
+    stream
+        .write_all(post_head(ECHO.len()).as_bytes())
+        .await
+        .expect("send request head");
+    for piece in ECHO.chunks(20) {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        stream.write_all(piece).await.expect("send request body");
+    }
+
+    let received = response_of(&mut stream).await;
+    assert!(received.starts_with("HTTP/1.1 200 "), "got: {received}");
+
+    server.write().stop_rpc_server();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn body_deadline_does_not_cut_off_a_slow_handler() {
+    const NAP_CALL: &[u8] = br#"{"jsonrpc":"2.0","method":"nap","params":[],"id":1}"#;
+    let (server, address) = start_server(RpcServerConfig {
+        request_body_timeout: 1,
+        request_body_idle_timeout: 1,
+        ..Default::default()
+    });
+
+    let started = std::time::Instant::now();
+    let received = exchange(address, &post_request(NAP_CALL)).await;
+
+    // The handler runs for longer than either body deadline.
+    assert!(received.starts_with("HTTP/1.1 200 "), "got: {received}");
+    assert!(started.elapsed() >= NAP, "took {:?}", started.elapsed());
+
+    server.write().stop_rpc_server();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn timed_out_connection_gives_its_slot_back() {
+    let (server, address) = start_server(RpcServerConfig {
+        max_concurrent_connections: 1,
+        request_body_timeout: 60,
+        request_body_idle_timeout: 2,
+        ..Default::default()
+    });
+
+    let mut stalled = TcpStream::connect(address).await.expect("connect");
+    stalled
+        .write_all(post_head(ECHO.len()).as_bytes())
+        .await
+        .expect("send request head");
+
+    // While the stalled connection holds the only slot, nobody else is
+    // served.
+    let turned_away = exchange(address, &post_request(ECHO)).await;
+    assert_eq!(turned_away, "");
+
+    // The idle deadline closes it...
+    assert_eq!(response_of(&mut stalled).await, "");
+
+    // ...and that frees the slot. The server lets go of it just after the
+    // client sees the close, hence the retries.
+    let mut served = String::new();
+    for _ in 0..100 {
+        served = exchange(address, &post_request(ECHO)).await;
+        if !served.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(served.starts_with("HTTP/1.1 200 "), "got: {served}");
+
+    server.write().stop_rpc_server();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn body_size_and_length_rules_hold_over_a_socket() {
+    let (server, address) = start_server(RpcServerConfig {
+        max_request_body_size: 64,
+        ..Default::default()
+    });
+    assert!(ECHO.len() <= 64);
+    let chunked = |content: &[u8]| {
+        let mut body = format!("{:x}\r\n", content.len()).into_bytes();
+        body.extend_from_slice(content);
+        body.extend_from_slice(b"\r\n0\r\n\r\n");
+        body
+    };
+
+    // Declared length over the limit: rejected from the head, as before.
+    let received = exchange(address, post_head(4096).as_bytes()).await;
+    assert!(received.starts_with("HTTP/1.1 413 "), "got: {received}");
+
+    // No declared length, with or without a chunked body: rejected as before.
+    let received = exchange(address, format!("{POST_HEAD}\r\n").as_bytes()).await;
+    assert!(received.starts_with("HTTP/1.1 411 "), "got: {received}");
+
+    let mut request = format!("{POST_HEAD}Transfer-Encoding: chunked\r\n\r\n").into_bytes();
+    request.extend_from_slice(&chunked(ECHO));
+    let received = exchange(address, &request).await;
+    assert!(received.starts_with("HTTP/1.1 411 "), "got: {received}");
+
+    // A declared length followed by chunked encoding is framed by the
+    // chunks, so the declared length says nothing about the size. Within the
+    // limit it is served, as before...
+    let both = format!("{POST_HEAD}Content-Length: 8\r\nTransfer-Encoding: chunked\r\n\r\n");
+    let mut request = both.clone().into_bytes();
+    request.extend_from_slice(&chunked(ECHO));
+    let received = exchange(address, &request).await;
+    assert!(received.starts_with("HTTP/1.1 200 "), "got: {received}");
+
+    // ...and over the limit the connection is closed.
+    let mut request = both.into_bytes();
+    request.extend_from_slice(&chunked(&[b' '; 200]));
+    let received = exchange(address, &request).await;
+    assert_eq!(received, "");
 
     server.write().stop_rpc_server();
 }

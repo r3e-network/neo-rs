@@ -85,14 +85,15 @@ pub fn build_rpc_routes(
         max_batch_size: max_batch,
     };
 
-    let max_body = settings.max_request_body_size as u64;
     let post_route = warp::path::end()
         .and(warp::post())
         .and(with_filters(filters.clone()))
         .and(warp::ext::optional::<SocketAddr>())
         .and(warp::header::optional::<HeaderValue>("origin"))
         .and(warp::header::optional::<String>("authorization"))
-        .and(warp::body::content_length_limit(max_body.max(1)))
+        .and(warp::body::content_length_limit(max_post_body_len(
+            &settings,
+        )))
         .and(warp::body::bytes())
         .and_then(handle_post_request);
 
@@ -157,6 +158,12 @@ pub fn build_ws_route(
                     .into_response()
             },
         )
+}
+
+/// Largest POST body accepted, in bytes. The gate receives the body and the
+/// POST route checks its declared length; both must use the same limit.
+fn max_post_body_len(settings: &RpcServerConfig) -> u64 {
+    (settings.max_request_body_size as u64).max(1)
 }
 
 fn with_filters(
