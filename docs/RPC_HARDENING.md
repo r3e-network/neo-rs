@@ -16,7 +16,7 @@ Recommendations and a sample `RpcServer.json` for running the RPC plugin securel
 - A POST body must arrive within `request_body_timeout` seconds in total (default 120) and must not stall for longer than `request_body_idle_timeout` seconds (default 30); either set to 0 is off. A connection that misses a deadline is closed without a response, which frees its `max_concurrent_connections` slot. The deadlines cover receiving the body only, never the execution of the call. The total deadline bounds how slowly a body may be sent: a maximum-size transaction (about 137 KB as a `sendrawtransaction` body) needs about 1.2 KB/s, a body at the default 5 MiB `max_request_body_size` about 44 KB/s; raise `request_body_timeout` if clients on slower links post bodies that large.
 - Keep `disabled_methods` populated for any RPC methods you do not need.
 - Prefer environment overrides for secrets and endpoints in containers: `NEO_RPC_USER`, `NEO_RPC_PASS`, `NEO_RPC_TLS_CERT`, `NEO_RPC_TLS_PASS`, `NEO_RPC_BIND`, `NEO_RPC_PORT`, `NEO_RPC_ALLOW_ORIGINS`, `NEO_RPC_DISABLED_METHODS`.
-- Use the CLI `--rpc-hardened` switch to force auth, disable CORS, and disable wallet/key-export/send methods (`openwallet`, `dumpprivkey`, `importprivkey`, `sendfrom`, `sendto`, `sendmany`, `sendrawtransaction`, `listplugins`) at startup; this will also fail if credentials are missing.
+- Use the CLI `--rpc-hardened` switch to force auth, disable CORS, and disable wallet/key-export/send methods (`openwallet`, `closewallet`, `dumpprivkey`, `importprivkey`, `getnewaddress`, `sendfrom`, `sendtoaddress`, `sendmany`, `canceltransaction`, `sendrawtransaction`, `startconsensus`, `listplugins`) at startup; this will also fail if credentials are missing.
 - Built-in TLS is supported via `ssl_cert` / `ssl_cert_password` / `trusted_authorities` (or `NEO_RPC_TLS_*`). Prefer terminating TLS at a reverse proxy when possible; if `TrustedAuthorities` is set, at least one matching client CA root must load or the server refuses to start.
 - Expose only what you need: avoid `listplugins` and `openwallet` on untrusted networks; keep them disabled or restrict via proxy ACLs.
 - Compatibility note: set `NEO_LISTPLUGINS_COMPAT=fixture` (and optionally `NEO_PLUGIN_VERSION=3.0.0.0`) to emulate legacy C# `listplugins` output when needed for fixture-based clients.
@@ -41,6 +41,8 @@ This example is for TestNet (magic `894710606`, port `20332`). Adjust `network`,
         "max_concurrent_connections": 40,
         "max_requests_per_second": 0,
         "rate_limit_burst": 0,
+        "admission_requests_per_second": null,
+        "admission_burst": null,
         "max_request_body_size": 5242880,
         "rpc_user": "change-me",
         "rpc_pass": "change-me-strongly",
@@ -48,6 +50,8 @@ This example is for TestNet (magic `894710606`, port `20332`). Adjust `network`,
         "allow_origins": [],
         "keep_alive_timeout": 60,
         "request_headers_timeout": 15,
+        "request_body_timeout": 120,
+        "request_body_idle_timeout": 30,
         "max_gas_invoke": 2000000000,
         "max_fee": 10000000,
         "max_iterator_result_items": 100,
@@ -64,6 +68,12 @@ This example is for TestNet (magic `894710606`, port `20332`). Adjust `network`,
 ```
 
 You can copy `config/Plugins/RpcServer/RpcServer.json.example` into your plugin directory and adjust it for your environment.
+
+The admission budget and the body deadlines are shown at their defaults; leaving a key out has the same effect:
+- `admission_requests_per_second`: `null` derives the budget, four times `max_requests_per_second`, which leaves it off while that is 0 as in the sample. `0` turns it off whatever the per-method limit is; any other value is the number of requests admitted per peer IP per second.
+- `admission_burst`: `null` or `0` uses `admission_requests_per_second` when that is set, otherwise four times the per-method burst (`rate_limit_burst`, or `max_requests_per_second` when that is 0).
+- `request_body_timeout`: 120 seconds for the whole body; `0` removes the deadline.
+- `request_body_idle_timeout`: 30 seconds without receiving any data; `0` removes the deadline.
 
 ## Reverse proxy (outline)
 - Terminate TLS and perform auth/rate-limiting at the proxy (Nginx/Caddy/Envoy).
