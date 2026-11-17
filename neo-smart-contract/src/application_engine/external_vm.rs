@@ -378,6 +378,15 @@ impl ExternalVmHost<'_> {
                 .ok_or_else(|| "No current execution context after host call".to_string())?;
             context.evaluation_stack().to_vec()
         };
+        // The conversion below recurses once per nesting level and the
+        // interpreter refuses such a value anyway, so fault with its message
+        // before walking a value that is too deep or contains itself.
+        if items
+            .iter()
+            .any(|item| canonical_nesting_exceeds(item, neo_vm::MAX_COMPOUND_NESTING_DEPTH))
+        {
+            return Err(neo_vm::NESTING_DEPTH_ERROR.to_string());
+        }
         let mut exported = Vec::with_capacity(items.len());
         for item in items {
             exported.push(self.canonical_to_external(item)?);
@@ -492,6 +501,7 @@ impl ExternalVmHost<'_> {
 impl ApplicationEngine {
     pub(super) fn try_execute_with_external_vm(&mut self) -> Option<VMState> {
         let execution = self.prepare_external_vm_execution()?;
+        let _depth = ExternalVmDepthGuard::enter();
         let mut host = ExternalVmHost::new(self, &execution);
         let result = if let Some(result_stack_limit) = execution.result_stack_limit {
             interpret_with_stack_and_syscalls_at_with_result_limit(
@@ -545,6 +555,9 @@ impl ApplicationEngine {
         {
             return None;
         }
+        if external_vm_depth_exhausted() {
+            return None;
+        }
         // Diagnostics must not change consensus semantics by forcing the jump-table path.
         if !self.pending_native_calls.is_empty() {
             return None;
@@ -569,6 +582,16 @@ impl ApplicationEngine {
             .is_some_and(|caller| context.shares_evaluation_stack_with(caller));
         let script = context.script().as_bytes();
         if script_uses_application_engine_host(script) {
+            return None;
+        }
+        // The interpreter refuses values nested deeper than its limit, and the
+        // conversion below recurses once per level without noticing a value
+        // that contains itself. Such a context remains on the canonical engine.
+        if context
+            .evaluation_stack()
+            .iter()
+            .any(|item| canonical_nesting_exceeds(item, neo_vm::MAX_COMPOUND_NESTING_DEPTH))
+        {
             return None;
         }
         // Host-only objects cannot be manufactured without their runtime
@@ -633,6 +656,53 @@ impl ApplicationEngine {
         self.vm_engine.engine_mut().set_state(VMState::FAULT);
         self.fault_exception = Some(message);
         VMState::FAULT
+    }
+}
+/// Whether `item` nests more than `limit` compounds deep. The walk stops
+/// after `limit + 1` levels, so it also ends on a value that contains itself.
+fn canonical_nesting_exceeds(item: &StackItem, limit: usize) -> bool {
+    if !matches!(
+        item,
+        StackItem::Array(_) | StackItem::Struct(_) | StackItem::Map(_)
+    ) {
+        return false;
+    }
+    let Some(room) = limit.checked_sub(1) else {
+        return true;
+    };
+    let children: Vec<StackItem> = match item {
+        StackItem::Array(array) => array.items(),
+        StackItem::Struct(structure) => structure.items(),
+        StackItem::Map(map) => map.iter().map(|(_, value)| value).collect(),
+        _ => return false,
+    };
+    children
+        .iter()
+        .any(|child| canonical_nesting_exceeds(child, room))
+}
+/// A contract called from the interpreter runs inside the caller's host call,
+/// so every interpreter execution in a call chain stays on the native stack
+/// until the chain unwinds. Contexts past this many run on the canonical
+/// engine, whose loop keeps the native stack flat up to its own invocation
+/// limit. Four of them, the innermost receiving a value nested to the
+/// interpreter's limit, fit in 512 KiB without optimization.
+const MAX_EXTERNAL_VM_DEPTH: usize = 4;
+thread_local! {
+    static EXTERNAL_VM_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+fn external_vm_depth_exhausted() -> bool {
+    EXTERNAL_VM_DEPTH.with(|depth| depth.get() >= MAX_EXTERNAL_VM_DEPTH)
+}
+struct ExternalVmDepthGuard;
+impl ExternalVmDepthGuard {
+    fn enter() -> Self {
+        EXTERNAL_VM_DEPTH.with(|depth| depth.set(depth.get() + 1));
+        Self
+    }
+}
+impl Drop for ExternalVmDepthGuard {
+    fn drop(&mut self) {
+        EXTERNAL_VM_DEPTH.with(|depth| depth.set(depth.get() - 1));
     }
 }
 fn script_uses_application_engine_host(script: &[u8]) -> bool {
@@ -772,8 +842,151 @@ fn external_vm_fault_message(message: Option<String>, ip: Option<u32>) -> String
 
 #[cfg(test)]
 mod tests {
-    use super::{external_result_stack_limit, script_uses_application_engine_host};
-    use neo_vm::OpCode;
+    use super::{
+        EXTERNAL_VM_DEPTH, ExternalVmDepthGuard, MAX_EXTERNAL_VM_DEPTH, canonical_nesting_exceeds,
+        external_result_stack_limit, external_vm_depth_exhausted,
+        script_uses_application_engine_host,
+    };
+    use neo_vm::{MAX_COMPOUND_NESTING_DEPTH, OpCode, StackItem, SyscallProvider};
+
+    struct NoHost;
+    impl SyscallProvider for NoHost {
+        fn syscall(
+            &mut self,
+            api: u32,
+            _ip: usize,
+            _stack: &mut Vec<neo_vm::StackValue>,
+        ) -> Result<(), String> {
+            Err(format!("unsupported syscall 0x{api:08x}"))
+        }
+    }
+
+    /// `levels` compounds one inside another, cycling through the three kinds.
+    fn nested(levels: usize) -> StackItem {
+        let mut item = StackItem::from_array(Vec::<StackItem>::new());
+        for level in 1..levels {
+            item = match level % 3 {
+                0 => StackItem::from_array(vec![item]),
+                1 => StackItem::from_struct(vec![item]),
+                _ => {
+                    let mut map = neo_vm::VmOrderedDictionary::with_capacity(1);
+                    map.insert(StackItem::from_i64(0), item);
+                    StackItem::from_map(map)
+                }
+            };
+        }
+        item
+    }
+
+    fn interpreter_refuses(item: StackItem) -> bool {
+        let value = neo_vm::StackValue::try_from(item).expect("convertible value");
+        match neo_vm::interpret_with_stack_and_syscalls(
+            &[OpCode::RET as u8],
+            vec![value],
+            &mut NoHost,
+        ) {
+            Ok(_) => false,
+            Err(message) => {
+                assert_eq!(message, neo_vm::NESTING_DEPTH_ERROR);
+                true
+            }
+        }
+    }
+
+    #[test]
+    fn nesting_check_counts_compound_levels() {
+        assert!(!canonical_nesting_exceeds(&StackItem::from_i64(1), 0));
+        assert!(!canonical_nesting_exceeds(&StackItem::Null, 0));
+        assert!(canonical_nesting_exceeds(&nested(1), 0));
+        assert!(!canonical_nesting_exceeds(&nested(1), 1));
+        assert!(canonical_nesting_exceeds(&nested(4), 3));
+        assert!(!canonical_nesting_exceeds(&nested(4), 4));
+        // The deepest child decides, wherever it sits.
+        let wide = StackItem::from_array(vec![nested(1), nested(3), StackItem::from_i64(1)]);
+        assert!(canonical_nesting_exceeds(&wide, 3));
+        assert!(!canonical_nesting_exceeds(&wide, 4));
+    }
+
+    #[test]
+    fn nesting_check_refuses_exactly_what_the_interpreter_refuses() {
+        for levels in [1, 2, 63, 64, 65, 66, 100] {
+            let exceeds = canonical_nesting_exceeds(&nested(levels), MAX_COMPOUND_NESTING_DEPTH);
+            assert_eq!(
+                exceeds,
+                levels > MAX_COMPOUND_NESTING_DEPTH,
+                "{levels} levels"
+            );
+            assert_eq!(
+                exceeds,
+                interpreter_refuses(nested(levels)),
+                "{levels} levels"
+            );
+        }
+    }
+
+    #[test]
+    fn nesting_check_ends_on_a_value_that_contains_itself() {
+        let outer = StackItem::from_array(Vec::<StackItem>::new());
+        let inner = StackItem::from_array(vec![outer.clone()]);
+        let StackItem::Array(array) = &outer else {
+            unreachable!()
+        };
+        array.push(inner.clone()).expect("push");
+        assert!(canonical_nesting_exceeds(
+            &outer,
+            MAX_COMPOUND_NESTING_DEPTH
+        ));
+        assert!(canonical_nesting_exceeds(
+            &inner,
+            MAX_COMPOUND_NESTING_DEPTH
+        ));
+        let holder = StackItem::from_struct(vec![StackItem::from_i64(1), inner]);
+        assert!(canonical_nesting_exceeds(
+            &holder,
+            MAX_COMPOUND_NESTING_DEPTH
+        ));
+        // Break the cycle so the two arrays are freed.
+        array.clear().expect("clear");
+    }
+
+    #[test]
+    fn nesting_check_stays_shallow_on_a_very_deep_value() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024)
+            .spawn(|| {
+                let mut item = StackItem::from_array(Vec::<StackItem>::new());
+                for _ in 1..100_000 {
+                    item = StackItem::from_array(vec![item]);
+                }
+                assert!(canonical_nesting_exceeds(&item, MAX_COMPOUND_NESTING_DEPTH));
+                // Dropping the chain would recurse once per level; take it
+                // apart from the outside in instead.
+                while let StackItem::Array(array) = &item {
+                    let Ok(child) = array.pop() else {
+                        break;
+                    };
+                    item = child;
+                }
+            })
+            .expect("spawn")
+            .join()
+            .expect("deep value must not overflow the native stack");
+    }
+
+    #[test]
+    fn interpreter_depth_guard_counts_executions_in_progress() {
+        assert!(!external_vm_depth_exhausted());
+        let mut guards: Vec<_> = (0..MAX_EXTERNAL_VM_DEPTH - 1)
+            .map(|_| ExternalVmDepthGuard::enter())
+            .collect();
+        assert!(!external_vm_depth_exhausted());
+        guards.push(ExternalVmDepthGuard::enter());
+        assert!(external_vm_depth_exhausted());
+        guards.pop();
+        assert!(!external_vm_depth_exhausted());
+        drop(guards);
+        assert_eq!(EXTERNAL_VM_DEPTH.with(|depth| depth.get()), 0);
+    }
 
     #[test]
     fn static_slot_initialization_stays_on_canonical_engine() {
