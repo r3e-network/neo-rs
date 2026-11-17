@@ -120,7 +120,7 @@ pub(crate) fn apply_cli_overrides(cli: &NodeCli, node_config: &mut NodeConfig) {
                     tracing::warn!(
                         "RPC hardened mode: sendrawtransaction is disabled. \
                         Clients attempting to send transactions will receive \
-                        -32601 Method not found."
+                        -600 Access denied."
                     );
                 }
                 disabled.push(method.to_string());
