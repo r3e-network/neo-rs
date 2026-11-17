@@ -111,8 +111,9 @@ impl OracleContract {
                 )
             })?;
         let price = self.get_price_value(snapshot);
-        let price_u64 = u64::try_from(price)
-            .map_err(|_| Error::invalid_operation("Oracle price cannot be converted to u64"))?;
+        let price_u64 = price
+            .to_u64()
+            .ok_or_else(|| Error::invalid_operation("Oracle price cannot be converted to u64"))?;
         engine.add_runtime_fee(price_u64)?;
         let gas_for_response_u64 = u64::try_from(gas_for_response)
             .map_err(|_| Error::invalid_operation("gasForResponse cannot be converted to u64"))?;

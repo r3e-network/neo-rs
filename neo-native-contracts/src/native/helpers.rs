@@ -11,6 +11,7 @@ use neo_smart_contract::contract::Contract;
 use neo_smart_contract::error::{CoreError, CoreResult};
 use neo_storage::persistence::DataCache;
 use neo_vm::BinarySerializer;
+use neo_vm::StackItem;
 use neo_vm::StackValue;
 
 pub use neo_smart_contract::application_engine::NativeChainQueries;
@@ -19,6 +20,23 @@ pub use neo_smart_contract::application_engine::NativeChainQueries;
 /// native-contract error when the bytes are invalid.
 pub(crate) fn parse_uint160_arg(arg: &[u8], label: &str) -> CoreResult<UInt160> {
     UInt160::from_bytes(arg).map_err(|_| CoreError::native_contract(format!("Invalid {label}")))
+}
+
+/// Converts a native-contract Boolean argument (raw ABI bytes) to `bool`.
+///
+/// The dispatcher flattens every argument to its byte representation before a
+/// native method runs, so the originating `StackItem` kind is no longer
+/// visible. Neo converts Boolean parameters through `StackItem.GetBoolean()`,
+/// where any non-zero integer value is `true`; inspecting only byte zero would
+/// turn `Integer(256)` (encoded `[0x00, 0x01]`) into `false`.
+///
+/// Rebuilding a `ByteString` and delegating to [`StackItem::as_bool`] restores
+/// that conversion. Byte strings beyond the VM integer size keep Neo's
+/// byte-wise truthiness instead of failing the conversion.
+pub(crate) fn parse_bool_arg(arg: &[u8]) -> bool {
+    StackItem::from_byte_string(arg.to_vec())
+        .as_bool()
+        .unwrap_or_else(|_| arg.iter().any(|byte| *byte != 0))
 }
 
 /// Serializes a [`StackValue`] to bytes using default engine limits,

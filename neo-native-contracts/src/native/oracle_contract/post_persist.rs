@@ -17,8 +17,7 @@ use neo_protocol::payloads::transaction_attribute::TransactionAttribute;
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::contract::Contract;
 use neo_smart_contract::error::{CoreError as Error, CoreResult as Result};
-use num_bigint::BigInt;
-use std::collections::HashMap;
+use num_bigint::{BigInt, Sign};
 
 impl OracleContract {
     pub(super) fn cleanup_persisted_responses(
@@ -65,7 +64,7 @@ impl OracleContract {
         let snapshot = engine.snapshot_cache();
         let snapshot_ref = snapshot.as_ref();
         let price = self.get_price_value(snapshot_ref);
-        if price <= 0 {
+        if price.sign() != Sign::Plus {
             return Ok(());
         }
 
@@ -76,25 +75,34 @@ impl OracleContract {
 
         let recipient_count = u64::try_from(recipients.len())
             .map_err(|_| Error::invalid_operation("Too many oracle recipients"))?;
-        let mut rewards: HashMap<UInt160, i64> = HashMap::new();
+        // Match Neo's `PostPersist`: rewards are accumulated per designated
+        // oracle node and minted while walking the designated node array in
+        // order, so the emitted Transfer notifications are deterministic.
+        // Accumulating through a `HashMap` would mint in randomized iteration
+        // order instead.
+        let mut rewards: Vec<(UInt160, BigInt)> = recipients
+            .iter()
+            .map(|account| (*account, BigInt::from(0)))
+            .collect();
         for response_id in response_ids {
             let index = usize::try_from(*response_id % recipient_count)
                 .map_err(|_| Error::invalid_operation("Oracle recipient index overflow"))?;
-            let account = recipients[index];
-            *rewards.entry(account).or_insert(0) += price;
-        }
-
-        if rewards.is_empty() {
-            return Ok(());
+            let Some((_, reward)) = rewards.get_mut(index) else {
+                return Err(Error::invalid_operation(
+                    "Oracle recipient index out of range",
+                ));
+            };
+            // C# accumulates rewards with BigInteger; BigInt keeps large totals
+            // exact instead of wrapping the way unchecked i64 addition would.
+            *reward += &price;
         }
 
         let gas = GasToken::new();
         for (account, amount) in rewards {
-            if amount <= 0 {
+            if amount.sign() != Sign::Plus {
                 continue;
             }
-            let minted = BigInt::from(amount);
-            gas.mint(engine, &account, &minted, false)?;
+            gas.mint(engine, &account, &amount, false)?;
         }
 
         Ok(())

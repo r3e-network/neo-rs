@@ -112,10 +112,9 @@ impl OracleContract {
             ));
         }
         let snapshot = engine.snapshot_cache();
-        Ok(self
-            .get_price_value(snapshot.as_ref())
-            .to_le_bytes()
-            .to_vec())
+        // C# `getPrice` returns the stored BigInteger; keep the variable-width
+        // signed-LE encoding instead of narrowing to a fixed 8-byte i64.
+        Ok(self.get_price_value(snapshot.as_ref()).to_signed_bytes_le())
     }
 
     fn invoke_finish(&self, engine: &mut ApplicationEngine, _args: &[Vec<u8>]) -> Result<Vec<u8>> {

@@ -31,21 +31,15 @@ use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
 impl OracleContract {
-    pub(super) fn get_price_value(&self, snapshot: &DataCache) -> i64 {
+    pub(super) fn get_price_value(&self, snapshot: &DataCache) -> BigInt {
         // C# parity: stored as variable-width signed-LE BigInteger bytes (StorageItem.Value),
         // not a fixed 8-byte i64. Empty bytes => 0; parse via BigInt::from_signed_bytes_le.
+        // The price is returned as a BigInteger so prices above i64::MAX survive intact.
         let key = self.price_key();
         snapshot
             .try_get(&key)
-            .and_then(|item| {
-                let bytes = item.value_bytes();
-                if bytes.is_empty() {
-                    Some(0)
-                } else {
-                    BigInt::from_signed_bytes_le(&bytes).to_i64()
-                }
-            })
-            .unwrap_or(DEFAULT_PRICE)
+            .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
+            .unwrap_or_else(|| BigInt::from(DEFAULT_PRICE))
     }
 
     pub(super) fn next_request_id(&self, snapshot: &DataCache) -> Result<u64> {

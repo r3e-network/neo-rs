@@ -1,4 +1,5 @@
 use super::CryptoLib;
+use crate::native::helpers::parse_bool_arg;
 use neo_smart_contract::error::{CoreError as Error, CoreResult as Result};
 
 use blst::{
@@ -107,7 +108,9 @@ impl CryptoLib {
 
         let point = Bls12381Interop::from_encoded_bytes(&args[0])?;
         let scalar = &args[1];
-        let neg = args.get(2).is_some_and(|v| !v.is_empty() && v[0] != 0);
+        // Neo converts Boolean arguments through StackItem truthiness, so any
+        // non-zero integer value (e.g. Integer(256) encoded as [0x00, 0x01]) is true.
+        let neg = args.get(2).is_some_and(|arg| parse_bool_arg(arg));
 
         if scalar.len() != 32 {
             return Err(Error::native_contract(

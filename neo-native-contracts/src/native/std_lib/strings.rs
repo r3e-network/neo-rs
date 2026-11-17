@@ -1,4 +1,5 @@
 use super::StdLib;
+use crate::native::helpers::parse_bool_arg;
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::error::CoreError as Error;
 use neo_smart_contract::error::CoreResult as Result;
@@ -28,22 +29,26 @@ impl StdLib {
         let separator = String::from_utf8(args[1].clone())
             .map_err(|_| Error::native_contract("Invalid UTF-8 separator"))?;
 
+        // Neo's 1024-byte input cap applies to the string being split only;
+        // the separator is not length-limited.
         self.ensure_max_input_len(string_data.as_bytes(), "stringSplit")?;
-        self.ensure_max_input_len(separator.as_bytes(), "stringSplit")?;
 
-        // Parse optional removeEmptyEntries parameter (default: false)
-        let remove_empty_entries = if args.len() >= 3 {
-            if args[2].is_empty() {
-                false
-            } else {
-                args[2][0] != 0
-            }
-        } else {
-            false
-        };
+        // Parse optional removeEmptyEntries parameter (default: false).
+        // Neo converts Boolean arguments through StackItem truthiness, so any
+        // non-zero integer value (e.g. Integer(256) encoded as [0x00, 0x01]) is true.
+        let remove_empty_entries = args.get(2).is_some_and(|arg| parse_bool_arg(arg));
 
         // Split the string
-        let parts: Vec<&str> = if remove_empty_entries {
+        let parts: Vec<&str> = if separator.is_empty() {
+            // .NET String.Split with an empty separator returns the input as a
+            // single element instead of splitting between every character the
+            // way Rust's `split("")` does.
+            if remove_empty_entries && string_data.is_empty() {
+                Vec::new()
+            } else {
+                vec![string_data.as_str()]
+            }
+        } else if remove_empty_entries {
             string_data
                 .split(&separator)
                 .filter(|s| !s.is_empty())

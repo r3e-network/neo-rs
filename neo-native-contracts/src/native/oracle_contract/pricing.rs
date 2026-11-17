@@ -10,8 +10,7 @@ use super::OracleContract;
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::error::{CoreError as Error, CoreResult as Result};
 use neo_storage::StorageItem;
-use num_bigint::BigInt;
-use num_traits::ToPrimitive;
+use num_bigint::{BigInt, Sign};
 
 impl OracleContract {
     pub(super) fn set_price(
@@ -25,11 +24,11 @@ impl OracleContract {
             ));
         }
 
-        let price = BigInt::from_signed_bytes_le(&args[0])
-            .to_i64()
-            .ok_or_else(|| Error::invalid_operation("Invalid price value"))?;
+        // Neo stores the price as a BigInteger; keep full precision instead of
+        // narrowing to i64 (which would reject or truncate valid prices).
+        let price = BigInt::from_signed_bytes_le(&args[0]);
 
-        if price <= 0 {
+        if price.sign() != Sign::Plus {
             return Err(Error::invalid_operation(
                 "Price must be positive".to_string(),
             ));
@@ -49,7 +48,7 @@ impl OracleContract {
         self.put_item(
             snapshot,
             self.price_key(),
-            StorageItem::from_bytes(BigInt::from(price).to_signed_bytes_le()),
+            StorageItem::from_bytes(price.to_signed_bytes_le()),
         );
 
         Ok(Vec::new())

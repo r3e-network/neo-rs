@@ -12,6 +12,7 @@ use crate::native::oracle_request::OracleRequest;
 use neo_smart_contract::error::CoreResult as Result;
 use neo_storage::StorageKey;
 use neo_storage::persistence::{DataCache, seek_direction::SeekDirection};
+use num_bigint::BigInt;
 
 impl OracleContract {
     /// Returns the oracle request stored under `id`, if any.
@@ -64,7 +65,7 @@ impl OracleContract {
     }
 
     /// Returns the current oracle response price in GAS (C# `getPrice`).
-    pub fn get_price(&self, snapshot: &DataCache) -> i64 {
+    pub fn get_price(&self, snapshot: &DataCache) -> BigInt {
         self.get_price_value(snapshot)
     }
 }

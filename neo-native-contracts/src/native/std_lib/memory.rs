@@ -1,4 +1,5 @@
 use super::StdLib;
+use crate::native::helpers::parse_bool_arg;
 use memchr::memmem;
 use neo_smart_contract::error::CoreError as Error;
 use neo_smart_contract::error::CoreResult as Result;
@@ -40,8 +41,8 @@ impl StdLib {
         let mem = &args[0];
         let value = &args[1];
 
+        // Neo only bounds the searched memory; the pattern length is unrestricted.
         self.ensure_max_input_len(mem, "memorySearch")?;
-        self.ensure_max_input_len(value, "memorySearch")?;
 
         // Parse optional start parameter (default: 0)
         let start = if args.len() >= 3 {
@@ -53,16 +54,10 @@ impl StdLib {
             0
         };
 
-        // Parse optional backward parameter (default: false)
-        let backward = if args.len() >= 4 {
-            if args[3].is_empty() {
-                false
-            } else {
-                args[3][0] != 0
-            }
-        } else {
-            false
-        };
+        // Parse optional backward parameter (default: false).
+        // Neo converts Boolean arguments through StackItem truthiness, so any
+        // non-zero integer value (e.g. Integer(256) encoded as [0x00, 0x01]) is true.
+        let backward = args.get(3).is_some_and(|arg| parse_bool_arg(arg));
 
         // Validate start index
         if start < 0 || start as usize > mem.len() {
