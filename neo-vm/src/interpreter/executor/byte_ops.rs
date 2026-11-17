@@ -69,7 +69,7 @@ pub(super) fn execute(
             splice_rules::memcpy_bytes(&mut dst_bytes, di, &to_abi_value(&src_item), si, count)?;
             let updated = StackValue::Buffer(dst_id, dst_bytes);
             remember_consumed_mutation(consumed_mutations, &updated);
-            propagate_update(&updated, stack, locals, args, static_fields, None);
+            propagate_update(&updated, stack, locals, args, static_fields, None)?;
         }
         _ => unreachable!("opcode routed to byte_ops: 0x{opcode:02x}"),
     }

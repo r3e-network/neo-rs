@@ -8,7 +8,7 @@ pub(super) use call_stack::CallStack;
 pub(super) use try_frame::TryFrame;
 pub(super) use try_stack::TryStack;
 
-use alloc::vec::Vec;
+use alloc::{string::String, vec::Vec};
 use core::sync::atomic::{AtomicU32, Ordering};
 
 pub(super) type PendingException = crate::runtime::PendingException<StackValue>;
@@ -57,14 +57,15 @@ pub(super) fn propagate_active_aliases_into_saved_frame(
     args: &[StackValue],
     static_fields: &[StackValue],
     consumed_mutations: &[StackValue],
-) {
+) -> Result<(), String> {
     for targets in [saved_locals, saved_args] {
-        propagate_aliases_from_sources(targets, stack);
-        propagate_aliases_from_sources(targets, locals);
-        propagate_aliases_from_sources(targets, args);
-        propagate_aliases_from_sources(targets, static_fields);
-        propagate_aliases_from_sources(targets, consumed_mutations);
+        propagate_aliases_from_sources(targets, stack)?;
+        propagate_aliases_from_sources(targets, locals)?;
+        propagate_aliases_from_sources(targets, args)?;
+        propagate_aliases_from_sources(targets, static_fields)?;
+        propagate_aliases_from_sources(targets, consumed_mutations)?;
     }
+    Ok(())
 }
 
 pub(super) fn remember_consumed_mutation(

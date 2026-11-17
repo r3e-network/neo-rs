@@ -12,4 +12,5 @@ pub use api::{
     interpret_with_stack_and_syscalls_at_with_initializer_and_result_limit,
     interpret_with_stack_and_syscalls_at_with_result_limit, interpret_with_syscalls,
 };
+pub use runtime_types::{MAX_COMPOUND_NESTING_DEPTH, NESTING_DEPTH_ERROR};
 pub use state::{last_interpreter_ip, last_result_limit, last_result_stack_len, last_result_stage};

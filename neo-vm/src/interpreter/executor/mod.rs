@@ -9,7 +9,10 @@ mod slot_ops;
 mod stack_ops;
 use super::helpers::*;
 use super::opcodes::*;
-use super::runtime_types::{CompoundIds, StackValue, to_abi_value};
+use super::runtime_types::{
+    CompoundIds, ITEM_COUNT_ERROR, NESTING_DEPTH_ERROR, StackValue, counted_items,
+    ensure_abi_nesting, to_abi_value,
+};
 use super::state::*;
 use crate::{
     ExecutionResult, StackValue as AbiStackValue, semantics::comparison as comparison_rules,
@@ -20,6 +23,27 @@ use alloc::{
     vec::Vec,
 };
 use core::sync::atomic::Ordering;
+
+/// Whether `opcode` can add more than one item to the count the canonical
+/// reference counter keeps. Every other opcode adds at most one, which lets
+/// the main loop recount only when the last count leaves no headroom.
+fn may_add_several_items(opcode: u8) -> bool {
+    matches!(
+        opcode,
+        SYSCALL
+            | CALLT
+            | RET
+            | INITSSLOT
+            | INITSLOT
+            | UNPACK
+            | NEWARRAY
+            | NEWARRAY_T
+            | NEWSTRUCT
+            | KEYS
+            | VALUES
+            | CONVERT
+    )
+}
 
 pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
     script: &[u8],
@@ -41,10 +65,15 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
         return Err("initializer instruction pointer out of bounds".to_string());
     }
     let mut ids = CompoundIds::default();
+    if let Err(error) = ensure_abi_nesting(&initial_stack) {
+        discard_abi_values(initial_stack);
+        return Err(error);
+    }
     let mut method_initial_stack = initial_stack
         .into_iter()
         .map(|item| ids.import_abi(item))
         .collect::<Vec<_>>();
+    ids.note_imported(&method_initial_stack);
     let mut running_initializer = initializer_ip.is_some();
     let retained_initializer_method_stack_len = if running_initializer {
         retain_initializer_method_stack(&method_initial_stack)?
@@ -67,6 +96,11 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
     let mut consumed_mutations: Vec<StackValue> = Vec::with_capacity(16);
     let mut pending_error: Option<PendingException> = None;
     let mut previous_opcode_was_callt = false;
+    // Slot entries held by suspended call frames. The riscv32 guest keeps
+    // those frames encoded, so the count is tracked here on both targets.
+    let mut saved_slot_entries = 0usize;
+    // Instructions that may still run before the items have to be recounted.
+    let mut item_budget = 0usize;
     let semantics = host.semantics();
 
     macro_rules! apply_dispatch {
@@ -79,6 +113,7 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
 
     'main_loop: loop {
         if pending_error.is_some() {
+            item_budget = 0;
             // Find the topmost un-caught frame
             if let Some(frame_index) = try_frames.find_uncaught_index() {
                 let frame_call_depth = try_frames
@@ -88,6 +123,8 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
                     if let Some((_, mut saved_locals, mut saved_args, saved_init)) =
                         call_stack.pop_and_restore()?
                     {
+                        saved_slot_entries = saved_slot_entries
+                            .saturating_sub(saved_locals.len() + saved_args.len());
                         let current_mutations = core::mem::take(&mut consumed_mutations);
                         propagate_active_aliases_into_saved_frame(
                             &mut saved_locals,
@@ -97,7 +134,7 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
                             &args,
                             &static_fields,
                             &current_mutations,
-                        );
+                        )?;
                         locals = saved_locals;
                         args = saved_args;
                         reset_consumed_mutations(&mut consumed_mutations);
@@ -145,6 +182,20 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
         if stack.len() > MAX_STACK_SIZE {
             return Err("stack overflow".to_string());
         }
+        // NeoVM also counts slot entries and the children of every compound
+        // item towards that limit. The count is only comparable while the
+        // interpreter's ids still stand for the canonical object identities.
+        if item_budget == 0 && !ids.count_diverged() {
+            let counted = counted_items(
+                [&stack, &locals, &args, &static_fields],
+                saved_slot_entries,
+                MAX_STACK_SIZE,
+            );
+            if counted > MAX_STACK_SIZE {
+                return Err(ITEM_COUNT_ERROR.to_string());
+            }
+            item_budget = MAX_STACK_SIZE - counted;
+        }
 
         if ip >= script.len() {
             break;
@@ -153,6 +204,11 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
         let opcode = script[ip];
         record_interpreter_ip(ip);
         host.on_instruction(opcode)?;
+        item_budget = if may_add_several_items(opcode) {
+            0
+        } else {
+            item_budget.saturating_sub(1)
+        };
         let callt_result_pending_store = previous_opcode_was_callt;
         previous_opcode_was_callt = false;
         match opcode {
@@ -277,7 +333,7 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
                     &mut consumed_mutations,
                     &mut ids,
                 ) {
-                    if try_frames.is_empty() {
+                    if try_frames.is_empty() || e == NESTING_DEPTH_ERROR {
                         return Err(e);
                     }
                     pending_error = Some(PendingException::message(e));
@@ -302,7 +358,7 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
                     &mut consumed_mutations,
                     &mut ids,
                 ) {
-                    if try_frames.is_empty() {
+                    if try_frames.is_empty() || e == NESTING_DEPTH_ERROR {
                         return Err(e);
                     }
                     pending_error = Some(PendingException::message(e));
@@ -458,6 +514,7 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
                 let return_ip = ip + advance;
                 let saved_init = slots_initialized;
                 reset_consumed_mutations(&mut consumed_mutations);
+                saved_slot_entries = saved_slot_entries.saturating_add(locals.len() + args.len());
                 #[cfg(target_arch = "riscv32")]
                 {
                     call_stack.push_frame_refs(return_ip, &locals, &args, saved_init)?;
@@ -487,6 +544,7 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
                 let return_ip = ip + 1;
                 let saved_init = slots_initialized;
                 reset_consumed_mutations(&mut consumed_mutations);
+                saved_slot_entries = saved_slot_entries.saturating_add(locals.len() + args.len());
                 #[cfg(target_arch = "riscv32")]
                 {
                     call_stack.push_frame_refs(return_ip, &locals, &args, saved_init)?;
@@ -647,6 +705,8 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
                 if let Some((return_ip, mut saved_locals, mut saved_args, saved_init)) =
                     call_stack.pop_and_restore()?
                 {
+                    saved_slot_entries =
+                        saved_slot_entries.saturating_sub(saved_locals.len() + saved_args.len());
                     let current_mutations = core::mem::take(&mut consumed_mutations);
                     propagate_active_aliases_into_saved_frame(
                         &mut saved_locals,
@@ -656,7 +716,7 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
                         &args,
                         &static_fields,
                         &current_mutations,
-                    );
+                    )?;
                     locals = saved_locals;
                     args = saved_args;
                     reset_consumed_mutations(&mut consumed_mutations);
@@ -688,6 +748,7 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
                     slots_initialized = false;
                     try_frames = TryStack::new();
                     call_stack = CallStack::new();
+                    saved_slot_entries = 0;
                     pending_error = None;
                     previous_opcode_was_callt = false;
                     running_initializer = false;

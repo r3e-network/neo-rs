@@ -6,6 +6,20 @@ fn stabilize_allocator_after_host_call() {
     }
 }
 
+/// Settles a successful host call and vets what the host handed back.
+///
+/// A value that nests deeper than the interpreter allows turns the call into
+/// a failure before anything is imported, so the caller's error path restores
+/// the state and releases the values without recursing.
+fn accept_host_values(
+    outcome: Result<(), String>,
+    values: &[crate::StackValue],
+) -> Result<(), String> {
+    outcome?;
+    stabilize_allocator_after_host_call();
+    ensure_abi_nesting(values)
+}
+
 #[derive(Clone, Copy)]
 struct RetainedHostState {
     stack: Option<usize>,
@@ -166,9 +180,9 @@ pub(crate) fn invoke_syscall<H: SyscallProvider>(
 
     let retained =
         RetainedHostState::capture(stack, args, locals, static_fields, consumed_mutations)?;
-    match host.syscall(api, ip, &mut abi_args) {
+    let outcome = host.syscall(api, ip, &mut abi_args);
+    match accept_host_values(outcome, &abi_args) {
         Ok(()) => {
-            stabilize_allocator_after_host_call();
             if retained.has_stack() {
                 retained.restore_non_stack(consumed_mutations, locals, args, static_fields)?;
                 retained.restore_stack(
@@ -181,6 +195,7 @@ pub(crate) fn invoke_syscall<H: SyscallProvider>(
                 for item in abi_args {
                     stack.push(ids.import_abi(item));
                 }
+                ids.note_imported(&stack[keep..]);
                 return Ok(());
             }
 
@@ -189,6 +204,7 @@ pub(crate) fn invoke_syscall<H: SyscallProvider>(
             for item in abi_args {
                 stack.push(ids.import_abi(item));
             }
+            ids.note_imported(&stack[keep..]);
             Ok(())
         }
         Err(e) => {
@@ -224,9 +240,9 @@ fn invoke_full_stack_syscall<H: SyscallProvider>(
     let mut abi_stack = to_abi_stack(stack);
     let retained =
         RetainedHostState::capture(stack, args, locals, static_fields, consumed_mutations)?;
-    match host.syscall_with_full_stack(api, ip, &mut abi_stack, argument_count) {
+    let outcome = host.syscall_with_full_stack(api, ip, &mut abi_stack, argument_count);
+    match accept_host_values(outcome, &abi_stack) {
         Ok(()) => {
-            stabilize_allocator_after_host_call();
             if retained.has_stack() {
                 retained.restore_non_stack(consumed_mutations, locals, args, static_fields)?;
                 retained.restore_stack(stack, stack.len().max(POST_SYSCALL_STACK_HEADROOM))?;
@@ -255,6 +271,8 @@ fn invoke_full_stack_syscall<H: SyscallProvider>(
                 .zip(imported_stack.iter())
                 .take_while(|(left, right)| structurally_equal(left, right))
                 .count();
+            // The shared prefix keeps the values the interpreter already held.
+            ids.note_imported(&imported_stack[shared_prefix..]);
             #[cfg(target_arch = "riscv32")]
             {
                 let mut preserved_stack = core::mem::take(stack);
@@ -416,9 +434,9 @@ pub(crate) fn invoke_callt<H: SyscallProvider>(
     let mut abi_stack = to_abi_stack(stack);
     let retained =
         RetainedHostState::capture(stack, args, locals, static_fields, consumed_mutations)?;
-    match host.callt(token, ip, &mut abi_stack) {
+    let outcome = host.callt(token, ip, &mut abi_stack);
+    match accept_host_values(outcome, &abi_stack) {
         Ok(()) => {
-            stabilize_allocator_after_host_call();
             if retained.has_stack() {
                 retained.restore_non_stack(consumed_mutations, locals, args, static_fields)?;
                 retained.restore_stack(stack, stack.len().max(POST_SYSCALL_STACK_HEADROOM))?;
@@ -447,6 +465,8 @@ pub(crate) fn invoke_callt<H: SyscallProvider>(
                 .zip(imported_stack.iter())
                 .take_while(|(left, right)| structurally_equal(left, right))
                 .count();
+            // The shared prefix keeps the values the interpreter already held.
+            ids.note_imported(&imported_stack[shared_prefix..]);
             #[cfg(target_arch = "riscv32")]
             {
                 let mut preserved_stack = core::mem::take(stack);

@@ -1,5 +1,29 @@
 use crate::StackValue as AbiStackValue;
-use alloc::vec::Vec;
+use alloc::{
+    collections::BTreeSet,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+/// Deepest compound nesting the lightweight interpreter lets a value reach.
+///
+/// A primitive nests zero levels; an Array, Struct or Map nests one level more
+/// than its deepest child. Clone, Drop, Debug, equality and the ABI conversions
+/// of interpreter values all descend one native frame set per level, so this
+/// bound is what keeps them inside the native stack. It is also the depth the
+/// retained-state codec of the riscv32 guest accepts.
+///
+/// The canonical engine has no such limit: it only bounds the total item
+/// count. Scripts that nest deeper than this fault here and not there.
+pub const MAX_COMPOUND_NESTING_DEPTH: usize = 64;
+
+/// The fault for a value that would nest deeper than
+/// [`MAX_COMPOUND_NESTING_DEPTH`].
+///
+/// A host call that fails with this message faults the execution even inside
+/// a TRY block, the same as a host call that hands back such a value.
+pub const NESTING_DEPTH_ERROR: &str = "compound nesting depth exceeds maximum";
+pub(crate) const ITEM_COUNT_ERROR: &str = "item count exceeds maximum stack size";
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum StackValue {
@@ -110,9 +134,149 @@ pub(crate) fn discard_abi_values(values: Vec<AbiStackValue>) {
     }
 }
 
+/// Returns whether `value` nests more than `limit` compound levels.
+///
+/// The walk stops descending once `limit` is spent, so it recurses at most
+/// `limit + 1` frames whatever the real depth of `value` is.
+pub(crate) fn nesting_exceeds(value: &StackValue, limit: usize) -> bool {
+    match value {
+        StackValue::Array(_, items) | StackValue::Struct(_, items) => match limit.checked_sub(1) {
+            None => true,
+            Some(inner) => items.iter().any(|item| nesting_exceeds(item, inner)),
+        },
+        StackValue::Map(_, items) => match limit.checked_sub(1) {
+            None => true,
+            Some(inner) => items
+                .iter()
+                .any(|(key, value)| nesting_exceeds(key, inner) || nesting_exceeds(value, inner)),
+        },
+        StackValue::Buffer(_, _)
+        | StackValue::Integer(_)
+        | StackValue::BigInteger(_)
+        | StackValue::ByteString(_)
+        | StackValue::Boolean(_)
+        | StackValue::Pointer(_)
+        | StackValue::Interop(_)
+        | StackValue::Iterator(_)
+        | StackValue::Null => false,
+    }
+}
+
+/// ABI counterpart of [`nesting_exceeds`].
+pub(crate) fn abi_nesting_exceeds(value: &AbiStackValue, limit: usize) -> bool {
+    match value {
+        AbiStackValue::Array(items) | AbiStackValue::Struct(items) => match limit.checked_sub(1) {
+            None => true,
+            Some(inner) => items.iter().any(|item| abi_nesting_exceeds(item, inner)),
+        },
+        AbiStackValue::Map(items) => match limit.checked_sub(1) {
+            None => true,
+            Some(inner) => items.iter().any(|(key, value)| {
+                abi_nesting_exceeds(key, inner) || abi_nesting_exceeds(value, inner)
+            }),
+        },
+        AbiStackValue::Buffer(_)
+        | AbiStackValue::Integer(_)
+        | AbiStackValue::BigInteger(_)
+        | AbiStackValue::ByteString(_)
+        | AbiStackValue::Boolean(_)
+        | AbiStackValue::Pointer(_)
+        | AbiStackValue::Interop(_)
+        | AbiStackValue::Iterator(_)
+        | AbiStackValue::Null => false,
+    }
+}
+
+/// Rejects `value` unless it can become the child of a compound value.
+pub(crate) fn ensure_nestable(value: &StackValue) -> Result<(), String> {
+    if nesting_exceeds(value, MAX_COMPOUND_NESTING_DEPTH - 1) {
+        return Err(NESTING_DEPTH_ERROR.to_string());
+    }
+    Ok(())
+}
+
+/// Rejects values supplied from outside the interpreter that nest deeper than
+/// it allows, before any of them is imported.
+pub(crate) fn ensure_abi_nesting(values: &[AbiStackValue]) -> Result<(), String> {
+    if values
+        .iter()
+        .any(|value| abi_nesting_exceeds(value, MAX_COMPOUND_NESTING_DEPTH))
+    {
+        return Err(NESTING_DEPTH_ERROR.to_string());
+    }
+    Ok(())
+}
+
+/// Counts the items the canonical reference counter holds for this state.
+///
+/// Every stack and slot entry counts once, and every distinct Array, Struct
+/// or Map reachable from the active entries adds one per child (a Map entry
+/// is two children). Slots of suspended call frames arrive as
+/// `saved_slot_entries`; what they reference is not walked. The walk stops as
+/// soon as the count passes `limit`, so the result is exact only up to there.
+pub(crate) fn counted_items(
+    roots: [&[StackValue]; 4],
+    saved_slot_entries: usize,
+    limit: usize,
+) -> usize {
+    let mut count = saved_slot_entries;
+    for values in roots {
+        count = count.saturating_add(values.len());
+    }
+    if count > limit {
+        return count;
+    }
+
+    let mut seen = BTreeSet::new();
+    for values in roots {
+        for value in values {
+            count_children(value, &mut seen, &mut count, limit);
+        }
+    }
+    count
+}
+
+fn count_children(value: &StackValue, seen: &mut BTreeSet<u64>, count: &mut usize, limit: usize) {
+    if *count > limit {
+        return;
+    }
+    match value {
+        StackValue::Array(id, items) | StackValue::Struct(id, items) => {
+            if seen.insert(*id) {
+                *count = count.saturating_add(items.len());
+                for item in items {
+                    count_children(item, seen, count, limit);
+                }
+            }
+        }
+        StackValue::Map(id, items) => {
+            if seen.insert(*id) {
+                *count = count.saturating_add(items.len().saturating_mul(2));
+                for (key, value) in items {
+                    count_children(key, seen, count, limit);
+                    count_children(value, seen, count, limit);
+                }
+            }
+        }
+        StackValue::Buffer(_, _)
+        | StackValue::Integer(_)
+        | StackValue::BigInteger(_)
+        | StackValue::ByteString(_)
+        | StackValue::Boolean(_)
+        | StackValue::Pointer(_)
+        | StackValue::Interop(_)
+        | StackValue::Iterator(_)
+        | StackValue::Null => {}
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct CompoundIds {
     next: u64,
+    /// Set once interpreter ids stop standing for the canonical engine's
+    /// object identities, or once the canonical reference counter is known to
+    /// undercount. [`counted_items`] is not comparable from then on.
+    count_diverged: bool,
 }
 
 impl CompoundIds {
@@ -120,6 +284,37 @@ impl CompoundIds {
         let id = self.next;
         self.next += 1;
         id
+    }
+
+    pub(crate) fn count_diverged(&self) -> bool {
+        self.count_diverged
+    }
+
+    /// Records the values the interpreter kept from an import.
+    ///
+    /// ABI values carry no object identity, so every imported compound gets
+    /// fresh ids whether or not the host shares it with another value.
+    pub(crate) fn note_imported(&mut self, values: &[StackValue]) {
+        if values.iter().any(|value| {
+            matches!(
+                value,
+                StackValue::Array(..) | StackValue::Struct(..) | StackValue::Map(..)
+            )
+        }) {
+            self.count_diverged = true;
+        }
+    }
+
+    /// Clones `value` for storage by APPEND or SETITEM.
+    ///
+    /// The canonical engine records a child stored into an existing compound
+    /// as a parent reference only, and from then on counts fewer items than
+    /// are reachable whenever that child is itself tracked.
+    pub(crate) fn clone_for_mutation(&mut self, value: &StackValue) -> StackValue {
+        if compound_id(value).is_some() {
+            self.count_diverged = true;
+        }
+        self.clone_struct_for_storage(value)
     }
 
     pub(crate) fn array(&mut self, items: Vec<StackValue>) -> StackValue {
@@ -146,6 +341,14 @@ impl CompoundIds {
     }
 
     pub(crate) fn deep_clone(&mut self, value: &StackValue) -> StackValue {
+        if matches!(
+            value,
+            StackValue::Array(..) | StackValue::Struct(..) | StackValue::Map(..)
+        ) {
+            // The copy gets ids of its own, so the two no longer count as one
+            // object the way they may in the canonical engine.
+            self.count_diverged = true;
+        }
         match value {
             StackValue::Integer(value) => StackValue::Integer(*value),
             StackValue::BigInteger(value) => StackValue::BigInteger(value.clone()),
@@ -180,6 +383,10 @@ impl CompoundIds {
         }
     }
 
+    /// Imports a value that crossed the host boundary.
+    ///
+    /// Callers that keep an imported compound report it through
+    /// [`Self::note_imported`].
     pub(crate) fn import_abi(&mut self, value: AbiStackValue) -> StackValue {
         match value {
             AbiStackValue::Integer(value) => StackValue::Integer(value),
@@ -362,6 +569,10 @@ fn contains_compound_id(value: &StackValue, target_id: u64) -> bool {
     }
 }
 
+/// Rewrites every alias of `updated` in the active state.
+///
+/// Fails, leaving the offending alias untouched, when an alias sits so deep
+/// that taking the update would nest it past [`MAX_COMPOUND_NESTING_DEPTH`].
 pub(crate) fn propagate_update(
     updated: &StackValue,
     stack: &mut [StackValue],
@@ -369,12 +580,13 @@ pub(crate) fn propagate_update(
     args: &mut [StackValue],
     static_fields: &mut [StackValue],
     affected_stack_indices: Option<&[usize]>,
-) {
+) -> Result<(), String> {
+    let mut fits = true;
     match affected_stack_indices {
         Some(indices) if !indices.is_empty() => {
             for &idx in indices {
                 if idx < stack.len() {
-                    replace_alias(&mut stack[idx], updated);
+                    fits &= replace_alias(&mut stack[idx], updated, MAX_COMPOUND_NESTING_DEPTH);
                 }
             }
         }
@@ -383,44 +595,59 @@ pub(crate) fn propagate_update(
         }
         None => {
             for value in stack {
-                replace_alias(value, updated);
+                fits &= replace_alias(value, updated, MAX_COMPOUND_NESTING_DEPTH);
             }
         }
     }
     for value in locals {
-        replace_alias(value, updated);
+        fits &= replace_alias(value, updated, MAX_COMPOUND_NESTING_DEPTH);
     }
     for value in args {
-        replace_alias(value, updated);
+        fits &= replace_alias(value, updated, MAX_COMPOUND_NESTING_DEPTH);
     }
     for value in static_fields {
-        replace_alias(value, updated);
+        fits &= replace_alias(value, updated, MAX_COMPOUND_NESTING_DEPTH);
+    }
+    if fits {
+        Ok(())
+    } else {
+        Err(NESTING_DEPTH_ERROR.to_string())
     }
 }
 
-pub(crate) fn propagate_aliases_from_sources(targets: &mut [StackValue], sources: &[StackValue]) {
+pub(crate) fn propagate_aliases_from_sources(
+    targets: &mut [StackValue],
+    sources: &[StackValue],
+) -> Result<(), String> {
+    let mut fits = true;
     for source in sources {
-        propagate_alias_from_source(targets, source);
+        fits &= propagate_alias_from_source(targets, source);
+    }
+    if fits {
+        Ok(())
+    } else {
+        Err(NESTING_DEPTH_ERROR.to_string())
     }
 }
 
-fn propagate_alias_from_source(targets: &mut [StackValue], source: &StackValue) {
+fn propagate_alias_from_source(targets: &mut [StackValue], source: &StackValue) -> bool {
+    let mut fits = true;
     if compound_id(source).is_some() {
         for target in targets.iter_mut() {
-            replace_alias(target, source);
+            fits &= replace_alias(target, source, MAX_COMPOUND_NESTING_DEPTH);
         }
     }
 
     match source {
         StackValue::Array(_, items) | StackValue::Struct(_, items) => {
             for item in items {
-                propagate_alias_from_source(targets, item);
+                fits &= propagate_alias_from_source(targets, item);
             }
         }
         StackValue::Map(_, items) => {
             for (key, value) in items {
-                propagate_alias_from_source(targets, key);
-                propagate_alias_from_source(targets, value);
+                fits &= propagate_alias_from_source(targets, key);
+                fits &= propagate_alias_from_source(targets, value);
             }
         }
         StackValue::Buffer(_, _)
@@ -433,25 +660,34 @@ fn propagate_alias_from_source(targets: &mut [StackValue], source: &StackValue) 
         | StackValue::Iterator(_)
         | StackValue::Null => {}
     }
+    fits
 }
 
-fn replace_alias(target: &mut StackValue, updated: &StackValue) {
+/// Replaces every alias of `updated` inside `target`, which may still nest
+/// `room` compound levels. Returns `false`, leaving that alias as it was, when
+/// the replacement would nest deeper than `room`.
+fn replace_alias(target: &mut StackValue, updated: &StackValue, room: usize) -> bool {
     let target_id = compound_id(target);
     if target_id.is_some() && target_id == compound_id(updated) {
+        if nesting_exceeds(updated, room) {
+            return false;
+        }
         *target = updated.clone();
-        return;
+        return true;
     }
 
+    let inner = room.saturating_sub(1);
+    let mut fits = true;
     match target {
         StackValue::Array(_, items) | StackValue::Struct(_, items) => {
             for item in items {
-                replace_alias(item, updated);
+                fits &= replace_alias(item, updated, inner);
             }
         }
         StackValue::Map(_, items) => {
             for (key, value) in items {
-                replace_alias(key, updated);
-                replace_alias(value, updated);
+                fits &= replace_alias(key, updated, inner);
+                fits &= replace_alias(value, updated, inner);
             }
         }
         StackValue::Buffer(_, _)
@@ -464,6 +700,7 @@ fn replace_alias(target: &mut StackValue, updated: &StackValue) {
         | StackValue::Iterator(_)
         | StackValue::Null => {}
     }
+    fits
 }
 
 #[cfg(test)]

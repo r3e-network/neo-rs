@@ -2,7 +2,8 @@ use super::super::api::InterpreterSemantics;
 use super::super::helpers::*;
 use super::super::opcodes::*;
 use super::super::runtime_types::{
-    CompoundIds, StackValue, find_affected_indices, propagate_update,
+    CompoundIds, NESTING_DEPTH_ERROR, StackValue, ensure_nestable, find_affected_indices,
+    propagate_update,
 };
 use super::super::state::{MAX_STACK_SIZE, PendingException, TryStack, remember_consumed_mutation};
 use super::control::Dispatch;
@@ -26,7 +27,7 @@ fn commit_collection_update(
     static_fields: &mut [StackValue],
     consumed_mutations: &mut Vec<StackValue>,
     affected_stack_indices: Option<&[usize]>,
-) {
+) -> Result<(), String> {
     remember_consumed_mutation(consumed_mutations, updated);
     propagate_update(
         updated,
@@ -35,7 +36,20 @@ fn commit_collection_update(
         args,
         static_fields,
         affected_stack_indices,
-    );
+    )
+}
+
+/// Rejects a PACK-family operand run when wrapping it in one more compound
+/// would nest past the limit. Runs before anything is popped, so the value
+/// that would be too deep is never built.
+fn ensure_operands_nestable(operands: &[StackValue]) -> Result<(), String> {
+    if operands
+        .iter()
+        .any(|operand| ensure_nestable(operand).is_err())
+    {
+        return Err(NESTING_DEPTH_ERROR.to_string());
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -73,6 +87,7 @@ pub(super) fn execute(
             if stack.len() < count.saturating_mul(2) {
                 return Err("stack underflow for PACKMAP".to_string());
             }
+            ensure_operands_nestable(&stack[stack.len() - count * 2..])?;
 
             let mut pairs = Vec::with_capacity(count);
             for _ in 0..count {
@@ -90,6 +105,7 @@ pub(super) fn execute(
             if stack.len() < count {
                 return Err("stack underflow for PACKSTRUCT".to_string());
             }
+            ensure_operands_nestable(&stack[stack.len() - count..])?;
 
             let mut items = Vec::with_capacity(count);
             for _ in 0..count {
@@ -109,6 +125,7 @@ pub(super) fn execute(
             if stack.len() < count {
                 return Err("stack underflow for PACK".to_string());
             }
+            ensure_operands_nestable(&stack[stack.len() - count..])?;
 
             let mut items = Vec::with_capacity(count);
             for _ in 0..count {
@@ -241,9 +258,10 @@ pub(super) fn execute(
         APPEND => {
             let value = pop_item(stack)?;
             let item = pop_item(stack)?;
+            ensure_nestable(&value)?;
             match item {
                 StackValue::Array(id, mut items) => {
-                    items.push(ids.clone_struct_for_storage(&value));
+                    items.push(ids.clone_for_mutation(&value));
                     let updated = StackValue::Array(id, items);
                     let affected = find_affected_indices(id, stack);
                     commit_collection_update(
@@ -254,10 +272,10 @@ pub(super) fn execute(
                         static_fields,
                         consumed_mutations,
                         Some(&affected),
-                    );
+                    )?;
                 }
                 StackValue::Struct(id, mut items) => {
-                    items.push(ids.clone_struct_for_storage(&value));
+                    items.push(ids.clone_for_mutation(&value));
                     let updated = StackValue::Struct(id, items);
                     let affected = find_affected_indices(id, stack);
                     commit_collection_update(
@@ -268,7 +286,7 @@ pub(super) fn execute(
                         static_fields,
                         consumed_mutations,
                         Some(&affected),
-                    );
+                    )?;
                 }
                 _ => return Err("APPEND expects an array or struct".to_string()),
             }
@@ -348,6 +366,7 @@ pub(super) fn execute(
             let value = pop_item(stack)?;
             let key = pop_item(stack)?;
             let item = pop_item(stack)?;
+            ensure_nestable(&value)?;
             match item {
                 StackValue::ByteString(_) => {
                     return Err(
@@ -375,14 +394,14 @@ pub(super) fn execute(
                         static_fields,
                         consumed_mutations,
                         Some(&affected),
-                    );
+                    )?;
                 }
                 StackValue::Array(id, mut items) => {
                     let index = integer_value_for_collection_index(&key)?;
                     if index < 0 || (index as usize) >= items.len() {
                         return Err("index out of range for SETITEM".to_string());
                     }
-                    items[index as usize] = ids.clone_struct_for_storage(&value);
+                    items[index as usize] = ids.clone_for_mutation(&value);
                     let updated = StackValue::Array(id, items);
                     let affected = find_affected_indices(id, stack);
                     commit_collection_update(
@@ -393,14 +412,14 @@ pub(super) fn execute(
                         static_fields,
                         consumed_mutations,
                         Some(&affected),
-                    );
+                    )?;
                 }
                 StackValue::Struct(id, mut items) => {
                     let index = integer_value_for_collection_index(&key)?;
                     if index < 0 || (index as usize) >= items.len() {
                         return Err("index out of range for SETITEM".to_string());
                     }
-                    items[index as usize] = ids.clone_struct_for_storage(&value);
+                    items[index as usize] = ids.clone_for_mutation(&value);
                     let updated = StackValue::Struct(id, items);
                     let affected = find_affected_indices(id, stack);
                     commit_collection_update(
@@ -411,7 +430,7 @@ pub(super) fn execute(
                         static_fields,
                         consumed_mutations,
                         Some(&affected),
-                    );
+                    )?;
                 }
                 StackValue::Map(id, mut items) => {
                     if let Some(index) = collection_rules::map_entry_index_by(
@@ -420,11 +439,11 @@ pub(super) fn execute(
                         primitive_key_equals,
                         validate_map_key,
                     )? {
-                        items[index].1 = ids.clone_struct_for_storage(&value);
+                        items[index].1 = ids.clone_for_mutation(&value);
                     } else {
                         let mut updated_items = Vec::with_capacity(items.len() + 1);
                         updated_items.extend(items);
-                        updated_items.push((key, ids.clone_struct_for_storage(&value)));
+                        updated_items.push((key, ids.clone_for_mutation(&value)));
                         items = updated_items;
                     }
                     let updated = StackValue::Map(id, items);
@@ -437,7 +456,7 @@ pub(super) fn execute(
                         static_fields,
                         consumed_mutations,
                         Some(&affected),
-                    );
+                    )?;
                 }
                 _ => return Err("SETITEM expects an array, buffer, or map".to_string()),
             }
@@ -462,7 +481,7 @@ pub(super) fn execute(
                         static_fields,
                         consumed_mutations,
                         Some(&affected),
-                    );
+                    )?;
                 }
                 StackValue::Struct(id, mut items) => {
                     let index = integer_value_for_collection_index(&key)?;
@@ -480,7 +499,7 @@ pub(super) fn execute(
                         static_fields,
                         consumed_mutations,
                         Some(&affected),
-                    );
+                    )?;
                 }
                 StackValue::Map(id, mut items) => {
                     let index = collection_rules::map_entry_index_by(
@@ -501,7 +520,7 @@ pub(super) fn execute(
                         static_fields,
                         consumed_mutations,
                         Some(&affected),
-                    );
+                    )?;
                 }
                 _ => return Err("REMOVE expects an array, struct, or map".to_string()),
             }
@@ -519,7 +538,7 @@ pub(super) fn execute(
                         static_fields,
                         consumed_mutations,
                         None,
-                    );
+                    )?;
                 }
                 StackValue::Struct(id, _) => {
                     let updated = StackValue::Struct(id, Vec::new());
@@ -531,7 +550,7 @@ pub(super) fn execute(
                         static_fields,
                         consumed_mutations,
                         None,
-                    );
+                    )?;
                 }
                 StackValue::Map(id, _) => {
                     let updated = StackValue::Map(id, Vec::new());
@@ -543,7 +562,7 @@ pub(super) fn execute(
                         static_fields,
                         consumed_mutations,
                         None,
-                    );
+                    )?;
                 }
                 StackValue::Buffer(id, _) => {
                     let updated = StackValue::Buffer(id, Vec::new());
@@ -555,7 +574,7 @@ pub(super) fn execute(
                         static_fields,
                         consumed_mutations,
                         None,
-                    );
+                    )?;
                 }
                 _ => return Err("CLEARITEMS expects a compound value".to_string()),
             }
@@ -576,7 +595,7 @@ pub(super) fn execute(
                         static_fields,
                         consumed_mutations,
                         None,
-                    );
+                    )?;
                     stack.push(popped);
                 }
                 StackValue::Struct(id, mut items) => {
@@ -592,7 +611,7 @@ pub(super) fn execute(
                         static_fields,
                         consumed_mutations,
                         None,
-                    );
+                    )?;
                     stack.push(popped);
                 }
                 StackValue::Map(id, mut entries) => {
@@ -608,7 +627,7 @@ pub(super) fn execute(
                         static_fields,
                         consumed_mutations,
                         None,
-                    );
+                    )?;
                     stack.push(key);
                     stack.push(value);
                 }
@@ -625,7 +644,7 @@ pub(super) fn execute(
                         static_fields,
                         consumed_mutations,
                         None,
-                    );
+                    )?;
                     stack.push(StackValue::Integer(byte as i64));
                 }
                 _ => return Err("POPITEM expects a compound value".to_string()),
@@ -656,7 +675,7 @@ pub(super) fn execute(
                         static_fields,
                         consumed_mutations,
                         None,
-                    );
+                    )?;
                 }
                 StackValue::Struct(id, mut items) => {
                     items.reverse();
@@ -669,7 +688,7 @@ pub(super) fn execute(
                         static_fields,
                         consumed_mutations,
                         None,
-                    );
+                    )?;
                 }
                 StackValue::Buffer(id, mut bytes) => {
                     bytes.reverse();
@@ -682,7 +701,7 @@ pub(super) fn execute(
                         static_fields,
                         consumed_mutations,
                         None,
-                    );
+                    )?;
                 }
                 _ => {
                     return Err(format!(
