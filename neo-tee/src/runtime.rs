@@ -25,12 +25,28 @@ use tracing::{info, warn};
 ///
 /// Produced from the `[privacy]` config section; `None` everywhere else means
 /// privacy mode is off and the pre-privacy behavior is kept byte-for-byte.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum PrivacyEncryption {
     /// Committee epoch key material explicitly provisioned via config.
     CommitteeKey { epoch_id: u64, secret: [u8; 32] },
     /// Enclave sealing key encapsulates payload keys (rollback-floor guarded).
     TeeSealedKey,
+}
+
+/// C-7: hand-written `Debug` that never prints the committee epoch secret.
+/// This enum is logged (e.g. `mode = ?mode`) and may end up in diagnostics,
+/// so deriving `Debug` would leak the content-encryption key.
+impl std::fmt::Debug for PrivacyEncryption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CommitteeKey { epoch_id, .. } => f
+                .debug_struct("CommitteeKey")
+                .field("epoch_id", epoch_id)
+                .field("secret", &"[REDACTED]")
+                .finish(),
+            Self::TeeSealedKey => f.write_str("TeeSealedKey"),
+        }
+    }
 }
 
 impl PrivacyEncryption {
@@ -571,6 +587,26 @@ mod tests {
         section.encryption_mode = "bogus".to_string();
         let err = PrivacyEncryption::resolve(&section).unwrap_err();
         assert!(err.contains("unknown encryption_mode"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn privacy_encryption_debug_redacts_secret() {
+        let secret = [0x5Au8; 32];
+        let mode = PrivacyEncryption::CommitteeKey {
+            epoch_id: 42,
+            secret,
+        };
+
+        let rendered = format!("{mode:?}");
+        assert!(rendered.contains("[REDACTED]"), "unexpected: {rendered}");
+        assert!(rendered.contains("42"), "unexpected: {rendered}");
+        assert!(!rendered.contains("90, 90"), "secret leaked: {rendered}");
+        assert!(
+            !rendered.contains(&hex::encode(secret)),
+            "secret leaked: {rendered}"
+        );
+
+        assert_eq!(format!("{:?}", PrivacyEncryption::TeeSealedKey), "TeeSealedKey");
     }
 
     #[cfg(not(feature = "tee-sgx"))]

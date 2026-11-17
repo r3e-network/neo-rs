@@ -28,6 +28,8 @@ pub enum QuoteValidationResult {
     Revoked,
     /// Quote signature is invalid
     InvalidSignature,
+    /// Report wrapper fields disagree with the authenticated quote content
+    ReportQuoteMismatch,
     /// Quote format is invalid
     InvalidFormat,
     /// Unknown or unsupported quote type
@@ -50,6 +52,9 @@ impl QuoteValidationResult {
             QuoteValidationResult::SecurityVersionTooLow => "Security version too low",
             QuoteValidationResult::Revoked => "Quote or platform has been revoked",
             QuoteValidationResult::InvalidSignature => "Invalid quote signature",
+            QuoteValidationResult::ReportQuoteMismatch => {
+                "Report fields do not match the authenticated quote"
+            }
             QuoteValidationResult::InvalidFormat => "Invalid quote format",
             QuoteValidationResult::UnsupportedQuoteType => "Unsupported quote type",
         }
@@ -432,6 +437,65 @@ impl AttestationReport {
             return QuoteValidationResult::InvalidSignature;
         }
 
+        // C-1: every field checked above comes from the mutable report
+        // wrapper, so on its own it proves nothing about the enclave that was
+        // actually quoted. Once the quote signature is verified, bind the
+        // wrapper to the authenticated quote content and reject disagreement.
+        if self.report_type == ReportType::Remote {
+            let binding = self.verify_quote_binding();
+            if binding != QuoteValidationResult::Valid {
+                return binding;
+            }
+        }
+
+        QuoteValidationResult::Valid
+    }
+
+    /// Compare the report wrapper fields against the content of the quote it
+    /// carries.
+    ///
+    /// The quote bytes are the only authenticated source of measurements,
+    /// security version, report data and enclave attributes (callers must run
+    /// [`AttestationReport::verify`] first so the signature has been checked).
+    /// Any disagreement means the wrapper is claiming something the quote does
+    /// not attest, which must be rejected.
+    fn verify_quote_binding(&self) -> QuoteValidationResult {
+        let Some(quote_bytes) = self.quote.as_deref() else {
+            tracing::warn!(target: "neo", "remote attestation report carries no quote to bind");
+            return QuoteValidationResult::InvalidFormat;
+        };
+
+        let Some(quote) = Quote::from_bytes(quote_bytes) else {
+            tracing::warn!(target: "neo", "attestation report quote could not be parsed");
+            return QuoteValidationResult::InvalidFormat;
+        };
+
+        if quote.mrenclave != self.mrenclave {
+            tracing::warn!(target: "neo", "report MRENCLAVE does not match quoted MRENCLAVE");
+            return QuoteValidationResult::ReportQuoteMismatch;
+        }
+        if quote.mrsigner != self.mrsigner {
+            tracing::warn!(target: "neo", "report MRSIGNER does not match quoted MRSIGNER");
+            return QuoteValidationResult::ReportQuoteMismatch;
+        }
+        if quote.isv_prod_id != self.isv_prod_id || quote.isv_svn != self.isv_svn {
+            tracing::warn!(
+                target: "neo",
+                "report ISV product/security version does not match the quote"
+            );
+            return QuoteValidationResult::ReportQuoteMismatch;
+        }
+        if quote.report_data != self.report_data {
+            tracing::warn!(target: "neo", "report data does not match quoted report data");
+            return QuoteValidationResult::ReportQuoteMismatch;
+        }
+
+        let quoted_debug = (quote.attributes[0] & 0x02) != 0;
+        if quoted_debug != self.attributes.debug {
+            tracing::warn!(target: "neo", "report debug attribute does not match the quote");
+            return QuoteValidationResult::ReportQuoteMismatch;
+        }
+
         QuoteValidationResult::Valid
     }
 
@@ -803,5 +867,114 @@ mod tests {
         assert_eq!(quote.attributes[0] & 0x02, 0x02);
         assert_eq!(quote.isv_prod_id, 0x1234);
         assert_eq!(quote.isv_svn, 0x5678);
+    }
+
+    /// Build a minimal 436-byte SGX quote v3 prefix carrying the given fields.
+    fn build_quote(
+        mrenclave: [u8; 32],
+        mrsigner: [u8; 32],
+        report_data: [u8; 64],
+        isv_prod_id: u16,
+        isv_svn: u16,
+        debug: bool,
+    ) -> Vec<u8> {
+        let mut bytes = vec![0u8; 436];
+        bytes[0] = 3; // version 3 (ECDSA)
+        bytes[2] = 2; // ECDSA signature type
+        bytes[48 + 64..48 + 96].copy_from_slice(&mrenclave);
+        bytes[48 + 128..48 + 160].copy_from_slice(&mrsigner);
+        bytes[48 + 320..48 + 384].copy_from_slice(&report_data);
+        if debug {
+            bytes[48 + 48] = 0x02;
+        }
+        bytes[48 + 256..48 + 258].copy_from_slice(&isv_prod_id.to_le_bytes());
+        bytes[48 + 258..48 + 260].copy_from_slice(&isv_svn.to_le_bytes());
+        bytes
+    }
+
+    fn quote_backed_report(
+        mrenclave: [u8; 32],
+        mrsigner: [u8; 32],
+        report_data: [u8; 64],
+    ) -> AttestationReport {
+        let mut report = AttestationReport::simulated_with_measurements(
+            report_data, mrenclave, mrsigner,
+        );
+        report.report_type = ReportType::Remote;
+        report.quote = Some(build_quote(mrenclave, mrsigner, report_data, 1, 1, false));
+        report
+    }
+
+    #[test]
+    fn test_quote_binding_accepts_matching_fields() {
+        let mrenclave = [0x11u8; 32];
+        let mrsigner = [0x22u8; 32];
+        let report_data = [0x33u8; 64];
+
+        let report = quote_backed_report(mrenclave, mrsigner, report_data);
+        assert_eq!(
+            report.verify_quote_binding(),
+            QuoteValidationResult::Valid
+        );
+    }
+
+    #[test]
+    fn test_quote_binding_rejects_tampered_measurements() {
+        let mrenclave = [0x11u8; 32];
+        let mrsigner = [0x22u8; 32];
+        let report_data = [0x33u8; 64];
+
+        let mut report = quote_backed_report(mrenclave, mrsigner, report_data);
+        report.mrenclave = [0x99u8; 32];
+        assert_eq!(
+            report.verify_quote_binding(),
+            QuoteValidationResult::ReportQuoteMismatch
+        );
+
+        let mut report = quote_backed_report(mrenclave, mrsigner, report_data);
+        report.mrsigner = [0x99u8; 32];
+        assert_eq!(
+            report.verify_quote_binding(),
+            QuoteValidationResult::ReportQuoteMismatch
+        );
+    }
+
+    #[test]
+    fn test_quote_binding_rejects_tampered_version_and_report_data() {
+        let mrenclave = [0x11u8; 32];
+        let mrsigner = [0x22u8; 32];
+        let report_data = [0x33u8; 64];
+
+        let mut report = quote_backed_report(mrenclave, mrsigner, report_data);
+        report.isv_svn = 9;
+        assert_eq!(
+            report.verify_quote_binding(),
+            QuoteValidationResult::ReportQuoteMismatch
+        );
+
+        let mut report = quote_backed_report(mrenclave, mrsigner, report_data);
+        report.report_data = [0x44u8; 64];
+        assert_eq!(
+            report.verify_quote_binding(),
+            QuoteValidationResult::ReportQuoteMismatch
+        );
+
+        let mut report = quote_backed_report(mrenclave, mrsigner, report_data);
+        report.attributes.debug = true;
+        assert_eq!(
+            report.verify_quote_binding(),
+            QuoteValidationResult::ReportQuoteMismatch
+        );
+    }
+
+    #[test]
+    fn test_quote_binding_requires_a_quote() {
+        let mut report = AttestationReport::simulated([0u8; 64]);
+        report.report_type = ReportType::Remote;
+
+        assert_eq!(
+            report.verify_quote_binding(),
+            QuoteValidationResult::InvalidFormat
+        );
     }
 }

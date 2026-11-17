@@ -14,6 +14,7 @@ use rand::RngCore;
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use std::fmt;
 use zeroize::Zeroize;
 
 /// Sealed data container
@@ -49,7 +50,7 @@ impl SealedData {
 }
 
 /// Key derivation parameters for HKDF
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct KeyDerivationParams<'a> {
     /// Base key material (e.g., sealing key from TEE)
     pub base_key: &'a [u8; 32],
@@ -57,6 +58,18 @@ pub struct KeyDerivationParams<'a> {
     pub context: &'a str,
     /// Optional salt for domain separation
     pub salt: Option<&'a [u8]>,
+}
+
+/// C-7: hand-written `Debug` that never prints key material. `Salt` is treated
+/// as secret because callers may pass key-derived salt material here.
+impl fmt::Debug for KeyDerivationParams<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KeyDerivationParams")
+            .field("base_key", &"[REDACTED]")
+            .field("context", &self.context)
+            .field("salt", &self.salt.map(|_| "[REDACTED]"))
+            .finish()
+    }
 }
 
 /// Derive a context-specific key using HKDF-SHA256
@@ -421,5 +434,32 @@ mod tests {
         // Derive subkey
         let subkey = key.derive_subkey("test-context").unwrap();
         assert_ne!(subkey.as_bytes(), key.as_bytes());
+    }
+
+    #[test]
+    fn test_key_derivation_params_debug_redacts_key_material() {
+        let base_key = [0xC3u8; 32];
+        let salt = [0x7Eu8; 8];
+        let params = KeyDerivationParams {
+            base_key: &base_key,
+            context: "wallet-key",
+            salt: Some(&salt),
+        };
+
+        let rendered = format!("{params:?}");
+        assert!(rendered.contains("[REDACTED]"), "unexpected: {rendered}");
+        assert!(rendered.contains("wallet-key"), "unexpected: {rendered}");
+        // No raw key/salt bytes may appear in any rendering (decimal lists or hex).
+        assert!(!rendered.contains("195, 195"), "key leaked: {rendered}");
+        assert!(!rendered.contains(&hex::encode(base_key)), "key leaked: {rendered}");
+        assert!(!rendered.contains("126, 126"), "salt leaked: {rendered}");
+        assert!(!rendered.contains(&hex::encode(salt)), "salt leaked: {rendered}");
+
+        let no_salt = KeyDerivationParams {
+            base_key: &base_key,
+            context: "wallet-key",
+            salt: None,
+        };
+        assert!(format!("{no_salt:?}").contains("salt: None"));
     }
 }

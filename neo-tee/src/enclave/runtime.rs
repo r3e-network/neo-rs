@@ -1,11 +1,19 @@
 //! Enclave runtime implementation
 
+// C-2: the software (simulated) sealing-key path is gated behind the opt-in
+// `tee-sgx-sim` cfg, which is intentionally not part of the default feature
+// set. Referencing it here is expected, so silence the cfg-check lint for this
+// module only.
+#![allow(unexpected_cfgs)]
+
 use crate::error::{EnclaveInitError, TeeError, TeeResult};
 #[cfg(feature = "tee-sgx")]
 use crate::sgx::VerifiedSgxEvidence;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+#[cfg(any(feature = "tee-sgx", test, feature = "tee-sgx-sim"))]
+use std::path::Path;
 use tracing::{debug, error, info, warn};
 
 /// Enclave configuration
@@ -458,15 +466,33 @@ impl TeeEnclave {
     }
 
     /// Derive sealing key from hardware or simulation
+    ///
+    /// C-2: without `tee-sgx` the software derivation is only compiled for
+    /// tests and the explicit `tee-sgx-sim` feature. A default (release) build
+    /// therefore fails closed instead of silently sealing data with a key that
+    /// any host process can recompute.
     fn derive_sealing_key(&self) -> TeeResult<[u8; 32]> {
         #[cfg(feature = "tee-sgx")]
         {
             self.derive_sgx_sealing_key()
         }
 
-        #[cfg(not(feature = "tee-sgx"))]
+        #[cfg(all(not(feature = "tee-sgx"), any(test, feature = "tee-sgx-sim")))]
         {
             self.derive_simulated_sealing_key()
+        }
+
+        #[cfg(all(
+            not(feature = "tee-sgx"),
+            not(test),
+            not(feature = "tee-sgx-sim")
+        ))]
+        {
+            Err(TeeError::FeatureNotEnabled(
+                "enclave sealing key derivation unavailable: hardware sealing requires the \
+                 `tee-sgx` feature (simulated sealing keys are not permitted in this build)"
+                    .to_string(),
+            ))
         }
     }
 
@@ -503,7 +529,7 @@ impl TeeEnclave {
     }
 
     /// Derive simulated sealing key for testing
-    #[cfg(not(feature = "tee-sgx"))]
+    #[cfg(all(not(feature = "tee-sgx"), any(test, feature = "tee-sgx-sim")))]
     fn derive_simulated_sealing_key(&self) -> TeeResult<[u8; 32]> {
         use sha2::{Digest, Sha256};
 
@@ -539,6 +565,7 @@ impl TeeEnclave {
     /// This is used in simulation mode and in SGX builds when code is not
     /// executing inside an enclave and must fail over to deterministic software
     /// key derivation.
+    #[cfg(any(feature = "tee-sgx", test, feature = "tee-sgx-sim"))]
     fn get_machine_identifier(&self) -> Vec<u8> {
         use sha2::{Digest, Sha256};
 
@@ -578,6 +605,7 @@ impl TeeEnclave {
     }
 
     /// Generate and save a new machine identifier
+    #[cfg(any(feature = "tee-sgx", test, feature = "tee-sgx-sim"))]
     fn generate_and_save_machine_id(id_file: &Path) -> Vec<u8> {
         let id: [u8; 32] = rand::random();
 

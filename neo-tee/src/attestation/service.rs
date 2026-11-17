@@ -344,9 +344,17 @@ impl AttestationService {
                 warn!("SGX DCAP quote verification failed: {}", err);
                 return Ok(QuoteValidationResult::InvalidSignature);
             }
+
+            Ok(QuoteValidationResult::Valid)
         }
 
-        Ok(QuoteValidationResult::Valid)
+        // C-2: without `tee-sgx` only the structural checks above ran, so a
+        // "Valid" result would assert authenticity that was never verified.
+        #[cfg(not(feature = "tee-sgx"))]
+        {
+            warn!("SGX quote verification unavailable: neo-tee was built without `tee-sgx`");
+            Err(hardware_verification_unavailable())
+        }
     }
 
     /// Verify a quote with detailed validation
@@ -381,9 +389,17 @@ impl AttestationService {
                 warn!("SGX DCAP quote verification failed: {}", err);
                 return Ok(QuoteValidationResult::InvalidSignature);
             }
+
+            Ok(QuoteValidationResult::Valid)
         }
 
-        Ok(QuoteValidationResult::Valid)
+        // C-2: see `verify_quote` — structural checks alone must never be
+        // reported as a verified quote.
+        #[cfg(not(feature = "tee-sgx"))]
+        {
+            warn!("SGX quote verification unavailable: neo-tee was built without `tee-sgx`");
+            Err(hardware_verification_unavailable())
+        }
     }
 
     /// Get the expected MRENCLAVE for this enclave version
@@ -692,6 +708,19 @@ impl AttestationService {
     }
 }
 
+/// Error returned when cryptographic quote verification is not compiled in.
+///
+/// C-2: structural quote checks are not verification. Without the `tee-sgx`
+/// feature the crate cannot authenticate a quote, so the quote verification
+/// entry points fail closed with this error instead of returning `Valid`.
+#[cfg(not(feature = "tee-sgx"))]
+fn hardware_verification_unavailable() -> TeeError {
+    TeeError::FeatureNotEnabled(
+        "hardware quote verification unavailable: neo-tee was built without the `tee-sgx` feature"
+            .to_string(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -967,6 +996,32 @@ mod tests {
         let result = service.verify_quote(&invalid_quote);
 
         assert!(result.is_err());
+    }
+
+    #[cfg(not(feature = "tee-sgx"))]
+    #[test]
+    fn test_verify_quote_fails_closed_without_hardware_feature() {
+        let (_temp, service) = setup_service();
+
+        // Structurally valid SGX quote v3 prefix: every field check passes.
+        let mut quote_bytes = vec![0u8; 436];
+        quote_bytes[0] = 3; // version
+        quote_bytes[2] = 2; // ECDSA signature type
+        quote_bytes[48 + 258] = 1; // isv_svn = 1
+
+        match service.verify_quote(&quote_bytes) {
+            Err(TeeError::FeatureNotEnabled(message)) => {
+                assert!(message.contains("tee-sgx"), "unexpected: {message}");
+            }
+            other => panic!("expected FeatureNotEnabled, got {other:?}"),
+        }
+
+        match service.verify_quote_detailed(&quote_bytes, None) {
+            Err(TeeError::FeatureNotEnabled(message)) => {
+                assert!(message.contains("tee-sgx"), "unexpected: {message}");
+            }
+            other => panic!("expected FeatureNotEnabled, got {other:?}"),
+        }
     }
 
     #[test]
