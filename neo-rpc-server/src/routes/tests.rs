@@ -968,3 +968,116 @@ async fn process_body_returns_internal_error_on_panic() {
         Some(RpcError::internal_server_error().code() as i64)
     );
 }
+
+/// `depth` arrays, one inside the other.
+#[cfg(feature = "jsonrpsee-server")]
+fn nested_arrays(depth: usize) -> String {
+    format!("{}{}", "[".repeat(depth), "]".repeat(depth))
+}
+
+#[cfg(feature = "jsonrpsee-server")]
+#[test]
+fn unparsed_depth_scan_agrees_with_the_parsed_walk() {
+    const DOCUMENTS: &[&str] = &[
+        "null",
+        "0",
+        r#""text""#,
+        "[]",
+        "{}",
+        "[[]]",
+        "[[], [[]], []]",
+        r#"{"a": {"b": [1, {"c": null}]}}"#,
+        r#"[[[1], 2], {"k": [[false]]}, -1.5e3]"#,
+        " [ 1 , [ 2 , [ 3 ] ] , \"x\" ] ",
+        // Brackets, braces and quotes inside strings open nothing.
+        r#"["[[[[", "]]]]", "{\"a\": [", "\\"]"#,
+        r#"{"[[[": 1, "a\"[": [true]}"#,
+    ];
+
+    for document in DOCUMENTS {
+        let parsed: Value = serde_json::from_str(document).expect("valid JSON");
+        for max_depth in 1..=6 {
+            assert_eq!(
+                text_exceeds_max_depth(document.as_bytes(), 0, max_depth),
+                exceeds_max_depth(&parsed, max_depth),
+                "{document} against a limit of {max_depth}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "jsonrpsee-server")]
+#[test]
+fn unparsed_depth_scan_does_not_recurse() {
+    // A stack this small holds no recursion a hundred thousand levels deep.
+    let scan = std::thread::Builder::new()
+        .stack_size(64 * 1024)
+        .spawn(|| {
+            let deep = nested_arrays(100_000);
+            (
+                params_exceed_max_depth(&deep, false),
+                text_exceeds_max_depth(deep.as_bytes(), 0, usize::MAX),
+            )
+        })
+        .expect("thread to start");
+
+    // Refused at the limit, and walked to the end when there is none.
+    assert_eq!(scan.join().expect("scan to finish"), (true, false));
+}
+
+/// The jsonrpsee adapter only ever sees the `params` of a request. Whatever
+/// `process_body` decides about the depth of a body, the adapter's measure
+/// has to decide the same from the `params` alone.
+#[cfg(feature = "jsonrpsee-server")]
+#[tokio::test(flavor = "multi_thread")]
+async fn params_depth_verdict_matches_the_whole_body_verdict() {
+    let invocations = Arc::new(AtomicUsize::new(0));
+    let (_server, filters) = build_filters_with_counting_handler(Arc::clone(&invocations));
+    let bad_request = i64::from(RpcError::bad_request().code());
+
+    for batched in [false, true] {
+        for nesting in 1..=MAX_PARAMS_DEPTH + 4 {
+            let arrays = nested_arrays(nesting);
+            let objects = format!("[{}0{}]", r#"{"k":"#.repeat(nesting), "}".repeat(nesting));
+            for params in [arrays, objects] {
+                let request =
+                    format!(r#"{{"jsonrpc":"2.0","method":"ping","params":{params},"id":1}}"#);
+                let body = if batched {
+                    format!("[{request}]")
+                } else {
+                    request
+                };
+
+                let served_before = invocations.load(Ordering::SeqCst);
+                let (response, _) = process_body(&filters, None, body.as_bytes(), None);
+                let response = response.expect("response");
+                let refused = response
+                    .get("error")
+                    .is_some_and(|error| error["code"].as_i64() == Some(bad_request));
+
+                assert_eq!(
+                    params_exceed_max_depth(&params, batched),
+                    refused,
+                    "batched: {batched}, params: {params}"
+                );
+                assert_eq!(
+                    invocations.load(Ordering::SeqCst) - served_before,
+                    usize::from(!refused),
+                    "batched: {batched}, params: {params}"
+                );
+            }
+        }
+
+        // The request object, and the batch array around it, take their
+        // levels out of the same limit.
+        let enclosing = if batched { 2 } else { 1 };
+        assert!(!params_exceed_max_depth(
+            &nested_arrays(MAX_PARAMS_DEPTH - enclosing),
+            batched
+        ));
+        assert!(params_exceed_max_depth(
+            &nested_arrays(MAX_PARAMS_DEPTH - enclosing + 1),
+            batched
+        ));
+    }
+}

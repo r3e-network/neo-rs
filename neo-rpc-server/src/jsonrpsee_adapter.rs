@@ -23,9 +23,48 @@
 //! * `MaxRequestsPerSecond`/`RateLimitBurst` — applied as a single aggregate
 //!   ceiling (`per-client rate × MaxConcurrentConnections`) because the module
 //!   API exposes no peer identity to key a per-client limiter on.
-//! * TLS, CORS, `MaxRequestBodySize`, `MaxBatchSize`, connect limits, timeouts
-//!   and compression are **not** inherited; they must be provided by the
-//!   `jsonrpsee` server/service layer.
+//! * JSON nesting depth — `params` reach the module as unparsed text and are
+//!   measured before they are parsed, against the limit of the warp front end
+//!   and counted the way it counts: as part of the request they came in. Over
+//!   the limit the call is refused with the warp front end's error and its
+//!   handler does not run. A method call cannot tell whether it arrived in a
+//!   batch, where the batch array adds a level; [`JsonRpseeBatchLimits`] is
+//!   the RPC middleware that accounts for it. Members of a request that
+//!   jsonrpsee does not know are not measured: it skips them without building
+//!   anything from them, where the warp front end counts them too.
+//! * `MaxRequestBodySize`, `MaxBatchSize` — a module never sees the request
+//!   body, so the jsonrpsee server has to enforce these: build its settings
+//!   with [`jsonrpsee_server_config`]. As a backstop for a server configured
+//!   some other way, `params` longer than `MaxRequestBodySize` are refused
+//!   at dispatch.
+//! * TLS, CORS, connect limits, the admission limit, timeouts (the request
+//!   body deadlines included) and compression are **not** inherited; they
+//!   must be provided by the `jsonrpsee` server/service layer.
+//!
+//! A server that carries the limits above is built like this:
+//!
+//! ```no_run
+//! # use jsonrpsee::core::middleware::RpcServiceBuilder;
+//! # use jsonrpsee::server::{Server, ServerHandle};
+//! # use neo_rpc_server::{
+//! #     JsonRpseeBatchLimits, RpcServer, RpcServerConfig, build_jsonrpsee_module,
+//! #     jsonrpsee_server_config,
+//! # };
+//! # use parking_lot::RwLock;
+//! # use std::sync::Weak;
+//! # async fn serve(
+//! #     rpc_server: Weak<RwLock<RpcServer>>,
+//! #     config: RpcServerConfig,
+//! # ) -> Result<ServerHandle, Box<dyn std::error::Error>> {
+//! let server = Server::builder()
+//!     .set_config(jsonrpsee_server_config(&config).build())
+//!     .set_rpc_middleware(RpcServiceBuilder::new().layer_fn(JsonRpseeBatchLimits::new))
+//!     .build("127.0.0.1:10332")
+//!     .await?;
+//! let handle = server.start(build_jsonrpsee_module(rpc_server, &config)?);
+//! # Ok(handle)
+//! # }
+//! ```
 //!
 //! Treat the adapter as a convenience for embedding the handlers in an
 //! existing, already-hardened jsonrpsee deployment. Do not expose it directly
@@ -34,17 +73,22 @@
 //! controls.
 
 use super::middleware::{GovernorRateLimiter, RateLimitConfig};
-use super::routes::{invoke_rpc_handler, resolve_rpc_handler};
+use super::routes::{
+    invoke_rpc_handler, max_post_body_len, params_exceed_max_depth, resolve_rpc_handler,
+};
 use super::rpc_error::RpcError;
 use super::rpc_server::RpcServer;
 use super::rpc_server_settings::RpcServerConfig;
-use jsonrpsee::RpcModule;
 use jsonrpsee::core::RegisterMethodError;
-use jsonrpsee::types::{ErrorObjectOwned, Params};
+use jsonrpsee::core::middleware::{Batch, Notification, Request, ResponseFuture, RpcServiceT};
+use jsonrpsee::server::{BatchRequestConfig, ServerConfig, ServerConfigBuilder};
+use jsonrpsee::types::{ErrorObjectOwned, Id, Params};
+use jsonrpsee::{MethodResponse, RpcModule};
 use parking_lot::RwLock;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::fmt;
+use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Weak};
 
@@ -96,6 +140,9 @@ pub struct JsonRpseeContext {
     server: Weak<RwLock<RpcServer>>,
     disabled: Arc<HashSet<String>>,
     rate_limiter: Option<Arc<GovernorRateLimiter>>,
+    /// `MaxRequestBodySize`: no `params` can be longer than the body they
+    /// came in.
+    max_request_len: u64,
 }
 
 impl JsonRpseeContext {
@@ -105,6 +152,7 @@ impl JsonRpseeContext {
             server,
             disabled,
             rate_limiter: None,
+            max_request_len: max_post_body_len(&RpcServerConfig::default()),
         }
     }
 
@@ -161,6 +209,85 @@ pub fn build_jsonrpsee_module_with_external_auth(
     build_module(server, config, extra_disabled, true)
 }
 
+/// Settings for the jsonrpsee server that serves the module, carrying the
+/// request limits of `config` that only the server can enforce:
+/// `MaxRequestBodySize` and `MaxBatchSize`, as the warp front end applies
+/// them.
+///
+/// Returned as a builder so the caller can add what else the deployment
+/// needs before building it.
+#[must_use]
+pub fn jsonrpsee_server_config(config: &RpcServerConfig) -> ServerConfigBuilder {
+    let max_body = u32::try_from(max_post_body_len(config)).unwrap_or(u32::MAX);
+    let max_batch = u32::try_from(config.max_batch_size).unwrap_or(u32::MAX);
+    ServerConfig::builder()
+        .max_request_body_size(max_body)
+        .set_batch_request_config(BatchRequestConfig::Limit(max_batch))
+}
+
+/// RPC middleware that holds a batch to the depth limit of the warp front
+/// end.
+///
+/// The module checks every call on its own, but a call does not know it came
+/// in a batch, where the batch array puts its `params` one level deeper. This
+/// counts that level and, like the warp front end, refuses the whole batch
+/// when any of it is too deep: none of its calls run.
+///
+/// Install it with
+/// `RpcServiceBuilder::new().layer_fn(JsonRpseeBatchLimits::new)`.
+#[derive(Clone, Debug)]
+pub struct JsonRpseeBatchLimits<S> {
+    service: S,
+}
+
+impl<S> JsonRpseeBatchLimits<S> {
+    pub const fn new(service: S) -> Self {
+        Self { service }
+    }
+}
+
+impl<S> RpcServiceT for JsonRpseeBatchLimits<S>
+where
+    S: RpcServiceT<
+            MethodResponse = MethodResponse,
+            NotificationResponse = MethodResponse,
+            BatchResponse = MethodResponse,
+        >,
+{
+    type MethodResponse = MethodResponse;
+    type NotificationResponse = MethodResponse;
+    type BatchResponse = MethodResponse;
+
+    fn call<'a>(
+        &self,
+        request: Request<'a>,
+    ) -> impl Future<Output = Self::MethodResponse> + Send + 'a {
+        self.service.call(request)
+    }
+
+    fn batch<'a>(&self, batch: Batch<'a>) -> impl Future<Output = Self::BatchResponse> + Send + 'a {
+        let too_deep = batch.iter().flatten().any(|entry| {
+            entry
+                .params()
+                .is_some_and(|params| params_exceed_max_depth(params.get(), true))
+        });
+        if too_deep {
+            return ResponseFuture::ready(MethodResponse::error(
+                Id::Null,
+                error_object(RpcError::bad_request()),
+            ));
+        }
+        ResponseFuture::future(self.service.batch(batch))
+    }
+
+    fn notification<'a>(
+        &self,
+        notification: Notification<'a>,
+    ) -> impl Future<Output = Self::NotificationResponse> + Send + 'a {
+        self.service.notification(notification)
+    }
+}
+
 fn build_module(
     server: Weak<RwLock<RpcServer>>,
     config: &RpcServerConfig,
@@ -177,6 +304,7 @@ fn build_module(
 
     let mut context = JsonRpseeContext::new(server, Arc::clone(&disabled));
     context.rate_limiter = rate_limiter;
+    context.max_request_len = max_post_body_len(config);
 
     let mut module = RpcModule::new(context);
     for method in methods {
@@ -250,7 +378,7 @@ fn register_neo_method(
         .register_blocking_method::<Result<Value, ErrorObjectOwned>, _>(
             method,
             move |params, context, _| {
-                let params = parse_array_params(params)?;
+                let params = parse_array_params(params, context.max_request_len)?;
                 dispatch(&context, method, params.as_slice())
             },
         )
@@ -269,13 +397,19 @@ fn dispatch(
     invoke_rpc_handler(&server, handler, method, params).map_err(error_object)
 }
 
-fn parse_array_params(params: Params<'_>) -> Result<Vec<Value>, ErrorObjectOwned> {
+fn parse_array_params(params: Params<'_>, max_len: u64) -> Result<Vec<Value>, ErrorObjectOwned> {
     let Some(raw) = params.as_str() else {
         return Ok(Vec::new());
     };
 
     if raw.is_empty() {
         return Ok(Vec::new());
+    }
+
+    // jsonrpsee hands `params` over unparsed, so both limits are checked on
+    // the text, before anything is built from it.
+    if raw.len() as u64 > max_len || params_exceed_max_depth(raw, false) {
+        return Err(error_object(RpcError::bad_request()));
     }
 
     match serde_json::from_str::<Value>(raw) {

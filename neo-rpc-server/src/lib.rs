@@ -63,8 +63,9 @@ pub use session::Session;
 
 #[cfg(feature = "jsonrpsee-server")]
 pub use jsonrpsee_adapter::{
-    JsonRpseeAdapterError, JsonRpseeContext, build_jsonrpsee_module,
+    JsonRpseeAdapterError, JsonRpseeBatchLimits, JsonRpseeContext, build_jsonrpsee_module,
     build_jsonrpsee_module_with_disabled, build_jsonrpsee_module_with_external_auth,
+    jsonrpsee_server_config,
 };
 
 // Re-export smart contract handlers

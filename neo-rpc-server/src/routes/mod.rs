@@ -162,7 +162,7 @@ pub fn build_ws_route(
 
 /// Largest POST body accepted, in bytes. The gate receives the body and the
 /// POST route checks its declared length; both must use the same limit.
-fn max_post_body_len(settings: &RpcServerConfig) -> u64 {
+pub(crate) fn max_post_body_len(settings: &RpcServerConfig) -> u64 {
     (settings.max_request_body_size as u64).max(1)
 }
 
@@ -246,6 +246,64 @@ pub(super) fn exceeds_max_depth(value: &Value, max_depth: usize) -> bool {
     }
 
     walk(value, 1, max_depth)
+}
+
+/// [`exceeds_max_depth`] for JSON text that has not been parsed yet.
+///
+/// `enclosing` is the number of arrays and objects the text sits inside, so
+/// that a fragment is measured as part of its document. The text is walked
+/// once, without recursion and without building a value, which makes this
+/// safe to run on input of any depth before a parser sees it.
+///
+/// The verdict is the one [`exceeds_max_depth`] gives for the parsed
+/// document. The only exception is a repeated object key: parsing keeps the
+/// last value, this counts them all, so it can only be the stricter of the two.
+#[cfg(feature = "jsonrpsee-server")]
+fn text_exceeds_max_depth(text: &[u8], enclosing: usize, max_depth: usize) -> bool {
+    let mut open = enclosing;
+    let mut in_string = false;
+    let mut escaped = false;
+    for &byte in text {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match byte {
+            b' ' | b'\t' | b'\n' | b'\r' | b',' | b':' => {}
+            b']' | b'}' => open = open.saturating_sub(1),
+            // Anything else belongs to a value (or to a key, which has one)
+            // lying one level below the containers open around it.
+            _ => {
+                if open >= max_depth {
+                    return true;
+                }
+                match byte {
+                    b'[' | b'{' => open += 1,
+                    b'"' => in_string = true,
+                    _ => {}
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Whether a request carrying these `params`, given as unparsed JSON text,
+/// is one the routes here refuse for its depth.
+///
+/// The limit applies to the whole body, so `params` are measured where they
+/// lie in it: inside the request object and, for a request sent in a batch,
+/// inside the batch array as well.
+#[cfg(feature = "jsonrpsee-server")]
+pub(crate) fn params_exceed_max_depth(params: &str, batched: bool) -> bool {
+    let enclosing = if batched { 2 } else { 1 };
+    text_exceeds_max_depth(params.as_bytes(), enclosing, MAX_PARAMS_DEPTH)
 }
 
 impl RequestOutcome {
