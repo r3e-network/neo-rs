@@ -1,7 +1,13 @@
-//! `VerifyResult` - matches C# Neo.Ledger.VerifyResult exactly.
+//! `VerifyResult` - matches C# Neo.Ledger.VerifyResult exactly, plus one
+//! Rust-only extension.
 //!
 //! This is the single source of truth for `VerifyResult` enum. Both `neo-core::ledger`
 //! and neo-p2p re-export this type for backward compatibility.
+//!
+//! [`VerifyResult::LocalFailure`] is not part of the C# enum. It exists so a
+//! transient local failure (storage commit, engine open) is never reported to a
+//! peer as an invalid-block verdict, which would penalise a correct peer. The
+//! value is never sent on the wire: `VerifyResult` is a local status type.
 
 use crate::protocol_enum;
 
@@ -42,6 +48,10 @@ protocol_enum! {
         #[default]
         /// The verification result is unknown.
         Unknown = 15,
+        /// The inventory could not be processed because of a transient local
+        /// failure (local store commit, engine open). The inventory itself has
+        /// not been judged; the sender must not be penalised for it.
+        LocalFailure = 16,
     }
 }
 
@@ -83,6 +93,7 @@ mod tests {
         assert_eq!(VerifyResult::PolicyFail.to_byte(), 13);
         assert_eq!(VerifyResult::HasConflicts.to_byte(), 14);
         assert_eq!(VerifyResult::Unknown.to_byte(), 15);
+        assert_eq!(VerifyResult::LocalFailure.to_byte(), 16);
     }
 
     #[test]
@@ -94,13 +105,17 @@ mod tests {
             Some(VerifyResult::HasConflicts)
         );
         assert_eq!(VerifyResult::from_byte(15), Some(VerifyResult::Unknown));
-        assert_eq!(VerifyResult::from_byte(16), None);
+        assert_eq!(
+            VerifyResult::from_byte(16),
+            Some(VerifyResult::LocalFailure)
+        );
+        assert_eq!(VerifyResult::from_byte(17), None);
         assert_eq!(VerifyResult::from_byte(255), None);
     }
 
     #[test]
     fn test_verify_result_roundtrip() {
-        for i in 0..=15u8 {
+        for i in 0..=16u8 {
             let result = VerifyResult::from_byte(i).unwrap();
             assert_eq!(result.to_byte(), i);
         }
@@ -118,6 +133,7 @@ mod tests {
         assert!(VerifyResult::Succeed.is_success());
         assert!(!VerifyResult::Invalid.is_success());
         assert!(!VerifyResult::Unknown.is_success());
+        assert!(!VerifyResult::LocalFailure.is_success());
     }
 
     #[test]
@@ -147,7 +163,11 @@ mod tests {
             serde_json::from_str::<VerifyResult>("15").unwrap(),
             VerifyResult::Unknown
         );
-        assert!(serde_json::from_str::<VerifyResult>("16").is_err());
+        assert_eq!(
+            serde_json::from_str::<VerifyResult>("16").unwrap(),
+            VerifyResult::LocalFailure
+        );
+        assert!(serde_json::from_str::<VerifyResult>("17").is_err());
         assert!(serde_json::from_str::<VerifyResult>("255").is_err());
     }
 

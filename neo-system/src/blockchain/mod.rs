@@ -75,7 +75,7 @@ use std::any::Any;
 use std::collections::HashSet;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
@@ -159,6 +159,13 @@ pub struct Blockchain {
     _unverified_cache_blocks: Arc<AtomicUsize>,
     _extensible_witness_white_list: Arc<RwLock<HashSet<UInt160>>>,
     _inventory_cache: Arc<RwLock<LruCache<InventoryCacheKey, InventoryPayload>>>,
+    /// Number of times a local persistence attempt failed since actor start.
+    ///
+    /// `on_new_block` collapses "the block is invalid" and "local storage could
+    /// not commit" into `VerifyResult::Invalid`. Inventory handlers sample this
+    /// counter around the call so a failure that advanced it is reported as a
+    /// transient local failure instead of an invalid-block verdict.
+    _local_persist_failures: Arc<AtomicU64>,
     _drain_timer: Option<ScheduleHandle>,
 }
 
@@ -177,6 +184,7 @@ impl Blockchain {
                 NonZeroUsize::new(MAX_REVERIFY_INVENTORY_CACHE)
                     .expect("inventory cache capacity is non-zero"),
             ))),
+            _local_persist_failures: Arc::new(AtomicU64::new(0)),
             _drain_timer: None,
         }
     }
@@ -354,6 +362,11 @@ impl Blockchain {
                     hash = %hash,
                     "failed to persist block via NeoSystem"
                 );
+                // Record that the failure was local (storage/pipeline), not a
+                // verdict about the block itself. Inventory handlers use this to
+                // report a transient local failure to the peer-facing caller.
+                self._local_persist_failures
+                    .fetch_add(1, Ordering::Relaxed);
                 // Let the task manager release this height for a retry. This is
                 // a local commit failure, not evidence that the peer is invalid.
                 context.actor_system.event_stream().publish(PersistFailed {
@@ -363,6 +376,15 @@ impl Blockchain {
                 false
             }
         }
+    }
+
+    /// Snapshot of the local persistence-failure counter.
+    ///
+    /// Callers sample this before triggering persistence and compare afterwards:
+    /// an unchanged value means a persistence-rejecting verdict came from block
+    /// validation, not from local storage.
+    fn local_persist_failures(&self) -> u64 {
+        self._local_persist_failures.load(Ordering::Relaxed)
     }
 
     fn deserialize_inventory<T>(payload: &[u8]) -> Option<T>
@@ -394,8 +416,8 @@ mod transaction;
 // Re-export types from neo-ledger
 pub use neo_ledger::blockchain::{
     BlockchainCommand, BlockchainHandle, FillCompleted, FillMemoryPool, Import, ImportCompleted,
-    InventoryPayload, PersistCompleted, PersistFailed, PreverifyCompleted, RelayResult, Reverify,
-    ReverifyItem,
+    ImportError, ImportResult, InventoryPayload, PersistCompleted, PersistFailed,
+    PreverifyCompleted, RelayResult, Reverify, ReverifyItem,
 };
 
 #[cfg(test)]

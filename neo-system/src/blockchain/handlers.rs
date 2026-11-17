@@ -254,9 +254,7 @@ impl Blockchain {
         let Some(context) = &self.system_context else {
             tracing::debug!(target: "neo", "import requested before system context attached");
             if let Some(sender) = ctx.sender() {
-                // Use the first block from the import request as the completed block
-                let block = import.block.clone();
-                let _ = sender.tell(ImportCompleted { block });
+                let _ = sender.tell(ImportResult::failed(None, ImportError::SystemUnavailable));
             }
             return;
         };
@@ -268,7 +266,10 @@ impl Blockchain {
             .current_index(&store_cache)
             .unwrap_or_else(|_| context.ledger().current_height());
 
-        let mut last_block = import.block.clone();
+        // The reported result must never run ahead of the durable store: a block
+        // only becomes the "last committed block" after persistence succeeded.
+        let mut last_committed: Option<Arc<Block>> = None;
+        let mut failure: Option<ImportError> = None;
         for block in import.blocks {
             let index = block.index();
             match classify_import_block(current_height, index) {
@@ -280,6 +281,10 @@ impl Blockchain {
                         actual = index,
                         "import block out of sequence"
                     );
+                    failure = Some(ImportError::FutureGap {
+                        index,
+                        expected: current_height.saturating_add(1),
+                    });
                     break;
                 }
                 ImportDisposition::NextExpected => {}
@@ -293,19 +298,23 @@ impl Blockchain {
                         height = index,
                         "import block failed verification"
                     );
+                    failure = Some(ImportError::VerificationFailure { index });
                     break;
                 }
             }
 
-            last_block = block.clone();
             if !self.persist_block_via_system(&block) {
                 tracing::warn!(
                     target: "neo",
                     height = index,
                     "stopping import after block persist failure"
                 );
+                failure = Some(ImportError::PersistenceFailure { index });
                 break;
             }
+
+            // Durable commit confirmed: only now may the import advance.
+            last_committed = Some(Arc::clone(&block));
             self.handle_persist_completed(PersistCompleted {
                 block: block.clone(),
             })
@@ -313,8 +322,15 @@ impl Blockchain {
             current_height = index;
         }
 
+        let result = match (last_committed, failure) {
+            (block, Some(error)) => ImportResult::failed(block, error),
+            (Some(block), None) => ImportResult::succeeded(block),
+            // Every requested block was already present: nothing new to report.
+            (None, None) => ImportResult::failed(None, ImportError::AlreadyComplete),
+        };
+
         if let Some(sender) = ctx.sender() {
-            let _ = sender.tell(ImportCompleted { block: last_block });
+            let _ = sender.tell(result);
         }
     }
 
@@ -421,7 +437,7 @@ impl Blockchain {
     async fn handle_reverify_payload(&self, payload: InventoryPayload, ctx: &ActorContext) {
         match payload {
             InventoryPayload::Block(block) => {
-                if let Err(error) = self.handle_block_inventory(block, false, false, ctx).await {
+                if let Err(error) = self.handle_block_inventory(block, false, ctx).await {
                     tracing::debug!(
                         target: "neo",
                         %error,
@@ -449,7 +465,6 @@ impl Blockchain {
         &self,
         block: Arc<Block>,
         relay: bool,
-        pre_verified: bool,
         ctx: &ActorContext,
     ) -> ActorResult {
         let index = block.index();
@@ -466,9 +481,24 @@ impl Blockchain {
             }
         };
 
-        // Pre-verification covers only the state-independent block checks. The
-        // normal persistence path still performs all state-dependent validation.
-        let result = self.on_new_block(Arc::clone(&block), !pre_verified).await;
+        // Every inbound block is verified. The former `pre_verified` opt-out was
+        // never set by any producer and would have skipped state-dependent
+        // validation on the persistence path.
+        let persist_failures_before = self.local_persist_failures();
+        let mut result = self.on_new_block(Arc::clone(&block), true).await;
+
+        // `on_new_block` reports a failed store commit as `Invalid`, which would
+        // blame the peer for a transient local storage problem. Separate the two
+        // by observing whether a local persistence attempt failed.
+        if result == VerifyResult::Invalid && self.local_persist_failures() != persist_failures_before {
+            tracing::warn!(
+                target: "neo",
+                index,
+                %hash,
+                "inventory block rejected by a local persistence failure, not by validation"
+            );
+            result = VerifyResult::LocalFailure;
+        }
 
         // Opportunistically drain unverified cache inline. Scheduling via
         // self_ref().tell() can silently fail when the mailbox is full (try_send),
@@ -693,7 +723,9 @@ impl Blockchain {
             return;
         };
 
-        let store_cache = context.store_cache();
+        // Repairs write into the writer snapshot owned by this cache, so the
+        // binding must stay mutable: staging alone leaves the store untouched.
+        let mut store_cache = context.store_cache();
         let ledger_contract = LedgerContract::new();
         let persisted_index = ledger_contract.current_index(&store_cache).unwrap_or(0);
         let persisted_hash = ledger_contract
@@ -709,24 +741,41 @@ impl Blockchain {
             if let Some((tip_index, tip_hash)) =
                 Self::find_tip_in_store(&ledger_contract, &store_cache)
             {
-                let snapshot = store_cache.data_cache();
-                if let Err(error) =
+                let staged = {
+                    let snapshot = store_cache.data_cache();
                     ledger_contract.set_current_block_state(snapshot, &tip_hash, tip_index)
-                {
+                };
+                if let Err(error) = staged {
                     tracing::warn!(
                         target: "neo",
                         %error,
                         tip_index,
-                        "failed to repair persisted current block pointer"
+                        "failed to stage persisted current block pointer repair"
                     );
-                } else {
+                    return;
+                }
+
+                // Staging is not a repair: the write becomes durable only after
+                // the cache is committed to the backing store.
+                if let Err(error) = store_cache.try_commit() {
                     tracing::warn!(
                         target: "neo",
-                        repaired_index = tip_index,
-                        repaired_hash = %tip_hash,
-                        "repaired stale current block pointer from storage"
+                        error = %error,
+                        tip_index,
+                        "failed to commit repaired persisted current block pointer"
                     );
+                    return;
                 }
+
+                // The runtime ledger tip must agree with the pointer that is now
+                // durable, otherwise in-memory height stays behind the store.
+                context.ledger().record_tip(tip_index);
+                tracing::warn!(
+                    target: "neo",
+                    repaired_index = tip_index,
+                    repaired_hash = %tip_hash,
+                    "repaired stale current block pointer from storage"
+                );
                 return;
             }
 

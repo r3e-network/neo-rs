@@ -66,6 +66,20 @@ pub enum LedgerError {
         /// Underlying runtime cache failure message.
         message: String,
     },
+    /// The store commit **succeeded** and only the runtime cache / tip update
+    /// failed (step 14).
+    ///
+    /// This is deliberately distinct from [`LedgerError::RuntimeCache`] and from
+    /// [`LedgerError::StoreCommit`]: the block state is durable, so no rollback is
+    /// possible or attempted, and a caller must not treat the block as uncommitted
+    /// (retrying it would replay an already-committed height). The local runtime
+    /// view is stale until the process reloads or the cache is repaired.
+    PostCommitCacheFailure {
+        /// Height of the durably committed block whose cache update failed.
+        index: u32,
+        /// Underlying runtime cache failure message.
+        message: String,
+    },
     /// Fast-path execution validation failed, triggering fallback to full VM.
     FastPathError {
         /// Validation failure message.
@@ -98,6 +112,12 @@ impl fmt::Display for LedgerError {
                 write!(
                     f,
                     "failed to update runtime block cache for block {index}: {message}"
+                )
+            }
+            LedgerError::PostCommitCacheFailure { index, message } => {
+                write!(
+                    f,
+                    "block {index} was durably committed but the runtime cache update failed: {message}"
                 )
             }
             LedgerError::FastPathError { message } => {

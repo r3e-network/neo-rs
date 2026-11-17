@@ -43,6 +43,12 @@ pub(super) fn map_relay_result(result: RelayOutcome) -> Result<Value, RpcExcepti
         VerifyResult::Unknown => Err(RpcException::from(
             RpcError::verification_failed().with_data("Unknown"),
         )),
+        // The node could not process the inventory for a local reason. The
+        // inventory was not judged, so this is an internal error rather than a
+        // verification failure attributed to the caller's payload.
+        VerifyResult::LocalFailure => Err(internal_error(
+            "local failure while processing inventory; the inventory was not judged".to_string(),
+        )),
     }
 }
 

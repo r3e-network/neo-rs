@@ -221,7 +221,6 @@ impl RpcServerNode {
                     BlockchainCommand::InventoryBlock {
                         block: Arc::new(execution_block),
                         relay: true,
-                        pre_verified: false,
                     },
                     Some(sender),
                 )

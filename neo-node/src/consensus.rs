@@ -1296,7 +1296,6 @@ impl ConsensusActor {
                 .tell(neo_ledger::BlockchainCommand::InventoryBlock {
                     block: Arc::new(neo_protocol::execution::Block::from(&block)),
                     relay: true,
-                    pre_verified: false,
                 })
         {
             warn!(target: "neo", %err, "failed to submit consensus block");

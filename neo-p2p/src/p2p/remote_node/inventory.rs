@@ -293,7 +293,6 @@ impl RemoteNode {
                 BlockchainCommand::InventoryBlock {
                     block,
                     relay: true,
-                    pre_verified: false,
                 },
                 Some(ctx.self_ref()),
             )

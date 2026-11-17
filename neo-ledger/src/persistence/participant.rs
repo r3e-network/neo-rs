@@ -7,13 +7,15 @@
 //! * **stage / precommit (step 12)** — each participant stages its derived state and
 //!   votes on the commit in *registration order*. The first `Err` aborts persistence
 //!   before the store commit.
-//! * **reverse discard (steps 12/13/14 rollback)** — when a precommit vote, the store
-//!   commit, or the runtime cache update fails, every *already-staged* participant is
-//!   discarded in *reverse registration order*.
-//! * **committed (step 15a)** — after a successful store commit and cache/tip update,
-//!   every participant finalizes in registration order. This phase is infallible: it
-//!   runs for all participants regardless of fast-sync gating and can never fail the
-//!   pipeline.
+//! * **reverse discard (steps 12/13/14 rollback)** — when a precommit vote or the store
+//!   commit fails, the staging list is discarded in *reverse registration order*.
+//!   The list records each attempt **before** the vote runs, so a participant that
+//!   failed *after* writing partial staging state is discarded too.
+//! * **committed (step 15a)** — after a successful store commit, every participant
+//!   finalizes in registration order. This phase is infallible: it runs for all
+//!   participants regardless of fast-sync gating and can never fail the pipeline.
+//!   A failure of the *post-commit* runtime cache update does not roll this back:
+//!   the store state is already durable.
 //!
 //! The canonical state-service participant (task-107) implements this trait by wrapping
 //! `StateStore::update_local_state_root_from_cache` (precommit/stage),
@@ -89,12 +91,14 @@ pub trait CommitParticipant: Send + Sync + 'static {
     /// Registration-order stage + precommit vote (step 12).
     ///
     /// `Err(message)` aborts persistence before the store commit and triggers reverse
-    /// discard of every already-staged participant.
+    /// discard of the staging list, **including this participant**: an earlier step of
+    /// this same call may already have written staging state that must be unwound.
     fn precommit(&self, context: &StageContext<'_>) -> Result<(), String>;
 
-    /// Reverse-order rollback of a previously staged participant (steps 12/13/14).
+    /// Reverse-order rollback of a staged participant (steps 12/13/14).
     ///
     /// Infallible; the default is a no-op for participants with nothing to unwind.
+    /// Called for the failing participant as well as for earlier successful stages.
     fn discard(&self, _context: &StageContext<'_>) {}
 
     /// Infallible post-commit finalization (step 15a).

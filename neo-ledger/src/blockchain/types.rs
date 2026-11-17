@@ -59,12 +59,12 @@ pub enum BlockchainCommand {
     Initialize,
     /// Preverify completed event
     PreverifyCompleted(PreverifyCompleted),
-    /// Inventory block command
-    InventoryBlock {
-        block: Arc<Block>,
-        relay: bool,
-        pre_verified: bool,
-    },
+    /// Inventory block command.
+    ///
+    /// Every inbound block is verified by the actor: the former `pre_verified`
+    /// flag had no producer that ever set it to `true`, so accepting it only
+    /// offered a way to skip state-dependent validation.
+    InventoryBlock { block: Arc<Block>, relay: bool },
     /// Inventory extensible command
     InventoryExtensible {
         payload: neo_protocol::payloads::Extensible,
@@ -92,11 +92,94 @@ pub struct Import {
     pub verify: bool,
 }
 
-/// Import completed event.
+/// Typed outcome of an import request.
+///
+/// `block` is the highest block that is *durably committed* locally — it is
+/// never advanced before the store commit succeeds. `error` describes why the
+/// import stopped when it did not consume every requested block.
 #[derive(Debug, Clone)]
-pub struct ImportCompleted {
-    pub block: Arc<Block>,
+pub struct ImportResult {
+    /// Highest block confirmed committed by the persistence pipeline.
+    ///
+    /// `None` when the request committed nothing (no system context, an
+    /// out-of-sequence first block, or every block already present).
+    pub block: Option<Arc<Block>>,
+    /// The failure that stopped the import, if any.
+    pub error: Option<ImportError>,
 }
+
+impl ImportResult {
+    /// Builds a successful outcome for the last committed block.
+    pub fn succeeded(block: Arc<Block>) -> Self {
+        Self {
+            block: Some(block),
+            error: None,
+        }
+    }
+
+    /// Builds a failed outcome for the last committed block, if any.
+    pub fn failed(block: Option<Arc<Block>>, error: ImportError) -> Self {
+        Self {
+            block,
+            error: Some(error),
+        }
+    }
+
+    /// Returns `true` when every requested block was committed.
+    pub fn is_success(&self) -> bool {
+        self.error.is_none()
+    }
+
+    /// Returns the last durably committed block, if the request committed one.
+    pub fn committed_block(&self) -> Option<&Arc<Block>> {
+        self.block.as_ref()
+    }
+}
+
+/// Reason an import request stopped before consuming all of its blocks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImportError {
+    /// No system context was attached, so nothing could be persisted.
+    SystemUnavailable,
+    /// The block failed verification against the local chain state.
+    VerificationFailure { index: u32 },
+    /// A local storage/pipeline failure prevented the durable commit.
+    PersistenceFailure { index: u32 },
+    /// The block is ahead of the next expected height.
+    FutureGap { index: u32, expected: u32 },
+    /// Every requested block was already committed before the request.
+    AlreadyComplete,
+}
+
+impl std::fmt::Display for ImportError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ImportError::SystemUnavailable => {
+                f.write_str("import requested before the system context was attached")
+            }
+            ImportError::VerificationFailure { index } => {
+                write!(f, "block {index} failed verification during import")
+            }
+            ImportError::PersistenceFailure { index } => {
+                write!(f, "block {index} could not be committed by local storage")
+            }
+            ImportError::FutureGap { index, expected } => write!(
+                f,
+                "import block out of sequence: expected {expected}, received {index}"
+            ),
+            ImportError::AlreadyComplete => {
+                f.write_str("every requested import block was already committed")
+            }
+        }
+    }
+}
+
+/// Legacy name for the import completion payload.
+///
+/// The handler now reports the typed [`ImportResult`] (last durably committed
+/// block plus an optional [`ImportError`]) instead of unconditionally notifying
+/// completion, so this alias only preserves the historical export name.
+pub type ImportCompleted = ImportResult;
 
 /// Fill memory pool command.
 #[derive(Debug, Clone)]

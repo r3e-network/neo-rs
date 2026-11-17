@@ -34,13 +34,16 @@
 //!     * **10c other** — abort with [`LedgerError::UnexpectedVmState`].
 //! 11. `PostPersist`: open the seeded native engine, set state, run `native_post_persist`,
 //!     `record_native_persist_success`, emit the receipt when detailed.
-//! 12. Commit participants **stage/precommit in registration order**; the first `Err`
-//!     triggers **reverse-order discard** of already-staged participants and returns
+//! 12. Commit participants **stage/precommit in registration order**; the first
+//!     `Err` triggers **reverse-order discard** of the staging list — which
+//!     includes the participant that just failed — and returns
 //!     [`LedgerError::ParticipantCommit`] (Display embeds the participant message).
 //! 13. **Store commit** ([`StoreTransactionPort::commit`]); on failure reverse-discard
 //!     and return [`LedgerError::StoreCommit`] (Display carries the store commit prefix).
 //! 14. **Runtime cache / tip update**: `record_block` (online) or `record_tip` (offline
-//!     import); on failure reverse-discard and return [`LedgerError::RuntimeCache`].
+//!     import). This runs *after* the durable commit, so a failure returns
+//!     [`LedgerError::PostCommitCacheFailure`] — never a rollback, and never a
+//!     "nothing committed" error.
 //! 15. **Infallible post-commit** (never reorders, never fails):
 //!     * **15a** committed participants run in registration order for *all*
 //!       participants regardless of fast-sync gating.
@@ -156,7 +159,8 @@ pub trait RuntimeCacheSink: Send + Sync {
     /// Records the block into the online runtime caches (step 14, online).
     ///
     /// The `String` is the sink-owned failure message; the pipeline lifts it into
-    /// [`LedgerError::RuntimeCache`].
+    /// [`LedgerError::PostCommitCacheFailure`] because the store commit has
+    /// already succeeded by the time this runs.
     fn record_block(&self, block: &Block) -> Result<(), String>;
 
     /// Advances the tip height for offline imports (step 14, offline). Infallible.
@@ -364,11 +368,14 @@ pub fn persist_block_profiled(
             if fast_sync && !participant.run_during_fast_sync() {
                 continue;
             }
+            // Record the attempt *before* the vote. A participant can write partial
+            // staging state and then fail, so excluding it from the staging list
+            // would leak that state: reverse discard below must include it.
+            staged.push(index);
             if let Err(message) = participant.precommit(&stage) {
                 discard_staged_reverse(participants, &staged, &stage);
                 return Err(LedgerError::ParticipantCommit { message });
             }
-            staged.push(index);
         }
     }
 
@@ -385,23 +392,35 @@ pub fn persist_block_profiled(
     }
 
     // Step 14 — runtime cache / tip update.
-    let cache_result = {
+    //
+    // The store commit above is already durable. A failure here can therefore only
+    // make the *local runtime view* stale: it must not be reported as "nothing was
+    // committed", must not discard staged participants (their state is part of the
+    // durable commit) and must not attempt to roll back committed data.
+    let cache_failure = {
         let _stage = StageTimer::new(profiler, PersistenceStage::RuntimeUpdate);
         if options.update_runtime_cache {
-            runtime_cache
-                .record_block(&persisting_block)
-                .map_err(|message| LedgerError::RuntimeCache {
+            runtime_cache.record_block(&persisting_block).err().map(|message| {
+                LedgerError::PostCommitCacheFailure {
                     index: block_height,
                     message,
-                })
+                }
+            })
         } else {
             runtime_cache.record_tip(block_height);
-            Ok(())
+            None
         }
     };
-    if let Err(err) = cache_result {
-        discard_staged_reverse(participants, &staged, &stage);
-        return Err(err);
+
+    if let Some(error) = &cache_failure {
+        tracing::error!(
+            target: "neo",
+            index = block_height,
+            %block_hash,
+            error = %error,
+            "CRITICAL: block is durably committed but the runtime cache update failed; \
+             local tip/caches are stale until repaired by reload"
+        );
     }
 
     let (staged_fault_observations, dropped) = {
@@ -430,6 +449,12 @@ pub fn persist_block_profiled(
         }
         (staged_fault_observations, dropped)
     };
+
+    // Durable state advanced even when the runtime cache did not: report the
+    // committed-but-stale outcome so the caller never retries the height.
+    if let Some(error) = cache_failure {
+        return Err(error);
+    }
 
     Ok(PersistReceipt {
         block_hash,
@@ -860,8 +885,13 @@ mod tests {
         // Display embeds the injected participant message verbatim.
         assert!(err.to_string().contains("injected committing failure"));
         let entries = log.lock().clone();
-        // Reverse-order discard of already-staged participants b, then a. c never staged,
+        // Reverse-order discard of the staging list: the failing participant c is
+        // included (it may have written partial staging state), then b, then a.
         // d never reached.
+        let c_discard = entries
+            .iter()
+            .position(|e| e == "c:discard")
+            .expect("failing participant must be discarded");
         let b_discard = entries
             .iter()
             .position(|e| e == "b:discard")
@@ -870,8 +900,10 @@ mod tests {
             .iter()
             .position(|e| e == "a:discard")
             .expect("a discard");
-        assert!(b_discard < a_discard, "discard must run in reverse order");
-        assert!(!entries.iter().any(|e| e == "c:discard"));
+        assert!(
+            c_discard < b_discard && b_discard < a_discard,
+            "discard must run in reverse order and start with the failing participant"
+        );
         assert!(!entries.iter().any(|e| e == "d:precommit"));
         assert!(!entries.iter().any(|e| e == "store_commit"));
     }
@@ -1138,7 +1170,7 @@ mod tests {
     }
 
     #[test]
-    fn runtime_cache_failure_discards_participants_after_store_commit() {
+    fn runtime_cache_failure_after_durable_commit_reports_stale_cache_without_rollback() {
         let log = log();
         let dropped = Arc::new(Mutex::new(0u64));
         let store = MockStore {
@@ -1167,24 +1199,24 @@ mod tests {
             &participants,
             &PersistOptions::online(),
         )
-        .expect_err("runtime cache failure aborts");
+        .expect_err("runtime cache failure is still reported");
 
+        // The error must be the distinct *post-commit* variant: durable state
+        // advanced, only the local runtime view is stale.
+        assert!(matches!(
+            err,
+            LedgerError::PostCommitCacheFailure { .. }
+        ));
         assert_eq!(
             err.to_string(),
-            "failed to update runtime block cache for block 0: cache offline"
+            "block 0 was durably committed but the runtime cache update failed: cache offline"
         );
         let entries = log.lock().clone();
-        // Store commit happened first, then the participant was discarded on rollback.
-        let commit = entries
-            .iter()
-            .position(|e| e == "store_commit")
-            .expect("commit");
-        let discard = entries
-            .iter()
-            .position(|e| e == "a:discard")
-            .expect("discard");
-        assert!(commit < discard);
-        // No committed/evidence side effects after a failed cache update.
-        assert!(!entries.iter().any(|e| e == "a:committed"));
+        assert!(entries.iter().any(|e| e == "store_commit"));
+        // No rollback of already-committed data: the participant is finalized, not
+        // discarded, and post-commit side effects still run.
+        assert!(!entries.iter().any(|e| e == "a:discard"));
+        assert!(entries.iter().any(|e| e == "a:committed"));
+        assert!(entries.iter().any(|e| e == "broadcast:0"));
     }
 }
