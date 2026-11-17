@@ -696,3 +696,34 @@ async fn server_refuses_a_batch_over_the_configured_size() {
     assert!(response["error"].is_object(), "{response}");
     assert_eq!(calls.load(Ordering::SeqCst), 2);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn method_that_turns_protected_after_the_build_is_refused() {
+    let (server, calls) = build_probe_server();
+    let module = build_jsonrpsee_module(Arc::downgrade(&server), &RpcServerConfig::default())
+        .expect("module");
+
+    let response = raw_text_response(&module, &probe_request("[]", 1)).await;
+    assert_eq!(response["result"], true);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    // The registry is live: a handler registered later under the same name
+    // replaces the one the module was built from.
+    let protected_calls = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&protected_calls);
+    server.write().register_handlers(vec![RpcHandler::new(
+        RpcMethodDescriptor {
+            name: "probe".to_string(),
+            requires_auth: true,
+        },
+        Arc::new(move |_, _| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            Ok(json!("protected"))
+        }),
+    )]);
+
+    let response = raw_text_response(&module, &probe_request("[]", 2)).await;
+    assert_neo_error(&response, ServerRpcError::access_denied());
+    assert_eq!(protected_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}

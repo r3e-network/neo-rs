@@ -19,7 +19,8 @@
 //!   [`JsonRpseeAdapterError::AuthenticationRequired`] unless the caller
 //!   explicitly states that authentication is terminated in front of the
 //!   jsonrpsee server (see [`build_jsonrpsee_module_with_external_auth`]).
-//!   Authenticated methods are never registered here.
+//!   Authenticated methods are never registered here, and one that later takes
+//!   over a registered name is refused at dispatch.
 //! * `MaxRequestsPerSecond`/`RateLimitBurst` — applied as a single aggregate
 //!   ceiling (`per-client rate × MaxConcurrentConnections`) because the module
 //!   API exposes no peer identity to key a per-client limiter on.
@@ -393,6 +394,13 @@ fn dispatch(
     context.check_rate_limit(method)?;
     let (server, handler) = resolve_rpc_handler(&context.server, context.disabled.as_ref(), method)
         .map_err(error_object)?;
+
+    // Only public methods are registered, but the handler is looked up by
+    // name at call time. One registered since under a public name must not
+    // become reachable here, where no caller is authenticated.
+    if handler.descriptor().requires_auth() {
+        return Err(error_object(RpcError::access_denied()));
+    }
 
     invoke_rpc_handler(&server, handler, method, params).map_err(error_object)
 }
