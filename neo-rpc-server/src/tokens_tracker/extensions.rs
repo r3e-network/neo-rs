@@ -70,17 +70,19 @@ where
 
     let prefix_vec = prefix.to_vec();
     let mut results = Vec::with_capacity(max_results.min(64));
-    let mut scanned = 0usize;
 
     let snapshot = db.snapshot();
-    for (key_bytes, value_bytes) in snapshot.find(Some(&prefix_vec), SeekDirection::Forward) {
+    // `scanned` is the number of entries examined before this one.
+    for (scanned, (key_bytes, value_bytes)) in snapshot
+        .find(Some(&prefix_vec), SeekDirection::Forward)
+        .enumerate()
+    {
         if !key_bytes.starts_with(prefix)
             || results.len() >= max_results
             || scanned >= max_scan_count
         {
             break;
         }
-        scanned += 1;
 
         let mut key_reader = MemoryReader::new(&key_bytes[1..]);
         let key = TKey::deserialize(&mut key_reader).map_err(|e| e.to_string())?;
@@ -127,7 +129,6 @@ where
     }
 
     let mut results = Vec::with_capacity(max_results.min(64));
-    let mut scanned = 0usize;
 
     // `find` only exposes prefix semantics: it returns keys that start with
     // the given prefix. Scanning from `start_key` itself (a full lower-bound
@@ -146,14 +147,18 @@ where
     let scan_prefix = start_key[..common_len].to_vec();
 
     let snapshot = db.snapshot();
-    for (key_bytes, value_bytes) in snapshot.find(Some(&scan_prefix), SeekDirection::Forward) {
+    // `scanned` is the number of entries examined before this one, whether
+    // or not they fell inside the range.
+    for (scanned, (key_bytes, value_bytes)) in snapshot
+        .find(Some(&scan_prefix), SeekDirection::Forward)
+        .enumerate()
+    {
         if key_bytes.as_slice() > end_key
             || results.len() >= max_results
             || scanned >= max_scan_count
         {
             break;
         }
-        scanned += 1;
         if key_bytes.as_slice() < start_key {
             continue;
         }
@@ -223,5 +228,21 @@ mod tests {
             find_range::<UInt256, UInt160>(&store as &dyn Store, &key(0x01, 0), &key(0x01, 49), 4)
                 .expect("range scan");
         assert_eq!(found.len(), 4);
+    }
+
+    #[test]
+    fn find_range_counts_skipped_entries_against_scan_limit() {
+        let store = seeded_store(50);
+        // Entries 0..=9 lie below the range and are skipped, but they are
+        // scanned all the same: a cap of 12 leaves room for entries 10 and 11.
+        let found = find_range_with_limits::<UInt256, UInt160>(
+            &store as &dyn Store,
+            &key(0x01, 10),
+            &key(0x01, 49),
+            50,
+            12,
+        )
+        .expect("range scan");
+        assert_eq!(found.len(), 2);
     }
 }
