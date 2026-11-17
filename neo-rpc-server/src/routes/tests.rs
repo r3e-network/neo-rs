@@ -510,23 +510,377 @@ fn persist_transaction_record(
     store.commit();
 }
 
+/// Registers a public `ping` and a protected `secret`, each counting how often
+/// its handler body actually runs.
+fn build_server_with_protected_counter(
+    public_calls: Arc<AtomicUsize>,
+    protected_calls: Arc<AtomicUsize>,
+) -> Arc<RwLock<RpcServer>> {
+    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let mut server = RpcServer::new(system, RpcServerConfig::default());
+    server.register_handlers(vec![
+        RpcHandler::new(
+            RpcMethodDescriptor::new("ping"),
+            Arc::new(move |_, _| {
+                public_calls.fetch_add(1, Ordering::SeqCst);
+                Ok(Value::String("pong".to_string()))
+            }),
+        ),
+        RpcHandler::new(
+            RpcMethodDescriptor::new_protected("secret"),
+            Arc::new(move |_, _| {
+                protected_calls.fetch_add(1, Ordering::SeqCst);
+                Ok(Value::String("classified".to_string()))
+            }),
+        ),
+    ]);
+    Arc::new(RwLock::new(server))
+}
+
+fn filters_for(server: &Arc<RwLock<RpcServer>>, auth: Option<BasicAuth>) -> RpcFilters {
+    RpcFilters {
+        server: Arc::downgrade(server),
+        disabled: Arc::new(HashSet::new()),
+        auth: Arc::new(auth),
+        rate_limiter: None,
+        cors: None,
+        max_batch_size: 1024,
+    }
+}
+
+fn routes_for(
+    server: &Arc<RwLock<RpcServer>>,
+    auth: Option<BasicAuth>,
+) -> impl Filter<Extract = (HttpResponse,), Error = warp::Rejection> + Clone + use<> {
+    build_rpc_routes(
+        Arc::downgrade(server),
+        Arc::new(HashSet::new()),
+        Arc::new(auth),
+        RpcServerConfig::default(),
+    )
+}
+
+fn test_credentials() -> BasicAuth {
+    BasicAuth {
+        user: b"testuser".to_vec(),
+        pass: b"testpass".to_vec(),
+    }
+}
+
+fn basic_header(user: &str, pass: &str) -> String {
+    format!("Basic {}", BASE64_STANDARD.encode(format!("{user}:{pass}")))
+}
+
+fn error_code(response: &Value) -> Option<i64> {
+    response
+        .get("error")
+        .and_then(Value::as_object)
+        .and_then(|error| error.get("code"))
+        .and_then(Value::as_i64)
+}
+
+const ACCESS_DENIED: i64 = -600;
+
+#[test]
+fn access_denied_code_matches_rpc_error() {
+    assert_eq!(RpcError::access_denied().code() as i64, ACCESS_DENIED);
+}
+
 #[tokio::test(flavor = "multi_thread")]
-async fn process_body_allows_wallet_method_without_auth_config() {
+async fn process_body_denies_wallet_method_without_auth_config() {
     let (_server, filters) = build_filters_with_auth(Arc::new(None), true);
     let body = br#"{"jsonrpc": "2.0", "method": "getnewaddress", "params": [], "id": 1}"#;
 
     let (response, unauthorized) = process_body(&filters, None, body, None);
-    assert!(!unauthorized);
+    assert!(unauthorized);
 
     let response = response.expect("response");
-    let error = response
-        .get("error")
-        .and_then(Value::as_object)
-        .expect("error object");
+    assert_eq!(response.get("id").and_then(Value::as_i64), Some(1));
+    // Denied by the dispatcher, not by the wallet handler's own
+    // "no opened wallet" check.
+    assert_eq!(error_code(&response), Some(ACCESS_DENIED));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn every_wallet_method_is_denied_without_auth_config() {
+    let (_server, filters) = build_filters_with_auth(Arc::new(None), true);
+    let methods = crate::rpc_server_wallet::RpcServerWallet::register_handlers()
+        .iter()
+        .map(|handler| handler.descriptor().name.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(methods.len(), 13);
+    for name in ["dumpprivkey", "sendtoaddress", "openwallet"] {
+        assert!(methods.iter().any(|method| method == name), "{name}");
+    }
+
+    for method in methods {
+        let body = serde_json::to_vec(&json!({
+            "jsonrpc": "2.0", "method": method, "params": [], "id": 1,
+        }))
+        .expect("body");
+        let (response, unauthorized) = process_body(&filters, None, &body, None);
+        assert!(unauthorized, "{method}");
+        assert_eq!(
+            error_code(&response.expect("response")),
+            Some(ACCESS_DENIED),
+            "{method}"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn wallet_method_reaches_its_handler_with_valid_credentials() {
+    let auth = Arc::new(Some(test_credentials()));
+    let (_server, filters) = build_filters_with_auth(auth, true);
+    let body = br#"{"jsonrpc": "2.0", "method": "getnewaddress", "params": [], "id": 1}"#;
+
+    let header = basic_header("testuser", "testpass");
+    let (response, unauthorized) = process_body(&filters, Some(&header), body, None);
+    assert!(!unauthorized);
     assert_eq!(
-        error.get("code").and_then(Value::as_i64),
+        error_code(&response.expect("response")),
         Some(RpcError::no_opened_wallet().code() as i64)
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn protected_method_succeeds_with_valid_credentials() {
+    let public_calls = Arc::new(AtomicUsize::new(0));
+    let protected_calls = Arc::new(AtomicUsize::new(0));
+    let server = build_server_with_protected_counter(
+        Arc::clone(&public_calls),
+        Arc::clone(&protected_calls),
+    );
+    let filters = filters_for(&server, Some(test_credentials()));
+    let body = br#"{"jsonrpc": "2.0", "method": "secret", "params": [], "id": 7}"#;
+
+    let header = basic_header("testuser", "testpass");
+    let (response, unauthorized) = process_body(&filters, Some(&header), body, None);
+    assert!(!unauthorized);
+    let response = response.expect("response");
+    assert_eq!(
+        response.get("result").and_then(Value::as_str),
+        Some("classified")
+    );
+    assert_eq!(response.get("id").and_then(Value::as_i64), Some(7));
+    assert_eq!(protected_calls.load(Ordering::SeqCst), 1);
+
+    for header in [None, Some(basic_header("testuser", "wrong"))] {
+        let (response, unauthorized) = process_body(&filters, header.as_deref(), body, None);
+        assert!(unauthorized);
+        assert_eq!(
+            error_code(&response.expect("response")),
+            Some(ACCESS_DENIED)
+        );
+    }
+    assert_eq!(protected_calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn protected_method_is_never_invoked_without_auth_config() {
+    let public_calls = Arc::new(AtomicUsize::new(0));
+    let protected_calls = Arc::new(AtomicUsize::new(0));
+    let server = build_server_with_protected_counter(
+        Arc::clone(&public_calls),
+        Arc::clone(&protected_calls),
+    );
+    let filters = filters_for(&server, None);
+
+    // Single call, with and without a (necessarily meaningless) header.
+    let single = br#"{"jsonrpc": "2.0", "method": "secret", "params": [], "id": 1}"#;
+    for header in [None, Some(basic_header("testuser", "testpass"))] {
+        let (response, unauthorized) = process_body(&filters, header.as_deref(), single, None);
+        assert!(unauthorized);
+        assert_eq!(
+            error_code(&response.expect("response")),
+            Some(ACCESS_DENIED)
+        );
+    }
+
+    // Method names are matched case-insensitively; so is the guard.
+    let shouting = br#"{"jsonrpc": "2.0", "method": "SECRET", "params": [], "id": 1}"#;
+    let (response, unauthorized) = process_body(&filters, None, shouting, None);
+    assert!(unauthorized);
+    assert_eq!(
+        error_code(&response.expect("response")),
+        Some(ACCESS_DENIED)
+    );
+
+    // Notification: no JSON response, and still no invocation.
+    let notification = br#"{"jsonrpc": "2.0", "method": "secret", "params": []}"#;
+    let (response, unauthorized) = process_body(&filters, None, notification, None);
+    assert!(unauthorized);
+    assert!(response.is_none());
+
+    // Mixed batch: the public call is answered, the protected call is denied.
+    let batch = br#"[
+        {"jsonrpc": "2.0", "method": "ping", "params": [], "id": 1},
+        {"jsonrpc": "2.0", "method": "secret", "params": [], "id": 2},
+        {"jsonrpc": "2.0", "method": "secret", "params": []}
+    ]"#;
+    let (response, unauthorized) = process_body(&filters, None, batch, None);
+    assert!(unauthorized);
+    let response = response.expect("response");
+    let entries = response.as_array().expect("batch array");
+    assert_eq!(entries.len(), 2);
+    assert_eq!(
+        entries[0].get("result").and_then(Value::as_str),
+        Some("pong")
+    );
+    assert_eq!(entries[0].get("id").and_then(Value::as_i64), Some(1));
+    assert_eq!(error_code(&entries[1]), Some(ACCESS_DENIED));
+    assert_eq!(entries[1].get("id").and_then(Value::as_i64), Some(2));
+
+    assert_eq!(public_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(protected_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn protected_method_over_http_is_refused_without_a_challenge() {
+    let public_calls = Arc::new(AtomicUsize::new(0));
+    let protected_calls = Arc::new(AtomicUsize::new(0));
+    let server = build_server_with_protected_counter(
+        Arc::clone(&public_calls),
+        Arc::clone(&protected_calls),
+    );
+    let routes = routes_for(&server, None);
+
+    let post = warp::test::request()
+        .method("POST")
+        .path("/")
+        .body(r#"{"jsonrpc": "2.0", "method": "secret", "params": [], "id": 1}"#)
+        .reply(&routes)
+        .await;
+    assert_eq!(post.status(), StatusCode::UNAUTHORIZED);
+    // Nothing is configured, so there is nothing a client could supply.
+    assert!(post.headers().get(WWW_AUTHENTICATE).is_none());
+    let body: Value = serde_json::from_slice(post.body()).expect("json body");
+    assert_eq!(error_code(&body), Some(ACCESS_DENIED));
+
+    let get = warp::test::request()
+        .method("GET")
+        .path("/?jsonrpc=2.0&id=1&method=secret&params=%5B%5D")
+        .reply(&routes)
+        .await;
+    assert_eq!(get.status(), StatusCode::UNAUTHORIZED);
+    assert!(get.headers().get(WWW_AUTHENTICATE).is_none());
+    let body: Value = serde_json::from_slice(get.body()).expect("json body");
+    assert_eq!(error_code(&body), Some(ACCESS_DENIED));
+
+    // Public methods stay open when nothing is configured.
+    let public = warp::test::request()
+        .method("GET")
+        .path("/?jsonrpc=2.0&id=1&method=ping&params=%5B%5D")
+        .reply(&routes)
+        .await;
+    assert_eq!(public.status(), StatusCode::OK);
+    let body: Value = serde_json::from_slice(public.body()).expect("json body");
+    assert_eq!(body.get("result").and_then(Value::as_str), Some("pong"));
+
+    assert_eq!(public_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(protected_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn protected_method_over_http_runs_with_valid_credentials() {
+    let public_calls = Arc::new(AtomicUsize::new(0));
+    let protected_calls = Arc::new(AtomicUsize::new(0));
+    let server = build_server_with_protected_counter(
+        Arc::clone(&public_calls),
+        Arc::clone(&protected_calls),
+    );
+    let routes = routes_for(&server, Some(test_credentials()));
+    let header = basic_header("testuser", "testpass");
+
+    let post = warp::test::request()
+        .method("POST")
+        .path("/")
+        .header("authorization", &header)
+        .body(r#"{"jsonrpc": "2.0", "method": "secret", "params": [], "id": 1}"#)
+        .reply(&routes)
+        .await;
+    assert_eq!(post.status(), StatusCode::OK);
+    let body: Value = serde_json::from_slice(post.body()).expect("json body");
+    assert_eq!(
+        body.get("result").and_then(Value::as_str),
+        Some("classified")
+    );
+
+    let get = warp::test::request()
+        .method("GET")
+        .path("/?jsonrpc=2.0&id=1&method=secret&params=%5B%5D")
+        .header("authorization", &header)
+        .reply(&routes)
+        .await;
+    assert_eq!(get.status(), StatusCode::OK);
+    assert_eq!(protected_calls.load(Ordering::SeqCst), 2);
+
+    // Credentials are configured, so a missing header is challenged.
+    let missing = warp::test::request()
+        .method("POST")
+        .path("/")
+        .body(r#"{"jsonrpc": "2.0", "method": "secret", "params": [], "id": 1}"#)
+        .reply(&routes)
+        .await;
+    assert_eq!(missing.status(), StatusCode::UNAUTHORIZED);
+    assert!(missing.headers().get(WWW_AUTHENTICATE).is_some());
+    assert_eq!(protected_calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn empty_password_authenticates_public_methods_but_not_protected_ones() {
+    let public_calls = Arc::new(AtomicUsize::new(0));
+    let protected_calls = Arc::new(AtomicUsize::new(0));
+    let server = build_server_with_protected_counter(
+        Arc::clone(&public_calls),
+        Arc::clone(&protected_calls),
+    );
+    let auth = BasicAuth::from_settings(&RpcServerConfig {
+        rpc_user: "testuser".to_string(),
+        rpc_pass: String::new(),
+        ..Default::default()
+    })
+    .expect("a non-blank username still enables global authentication");
+    let routes = routes_for(&server, Some(auth));
+    let header = basic_header("testuser", "");
+
+    // Global authentication is unchanged: the empty password is accepted for
+    // public methods and a missing header is challenged.
+    let public = warp::test::request()
+        .method("POST")
+        .path("/")
+        .header("authorization", &header)
+        .body(r#"{"jsonrpc": "2.0", "method": "ping", "params": [], "id": 1}"#)
+        .reply(&routes)
+        .await;
+    assert_eq!(public.status(), StatusCode::OK);
+    assert_eq!(public_calls.load(Ordering::SeqCst), 1);
+
+    let missing = warp::test::request()
+        .method("POST")
+        .path("/")
+        .body(r#"{"jsonrpc": "2.0", "method": "ping", "params": [], "id": 1}"#)
+        .reply(&routes)
+        .await;
+    assert_eq!(missing.status(), StatusCode::UNAUTHORIZED);
+    assert!(missing.headers().get(WWW_AUTHENTICATE).is_some());
+
+    // An empty password is not a secret, so it cannot unlock protected
+    // methods; the client already authenticated, so no challenge is sent.
+    let protected = warp::test::request()
+        .method("POST")
+        .path("/")
+        .header("authorization", &header)
+        .body(r#"{"jsonrpc": "2.0", "method": "secret", "params": [], "id": 1}"#)
+        .reply(&routes)
+        .await;
+    assert_eq!(protected.status(), StatusCode::UNAUTHORIZED);
+    assert!(protected.headers().get(WWW_AUTHENTICATE).is_none());
+    let body: Value = serde_json::from_slice(protected.body()).expect("json body");
+    assert_eq!(error_code(&body), Some(ACCESS_DENIED));
+
+    assert_eq!(public_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(protected_calls.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test(flavor = "multi_thread")]

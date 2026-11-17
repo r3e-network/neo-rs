@@ -404,11 +404,13 @@ impl RpcServerWallet {
     /// Registers all wallet RPC handlers.
     ///
     /// # Security
-    /// Wallet methods are marked as protected metadata. Authentication is enforced
-    /// only when RPC basic auth is configured, matching C# behavior.
+    /// Wallet methods are protected: the dispatcher invokes them only for a
+    /// request that authenticated against configured `RpcUser`/`RpcPass`
+    /// credentials, and refuses them when none are configured. This is stricter
+    /// than C#, which leaves them open on a server without credentials.
     pub fn register_handlers() -> Vec<RpcHandler> {
         super::rpc_handlers![
-            // Wallet methods are marked as protected metadata.
+            // Wallet methods are protected; see `routes::handlers::process_request`.
             protected;
             "closewallet" => Self::close_wallet,
             "dumpprivkey" => Self::dump_priv_key,

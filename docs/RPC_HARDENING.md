@@ -9,6 +9,7 @@ Recommendations and a sample `RpcServer.json` for running the RPC plugin securel
 - Bind to loopback (`127.0.0.1`) and front RPC with a reverse proxy (TLS/auth/rate limits) if exposing beyond localhost.
 - Disable CORS unless you have a trusted origin list; prefer an allowlist instead of `*`.
 - Set strong `rpc_user`/`rpc_pass` credentials if you cannot proxy-authenticate.
+- Wallet RPCs (`openwallet`, `closewallet`, `dumpprivkey`, `importprivkey`, `getnewaddress`, `listaddress`, `getwalletbalance`, `getwalletunclaimedgas`, `calculatenetworkfee`, `sendfrom`, `sendtoaddress`, `sendmany`, `canceltransaction`) are refused with HTTP 401 unless `rpc_user` (`RpcUser`) and a non-empty `rpc_pass` (`RpcPass`) are configured and the request authenticates with them. This is stricter than the C# node, which serves them unauthenticated when no credentials are set. A loopback bind, TLS or a proxy in front does not lift the requirement; a node that uses wallet RPCs must configure both settings.
 - Set sensible limits: `max_concurrent_connections`, `max_request_body_size`, `max_gas_invoke`, `max_fee`, `max_iterator_result_items`, `max_stack_size`.
 - Optional built-in per-IP rate limiting is available via `max_requests_per_second` and `rate_limit_burst` (disabled when set to 0). Use a reverse proxy limiter for stronger guarantees.
 - Keep `disabled_methods` populated for any RPC methods you do not need.

@@ -1,4 +1,4 @@
-use super::cors::{apply_cors, verify_basic_auth};
+use super::cors::{BasicAuth, apply_cors, verify_basic_auth};
 use super::{
     MAX_PARAMS_DEPTH, RequestOutcome, RpcFilters, RpcQueryParams, build_http_response,
     error_response, exceeds_max_depth, success_response,
@@ -36,10 +36,22 @@ pub(super) async fn handle_post_request(
         Some(client_ip),
     );
 
-    let challenge = unauthorized && filters.auth.as_ref().is_some();
+    let challenge = unauthorized && should_challenge(&filters, auth_header.as_deref());
     let mut http_response = build_http_response(response, unauthorized, challenge);
     apply_cors(&mut http_response, filters.cors.as_ref(), origin.as_ref());
     Ok(http_response)
+}
+
+/// A `WWW-Authenticate` challenge is only useful when credentials are
+/// configured and this request did not present them. A request denied for any
+/// other reason (a protected method on a server with no usable credentials)
+/// has nothing it could supply, so it is refused without a challenge.
+fn should_challenge(filters: &RpcFilters, auth_header: Option<&str>) -> bool {
+    filters
+        .auth
+        .as_ref()
+        .as_ref()
+        .is_some_and(|auth| !verify_basic_auth(auth_header, auth))
 }
 
 pub(super) async fn handle_get_request(
@@ -97,7 +109,7 @@ pub(super) async fn handle_get_request(
         }
     };
 
-    let challenge = unauthorized && filters.auth.as_ref().is_some();
+    let challenge = unauthorized && should_challenge(&filters, auth_header.as_deref());
     let mut http_response = build_http_response(response, unauthorized, challenge);
     apply_cors(&mut http_response, filters.cors.as_ref(), origin.as_ref());
     Ok(http_response)
@@ -271,17 +283,32 @@ fn process_request(
             }
         };
 
-    if let Some(auth) = filters.auth.as_ref() {
-        let header = auth_header.unwrap_or("").trim();
-        if header.is_empty() {
-            RPC_ERR_TOTAL.inc();
-            return RequestOutcome::error(error_response(id, RpcError::access_denied()), true);
+    let authenticated: Option<&BasicAuth> = match filters.auth.as_ref() {
+        Some(auth) => {
+            let header = auth_header.unwrap_or("").trim();
+            if header.is_empty() {
+                RPC_ERR_TOTAL.inc();
+                return RequestOutcome::error(error_response(id, RpcError::access_denied()), true);
+            }
+            if !verify_basic_auth(Some(header), auth) {
+                RPC_ERR_TOTAL.inc();
+                // A19: wrong credentials must also challenge with HTTP 401, not 200 + JSON.
+                return RequestOutcome::error(error_response(id, RpcError::access_denied()), true);
+            }
+            Some(auth)
         }
-        if !verify_basic_auth(Some(header), auth) {
-            RPC_ERR_TOTAL.inc();
-            // A19: wrong credentials must also challenge with HTTP 401, not 200 + JSON.
-            return RequestOutcome::error(error_response(id, RpcError::access_denied()), true);
-        }
+        None => None,
+    };
+
+    // R-1: a protected method runs only for a request that authenticated
+    // against credentials with a non-empty password. A server with no (or
+    // password-less) credentials refuses it outright; peer address, TLS and
+    // client identity are not substitutes for authentication.
+    if handler.descriptor().requires_auth()
+        && !authenticated.is_some_and(BasicAuth::unlocks_protected_methods)
+    {
+        RPC_ERR_TOTAL.inc();
+        return RequestOutcome::error(error_response(id, RpcError::access_denied()), true);
     }
 
     match invoke_rpc_handler(&server_arc, handler, &method, params.as_slice()) {

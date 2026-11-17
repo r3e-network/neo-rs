@@ -24,6 +24,15 @@ impl BasicAuth {
             pass: settings.rpc_pass.as_bytes().to_vec(),
         })
     }
+
+    /// Whether these credentials may unlock protected RPC methods.
+    ///
+    /// Global authentication accepts a non-blank username with an empty
+    /// password, but that is not a secret: protected methods additionally
+    /// require a non-empty password.
+    pub(super) fn unlocks_protected_methods(&self) -> bool {
+        !self.user.trim_ascii().is_empty() && !self.pass.is_empty()
+    }
 }
 
 #[derive(Clone)]
