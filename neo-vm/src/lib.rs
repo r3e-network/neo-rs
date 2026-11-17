@@ -238,7 +238,7 @@ pub mod stack_projection;
 // working via `neo_vm::*`.
 // ============================================================================
 
-/// Memory pool with arena-based allocation for high-performance VM execution.
+/// Object pools and pooled containers for high-performance VM execution.
 pub mod memory;
 
 /// ABI encoding and stack value types.
@@ -323,12 +323,6 @@ pub use syscalls::{
     init as init_syscall_registry, verify_registry_completeness,
 };
 // pub use rw_set_tracker::RwSetTracker;  // REMOVED - use crate::runtime::rw_set_tracker::RwSetTracker instead
-
-// ============================================================================
-// Memory Pool API
-// ============================================================================
-
-pub use memory::arena_pool::{ArenaAllocation, ArenaMemoryPool};
 
 // ============================================================================
 // I/O Abstraction

@@ -29,7 +29,6 @@
 //! Reusable containers (`PooledVec`, `PooledHashMap`) prevent reallocations during
 //! typical transaction processing by maintaining fixed capacity buffers.
 
-pub mod arena_pool;
 pub mod object_pool;
 pub mod pooled_containers;
 

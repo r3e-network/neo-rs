@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Removed
+- neo-vm: removed the unused `memory::arena_pool` module (`ArenaMemoryPool`, `ArenaAllocation`, `ArenaAwareExecutionEngine`) and the `bumpalo` dependency. Its safe API allowed use-after-reset and leaked arena-allocated heap buffers; nothing in the workspace used it.
+
 ## [0.20.0] - 2026-10-29
 
 ### Protocol
