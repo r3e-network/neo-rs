@@ -151,6 +151,11 @@ windows-sys = { version = "0.61", features = [
 ] }
 
 [dev-dependencies]
+# Test-only: the `tee` suites initialise the neo-tee enclave on the software
+# sealing key. This must stay a dev-dependency so the feature never reaches a
+# non-test build (resolver 2 does not unify dev-dependency features into
+# normal builds).
+neo-tee = { workspace = true, features = ["tee-sgx-sim"] }
 tempfile.workspace = true
 num-bigint = { workspace = true }
 
