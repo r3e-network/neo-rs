@@ -382,8 +382,7 @@ impl Blockchain {
                 // Record that the failure was local (storage/pipeline), not a
                 // verdict about the block itself. Inventory handlers use this to
                 // report a transient local failure to the peer-facing caller.
-                self._local_persist_failures
-                    .fetch_add(1, Ordering::Relaxed);
+                self._local_persist_failures.fetch_add(1, Ordering::Relaxed);
                 // Let the task manager release this height for a retry. This is
                 // a local commit failure, not evidence that the peer is invalid.
                 context.actor_system.event_stream().publish(PersistFailed {

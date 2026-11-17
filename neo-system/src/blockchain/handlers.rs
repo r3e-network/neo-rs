@@ -509,7 +509,9 @@ impl Blockchain {
         // `on_new_block` reports a failed store commit as `Invalid`, which would
         // blame the peer for a transient local storage problem. Separate the two
         // by observing whether a local persistence attempt failed.
-        if result == VerifyResult::Invalid && self.local_persist_failures() != persist_failures_before {
+        if result == VerifyResult::Invalid
+            && self.local_persist_failures() != persist_failures_before
+        {
             tracing::warn!(
                 target: "neo",
                 index,

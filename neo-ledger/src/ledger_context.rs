@@ -401,11 +401,7 @@ impl LedgerContext {
         }
 
         let hashes = self.hashes_by_index.read();
-        let Some(start_pos) = hashes
-            .entries
-            .iter()
-            .position(|hash| hash == hash_start)
-        else {
+        let Some(start_pos) = hashes.entries.iter().position(|hash| hash == hash_start) else {
             return Vec::new();
         };
 

@@ -400,12 +400,13 @@ pub fn persist_block_profiled(
     let cache_failure = {
         let _stage = StageTimer::new(profiler, PersistenceStage::RuntimeUpdate);
         if options.update_runtime_cache {
-            runtime_cache.record_block(&persisting_block).err().map(|message| {
-                LedgerError::PostCommitCacheFailure {
+            runtime_cache
+                .record_block(&persisting_block)
+                .err()
+                .map(|message| LedgerError::PostCommitCacheFailure {
                     index: block_height,
                     message,
-                }
-            })
+                })
         } else {
             runtime_cache.record_tip(block_height);
             None
@@ -1203,10 +1204,7 @@ mod tests {
 
         // The error must be the distinct *post-commit* variant: durable state
         // advanced, only the local runtime view is stale.
-        assert!(matches!(
-            err,
-            LedgerError::PostCommitCacheFailure { .. }
-        ));
+        assert!(matches!(err, LedgerError::PostCommitCacheFailure { .. }));
         assert_eq!(
             err.to_string(),
             "block 0 was durably committed but the runtime cache update failed: cache offline"
