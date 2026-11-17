@@ -41,6 +41,12 @@ picked up by `Blockchain::new`:
   persisted height, persisted bodies in the ledger context (oldest first), and
   cached blocks above the incoming height (highest first). A block never makes
   one at the same or a lower height give way.
+* Admission is all or nothing. Before anything is given up the actor checks
+  that the free room and everything the block may displace add up to its
+  cost, and that the unverified caps can take it. If not, the block is refused
+  and every cache is left as it was, so a block that cannot fit costs the node
+  nothing it had cached. Blocks at or below the persisted height are counted
+  as room and are given up at the next admission that needs their bytes.
 * The next block to persist does not need admission: it is persisted whether or
   not it fits, so blocks far above the tip cannot stall the chain by filling
   the budget.
@@ -52,9 +58,24 @@ from the ledger context from the store.
 A verified block that cannot be admitted is answered with `OutOfMemory`, which
 the network layer does not treat as a peer fault.
 
+A block that was refused or given up is fetched again. The P2P side learns
+neither outcome: the remote node marks the hash as known and reports the
+height as delivered before the actor decides. The task manager plans requests
+from the persisted height, not from what was delivered, so the height is asked
+for again when a delivery or a persisted block makes it plan, and, if nothing
+is persisted for ten seconds, by its frontier recovery on a five second timer
+(about fifteen seconds with one peer that answers nothing else; up to the 60
+second task timeout if three peers already hold a request for that height).
+Over the same connection a block sent before is taken again only once it is
+the next block to persist, which needs no admission, so such blocks come back
+one at a time.
+
 Tests: `neo-ledger/src/block_cache_budget.rs`, the budget tests in
-`neo-ledger/src/ledger_context.rs`, and
-`neo-system/src/blockchain/block_cache_budget_tests.rs`.
+`neo-ledger/src/ledger_context.rs`,
+`neo-system/src/blockchain/block_cache_budget_tests.rs`, and, for the fetch
+after a block was given up, `neo-system/tests/evicted_block_refetch_tests.rs`
+(a whole node against one peer over a loopback connection). The 60 second
+path with three peers is not tested.
 
 Not covered: the inventory cache of the actor, the header cache, the actor
 mailbox, and blocks the P2P task manager holds per session have their own
