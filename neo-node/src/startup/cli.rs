@@ -4,6 +4,26 @@ use crate::cli::NodeCli;
 use crate::config::NodeConfig;
 use zeroize::Zeroizing;
 
+/// RPC methods that `--rpc-hardened` adds to `rpc.disabled_methods`.
+///
+/// The RPC server refuses a request whose whole method name equals a disabled
+/// name, ignoring ASCII case; there is no prefix or pattern matching. An entry
+/// that is not the name of a registered handler therefore disables nothing.
+const HARDENED_DISABLED_METHODS: &[&str] = &[
+    "openwallet",
+    "closewallet",
+    "listplugins",
+    "dumpprivkey",
+    "importprivkey",
+    "getnewaddress",
+    "sendfrom",
+    "sendtoaddress",
+    "sendmany",
+    "canceltransaction",
+    "sendrawtransaction",
+    "startconsensus",
+];
+
 pub(crate) fn apply_cli_overrides(cli: &NodeCli, node_config: &mut NodeConfig) {
     if let Some(path) = &cli.storage {
         node_config.storage.path = Some(path.to_string_lossy().to_string());
@@ -88,21 +108,7 @@ pub(crate) fn apply_cli_overrides(cli: &NodeCli, node_config: &mut NodeConfig) {
         node_config.rpc.auth_enabled = true;
         node_config.rpc.allow_origins.clear();
         let mut disabled = node_config.rpc.disabled_methods.clone();
-        for method in [
-            "openwallet",
-            "closewallet",
-            "listplugins",
-            "dumpprivkey",
-            "importprivkey",
-            "getnewaddress",
-            "sendfrom",
-            "sendto",
-            "sendtoaddress",
-            "sendmany",
-            "canceltransaction",
-            "sendrawtransaction",
-            "startconsensus",
-        ] {
+        for &method in HARDENED_DISABLED_METHODS {
             if !disabled.iter().any(|m| m.eq_ignore_ascii_case(method)) {
                 if method == "sendrawtransaction" {
                     tracing::warn!(
@@ -115,5 +121,81 @@ pub(crate) fn apply_cli_overrides(cli: &NodeCli, node_config: &mut NodeConfig) {
             }
         }
         node_config.rpc.disabled_methods = disabled;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rpc_consensus::RpcServerConsensus;
+    use clap::Parser;
+    use neo_rpc::server::{
+        RpcServerApplicationLogs, RpcServerBlockchain, RpcServerNode, RpcServerOracle,
+        RpcServerPrivacy, RpcServerSmartContract, RpcServerState, RpcServerTokensTracker,
+        RpcServerUtilities, RpcServerWallet,
+    };
+    use std::collections::HashSet;
+
+    /// Names of every handler the node can register on its RPC server: the sets
+    /// of `start_rpc_server_if_enabled` and `install_privacy_rpc_endpoint`, plus
+    /// the consensus handlers registered in `run`. Keyed like the server does.
+    fn registrable_rpc_methods() -> HashSet<String> {
+        [
+            RpcServerNode::register_handlers(),
+            RpcServerBlockchain::register_handlers(),
+            RpcServerUtilities::register_handlers(),
+            RpcServerSmartContract::register_handlers(),
+            RpcServerWallet::register_handlers(),
+            RpcServerApplicationLogs::register_handlers(),
+            RpcServerState::register_handlers(),
+            RpcServerTokensTracker::register_handlers(),
+            RpcServerOracle::register_handlers(),
+            RpcServerPrivacy::register_handlers(),
+            RpcServerConsensus::register_handlers(),
+        ]
+        .into_iter()
+        .flatten()
+        .map(|handler| handler.descriptor().name.to_ascii_lowercase())
+        .collect()
+    }
+
+    #[test]
+    fn hardened_disabled_methods_are_registrable_rpc_methods() {
+        let registrable = registrable_rpc_methods();
+        let unknown: Vec<&str> = HARDENED_DISABLED_METHODS
+            .iter()
+            .copied()
+            .filter(|name| !registrable.contains(&name.to_ascii_lowercase()))
+            .collect();
+
+        assert!(
+            unknown.is_empty(),
+            "--rpc-hardened disables names that no RPC handler is registered under: {unknown:?}"
+        );
+    }
+
+    #[test]
+    fn rpc_hardened_appends_its_methods_to_the_configured_ones() {
+        let cli = NodeCli::parse_from([
+            "neo-node",
+            "--rpc-disabled-methods",
+            "SendRawTransaction,getpeers",
+            "--rpc-hardened",
+        ]);
+        let mut node_config = NodeConfig::default();
+
+        apply_cli_overrides(&cli, &mut node_config);
+
+        let mut expected = vec!["SendRawTransaction", "getpeers"];
+        expected.extend(
+            HARDENED_DISABLED_METHODS
+                .iter()
+                .copied()
+                .filter(|name| *name != "sendrawtransaction"),
+        );
+        assert_eq!(node_config.rpc.disabled_methods, expected);
+        assert_eq!(node_config.rpc.cors_enabled, Some(false));
+        assert!(node_config.rpc.auth_enabled);
+        assert!(node_config.rpc.allow_origins.is_empty());
     }
 }
