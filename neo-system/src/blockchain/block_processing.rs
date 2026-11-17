@@ -238,20 +238,54 @@ impl Blockchain {
         // accept the new one. Silently dropping the newcomer let an attacker
         // pre-fill every future height with cheap bogus blocks and censor the
         // honest block (whose hash is then suppressed by the peer dedup cache).
-        let mut evicted_cost = None;
-        if let Some(mut existing) = self._block_cache_unverified.get_mut(&index) {
+        let mut replaced = None;
+        if let Some(existing) = self._block_cache_unverified.get(&index) {
             if existing
                 .iter()
                 .any(|candidate| candidate.hash == block_hash)
             {
                 return;
             }
-            if existing.len() >= MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT && !existing.is_empty() {
-                evicted_cost = Some(existing.remove(0).cost);
+            if existing.len() >= MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT {
+                replaced = existing.first().map(|oldest| (oldest.hash, oldest.cost));
             }
         }
-        if let Some(evicted_cost) = evicted_cost {
-            self.release_unverified(evicted_cost, 1);
+
+        // Admission is all or nothing: the candidate this block replaces and
+        // the blocks above it are only given up once it is known that doing
+        // so lets the block in. A block that is refused changes nothing.
+        if !self.unverified_caps_can_take(index, cost, replaced.map(|(_, cost)| cost)) {
+            warn!(
+                target: "neo",
+                index,
+                cost,
+                "unable to free space in unverified block cache, dropping block"
+            );
+            return;
+        }
+        if retained.is_none() && !self.can_make_room(index, cost, replaced.map(|(hash, _)| hash)) {
+            warn!(
+                target: "neo",
+                index,
+                cost,
+                "block cache budget cannot hold unverified block, dropping block"
+            );
+            return;
+        }
+
+        if let Some((oldest, oldest_cost)) = replaced {
+            let removed = self
+                ._block_cache_unverified
+                .get_mut(&index)
+                .and_then(|mut existing| {
+                    let position = existing
+                        .iter()
+                        .position(|candidate| candidate.hash == oldest)?;
+                    Some(existing.remove(position))
+                });
+            if removed.is_some() {
+                self.release_unverified(oldest_cost, 1);
+            }
         }
 
         if !self.evict_unverified_for(index, cost) {
@@ -284,10 +318,52 @@ impl Blockchain {
             .fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Whether the block-count and byte caps of the unverified cache can take
+    /// a block at `index` costing `cost` once every entry above it is given
+    /// up. `replaced_cost` is the cost of the candidate at its own height
+    /// whose place it would take, if any. Changes nothing.
+    fn unverified_caps_can_take(
+        &self,
+        index: u32,
+        cost: usize,
+        replaced_cost: Option<usize>,
+    ) -> bool {
+        let fits = |bytes: usize, blocks: usize| {
+            let bytes = bytes.saturating_sub(replaced_cost.unwrap_or(0));
+            let blocks = blocks.saturating_sub(usize::from(replaced_cost.is_some()));
+            bytes.saturating_add(cost) <= MAX_UNVERIFIED_CACHE_BYTES
+                && blocks < MAX_UNVERIFIED_CACHE_SIZE
+        };
+        if fits(
+            self._unverified_cache_bytes.load(Ordering::Relaxed),
+            self._unverified_cache_blocks.load(Ordering::Relaxed),
+        ) {
+            return true;
+        }
+
+        // What stays when everything above the block is given up.
+        let (bytes, blocks) = self
+            ._block_cache_unverified
+            .iter()
+            .filter(|entry| *entry.key() <= index)
+            .fold((0usize, 0usize), |(bytes, blocks), entry| {
+                let candidates = entry.value();
+                (
+                    candidates
+                        .iter()
+                        .map(|candidate| candidate.cost)
+                        .fold(bytes, usize::saturating_add),
+                    blocks + candidates.len(),
+                )
+            });
+        fits(bytes, blocks)
+    }
+
     /// Evicts unverified entries above `incoming_index`, highest first, until
     /// `incoming_cost` fits within the block-count and byte caps of the
     /// unverified cache. Returns false when the incoming block still does not
-    /// fit: entries at or below its height are never evicted for it.
+    /// fit: entries at or below its height are never evicted for it. Callers
+    /// rule that out with [`Self::unverified_caps_can_take`] first.
     fn evict_unverified_for(&self, incoming_index: u32, incoming_cost: usize) -> bool {
         loop {
             let bytes = self._unverified_cache_bytes.load(Ordering::Relaxed);

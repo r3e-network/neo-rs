@@ -62,13 +62,20 @@
 //! again. Giving up a cached block therefore never changes what is valid or
 //! the order in which blocks are persisted.
 //!
-//! When a block does not fit, room is made in this order, and admission is
-//! refused if that is not enough:
+//! When a block does not fit, room is made in this order:
 //!
 //! 1. cached blocks at or below the persisted height, which are of no use;
 //! 2. persisted block bodies in the ledger context, oldest first, which the
 //!    store can still serve;
 //! 3. cached blocks at heights above the incoming block, highest first.
+//!
+//! Admission is all or nothing. Before anything is given up, the actor works
+//! out whether the free room and everything the incoming block may displace
+//! are enough for it together. If they are not, the block is refused and
+//! every cache is left as it was, the blocks of step 1 included. The same
+//! holds for the caps of the unverified cache and for the candidate a block
+//! replaces at a height that already holds as many as it may. A block that
+//! cannot be admitted therefore costs the node nothing it had cached.
 //!
 //! The budget never makes a block give way to one at the same or a greater
 //! height. The chain needs the lowest missing height next, and blocks nobody
@@ -106,7 +113,7 @@ use neo_smart_contract::error::CoreResult;
 use neo_storage::persistence::DataCache;
 use neo_storage::persistence::StoreCache;
 use std::any::Any;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -287,14 +294,14 @@ impl Blockchain {
     }
 
     /// Reserves `cost` bytes for a block at height `index`, giving up cached
-    /// blocks of lower priority when the budget is short.
+    /// blocks of lower priority when the budget is short. Nothing is given up
+    /// unless that makes the block fit.
     fn reserve_block_bytes(&self, index: u32, cost: usize) -> Option<BlockCacheReservation> {
         let budget = &self._block_cache_budget;
         if let Some(reservation) = budget.try_reserve(cost) {
             return Some(reservation);
         }
-        if cost > budget.limit() {
-            // Nothing that could be given up would make this block fit.
+        if !self.can_make_room(index, cost, None) {
             return None;
         }
 
@@ -318,7 +325,63 @@ impl Blockchain {
                 return Some(reservation);
             }
         }
+        // Only reached when something outside the actor charged the budget
+        // after the check above.
         None
+    }
+
+    /// Whether a block at height `index` costing `cost` bytes fits the budget
+    /// once everything it may displace is given up. `replaced` is the
+    /// unverified candidate at its own height whose place it would take, if
+    /// any. Changes nothing.
+    fn can_make_room(&self, index: u32, cost: usize, replaced: Option<UInt256>) -> bool {
+        let budget = &self._block_cache_budget;
+        if cost > budget.limit() {
+            // Nothing that could be given up would make this block fit.
+            return false;
+        }
+        let room = budget
+            .available()
+            .saturating_add(self.ledger.cached_block_bytes());
+        room >= cost || room.saturating_add(self.displaceable_bytes(index, replaced)) >= cost
+    }
+
+    /// Budget bytes that giving up every cached block a block at height
+    /// `index` may displace would return: the blocks at or below the
+    /// persisted height, the blocks above `index`, and the unverified
+    /// candidate `replaced` at `index` itself.
+    ///
+    /// A block both caches hold returns its bytes only when both entries go,
+    /// and is counted once.
+    fn displaceable_bytes(&self, index: u32, replaced: Option<UInt256>) -> usize {
+        let persisted_height = self.ledger.current_height();
+        let gives_way = |height: u32| height <= persisted_height || height > index;
+
+        // Bytes of each reservation, and whether every entry holding it goes.
+        let mut reservations: HashMap<*const BlockCacheReservation, (usize, bool)> = HashMap::new();
+        let mut note = |entry: &RetainedBlock, goes: bool| {
+            let (_, all_go) = reservations
+                .entry(Arc::as_ptr(&entry._reservation))
+                .or_insert((entry._reservation.bytes(), true));
+            *all_go &= goes;
+        };
+        for entry in self._block_cache.iter() {
+            let retained = entry.value();
+            note(retained, gives_way(retained.block.index()));
+        }
+        for entry in self._block_cache_unverified.iter() {
+            let height = *entry.key();
+            for candidate in entry.value() {
+                let is_replaced = height == index && replaced == Some(candidate.hash);
+                note(candidate, is_replaced || gives_way(height));
+            }
+        }
+
+        reservations
+            .values()
+            .filter(|(_, all_go)| *all_go)
+            .map(|(bytes, _)| *bytes)
+            .fold(0usize, usize::saturating_add)
     }
 
     /// Drops every cached block at or below `height`. Those are persisted
