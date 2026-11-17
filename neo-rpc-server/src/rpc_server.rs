@@ -34,6 +34,7 @@ use super::rpc_error::RpcError;
 use super::rpc_server_privacy::EncryptedTransactionSubmitter;
 use super::rpc_server_settings::RpcServerConfig;
 use super::session::Session;
+use crate::client_identity;
 use crate::rpc_exception::RpcException;
 use crate::rpc_method_attribute::RpcMethodDescriptor;
 use crate::rpc_transport::{PlainConnection, TlsConnection, apply_tcp_keepalive, log_join_error};
@@ -427,7 +428,16 @@ impl RpcServer {
                     Ok::<_, Infallible>(service_fn(move |mut req: hyper::Request<hyper::Body>| {
                         req.extensions_mut().insert(remote_addr);
                         let mut svc = svc.clone();
-                        async move { svc.call(req).await }
+                        async move {
+                            // R-7(d): bind the peer identity so handlers that
+                            // create iterator sessions can enforce per-client
+                            // quotas without access to the HTTP request.
+                            client_identity::scope_client_key(
+                                remote_addr.ip().to_string(),
+                                async move { svc.call(req).await },
+                            )
+                            .await
+                        }
                     }))
                 }
             });
@@ -515,7 +525,16 @@ impl RpcServer {
                     Ok::<_, Infallible>(service_fn(move |mut req: hyper::Request<hyper::Body>| {
                         req.extensions_mut().insert(remote_addr);
                         let mut svc = svc.clone();
-                        async move { svc.call(req).await }
+                        async move {
+                            // R-7(d): bind the peer identity so handlers that
+                            // create iterator sessions can enforce per-client
+                            // quotas without access to the HTTP request.
+                            client_identity::scope_client_key(
+                                remote_addr.ip().to_string(),
+                                async move { svc.call(req).await },
+                            )
+                            .await
+                        }
                     }))
                 }
             });
@@ -703,6 +722,14 @@ impl RpcServer {
         Duration::from_secs(self.settings.session_expiration_time)
     }
 
+    /// Absolute session lifetime. Never shorter than the idle timeout so a
+    /// configuration mistake cannot expire sessions before they idle out.
+    fn session_max_lifetime(&self) -> Duration {
+        let idle = self.settings.session_expiration_time.max(1);
+        let configured = self.settings.session_max_lifetime_time.max(1);
+        Duration::from_secs(configured.max(idle))
+    }
+
     #[must_use]
     pub const fn session_enabled(&self) -> bool {
         self.settings.session_enabled
@@ -713,18 +740,45 @@ impl RpcServer {
             return;
         }
         let expiration = self.session_expiration();
+        let max_lifetime = self.session_max_lifetime();
         let mut guard = self.sessions.lock();
-        guard.retain(|_, session| !session.is_expired(expiration));
+        guard.retain(|_, session| !session.is_expired(expiration, max_lifetime));
     }
 
+    /// Stores a session attributed to the client serving the current request.
     pub fn store_session(&self, session: Session) -> Result<Uuid, RpcError> {
+        let client_key = client_identity::current_client_key();
+        self.store_session_for_client(session, client_key.as_deref())
+    }
+
+    /// Stores a session for an explicit client identity.
+    ///
+    /// Enforces both the global session pool limit and the per-client quota so
+    /// one caller cannot monopolise iterator sessions.
+    pub fn store_session_for_client(
+        &self,
+        mut session: Session,
+        client_key: Option<&str>,
+    ) -> Result<Uuid, RpcError> {
         self.purge_expired_sessions();
-        let mut guard = self.sessions.lock();
+        let client_key = client_key.unwrap_or(client_identity::ANONYMOUS_CLIENT_KEY);
         let max_sessions = self.settings.max_sessions.max(1);
+        let max_per_client = self.settings.max_sessions_per_client.max(1).min(max_sessions);
+        let mut guard = self.sessions.lock();
         if guard.len() >= max_sessions {
             return Err(RpcError::session_capacity_exceeded()
                 .with_data(format!("Maximum sessions ({max_sessions}) reached")));
         }
+        let client_sessions = guard
+            .values()
+            .filter(|existing| existing.client_key() == Some(client_key))
+            .count();
+        if client_sessions >= max_per_client {
+            return Err(RpcError::session_capacity_exceeded().with_data(format!(
+                "Maximum sessions per client ({max_per_client}) reached"
+            )));
+        }
+        session.set_client_key(client_key);
         let id = Uuid::new_v4();
         guard.insert(id, session);
         Ok(id)

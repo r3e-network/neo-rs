@@ -24,6 +24,10 @@ pub enum JsonError {
     /// A general formatting or parsing error.
     #[error("format error: {0}")]
     Format(String),
+    /// A configured parsing limit (input size, string length, member count, or
+    /// total node count) was exceeded.
+    #[error("limit exceeded: {0}")]
+    LimitExceeded(String),
     /// UTF-8 decoding failed.
     #[error(transparent)]
     Utf8(#[from] FromUtf8Error),
@@ -41,6 +45,11 @@ impl JsonError {
     /// Creates a [`DuplicateKey`](Self::DuplicateKey) error from a key name.
     pub fn duplicate_key(key: impl Into<String>) -> Self {
         Self::DuplicateKey(key.into())
+    }
+
+    /// Creates a [`LimitExceeded`](Self::LimitExceeded) error from a message.
+    pub fn limit_exceeded(message: impl Into<String>) -> Self {
+        Self::LimitExceeded(message.into())
     }
 }
 

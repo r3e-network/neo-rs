@@ -2,9 +2,10 @@
 
 use neo_protocol::ProtocolSettings;
 use neo_rpc_server::{
-    RpcException, RpcHandler, RpcMethodDescriptor, RpcServer, RpcServerBlockchain, RpcServerConfig,
-    RpcServerNode, RpcServerUtilities, ServerRpcError, build_jsonrpsee_module,
-    build_jsonrpsee_module_with_disabled,
+    JsonRpseeAdapterError, RpcException, RpcHandler, RpcMethodDescriptor, RpcServer,
+    RpcServerBlockchain, RpcServerConfig, RpcServerNode, RpcServerUtilities, ServerRpcError,
+    build_jsonrpsee_module, build_jsonrpsee_module_with_disabled,
+    build_jsonrpsee_module_with_external_auth,
 };
 use neo_system::NeoSystem;
 use parking_lot::RwLock;
@@ -70,7 +71,8 @@ fn assert_neo_error(response: &Value, error: ServerRpcError) {
 #[tokio::test(flavor = "multi_thread")]
 async fn module_includes_existing_smoke_methods() {
     let server = build_server_with_handlers();
-    let module = build_jsonrpsee_module(Arc::downgrade(&server)).expect("module");
+    let module = build_jsonrpsee_module(Arc::downgrade(&server), &RpcServerConfig::default())
+        .expect("module");
     let methods = module.method_names().collect::<HashSet<_>>();
 
     for method in JSONRPSEE_SMOKE_METHODS {
@@ -81,7 +83,8 @@ async fn module_includes_existing_smoke_methods() {
 #[tokio::test(flavor = "multi_thread")]
 async fn module_registers_public_methods_from_server_registry() {
     let server = build_server_with_handlers();
-    let module = build_jsonrpsee_module(Arc::downgrade(&server)).expect("module");
+    let module = build_jsonrpsee_module(Arc::downgrade(&server), &RpcServerConfig::default())
+        .expect("module");
     let methods = module
         .method_names()
         .map(str::to_string)
@@ -125,7 +128,8 @@ async fn module_registers_dynamic_public_methods_without_descriptor_api_breaks()
     ]);
 
     let server = Arc::new(RwLock::new(server));
-    let module = build_jsonrpsee_module(Arc::downgrade(&server)).expect("module");
+    let module = build_jsonrpsee_module(Arc::downgrade(&server), &RpcServerConfig::default())
+        .expect("module");
     let methods = module.method_names().collect::<HashSet<_>>();
 
     assert!(methods.contains(dynamic_method.as_str()));
@@ -151,7 +155,8 @@ async fn module_registers_dynamic_public_methods_without_descriptor_api_breaks()
 #[tokio::test(flavor = "multi_thread")]
 async fn initial_read_only_methods_match_registered_handlers() {
     let server = build_server_with_handlers();
-    let module = build_jsonrpsee_module(Arc::downgrade(&server)).expect("module");
+    let module = build_jsonrpsee_module(Arc::downgrade(&server), &RpcServerConfig::default())
+        .expect("module");
 
     for (id, method) in JSONRPSEE_SMOKE_METHODS.iter().enumerate() {
         let response = raw_response(
@@ -174,7 +179,8 @@ async fn initial_read_only_methods_match_registered_handlers() {
 #[tokio::test(flavor = "multi_thread")]
 async fn getversion_accepts_omitted_params() {
     let server = build_server_with_handlers();
-    let module = build_jsonrpsee_module(Arc::downgrade(&server)).expect("module");
+    let module = build_jsonrpsee_module(Arc::downgrade(&server), &RpcServerConfig::default())
+        .expect("module");
     let response = raw_response(
         &module,
         json!({
@@ -196,7 +202,8 @@ async fn getversion_accepts_omitted_params() {
 #[tokio::test(flavor = "multi_thread")]
 async fn rejects_non_array_params_with_neo_error() {
     let server = build_server_with_handlers();
-    let module = build_jsonrpsee_module(Arc::downgrade(&server)).expect("module");
+    let module = build_jsonrpsee_module(Arc::downgrade(&server), &RpcServerConfig::default())
+        .expect("module");
     let response = raw_response(
         &module,
         json!({
@@ -216,7 +223,8 @@ async fn disabled_method_uses_neo_access_denied() {
     let server = build_server_with_handlers();
     let disabled = Arc::new(HashSet::from(["getblockcount".to_string()]));
     let module =
-        build_jsonrpsee_module_with_disabled(Arc::downgrade(&server), disabled).expect("module");
+        build_jsonrpsee_module_with_disabled(Arc::downgrade(&server), &RpcServerConfig::default(), disabled)
+            .expect("module");
     let response = raw_response(
         &module,
         json!({
@@ -234,7 +242,8 @@ async fn disabled_method_uses_neo_access_denied() {
 #[tokio::test(flavor = "multi_thread")]
 async fn unregistered_method_is_rejected_by_jsonrpsee_before_neo_dispatch() {
     let server = build_server_with_handlers();
-    let module = build_jsonrpsee_module(Arc::downgrade(&server)).expect("module");
+    let module = build_jsonrpsee_module(Arc::downgrade(&server), &RpcServerConfig::default())
+        .expect("module");
     let response = raw_response(
         &module,
         json!({
@@ -267,7 +276,8 @@ async fn handler_error_preserves_neo_message_and_data() {
         }),
     )]);
     let server = Arc::new(RwLock::new(server));
-    let module = build_jsonrpsee_module(Arc::downgrade(&server)).expect("module");
+    let module = build_jsonrpsee_module(Arc::downgrade(&server), &RpcServerConfig::default())
+        .expect("module");
     let response = raw_response(
         &module,
         json!({
@@ -283,4 +293,58 @@ async fn handler_error_preserves_neo_message_and_data() {
         &response,
         ServerRpcError::invalid_params().with_data("height"),
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn configured_disabled_methods_are_denied_case_insensitively() {
+    let server = build_server_with_handlers();
+    let config = RpcServerConfig {
+        disabled_methods: vec!["GetBlockCount".to_string()],
+        ..Default::default()
+    };
+    let module = build_jsonrpsee_module(Arc::downgrade(&server), &config).expect("module");
+
+    let response = raw_response(
+        &module,
+        json!({
+            "jsonrpc": "2.0",
+            "method": "getblockcount",
+            "params": [],
+            "id": 12
+        }),
+    )
+    .await;
+    assert_neo_error(&response, ServerRpcError::access_denied());
+
+    // Other methods keep being served.
+    assert!(module.method_names().any(|name| name == "getblockhash"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn credentialed_config_requires_external_authentication() {
+    let server = build_server_with_handlers();
+    let config = RpcServerConfig {
+        rpc_user: "neo".to_string(),
+        rpc_pass: "secret".to_string(),
+        ..Default::default()
+    };
+
+    let error = match build_jsonrpsee_module(Arc::downgrade(&server), &config) {
+        Ok(_) => panic!("adapter must refuse to build without an auth gate"),
+        Err(error) => error,
+    };
+    assert!(matches!(
+        error,
+        JsonRpseeAdapterError::AuthenticationRequired
+    ));
+
+    // An explicit acknowledgement that authentication terminates in front of
+    // the jsonrpsee server is accepted.
+    let module = build_jsonrpsee_module_with_external_auth(
+        Arc::downgrade(&server),
+        &config,
+        Arc::new(HashSet::new()),
+    )
+    .expect("module with external auth");
+    assert!(module.method_names().any(|name| name == "getversion"));
 }

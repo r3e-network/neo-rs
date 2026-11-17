@@ -4,6 +4,7 @@
 //! that match the C# Neo implementation exactly.
 
 use crate::codec_error::{CodecError, CodecResult};
+use crate::compression::DEFAULT_MAX_DECOMPRESSED_SIZE;
 use crate::{BinaryWriter, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
@@ -109,14 +110,31 @@ pub fn compress_data(data: &[u8]) -> CodecResult<Vec<u8>> {
     Ok(lz4_flex::compress_prepend_size(data))
 }
 
-/// Decompresses data using LZ4 (production implementation matching C# Neo compression)
+/// Decompresses data using LZ4 (production implementation matching C# Neo compression).
+///
+/// The decoded payload is bounded by [`DEFAULT_MAX_DECOMPRESSED_SIZE`]: the LZ4
+/// length prefix is attacker controlled, so it must never be forwarded straight
+/// into an allocation. Callers with a tighter budget should use
+/// [`decompress_data_with_limit`].
 pub fn decompress_data(compressed_data: &[u8]) -> CodecResult<Vec<u8>> {
+    decompress_data_with_limit(compressed_data, DEFAULT_MAX_DECOMPRESSED_SIZE)
+}
+
+/// Decompresses data using LZ4 with an explicit output budget.
+///
+/// The prepended length prefix is validated against `max_output_bytes` *before*
+/// any buffer is allocated, so a hostile record can only cost the caller the
+/// budget it chose to grant.
+pub fn decompress_data_with_limit(
+    compressed_data: &[u8],
+    max_output_bytes: usize,
+) -> CodecResult<Vec<u8>> {
     // Validate input
     if compressed_data.is_empty() {
         return Err(CodecError::deserialization("Cannot decompress empty data"));
     }
 
-    lz4_flex::decompress_size_prepended(compressed_data)
+    crate::compression::decompress_lz4(compressed_data, max_output_bytes)
         .map_err(|e| CodecError::deserialization(format!("Data decompression failed: {e}")))
 }
 
@@ -433,10 +451,32 @@ mod tests {
             CodecError::deserialization("Cannot decompress empty data")
         );
         let data = [1, 2, 3];
-        let error = lz4_flex::decompress_size_prepended(&data).unwrap_err();
         assert_eq!(
             decompress_data(&data).unwrap_err(),
-            CodecError::deserialization(format!("Data decompression failed: {error}"))
+            CodecError::deserialization(
+                "Data decompression failed: invalid data: compressed data missing length prefix"
+            )
         );
+    }
+
+    #[test]
+    fn decompress_data_rejects_declared_size_over_budget_before_decode() {
+        let mut compressed = Vec::new();
+        compressed.extend_from_slice(&1_000_000u32.to_le_bytes());
+        compressed.extend_from_slice(&[0u8; 16]);
+
+        let err = decompress_data_with_limit(&compressed, 1024).unwrap_err();
+        assert!(err.to_string().contains("exceeds maximum size"));
+    }
+
+    #[test]
+    fn decompress_data_with_limit_roundtrips_within_budget() {
+        let data = b"bounded decompression".to_vec();
+        let compressed = compress_data(&data).unwrap();
+        assert_eq!(
+            decompress_data_with_limit(&compressed, data.len()).unwrap(),
+            data
+        );
+        assert!(decompress_data_with_limit(&compressed, data.len() - 1).is_err());
     }
 }

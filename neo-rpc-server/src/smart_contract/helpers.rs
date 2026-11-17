@@ -144,25 +144,46 @@ pub(super) fn contract_parameter_to_stack_value(
     }
 }
 
+/// Default byte budget for one RPC response's materialised stack values.
+///
+/// Without a shared budget a single invoke can force the node to build an
+/// arbitrarily large JSON tree (result stack plus every notification state
+/// entry) regardless of the per-item `MaxStackSize` check.
+pub(super) const DEFAULT_RESPONSE_BUDGET_BYTES: usize = 2 * 1024 * 1024;
+
+/// Converts a stack item to JSON, charging the conversion against the
+/// response-wide `remaining_budget`.
+///
+/// The budget is decremented by the serialized size of the produced value and
+/// the call fails once it is exhausted, so callers must stop materialising
+/// further values for the same response.
 pub(super) fn stack_item_to_json(
     item: &StackItem,
     session: Option<&mut Session>,
+    remaining_budget: &mut usize,
 ) -> Result<Value, RpcException> {
-    stack_item_to_json_with_budget(item, session, None)
+    stack_item_to_json_with_budget(item, session, None, remaining_budget)
 }
 
+/// Converts a single stack item with a per-item size ceiling.
+///
+/// Used by paths that expose exactly one value per call (contract
+/// verification), where the per-item check already bounds the output and a
+/// response-wide budget would only reject legitimate multi-item stacks.
 pub(super) fn stack_item_to_json_limited(
     item: &StackItem,
     session: Option<&mut Session>,
     max_size: usize,
 ) -> Result<Value, RpcException> {
-    stack_item_to_json_with_budget(item, session, Some(max_size))
+    let mut budget = usize::MAX;
+    stack_item_to_json_with_budget(item, session, Some(max_size), &mut budget)
 }
 
 fn stack_item_to_json_with_budget(
     item: &StackItem,
     session: Option<&mut Session>,
     max_size: Option<usize>,
+    remaining_budget: &mut usize,
 ) -> Result<Value, RpcException> {
     let mut value = stack_item_rpc_json_deferred_size_check(item, max_size)
         .map_err(|err| stack_item_error(err.to_string()))?;
@@ -177,7 +198,36 @@ fn stack_item_to_json_with_budget(
         );
         obj.insert("id".to_string(), Value::String(iterator_id.to_string()));
     }
+    charge_response_budget(&value, remaining_budget)?;
     Ok(value)
+}
+
+/// Approximates the serialized size of a JSON value without allocating.
+fn json_value_size(value: &Value) -> usize {
+    match value {
+        Value::Null => 4,
+        Value::Bool(_) => 5,
+        Value::Number(number) => number.to_string().len(),
+        Value::String(text) => text.len().saturating_add(2),
+        Value::Array(items) => items.iter().fold(items.len().saturating_add(2), |total, item| {
+            total.saturating_add(json_value_size(item)).saturating_add(1)
+        }),
+        Value::Object(entries) => entries.values().fold(entries.len().saturating_add(2), |total, entry| {
+            total.saturating_add(json_value_size(entry)).saturating_add(4)
+        }),
+    }
+}
+
+fn charge_response_budget(value: &Value, remaining_budget: &mut usize) -> Result<(), RpcException> {
+    let size = json_value_size(value);
+    if size > *remaining_budget {
+        *remaining_budget = 0;
+        return Err(stack_item_error(
+            "response size budget exhausted while materialising invoke result",
+        ));
+    }
+    *remaining_budget -= size;
+    Ok(())
 }
 
 fn stack_item_error(message: impl Into<String>) -> RpcException {
@@ -187,10 +237,15 @@ fn stack_item_error(message: impl Into<String>) -> RpcException {
 pub(super) fn notification_to_json(
     notification: &NotifyEventArgs,
     mut session: Option<&mut Session>,
+    remaining_budget: &mut usize,
 ) -> Result<Value, RpcException> {
     let mut state = Vec::new();
     for entry in &notification.state {
-        state.push(stack_item_to_json(entry, session.as_deref_mut())?);
+        state.push(stack_item_to_json(
+            entry,
+            session.as_deref_mut(),
+            remaining_budget,
+        )?);
     }
     Ok(json!({
         "eventname": notification.event_name,

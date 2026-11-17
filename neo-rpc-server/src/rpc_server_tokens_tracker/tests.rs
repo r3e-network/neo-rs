@@ -239,7 +239,8 @@ async fn get_nep17_balances_reports_asset_metadata() {
     prefix.push(balance_prefix);
     prefix.extend_from_slice(&user.to_bytes());
     let entries =
-        find_prefix::<Nep17BalanceKey, TokenBalance>(store.as_ref(), &prefix).expect("find prefix");
+        find_prefix::<Nep17BalanceKey, TokenBalance>(store.as_ref(), &prefix, 100)
+            .expect("find prefix");
     assert_eq!(entries.len(), 1);
 
     let server = RpcServer::new(system, RpcServerConfig::default());
@@ -595,7 +596,7 @@ async fn get_nep17_transfers_orders_by_timestamp_descending() {
     let start_key = [prefix.as_slice(), &(t1 - 1).to_be_bytes()].concat();
     let end_key = [prefix.as_slice(), &(now_ms + 1).to_be_bytes()].concat();
     let sent_pairs =
-        find_range::<Nep17TransferKey, TokenTransfer>(store.as_ref(), &start_key, &end_key)
+        find_range::<Nep17TransferKey, TokenTransfer>(store.as_ref(), &start_key, &end_key, 100)
             .expect("find sent range");
     assert_eq!(sent_pairs.len(), 2);
 

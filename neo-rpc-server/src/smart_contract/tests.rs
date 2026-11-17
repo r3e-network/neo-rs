@@ -1255,3 +1255,81 @@ async fn get_unclaimed_gas_returns_address_string() {
         .expect("unclaimed");
     assert!(unclaimed.parse::<f64>().is_ok());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn traverse_iterator_rejects_zero_count() {
+    let config = RpcServerConfig {
+        session_enabled: true,
+        ..Default::default()
+    };
+    let server = make_server(config);
+    let handlers = RpcServerSmartContract::register_handlers();
+    let traverse = find_handler(&handlers, "traverseiterator");
+
+    // R-7(a): count=0 used to only refresh the session TTL and let a client
+    // hold the session forever without consuming any iterator item.
+    let params = [
+        Value::String(uuid::Uuid::new_v4().to_string()),
+        Value::String(uuid::Uuid::new_v4().to_string()),
+        Value::Number(serde_json::Number::from(0)),
+    ];
+    let err = (traverse.callback())(&server, &params).expect_err("zero count");
+    assert_invalid_params_data(&err, "Invalid iterator items count 0");
+}
+
+#[test]
+fn stack_item_conversion_charges_and_enforces_response_budget() {
+    let item = neo_vm::StackItem::from_int(1i64);
+
+    // A conversion consumes budget shared by the whole response.
+    let mut budget = helpers::DEFAULT_RESPONSE_BUDGET_BYTES;
+    helpers::stack_item_to_json(&item, None, &mut budget).expect("first item fits");
+    assert!(
+        budget < helpers::DEFAULT_RESPONSE_BUDGET_BYTES,
+        "every converted value must be charged against the budget"
+    );
+
+    // R-4: once the budget is exhausted the conversion fails instead of
+    // materialising further (unbounded) JSON.
+    let mut exhausted = 0usize;
+    let err = helpers::stack_item_to_json(&item, None, &mut exhausted).expect_err("exhausted");
+    assert!(
+        err.message().contains("budget"),
+        "unexpected message: {}",
+        err.message()
+    );
+    assert_eq!(exhausted, 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn store_session_enforces_per_client_quota() {
+    let config = RpcServerConfig {
+        session_enabled: true,
+        max_sessions: 10,
+        max_sessions_per_client: 1,
+        ..Default::default()
+    };
+    let server = make_server(config);
+    let new_session = || {
+        Session::new(
+            server.system(),
+            vec![OpCode::RET.byte()],
+            None,
+            None,
+            100_000_000,
+            None,
+        )
+        .expect("session")
+    };
+
+    server
+        .store_session_for_client(new_session(), Some("10.0.0.1"))
+        .expect("first session for client");
+    let err = server
+        .store_session_for_client(new_session(), Some("10.0.0.1"))
+        .expect_err("per-client quota");
+    assert_eq!(err.code(), -609);
+    server
+        .store_session_for_client(new_session(), Some("10.0.0.2"))
+        .expect("quota is per client");
+}

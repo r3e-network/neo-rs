@@ -7,6 +7,7 @@
 //! `neo_rpc::server::*` paths remain available through the `neo-rpc` facade.
 
 pub mod application_logs;
+mod client_identity;
 mod diagnostic;
 #[cfg(feature = "jsonrpsee-server")]
 mod jsonrpsee_adapter;
@@ -62,7 +63,8 @@ pub use session::Session;
 
 #[cfg(feature = "jsonrpsee-server")]
 pub use jsonrpsee_adapter::{
-    JsonRpseeContext, build_jsonrpsee_module, build_jsonrpsee_module_with_disabled,
+    JsonRpseeAdapterError, JsonRpseeContext, build_jsonrpsee_module,
+    build_jsonrpsee_module_with_disabled, build_jsonrpsee_module_with_external_auth,
 };
 
 // Re-export smart contract handlers

@@ -54,13 +54,18 @@ impl RpcServerTokensTracker {
         prefix.push(balance_prefix);
         prefix.extend_from_slice(&script_hash.to_bytes());
 
-        let balances =
-            find_prefix::<Nep11BalanceKey, TokenBalance>(service.store().as_ref(), &prefix)
-                .map_err(internal_error)?;
+        let max_results = service.settings().max_results as usize;
+        // R-6: bound the scan itself - the contract/metadata lookups below drop
+        // rows, so the raw read must never be unbounded.
+        let balances = find_prefix::<Nep11BalanceKey, TokenBalance>(
+            service.store().as_ref(),
+            &prefix,
+            max_results,
+        )
+        .map_err(internal_error)?;
 
         let store_cache = server.system().store_cache();
         let snapshot = Arc::new(store_cache.data_cache().clone());
-        let max_results = service.settings().max_results as usize;
 
         let mut grouped: HashMap<UInt160, Vec<(String, TokenBalance)>> = HashMap::new();
         let mut count = 0usize;
@@ -278,14 +283,19 @@ impl RpcServerTokensTracker {
         prefix.push(balance_prefix);
         prefix.extend_from_slice(&script_hash.to_bytes());
 
-        let balances =
-            find_prefix::<Nep17BalanceKey, TokenBalance>(service.store().as_ref(), &prefix)
-                .map_err(internal_error)?;
+        let max_results = service.settings().max_results as usize;
+        // R-6: bound the scan itself - the contract/metadata lookups below drop
+        // rows, so the raw read must never be unbounded.
+        let balances = find_prefix::<Nep17BalanceKey, TokenBalance>(
+            service.store().as_ref(),
+            &prefix,
+            max_results,
+        )
+        .map_err(internal_error)?;
 
         let store_cache = server.system().store_cache();
         let snapshot = Arc::new(store_cache.data_cache().clone());
         let mut results = Vec::new();
-        let max_results = service.settings().max_results as usize;
 
         for (key, value) in balances {
             if results.len() >= max_results {

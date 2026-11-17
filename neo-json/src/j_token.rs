@@ -14,9 +14,67 @@ use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
 use serde_json::{self, ser::PrettyFormatter};
 use std::fmt;
 use std::io::Write;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// An optional JSON token, representing a value that may be absent.
 pub type JsonValue = Option<JToken>;
+
+/// Resource limits applied while parsing JSON into a [`JToken`].
+///
+/// Nesting depth is passed separately (`max_nest`) because it is part of the
+/// historical `JToken::parse(value, max_nest)` contract. Everything else that
+/// lets a small input amplify into a large allocation is bounded here: the raw
+/// input size, individual string lengths, the width of a single container and
+/// the total number of nodes in the document.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ParseLimits {
+    /// Maximum accepted size of the input buffer in bytes.
+    pub max_input_bytes: usize,
+    /// Maximum length in bytes of a single JSON string value or object key.
+    pub max_string_length: usize,
+    /// Maximum number of members in one object, or elements in one array.
+    pub max_members: usize,
+    /// Maximum number of JSON nodes (scalars plus containers) in the document.
+    pub max_total_nodes: usize,
+}
+
+impl ParseLimits {
+    /// Creates an explicit set of limits.
+    #[must_use]
+    pub const fn new(
+        max_input_bytes: usize,
+        max_string_length: usize,
+        max_members: usize,
+        max_total_nodes: usize,
+    ) -> Self {
+        Self {
+            max_input_bytes,
+            max_string_length,
+            max_members,
+            max_total_nodes,
+        }
+    }
+
+    /// Limits that disable every bound.
+    ///
+    /// Only appropriate when the input is already trusted *and* already
+    /// materialised in memory (for example the blanket `Deserialize` impl, which
+    /// receives values that `serde_json` has parsed and validated itself).
+    #[must_use]
+    pub const fn unbounded() -> Self {
+        Self::new(usize::MAX, usize::MAX, usize::MAX, usize::MAX)
+    }
+}
+
+impl Default for ParseLimits {
+    fn default() -> Self {
+        // Conservative defaults sized for RPC payloads: larger than any sane
+        // request body, small enough that amplification attacks cannot allocate
+        // gigabytes before failing.
+        Self::new(16 * 1024 * 1024, 4 * 1024 * 1024, 1 << 20, 1 << 20)
+    }
+}
 
 /// Core JSON token enum (matches C# `Neo.Json.JToken`).
 #[derive(Clone, Debug, PartialEq)]
@@ -244,16 +302,53 @@ impl JToken {
     }
 
     /// Parses a JSON string into a `JToken` with a maximum nesting depth.
+    ///
+    /// Applies [`ParseLimits::default`] to bound input bytes, string lengths,
+    /// container widths and total node count.
     pub fn parse(value: &str, max_nest: usize) -> Result<Self, JsonError> {
-        Self::parse_bytes(value.as_bytes(), max_nest)
+        Self::parse_with_limits(value, max_nest, ParseLimits::default())
+    }
+
+    /// Parses a JSON string into a `JToken` with explicit limits.
+    pub fn parse_with_limits(
+        value: &str,
+        max_nest: usize,
+        limits: ParseLimits,
+    ) -> Result<Self, JsonError> {
+        Self::parse_bytes_with_limits(value.as_bytes(), max_nest, limits)
     }
 
     /// Parses a JSON byte slice into a `JToken` with a maximum nesting depth.
+    ///
+    /// Applies [`ParseLimits::default`] to bound input bytes, string lengths,
+    /// container widths and total node count.
     pub fn parse_bytes(bytes: &[u8], max_nest: usize) -> Result<Self, JsonError> {
+        Self::parse_bytes_with_limits(bytes, max_nest, ParseLimits::default())
+    }
+
+    /// Parses a JSON byte slice into a `JToken` with explicit limits.
+    ///
+    /// The input length is rejected up front, before any deserializer work, so an
+    /// oversized body never reaches the allocation-heavy paths.
+    pub fn parse_bytes_with_limits(
+        bytes: &[u8],
+        max_nest: usize,
+        limits: ParseLimits,
+    ) -> Result<Self, JsonError> {
+        if bytes.len() > limits.max_input_bytes {
+            return Err(JsonError::LimitExceeded(format!(
+                "input of {} bytes exceeds maximum of {} bytes",
+                bytes.len(),
+                limits.max_input_bytes
+            )));
+        }
+
         let mut deserializer = serde_json::Deserializer::from_slice(bytes);
         let seed = TokenSeed {
             remaining_depth: max_nest,
             max_depth: max_nest,
+            limits,
+            nodes: Arc::new(AtomicUsize::new(0)),
         };
         let token = seed.deserialize(&mut deserializer)?;
         deserializer.end()?;
@@ -364,18 +459,26 @@ impl<'de> serde::Deserialize<'de> for JToken {
     where
         D: Deserializer<'de>,
     {
+        // Parsing a `serde_json::Value` back into a `JToken` operates on data the
+        // caller already materialised and validated, so no extra budget is
+        // applied here; use `parse_with_limits` for untrusted byte input.
         let seed = TokenSeed {
             remaining_depth: usize::MAX,
             max_depth: usize::MAX,
+            limits: ParseLimits::unbounded(),
+            nodes: Arc::new(AtomicUsize::new(0)),
         };
         seed.deserialize(deserializer)
             .map(|value| value.unwrap_or(Self::Null))
     }
 }
 
+#[derive(Clone)]
 struct TokenSeed {
     remaining_depth: usize,
     max_depth: usize,
+    limits: ParseLimits,
+    nodes: Arc<AtomicUsize>,
 }
 
 impl<'de> DeserializeSeed<'de> for TokenSeed {
@@ -391,6 +494,8 @@ impl<'de> DeserializeSeed<'de> for TokenSeed {
         let visitor = TokenVisitor {
             remaining_depth: self.remaining_depth,
             max_depth: self.max_depth,
+            limits: self.limits,
+            nodes: self.nodes,
         };
         deserializer.deserialize_any(visitor)
     }
@@ -399,6 +504,63 @@ impl<'de> DeserializeSeed<'de> for TokenSeed {
 struct TokenVisitor {
     remaining_depth: usize,
     max_depth: usize,
+    limits: ParseLimits,
+    nodes: Arc<AtomicUsize>,
+}
+
+impl TokenVisitor {
+    /// Charges one JSON node against the document-wide node budget.
+    fn charge_node<E>(&self) -> Result<(), E>
+    where
+        E: de::Error,
+    {
+        let total = self.nodes.fetch_add(1, Ordering::Relaxed).saturating_add(1);
+        if total > self.limits.max_total_nodes {
+            return Err(de::Error::custom(format!(
+                "Exceeded maximum node count ({})",
+                self.limits.max_total_nodes
+            )));
+        }
+        Ok(())
+    }
+
+    /// Rejects strings (and object keys) longer than the string budget.
+    fn charge_string<E>(&self, value: &str) -> Result<(), E>
+    where
+        E: de::Error,
+    {
+        if value.len() > self.limits.max_string_length {
+            return Err(de::Error::custom(format!(
+                "String length {} exceeds maximum of {}",
+                value.len(),
+                self.limits.max_string_length
+            )));
+        }
+        Ok(())
+    }
+
+    /// Rejects containers wider than the member budget.
+    fn charge_member<E>(&self, len: usize) -> Result<(), E>
+    where
+        E: de::Error,
+    {
+        if len > self.limits.max_members {
+            return Err(de::Error::custom(format!(
+                "Container member count {len} exceeds maximum of {}",
+                self.limits.max_members
+            )));
+        }
+        Ok(())
+    }
+
+    fn child_seed(&self) -> TokenSeed {
+        TokenSeed {
+            remaining_depth: self.remaining_depth.saturating_sub(1),
+            max_depth: self.max_depth,
+            limits: self.limits,
+            nodes: Arc::clone(&self.nodes),
+        }
+    }
 }
 
 impl<'de> Visitor<'de> for TokenVisitor {
@@ -412,6 +574,7 @@ impl<'de> Visitor<'de> for TokenVisitor {
     where
         E: de::Error,
     {
+        self.charge_node()?;
         Ok(Some(JToken::Boolean(value)))
     }
 
@@ -419,6 +582,7 @@ impl<'de> Visitor<'de> for TokenVisitor {
     where
         E: de::Error,
     {
+        self.charge_node()?;
         Ok(Some(JToken::Number(value as f64)))
     }
 
@@ -426,6 +590,7 @@ impl<'de> Visitor<'de> for TokenVisitor {
     where
         E: de::Error,
     {
+        self.charge_node()?;
         Ok(Some(JToken::Number(value as f64)))
     }
 
@@ -433,6 +598,7 @@ impl<'de> Visitor<'de> for TokenVisitor {
     where
         E: de::Error,
     {
+        self.charge_node()?;
         Ok(Some(JToken::Number(value)))
     }
 
@@ -440,6 +606,8 @@ impl<'de> Visitor<'de> for TokenVisitor {
     where
         E: de::Error,
     {
+        self.charge_string(value)?;
+        self.charge_node()?;
         Ok(Some(JToken::String(value.to_string())))
     }
 
@@ -447,6 +615,8 @@ impl<'de> Visitor<'de> for TokenVisitor {
     where
         E: de::Error,
     {
+        self.charge_string(&value)?;
+        self.charge_node()?;
         Ok(Some(JToken::String(value)))
     }
 
@@ -454,6 +624,7 @@ impl<'de> Visitor<'de> for TokenVisitor {
     where
         E: de::Error,
     {
+        self.charge_node()?;
         Ok(Some(JToken::Null))
     }
 
@@ -468,10 +639,7 @@ impl<'de> Visitor<'de> for TokenVisitor {
     where
         D: Deserializer<'de>,
     {
-        let seed = TokenSeed {
-            remaining_depth: self.remaining_depth,
-            max_depth: self.max_depth,
-        };
+        let seed = self.child_seed();
         seed.deserialize(deserializer)
     }
 
@@ -482,12 +650,12 @@ impl<'de> Visitor<'de> for TokenVisitor {
         if self.remaining_depth == 0 {
             return Err(de::Error::custom("Exceeded max depth"));
         }
+        self.charge_node()?;
 
+        let seed = self.child_seed();
         let mut items = Vec::new();
-        while let Some(item) = seq.next_element_seed(TokenSeed {
-            remaining_depth: self.remaining_depth - 1,
-            max_depth: self.max_depth,
-        })? {
+        while let Some(item) = seq.next_element_seed(seed.clone())? {
+            self.charge_member(items.len().saturating_add(1))?;
             items.push(item);
         }
 
@@ -501,18 +669,102 @@ impl<'de> Visitor<'de> for TokenVisitor {
         if self.remaining_depth == 0 {
             return Err(de::Error::custom("Exceeded max depth"));
         }
+        self.charge_node()?;
 
+        let seed = self.child_seed();
         let mut properties = OrderedDictionary::new();
         while let Some(key) = map.next_key::<String>()? {
-            let value = map.next_value_seed(TokenSeed {
-                remaining_depth: self.remaining_depth - 1,
-                max_depth: self.max_depth,
-            })?;
+            self.charge_string(&key)?;
+            self.charge_member(properties.len().saturating_add(1))?;
+            let value = map.next_value_seed(seed.clone())?;
             if let Err((key, _)) = properties.try_insert(key, value) {
                 return Err(de::Error::custom(format!("Duplicate property name: {key}")));
             }
         }
 
         Ok(Some(JToken::Object(JObject::from_properties(properties))))
+    }
+}
+
+#[cfg(test)]
+mod parse_limits_tests {
+    use super::{JToken, ParseLimits};
+    use crate::JsonError;
+
+    fn limits(
+        max_input_bytes: usize,
+        max_string_length: usize,
+        max_members: usize,
+        max_total_nodes: usize,
+    ) -> ParseLimits {
+        ParseLimits::new(
+            max_input_bytes,
+            max_string_length,
+            max_members,
+            max_total_nodes,
+        )
+    }
+
+    #[test]
+    fn default_limits_accept_small_documents() {
+        assert_eq!(JToken::parse("0", 1).expect("scalar"), JToken::Number(0.0));
+        assert!(JToken::parse("[0]", 2).is_ok());
+        assert!(JToken::parse_bytes(br#"{"a":[1,2,3],"b":null}"#, 3).is_ok());
+    }
+
+    #[test]
+    fn input_byte_budget_rejects_before_deserializing() {
+        let err = JToken::parse_bytes_with_limits(b"[1,2,3]", 4, limits(4, 64, 64, 64))
+            .expect_err("input over budget");
+        match err {
+            JsonError::LimitExceeded(message) => {
+                assert!(message.contains("exceeds maximum of 4 bytes"), "{message}");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn string_length_budget_rejects_long_values_and_keys() {
+        let err = JToken::parse_with_limits("\"abcdef\"", 4, limits(1024, 3, 64, 64))
+            .expect_err("string over budget");
+        assert!(err.to_string().contains("String length 6 exceeds maximum of 3"));
+
+        let err = JToken::parse_with_limits(
+            r#"{"abcdef":1}"#,
+            4,
+            limits(1024, 3, 64, 64),
+        )
+        .expect_err("key over budget");
+        assert!(err.to_string().contains("String length 6 exceeds maximum of 3"));
+    }
+
+    #[test]
+    fn member_budget_rejects_wide_containers() {
+        let err = JToken::parse_with_limits("[1,2,3,4]", 4, limits(1024, 64, 3, 64))
+            .expect_err("array too wide");
+        assert!(err.to_string().contains("member count 4 exceeds maximum of 3"));
+
+        let err = JToken::parse_with_limits(
+            r#"{"a":1,"b":2,"c":3}"#,
+            4,
+            limits(1024, 64, 2, 64),
+        )
+        .expect_err("object too wide");
+        assert!(err.to_string().contains("member count 3 exceeds maximum of 2"));
+    }
+
+    #[test]
+    fn node_budget_rejects_oversized_documents() {
+        let err = JToken::parse_with_limits("[1,2,3]", 4, limits(1024, 64, 64, 3))
+            .expect_err("too many nodes");
+        assert!(err.to_string().contains("Exceeded maximum node count (3)"));
+    }
+
+    #[test]
+    fn unbounded_limits_accept_any_document() {
+        let token = JToken::parse_with_limits("[[1,2],[3]]", 8, ParseLimits::unbounded())
+            .expect("unbounded parse");
+        assert!(!token.to_string_value().is_empty());
     }
 }

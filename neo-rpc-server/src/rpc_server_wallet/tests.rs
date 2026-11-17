@@ -37,6 +37,28 @@ fn test_passphrase() -> &'static str {
         .as_str()
 }
 
+/// Asserts that a failure surfaced through the R-10 sanitized internal error
+/// envelope: the generic JSON-RPC message plus a correlation reference, and no
+/// trace of the underlying `leaked_detail` in anything the client can read.
+fn assert_sanitized_internal_error(
+    error: &crate::rpc_exception::RpcException,
+    leaked_detail: &str,
+) {
+    assert_eq!(error.code(), RpcError::internal_server_error().code());
+    let data = error.data().expect("correlation reference payload");
+    let reference = data
+        .strip_prefix("Internal error. Reference: ")
+        .unwrap_or_else(|| panic!("unexpected sanitized payload: {data}"));
+    assert!(
+        reference.len() >= 8 && reference.chars().all(|c| c.is_ascii_hexdigit()),
+        "correlation reference must be an opaque hex token: {reference}"
+    );
+    assert!(
+        !error.to_string().contains(leaked_detail),
+        "internal detail leaked to the client: {error}"
+    );
+}
+
 struct RecordingSignerService {
     private_key: [u8; 32],
     expected_key_ref: KeyRef,
@@ -537,7 +559,9 @@ async fn rpc_rejects_key_version_mismatch_without_default_fallback() {
         })
         .err()
         .expect("version mismatch must fail closed");
-    assert!(error.to_string().contains("not registered"));
+    // R-10: the signer rejection detail is logged under a correlation id and
+    // never echoed back, so only the sanitized envelope is observable here.
+    assert_sanitized_internal_error(&error, "not registered");
     let recorded = signer_service
         .requests
         .lock()
@@ -665,7 +689,9 @@ fn prepared_transaction_rejects_hash_field_mutation_before_completion() {
     let err = prepared
         .complete(vec![Witness::new()])
         .expect_err("changed hash field must invalidate authorization");
-    assert!(err.to_string().contains("hash fields changed"));
+    // R-10: the hash-mutation detail stays server-side; the client only gets
+    // the correlation reference.
+    assert_sanitized_internal_error(&err, "hash fields changed");
 }
 
 #[tokio::test(flavor = "multi_thread")]

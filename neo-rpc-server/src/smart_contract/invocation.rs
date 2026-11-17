@@ -25,9 +25,9 @@ use neo_vm::StackItem;
 use neo_vm::VmState as VMState;
 
 use super::helpers::{
-    build_dynamic_call_script, diagnostic_invocation_to_json, diagnostic_storage_changes,
-    expect_string_param, final_rpc_vm_state_string, internal_error, invalid_params,
-    notification_to_json, parse_contract_parameters, parse_signers_and_witnesses,
+    DEFAULT_RESPONSE_BUDGET_BYTES, build_dynamic_call_script, diagnostic_invocation_to_json,
+    diagnostic_storage_changes, expect_string_param, final_rpc_vm_state_string, internal_error,
+    invalid_params, notification_to_json, parse_contract_parameters, parse_signers_and_witnesses,
     stack_item_to_json,
 };
 
@@ -159,6 +159,10 @@ fn execute_script(
     result.insert("gasconsumed".to_string(), Value::String(gas_consumed));
     result.insert("exception".to_string(), exception_value);
 
+    // R-4: notifications and the result stack share one response budget so a
+    // single invoke cannot materialise an unbounded JSON tree.
+    let mut budget = DEFAULT_RESPONSE_BUDGET_BYTES;
+
     let notifications = {
         let mut session_ref = Some(&mut session);
         let mut entries = Vec::new();
@@ -166,6 +170,7 @@ fn execute_script(
             entries.push(notification_to_json(
                 notification,
                 session_ref.as_deref_mut(),
+                &mut budget,
             )?);
         }
         entries
@@ -176,9 +181,17 @@ fn execute_script(
         let mut session_ref = Some(&mut session);
         let mut entries = Vec::new();
         for item in &stack_snapshot {
-            match stack_item_to_json(item, session_ref.as_deref_mut()) {
+            match stack_item_to_json(item, session_ref.as_deref_mut(), &mut budget) {
                 Ok(value) => entries.push(value),
-                Err(err) => entries.push(Value::String(format!("error: {err}"))),
+                Err(err) => {
+                    let budget_exhausted = budget == 0;
+                    entries.push(Value::String(format!("error: {err}")));
+                    if budget_exhausted {
+                        // The budget covers the whole response: stop instead of
+                        // attempting conversions that can only fail.
+                        break;
+                    }
+                }
             }
         }
         entries

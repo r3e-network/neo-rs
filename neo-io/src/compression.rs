@@ -3,7 +3,7 @@
 use crate::IoError;
 use crate::codec_error::{CodecError, CodecResult};
 use serde::{Deserialize, Serialize};
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 
 /// Compression algorithms (matches C# Neo compression support)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -20,6 +20,16 @@ pub enum CompressionAlgorithm {
 pub const COMPRESSION_MIN_SIZE: usize = 128;
 /// Threshold in bytes below which compression is skipped.
 pub const COMPRESSION_THRESHOLD: usize = 64;
+
+/// Fallback output budget for decompression entry points whose callers cannot
+/// supply a context-specific limit.
+///
+/// Every decompression path must be bounded: the declared/actual output size
+/// originates from untrusted bytes (network payloads, persisted records, RPC
+/// parameters), so an unbounded decode is a compression-bomb / OOM primitive.
+/// Callers with tighter requirements should pass their own budget instead of
+/// relying on this constant.
+pub const DEFAULT_MAX_DECOMPRESSED_SIZE: usize = 64 * 1024 * 1024;
 
 /// Result type for compression operations.
 pub type CompressionResult<T> = Result<T, IoError>;
@@ -69,8 +79,6 @@ pub fn decompress_lz4(data: &[u8], max_size: usize) -> CompressionResult<Vec<u8>
 // Compression is always compiled in; the previous feature gate is removed to keep
 // behaviour deterministic across builds.
 
-const MAX_PERSISTENCE_LZ4_OUTPUT_SIZE: usize = u32::MAX as usize;
-
 /// Compresses data using the specified algorithm (production-ready implementation)
 pub fn compress(data: &[u8], algorithm: CompressionAlgorithm) -> CodecResult<Vec<u8>> {
     match algorithm {
@@ -83,17 +91,58 @@ pub fn compress(data: &[u8], algorithm: CompressionAlgorithm) -> CodecResult<Vec
     }
 }
 
-/// Decompresses data using the specified algorithm (production-ready implementation)
-pub fn decompress(compressed_data: &[u8], algorithm: CompressionAlgorithm) -> CodecResult<Vec<u8>> {
+/// Decompresses data using the specified algorithm, enforcing an output budget.
+///
+/// `max_output_bytes` bounds how many bytes this call may materialise. The bound
+/// is checked *before* any attacker-controlled allocation:
+///
+/// * `Lz4` validates the prepended length prefix against the budget before
+///   decoding (see [`decompress_lz4`]).
+/// * `Zstd` decodes through a stream with a capped output buffer, so a frame that
+///   inflates past the budget fails instead of growing the heap without limit.
+/// * `None` still enforces the budget on the pass-through payload.
+pub fn decompress(
+    compressed_data: &[u8],
+    algorithm: CompressionAlgorithm,
+    max_output_bytes: usize,
+) -> CodecResult<Vec<u8>> {
     match algorithm {
-        CompressionAlgorithm::None => Ok(Vec::from(compressed_data)),
-        CompressionAlgorithm::Lz4 => {
-            decompress_lz4(compressed_data, MAX_PERSISTENCE_LZ4_OUTPUT_SIZE)
-                .map_err(|e| CodecError::compression(e.to_string()))
+        CompressionAlgorithm::None => {
+            if compressed_data.len() > max_output_bytes {
+                return Err(CodecError::compression(format!(
+                    "payload exceeds maximum size ({max_output_bytes} bytes)"
+                )));
+            }
+            Ok(Vec::from(compressed_data))
         }
-        CompressionAlgorithm::Zstd => zstd::stream::decode_all(Cursor::new(compressed_data))
-            .map_err(|e| CodecError::io(format!("ZSTD decompression failed: {e}"))),
+        CompressionAlgorithm::Lz4 => decompress_lz4(compressed_data, max_output_bytes)
+            .map_err(|e| CodecError::compression(e.to_string())),
+        CompressionAlgorithm::Zstd => decompress_zstd(compressed_data, max_output_bytes),
     }
+}
+
+/// Zstandard decode with a bounded output buffer.
+///
+/// `zstd::stream::decode_all` keeps growing its output vector until the frame
+/// ends, which lets a small malicious frame drive an unbounded allocation. Here
+/// the decoder is streamed through `Read::take`, so at most `max_output_bytes + 1`
+/// bytes are ever materialised and an over-budget frame becomes a plain error.
+fn decompress_zstd(compressed_data: &[u8], max_output_bytes: usize) -> CodecResult<Vec<u8>> {
+    let mut decoder = zstd::stream::Decoder::new(Cursor::new(compressed_data))
+        .map_err(|e| CodecError::io(format!("ZSTD decompression failed: {e}")))?;
+    let limit = u64::try_from(max_output_bytes).unwrap_or(u64::MAX);
+    let mut output = Vec::new();
+    decoder
+        .by_ref()
+        .take(limit.saturating_add(1))
+        .read_to_end(&mut output)
+        .map_err(|e| CodecError::io(format!("ZSTD decompression failed: {e}")))?;
+    if output.len() > max_output_bytes {
+        return Err(CodecError::io(format!(
+            "ZSTD decompressed payload exceeds maximum size ({max_output_bytes} bytes)"
+        )));
+    }
+    Ok(output)
 }
 
 /// Gets the compression ratio for the given algorithm and data
@@ -131,6 +180,9 @@ pub fn estimate_compressed_size(data: &[u8], algorithm: CompressionAlgorithm) ->
 mod persistence_tests {
     use super::*;
 
+    /// Output budget used by the round-trip fixtures below.
+    const LIMIT: usize = 1024 * 1024;
+
     // ============================================================================
     // Compress/Decompress Tests
     // ============================================================================
@@ -145,15 +197,22 @@ mod persistence_tests {
     #[test]
     fn decompress_none_returns_original_data() {
         let data = vec![1, 2, 3, 4, 5];
-        let decompressed = decompress(&data, CompressionAlgorithm::None).unwrap();
+        let decompressed = decompress(&data, CompressionAlgorithm::None, LIMIT).unwrap();
         assert_eq!(decompressed, data);
+    }
+
+    #[test]
+    fn decompress_none_rejects_payload_over_budget() {
+        let data = vec![0u8; 32];
+        let err = decompress(&data, CompressionAlgorithm::None, 16).unwrap_err();
+        assert!(err.to_string().contains("exceeds maximum size"));
     }
 
     #[test]
     fn compress_lz4_roundtrip() {
         let data = b"Hello, Neo blockchain! This is test data for compression.".to_vec();
         let compressed = compress(&data, CompressionAlgorithm::Lz4).unwrap();
-        let decompressed = decompress(&compressed, CompressionAlgorithm::Lz4).unwrap();
+        let decompressed = decompress(&compressed, CompressionAlgorithm::Lz4, LIMIT).unwrap();
         assert_eq!(decompressed, data);
     }
 
@@ -161,7 +220,7 @@ mod persistence_tests {
     fn compress_lz4_empty_data() {
         let data: Vec<u8> = vec![];
         let compressed = compress(&data, CompressionAlgorithm::Lz4).unwrap();
-        let decompressed = decompress(&compressed, CompressionAlgorithm::Lz4).unwrap();
+        let decompressed = decompress(&compressed, CompressionAlgorithm::Lz4, LIMIT).unwrap();
         assert_eq!(decompressed, data);
     }
 
@@ -169,13 +228,13 @@ mod persistence_tests {
     fn compress_lz4_large_data() {
         let data: Vec<u8> = (0..10000).map(|i| (i % 256) as u8).collect();
         let compressed = compress(&data, CompressionAlgorithm::Lz4).unwrap();
-        let decompressed = decompress(&compressed, CompressionAlgorithm::Lz4).unwrap();
+        let decompressed = decompress(&compressed, CompressionAlgorithm::Lz4, LIMIT).unwrap();
         assert_eq!(decompressed, data);
     }
 
     #[test]
     fn decompress_lz4_missing_length_prefix_fails() {
-        let err = decompress(&[1, 2, 3], CompressionAlgorithm::Lz4).unwrap_err();
+        let err = decompress(&[1, 2, 3], CompressionAlgorithm::Lz4, LIMIT).unwrap_err();
         assert!(
             err.to_string()
                 .contains("compressed data missing length prefix")
@@ -186,7 +245,7 @@ mod persistence_tests {
     fn compress_zstd_roundtrip() {
         let data = b"Hello, Neo blockchain! This is test data for zstd.".to_vec();
         let compressed = compress(&data, CompressionAlgorithm::Zstd).unwrap();
-        let decompressed = decompress(&compressed, CompressionAlgorithm::Zstd).unwrap();
+        let decompressed = decompress(&compressed, CompressionAlgorithm::Zstd, LIMIT).unwrap();
         assert_eq!(decompressed, data);
     }
 
@@ -194,7 +253,23 @@ mod persistence_tests {
     fn compress_zstd_empty_data() {
         let data: Vec<u8> = vec![];
         let compressed = compress(&data, CompressionAlgorithm::Zstd).unwrap();
-        let decompressed = decompress(&compressed, CompressionAlgorithm::Zstd).unwrap();
+        let decompressed = decompress(&compressed, CompressionAlgorithm::Zstd, LIMIT).unwrap();
+        assert_eq!(decompressed, data);
+    }
+
+    #[test]
+    fn decompress_zstd_rejects_output_over_budget() {
+        let data = vec![0u8; 64 * 1024];
+        let compressed = compress(&data, CompressionAlgorithm::Zstd).unwrap();
+        let err = decompress(&compressed, CompressionAlgorithm::Zstd, 1024).unwrap_err();
+        assert!(err.to_string().contains("exceeds maximum size"));
+    }
+
+    #[test]
+    fn decompress_zstd_accepts_output_exactly_at_budget() {
+        let data = vec![7u8; 4096];
+        let compressed = compress(&data, CompressionAlgorithm::Zstd).unwrap();
+        let decompressed = decompress(&compressed, CompressionAlgorithm::Zstd, data.len()).unwrap();
         assert_eq!(decompressed, data);
     }
 
@@ -282,7 +357,7 @@ mod persistence_tests {
             let compressed = compress(data, CompressionAlgorithm::Lz4).unwrap();
             assert_eq!(compressed, compress_lz4(data).unwrap());
             assert_eq!(
-                decompress(&compressed, CompressionAlgorithm::Lz4).unwrap(),
+                decompress(&compressed, CompressionAlgorithm::Lz4, LIMIT).unwrap(),
                 data
             );
         }
@@ -293,7 +368,7 @@ mod persistence_tests {
         for data in [b"".as_slice(), &[1, 2, 3], &[1, 0, 0, 0, 0]] {
             let error = decompress_lz4(data, u32::MAX as usize).unwrap_err();
             assert_eq!(
-                decompress(data, CompressionAlgorithm::Lz4).unwrap_err(),
+                decompress(data, CompressionAlgorithm::Lz4, LIMIT).unwrap_err(),
                 CodecError::compression(error.to_string())
             );
         }
@@ -308,16 +383,13 @@ mod persistence_tests {
                 zstd::stream::encode_all(Cursor::new(data), 0).unwrap()
             );
             assert_eq!(
-                decompress(&compressed, CompressionAlgorithm::Zstd).unwrap(),
+                decompress(&compressed, CompressionAlgorithm::Zstd, LIMIT).unwrap(),
                 data
             );
         }
         let invalid = [1, 2, 3];
-        let error = zstd::stream::decode_all(Cursor::new(&invalid)).unwrap_err();
-        assert_eq!(
-            decompress(&invalid, CompressionAlgorithm::Zstd).unwrap_err(),
-            CodecError::io(format!("ZSTD decompression failed: {error}"))
-        );
+        let error = decompress(&invalid, CompressionAlgorithm::Zstd, LIMIT).unwrap_err();
+        assert!(error.to_string().starts_with("ZSTD decompression failed: "));
     }
 
     #[test]
@@ -327,7 +399,7 @@ mod persistence_tests {
             Vec::<u8>::new()
         );
         assert_eq!(
-            decompress(&[], CompressionAlgorithm::None).unwrap(),
+            decompress(&[], CompressionAlgorithm::None, LIMIT).unwrap(),
             Vec::<u8>::new()
         );
         assert_eq!(estimate_compressed_size(&[], CompressionAlgorithm::Zstd), 4);

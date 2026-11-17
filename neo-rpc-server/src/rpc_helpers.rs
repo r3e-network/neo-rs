@@ -18,10 +18,40 @@ pub fn invalid_params(message: impl Into<String>) -> RpcException {
     RpcException::from(RpcError::invalid_params().with_data(message.into()))
 }
 
+/// Number of hex characters in a correlation identifier handed back to clients.
+const CORRELATION_ID_LEN: usize = 16;
+
+/// Generates a short opaque identifier used to correlate a client-visible
+/// error with the corresponding server-side log record.
+#[must_use]
+pub fn new_correlation_id() -> String {
+    let mut id = uuid::Uuid::new_v4().simple().to_string();
+    id.truncate(CORRELATION_ID_LEN);
+    id
+}
+
 /// Creates an RpcException for internal server errors.
+///
+/// The caller-supplied detail is written to the server log under a freshly
+/// generated correlation identifier and is *never* echoed back to the client:
+/// internal error text routinely embeds filesystem paths, storage keys and
+/// other implementation details that must not cross the RPC boundary. Clients
+/// receive a generic message plus the identifier so operators can locate the
+/// matching log record.
 #[inline]
 pub fn internal_error(message: impl ToString) -> RpcException {
-    RpcException::from(RpcError::internal_server_error().with_data(message.to_string()))
+    let detail = message.to_string();
+    let correlation_id = new_correlation_id();
+    tracing::error!(
+        target: "neo::rpc",
+        correlation_id = %correlation_id,
+        detail = %detail,
+        "internal RPC error"
+    );
+    RpcException::from(
+        RpcError::internal_server_error()
+            .with_data(format!("Internal error. Reference: {correlation_id}")),
+    )
 }
 
 /// Serializes a Neo wire-compatible payload and encodes it with standard Base64.

@@ -48,7 +48,7 @@ use crate::rpc_error::RpcError;
 use crate::rpc_exception::RpcException;
 use crate::rpc_helpers::{
     expect_base64_param_with_decode_message, expect_string_param, internal_error, invalid_params,
-    parse_uint160, parse_uint256,
+    new_correlation_id, parse_uint160, parse_uint256,
 };
 use crate::rpc_relay;
 use crate::rpc_server::{RpcHandler, RpcServer, RpcSignerRuntime};
@@ -443,17 +443,15 @@ impl RpcServerWallet {
                 RpcError::unknown_account().with_data(format!("{script_hash} is watch-only")),
             ));
         }
-        let wif = account.export_wif().map_err(|err| {
-            RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
-        })?;
+        let wif = account
+            .export_wif()
+            .map_err(|err| internal_error(err.to_string()))?;
         Ok(Value::String(wif))
     }
 
     fn get_new_address(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
         let wallet = Self::require_wallet(server)?;
-        let key_pair = KeyPair::generate().map_err(|err| {
-            RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
-        })?;
+        let key_pair = KeyPair::generate().map_err(|err| internal_error(err.to_string()))?;
         let wallet_clone = Arc::clone(&wallet);
         let key_bytes = Zeroizing::new(*key_pair.private_key());
         let account = Self::await_wallet_future(Box::pin(async move {
@@ -476,11 +474,7 @@ impl RpcServerWallet {
                 }
                 let amount = token
                     .balance_of_snapshot(&store, &account.script_hash())
-                    .map_err(|err| {
-                        RpcException::from(
-                            RpcError::internal_server_error().with_data(err.to_string()),
-                        )
-                    })?;
+                    .map_err(|err| internal_error(err.to_string()))?;
                 total += amount;
             }
             let display = BigDecimal::new(total, token.decimals());
@@ -514,18 +508,14 @@ impl RpcServerWallet {
         let ledger = LedgerContract::new();
         let height = ledger
             .current_index(&store)
-            .map_err(|err| {
-                RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
-            })?
+            .map_err(|err| internal_error(err.to_string()))?
             .saturating_add(1);
         let neo = NeoToken::new();
         let mut total = BigInt::zero();
         for account in wallet.get_accounts() {
             let gas = neo
                 .unclaimed_gas(&store, &account.script_hash(), height)
-                .map_err(|err| {
-                    RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
-                })?;
+                .map_err(|err| internal_error(err.to_string()))?;
             total += gas;
         }
         Ok(Value::String(total.to_string()))
@@ -582,9 +572,9 @@ impl RpcServerWallet {
                 return Err(RpcException::from(RpcError::wallet_not_found()));
             }
             Err(err) => {
-                return Err(RpcException::from(
-                    RpcError::wallet_not_supported().with_data(err.to_string()),
-                ));
+                // R-10: never echo backend wallet errors (they embed paths and
+                // account material); log them under a correlation identifier.
+                return Err(Self::wallet_internal_failure(err));
             }
         };
         let wallet_arc: Arc<dyn CoreWallet> = Arc::new(wallet);
@@ -941,9 +931,7 @@ impl RpcServerWallet {
             RuntimeBuilder::new_current_thread()
                 .enable_all()
                 .build()
-                .map_err(|err| {
-                    RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
-                })?
+                .map_err(|err| internal_error(err.to_string()))?
                 .block_on(future)
         };
         result.map_err(Self::wallet_failure)
@@ -952,6 +940,26 @@ impl RpcServerWallet {
     fn save_wallet(wallet: &Arc<dyn CoreWallet>) -> Result<(), RpcException> {
         let wallet_clone = Arc::clone(wallet);
         Self::await_wallet_future(Box::pin(async move { wallet_clone.save() }))
+    }
+
+    /// Maps an unexpected wallet backend failure to a client-safe error.
+    ///
+    /// R-10: `WalletError` display strings embed filesystem paths and account
+    /// material, so the detail is logged under a correlation identifier and the
+    /// client only receives a generic message plus that identifier.
+    fn wallet_internal_failure(detail: impl ToString) -> RpcException {
+        let detail = detail.to_string();
+        let correlation_id = new_correlation_id();
+        tracing::error!(
+            target: "neo::rpc::wallet",
+            correlation_id = %correlation_id,
+            detail = %detail,
+            "internal wallet error"
+        );
+        RpcException::from(
+            RpcError::wallet_not_supported()
+                .with_data(format!("Wallet error. Reference: {correlation_id}")),
+        )
     }
 
     fn wallet_failure(err: WalletError) -> RpcException {
@@ -968,12 +976,8 @@ impl RpcServerWallet {
             WalletError::InsufficientFunds => {
                 RpcException::from(RpcError::insufficient_funds_wallet())
             }
-            WalletError::Io(err) => {
-                RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
-            }
-            other => {
-                RpcException::from(RpcError::wallet_not_supported().with_data(other.to_string()))
-            }
+            WalletError::Io(err) => internal_error(err.to_string()),
+            other => Self::wallet_internal_failure(other),
         }
     }
 

@@ -146,6 +146,22 @@ pub struct RpcServerConfig {
         alias = "MaxSessions"
     )]
     pub max_sessions: usize,
+    /// Maximum concurrent invoke iterator sessions owned by a single client
+    /// (peer address or connection). Bounds how much of the global pool one
+    /// caller can monopolise.
+    #[serde(
+        default = "RpcServerConfig::default_max_sessions_per_client",
+        alias = "MaxSessionsPerClient"
+    )]
+    pub max_sessions_per_client: usize,
+    /// Absolute lifetime of an iterator session in seconds. Activity refreshes
+    /// only the idle timeout, never this cap, so iterators cannot be held
+    /// indefinitely.
+    #[serde(
+        default = "RpcServerConfig::default_session_max_lifetime_seconds",
+        alias = "SessionMaxLifetime"
+    )]
+    pub session_max_lifetime_time: u64,
 }
 
 impl RpcServerConfig {
@@ -184,6 +200,14 @@ impl RpcServerConfig {
 
     const fn default_max_sessions() -> usize {
         32
+    }
+
+    const fn default_max_sessions_per_client() -> usize {
+        8
+    }
+
+    const fn default_session_max_lifetime_seconds() -> u64 {
+        300
     }
 
     const fn default_wallet_directory() -> String {
@@ -366,6 +390,8 @@ impl Default for RpcServerConfig {
             max_batch_size: Self::default_max_batch_size(),
             wallet_directory: Self::default_wallet_directory(),
             max_sessions: Self::default_max_sessions(),
+            max_sessions_per_client: Self::default_max_sessions_per_client(),
+            session_max_lifetime_time: Self::default_session_max_lifetime_seconds(),
         }
     }
 }

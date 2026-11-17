@@ -65,7 +65,14 @@ pub struct Session {
     diagnostic: Mutex<Option<Diagnostic>>,
     iterators: Mutex<HashMap<Uuid, IteratorEntry>>,
     iterator_lookup: Mutex<HashMap<u32, Uuid>>,
-    start_time: Mutex<Instant>,
+    /// Last activity instant used for the idle timeout.
+    idle_since: Mutex<Instant>,
+    /// Creation instant used for the absolute lifetime cap that activity can
+    /// never extend.
+    created_at: Instant,
+    /// Identity of the client that created the session (peer address or
+    /// connection key), used to enforce per-client session quotas.
+    client_key: Option<String>,
 }
 
 #[derive(Debug)]
@@ -154,7 +161,9 @@ impl Session {
             diagnostic: Mutex::new(diagnostic),
             iterators: Mutex::new(HashMap::new()),
             iterator_lookup: Mutex::new(HashMap::new()),
-            start_time: Mutex::new(Instant::now()),
+            idle_since: Mutex::new(Instant::now()),
+            created_at: Instant::now(),
+            client_key: None,
         })
     }
 
@@ -229,13 +238,30 @@ impl Session {
         Ok(values)
     }
 
-    pub fn reset_expiration(&self) {
-        let mut start_time = self.start_time.lock();
-        *start_time = Instant::now();
+    /// Records successful activity, extending the idle timeout only.
+    ///
+    /// The absolute lifetime cap (`created_at`) is deliberately untouched.
+    pub fn touch_idle(&self) {
+        let mut idle_since = self.idle_since.lock();
+        *idle_since = Instant::now();
     }
 
-    pub fn is_expired(&self, expiration: Duration) -> bool {
-        self.start_time.lock().elapsed() >= expiration
+    /// Binds the creating client's identity to this session.
+    pub fn set_client_key(&mut self, client_key: impl Into<String>) {
+        self.client_key = Some(client_key.into());
+    }
+
+    /// Returns the client identity bound at creation time.
+    #[must_use]
+    pub fn client_key(&self) -> Option<&str> {
+        self.client_key.as_deref()
+    }
+
+    /// Whether the session exceeded either the idle timeout or the absolute
+    /// lifetime cap.
+    #[must_use]
+    pub fn is_expired(&self, idle_timeout: Duration, max_lifetime: Duration) -> bool {
+        self.created_at.elapsed() >= max_lifetime || self.idle_since.lock().elapsed() >= idle_timeout
     }
 }
 
@@ -308,5 +334,36 @@ mod tests {
             .traverse_iterator(&uuid_first, 10)
             .expect("traverse iterator exhausted");
         assert!(tail.is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn absolute_lifetime_cannot_be_extended_by_activity() {
+        let settings = ProtocolSettings::default();
+        let system = NeoSystem::new(settings, None, None).expect("system");
+        let mut session = Session::new(
+            system,
+            vec![OpCode::RET.byte()],
+            None,
+            None,
+            100_000_000,
+            None,
+        )
+        .expect("session");
+
+        let idle = Duration::from_secs(60);
+        let max_lifetime = Duration::from_secs(300);
+        assert!(!session.is_expired(idle, max_lifetime));
+        session.touch_idle();
+        assert!(!session.is_expired(idle, max_lifetime));
+
+        // R-7(b): activity refreshes the idle timeout but must never extend
+        // the absolute lifetime measured from creation.
+        session.created_at = Instant::now() - Duration::from_secs(301);
+        assert!(session.is_expired(idle, max_lifetime));
+        session.touch_idle();
+        assert!(
+            session.is_expired(idle, max_lifetime),
+            "idle refresh must not extend the absolute lifetime"
+        );
     }
 }
