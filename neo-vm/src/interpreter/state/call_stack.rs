@@ -112,6 +112,53 @@ impl CallStack {
         Ok(())
     }
 
+    /// The slot values held by the suspended frames, one slice per slot run.
+    ///
+    /// The item count has to walk what suspended frames reference as well as
+    /// what the active stack, locals, args and static fields reference: a
+    /// value can be reachable from both sides at once, and only one shared
+    /// deduplicating walk gets that right.
+    #[cfg(not(target_arch = "riscv32"))]
+    pub(in crate::interpreter) fn saved_values(&self) -> Vec<&[StackValue]> {
+        let mut slices = Vec::with_capacity(self.len.saturating_mul(2));
+        for frame in &self.frames[..self.len] {
+            // SAFETY: every slot below `len` was initialized by a successful
+            // push and has not been removed by `pop_and_restore`.
+            let frame = unsafe { frame.assume_init_ref() };
+            slices.push(frame.locals.as_slice());
+            slices.push(frame.args.as_slice());
+        }
+        slices
+    }
+
+    /// The riscv32 guest keeps the suspended frames encoded, so counting has
+    /// to decode them. The decoded values are only borrowed for the walk and
+    /// are released by the caller.
+    #[cfg(target_arch = "riscv32")]
+    pub(in crate::interpreter) fn saved_values(&self) -> Result<Vec<Vec<StackValue>>, String> {
+        let mut slices = Vec::with_capacity(self.len.saturating_mul(2));
+        for frame in &self.frames[..self.len] {
+            // SAFETY: every slot below `len` was initialized by a successful
+            // push and has not been removed by `pop_and_restore`.
+            let frame = unsafe { frame.assume_init_ref() };
+            let locals_offset = frame.retained_offset + frame.args_len;
+            let end = locals_offset + frame.locals_len;
+            let bytes = unsafe { RETAINED_CALL_STACK_BUF.as_slice(end) };
+
+            let mut args = Vec::new();
+            decode_retained_prefix_into(
+                &bytes[frame.retained_offset..frame.retained_offset + frame.args_len],
+                &mut args,
+            )?;
+            slices.push(args);
+
+            let mut locals = Vec::new();
+            decode_retained_prefix_into(&bytes[locals_offset..end], &mut locals)?;
+            slices.push(locals);
+        }
+        Ok(slices)
+    }
+
     pub(in crate::interpreter) fn pop_and_restore(
         &mut self,
     ) -> Result<Option<RestoredCallFrame>, String> {

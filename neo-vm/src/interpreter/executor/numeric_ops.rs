@@ -112,13 +112,16 @@ fn shift_value(
     zero_shift_converts_to_integer: bool,
 ) -> Result<(), String> {
     let shift = stack.pop_shift_count()?;
-    let value = stack.pop_interpreter_value()?;
+    let mut value = stack.pop_interpreter_value()?;
     // Match the canonical numeric bridge's Buffer normalization for both
     // hardforks, not only for the pre-Gorgon zero-shift case.
-    let value = match value {
-        StackValue::Buffer(_, bytes) => StackValue::ByteString(bytes),
-        value => value,
+    let buffer_bytes = match &mut value {
+        StackValue::Buffer(_, bytes) => Some(core::mem::take(bytes)),
+        _ => None,
     };
+    if let Some(bytes) = buffer_bytes {
+        value = StackValue::ByteString(bytes);
+    }
     if shift == 0 && !zero_shift_converts_to_integer {
         // Push the interpreter value directly so Array/Struct/Map identity and
         // aliases survive a zero shift. Host-only objects still follow the

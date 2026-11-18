@@ -22,7 +22,10 @@ const RETAINED_PREFIX_BUF_SIZE: usize = 2 * 1024 * 1024;
 #[cfg(not(target_arch = "riscv32"))]
 const RETAINED_PREFIX_BUF_SIZE: usize = 0;
 
-const MAX_RETAINED_DECODE_DEPTH: usize = 64;
+// The deepest value the retained codec has to carry. It follows the
+// interpreter's own compound nesting limit, because a suspended call frame can
+// hold any value the interpreter accepts.
+const MAX_RETAINED_DECODE_DEPTH: usize = super::MAX_COMPOUND_NESTING_DEPTH;
 const MAX_RETAINED_COLLECTION_LEN: usize = 4096;
 
 pub(crate) struct RetainedPrefixBuffer(UnsafeCell<[u8; RETAINED_PREFIX_BUF_SIZE]>);

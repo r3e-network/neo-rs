@@ -195,7 +195,6 @@ pub(crate) fn invoke_syscall<H: SyscallProvider>(
                 for item in abi_args {
                     stack.push(ids.import_abi(item));
                 }
-                ids.note_imported(&stack[keep..]);
                 return Ok(());
             }
 
@@ -204,7 +203,6 @@ pub(crate) fn invoke_syscall<H: SyscallProvider>(
             for item in abi_args {
                 stack.push(ids.import_abi(item));
             }
-            ids.note_imported(&stack[keep..]);
             Ok(())
         }
         Err(e) => {
@@ -272,7 +270,6 @@ fn invoke_full_stack_syscall<H: SyscallProvider>(
                 .take_while(|(left, right)| structurally_equal(left, right))
                 .count();
             // The shared prefix keeps the values the interpreter already held.
-            ids.note_imported(&imported_stack[shared_prefix..]);
             #[cfg(target_arch = "riscv32")]
             {
                 let mut preserved_stack = core::mem::take(stack);
@@ -466,7 +463,6 @@ pub(crate) fn invoke_callt<H: SyscallProvider>(
                 .take_while(|(left, right)| structurally_equal(left, right))
                 .count();
             // The shared prefix keeps the values the interpreter already held.
-            ids.note_imported(&imported_stack[shared_prefix..]);
             #[cfg(target_arch = "riscv32")]
             {
                 let mut preserved_stack = core::mem::take(stack);

@@ -111,10 +111,6 @@ pub(super) fn execute(
             for _ in 0..count {
                 items.push(pop_item(stack)?);
             }
-            let items = items
-                .into_iter()
-                .map(|item| ids.clone_struct_for_storage(&item))
-                .collect();
             stack.push(ids.r#struct(items));
         }
         PACK => {
@@ -131,16 +127,13 @@ pub(super) fn execute(
             for _ in 0..count {
                 items.push(pop_item(stack)?);
             }
-            let items = items
-                .into_iter()
-                .map(|item| ids.clone_struct_for_storage(&item))
-                .collect();
             stack.push(ids.array(items));
         }
         UNPACK => {
-            let item = pop_item(stack)?;
-            match item {
+            let mut item = pop_item(stack)?;
+            match &mut item {
                 StackValue::Array(_, items) | StackValue::Struct(_, items) => {
+                    let items = core::mem::take(items);
                     let count = items.len() as i64;
                     for item in items.into_iter().rev() {
                         stack.push(item);
@@ -148,6 +141,7 @@ pub(super) fn execute(
                     stack.push(StackValue::Integer(count));
                 }
                 StackValue::Map(_, items) => {
+                    let items = core::mem::take(items);
                     let count = items.len() as i64;
                     for (key, value) in items.into_iter().rev() {
                         stack.push(value);
@@ -222,9 +216,10 @@ pub(super) fn execute(
             stack.push(StackValue::Boolean(has_key));
         }
         KEYS => {
-            let item = pop_item(stack)?;
-            match item {
+            let mut item = pop_item(stack)?;
+            match &mut item {
                 StackValue::Map(_, items) => {
+                    let items = core::mem::take(items);
                     let len = items.len();
                     let keys: Vec<_> = {
                         let mut v = Vec::with_capacity(len);
@@ -237,31 +232,34 @@ pub(super) fn execute(
             }
         }
         VALUES => {
-            let item = pop_item(stack)?;
-            match item {
-                StackValue::Map(_, items) => {
-                    let values = items
-                        .into_iter()
-                        .map(|(_, value)| value)
-                        .collect::<Vec<_>>();
-                    stack.push(ids.array(values));
-                }
-                StackValue::Array(_, items) => {
-                    stack.push(ids.array(items));
-                }
-                StackValue::Struct(_, items) => {
-                    stack.push(ids.array(items));
+            let mut item = pop_item(stack)?;
+            let values = match &mut item {
+                StackValue::Map(_, items) => core::mem::take(items)
+                    .into_iter()
+                    .map(|(_, value)| value)
+                    .collect::<Vec<_>>(),
+                StackValue::Array(_, items) | StackValue::Struct(_, items) => {
+                    core::mem::take(items)
                 }
                 _ => return Err("VALUES expects a map, array, or struct".to_string()),
-            }
+            };
+            // C# v3.10.1 clones the Struct values it collects, because they are
+            // mutable value types; every other item is shared.
+            let values = values
+                .into_iter()
+                .map(|value| ids.clone_struct_for_storage(&value))
+                .collect();
+            stack.push(ids.array(values));
         }
         APPEND => {
             let value = pop_item(stack)?;
-            let item = pop_item(stack)?;
+            let mut item = pop_item(stack)?;
             ensure_nestable(&value)?;
-            match item {
-                StackValue::Array(id, mut items) => {
+            match &mut item {
+                StackValue::Array(id, items) => {
+                    let id = *id;
                     items.push(ids.clone_for_mutation(&value));
+                    let items = core::mem::take(items);
                     let updated = StackValue::Array(id, items);
                     let affected = find_affected_indices(id, stack);
                     commit_collection_update(
@@ -274,8 +272,10 @@ pub(super) fn execute(
                         Some(&affected),
                     )?;
                 }
-                StackValue::Struct(id, mut items) => {
+                StackValue::Struct(id, items) => {
+                    let id = *id;
                     items.push(ids.clone_for_mutation(&value));
+                    let items = core::mem::take(items);
                     let updated = StackValue::Struct(id, items);
                     let affected = find_affected_indices(id, stack);
                     commit_collection_update(
@@ -294,12 +294,12 @@ pub(super) fn execute(
         PICKITEM => {
             let pick_result = (|| -> Result<(), String> {
                 let key_or_index = pop_item(stack)?;
-                let item = pop_item(stack)?;
-                match item {
+                let mut item = pop_item(stack)?;
+                match &mut item {
                     StackValue::Map(_, items) => {
                         // Map key can be any primitive type
                         let index = collection_rules::map_entry_index_by(
-                            &items,
+                            &*items,
                             &key_or_index,
                             primitive_key_equals,
                             validate_map_key,
@@ -322,9 +322,9 @@ pub(super) fn execute(
                     _ => {
                         // Array and Struct preserve interpreter object identity when
                         // a compound value is picked from them.
-                        let index = match key_or_index {
-                            StackValue::Integer(v) if v >= 0 => v as usize,
-                            StackValue::Boolean(v) => usize::from(v),
+                        let index = match &key_or_index {
+                            StackValue::Integer(v) if *v >= 0 => *v as usize,
+                            StackValue::Boolean(v) => usize::from(*v),
                             StackValue::Null => 0,
                             _ => {
                                 return Err(
@@ -332,14 +332,14 @@ pub(super) fn execute(
                                 );
                             }
                         };
-                        match item {
+                        match &mut item {
                             StackValue::Array(_, items) | StackValue::Struct(_, items) => {
                                 let value = items
                                     .get(index)
                                     .cloned()
                                     .ok_or_else(|| "index out of range for PICKITEM".to_string())?;
                                 if cfg!(target_arch = "riscv32") {
-                                    core::mem::forget(items);
+                                    core::mem::forget(core::mem::take(items));
                                 }
                                 stack.push(value);
                             }
@@ -365,25 +365,27 @@ pub(super) fn execute(
         SETITEM => {
             let value = pop_item(stack)?;
             let key = pop_item(stack)?;
-            let item = pop_item(stack)?;
+            let mut item = pop_item(stack)?;
             ensure_nestable(&value)?;
-            match item {
+            match &mut item {
                 StackValue::ByteString(_) => {
                     return Err(
                         "SETITEM expects a mutable buffer, array, struct, or map".to_string()
                     );
                 }
-                StackValue::Buffer(id, mut bytes) => {
+                StackValue::Buffer(id, bytes) => {
+                    let id = *id;
                     let index = integer_value_for_collection_index(&key)?;
                     if index < 0 || (index as usize) >= bytes.len() {
                         return Err("index out of range for SETITEM".to_string());
                     }
-                    let byte = match value {
-                        StackValue::Integer(value) if (-128..=255).contains(&value) => value as u8,
+                    let byte = match &value {
+                        StackValue::Integer(value) if (-128..=255).contains(value) => *value as u8,
                         StackValue::ByteString(value) if value.len() == 1 => value[0],
                         _ => return Err("SETITEM on buffer expects a byte value".to_string()),
                     };
                     bytes[index as usize] = byte;
+                    let bytes = core::mem::take(bytes);
                     let updated = StackValue::Buffer(id, bytes);
                     let affected = find_affected_indices(id, stack);
                     commit_collection_update(
@@ -396,12 +398,14 @@ pub(super) fn execute(
                         Some(&affected),
                     )?;
                 }
-                StackValue::Array(id, mut items) => {
+                StackValue::Array(id, items) => {
+                    let id = *id;
                     let index = integer_value_for_collection_index(&key)?;
                     if index < 0 || (index as usize) >= items.len() {
                         return Err("index out of range for SETITEM".to_string());
                     }
                     items[index as usize] = ids.clone_for_mutation(&value);
+                    let items = core::mem::take(items);
                     let updated = StackValue::Array(id, items);
                     let affected = find_affected_indices(id, stack);
                     commit_collection_update(
@@ -414,12 +418,14 @@ pub(super) fn execute(
                         Some(&affected),
                     )?;
                 }
-                StackValue::Struct(id, mut items) => {
+                StackValue::Struct(id, items) => {
+                    let id = *id;
                     let index = integer_value_for_collection_index(&key)?;
                     if index < 0 || (index as usize) >= items.len() {
                         return Err("index out of range for SETITEM".to_string());
                     }
                     items[index as usize] = ids.clone_for_mutation(&value);
+                    let items = core::mem::take(items);
                     let updated = StackValue::Struct(id, items);
                     let affected = find_affected_indices(id, stack);
                     commit_collection_update(
@@ -432,21 +438,20 @@ pub(super) fn execute(
                         Some(&affected),
                     )?;
                 }
-                StackValue::Map(id, mut items) => {
+                StackValue::Map(id, items) => {
+                    let id = *id;
+                    let mut entries = core::mem::take(items);
                     if let Some(index) = collection_rules::map_entry_index_by(
-                        &items,
+                        &entries,
                         &key,
                         primitive_key_equals,
                         validate_map_key,
                     )? {
-                        items[index].1 = ids.clone_for_mutation(&value);
+                        entries[index].1 = ids.clone_for_mutation(&value);
                     } else {
-                        let mut updated_items = Vec::with_capacity(items.len() + 1);
-                        updated_items.extend(items);
-                        updated_items.push((key, ids.clone_for_mutation(&value)));
-                        items = updated_items;
+                        entries.push((key, ids.clone_for_mutation(&value)));
                     }
-                    let updated = StackValue::Map(id, items);
+                    let updated = StackValue::Map(id, entries);
                     let affected = find_affected_indices(id, stack);
                     commit_collection_update(
                         &updated,
@@ -463,14 +468,16 @@ pub(super) fn execute(
         }
         REMOVE => {
             let key = pop_item(stack)?;
-            let item = pop_item(stack)?;
-            match item {
-                StackValue::Array(id, mut items) => {
+            let mut item = pop_item(stack)?;
+            match &mut item {
+                StackValue::Array(id, items) => {
+                    let id = *id;
                     let index = integer_value_for_collection_index(&key)?;
                     if index < 0 || (index as usize) >= items.len() {
                         return Err("index out of range for REMOVE".to_string());
                     }
                     items.remove(index as usize);
+                    let items = core::mem::take(items);
                     let updated = StackValue::Array(id, items);
                     let affected = find_affected_indices(id, stack);
                     commit_collection_update(
@@ -483,12 +490,14 @@ pub(super) fn execute(
                         Some(&affected),
                     )?;
                 }
-                StackValue::Struct(id, mut items) => {
+                StackValue::Struct(id, items) => {
+                    let id = *id;
                     let index = integer_value_for_collection_index(&key)?;
                     if index < 0 || (index as usize) >= items.len() {
                         return Err("index out of range for REMOVE".to_string());
                     }
                     items.remove(index as usize);
+                    let items = core::mem::take(items);
                     let updated = StackValue::Struct(id, items);
                     let affected = find_affected_indices(id, stack);
                     commit_collection_update(
@@ -501,16 +510,18 @@ pub(super) fn execute(
                         Some(&affected),
                     )?;
                 }
-                StackValue::Map(id, mut items) => {
+                StackValue::Map(id, entries) => {
+                    let id = *id;
+                    let mut entries = core::mem::take(entries);
                     let index = collection_rules::map_entry_index_by(
-                        &items,
+                        &entries,
                         &key,
                         primitive_key_equals,
                         validate_map_key,
                     )?
                     .ok_or_else(|| "key not found for REMOVE".to_string())?;
-                    items.remove(index);
-                    let updated = StackValue::Map(id, items);
+                    entries.remove(index);
+                    let updated = StackValue::Map(id, entries);
                     let affected = find_affected_indices(id, stack);
                     commit_collection_update(
                         &updated,
@@ -526,66 +537,33 @@ pub(super) fn execute(
             }
         }
         CLEARITEMS => {
-            let item = pop_item(stack)?;
-            match item {
-                StackValue::Array(id, _) => {
-                    let updated = StackValue::Array(id, Vec::new());
-                    commit_collection_update(
-                        &updated,
-                        stack,
-                        locals,
-                        args,
-                        static_fields,
-                        consumed_mutations,
-                        None,
-                    )?;
-                }
-                StackValue::Struct(id, _) => {
-                    let updated = StackValue::Struct(id, Vec::new());
-                    commit_collection_update(
-                        &updated,
-                        stack,
-                        locals,
-                        args,
-                        static_fields,
-                        consumed_mutations,
-                        None,
-                    )?;
-                }
-                StackValue::Map(id, _) => {
-                    let updated = StackValue::Map(id, Vec::new());
-                    commit_collection_update(
-                        &updated,
-                        stack,
-                        locals,
-                        args,
-                        static_fields,
-                        consumed_mutations,
-                        None,
-                    )?;
-                }
-                StackValue::Buffer(id, _) => {
-                    let updated = StackValue::Buffer(id, Vec::new());
-                    commit_collection_update(
-                        &updated,
-                        stack,
-                        locals,
-                        args,
-                        static_fields,
-                        consumed_mutations,
-                        None,
-                    )?;
-                }
+            let mut item = pop_item(stack)?;
+            let updated = match &mut item {
+                StackValue::Array(id, _) => StackValue::Array(*id, Vec::new()),
+                StackValue::Struct(id, _) => StackValue::Struct(*id, Vec::new()),
+                StackValue::Map(id, _) => StackValue::Map(*id, Vec::new()),
+                StackValue::Buffer(id, _) => StackValue::Buffer(*id, Vec::new()),
                 _ => return Err("CLEARITEMS expects a compound value".to_string()),
-            }
+            };
+            commit_collection_update(
+                &updated,
+                stack,
+                locals,
+                args,
+                static_fields,
+                consumed_mutations,
+                None,
+            )?;
         }
         POPITEM => {
-            let item = pop_item(stack)?;
-            match item {
-                StackValue::Array(id, mut items) => {
+            let mut item = pop_item(stack)?;
+            match &mut item {
+                StackValue::Array(id, items) => {
+                    let id = *id;
                     let popped = items
                         .pop()
                         .ok_or_else(|| "POPITEM on empty array".to_string())?;
+                    let items = core::mem::take(items);
                     let updated = StackValue::Array(id, items);
                     commit_collection_update(
                         &updated,
@@ -598,10 +576,12 @@ pub(super) fn execute(
                     )?;
                     stack.push(popped);
                 }
-                StackValue::Struct(id, mut items) => {
+                StackValue::Struct(id, items) => {
+                    let id = *id;
                     let popped = items
                         .pop()
                         .ok_or_else(|| "POPITEM on empty struct".to_string())?;
+                    let items = core::mem::take(items);
                     let updated = StackValue::Struct(id, items);
                     commit_collection_update(
                         &updated,
@@ -614,10 +594,12 @@ pub(super) fn execute(
                     )?;
                     stack.push(popped);
                 }
-                StackValue::Map(id, mut entries) => {
+                StackValue::Map(id, entries) => {
+                    let id = *id;
                     let (key, value) = entries
                         .pop()
                         .ok_or_else(|| "POPITEM on empty map".to_string())?;
+                    let entries = core::mem::take(entries);
                     let updated = StackValue::Map(id, entries);
                     commit_collection_update(
                         &updated,
@@ -631,10 +613,12 @@ pub(super) fn execute(
                     stack.push(key);
                     stack.push(value);
                 }
-                StackValue::Buffer(id, mut bytes) => {
+                StackValue::Buffer(id, bytes) => {
+                    let id = *id;
                     let byte = bytes
                         .pop()
                         .ok_or_else(|| "POPITEM on empty buffer".to_string())?;
+                    let bytes = core::mem::take(bytes);
                     let updated = StackValue::Buffer(id, bytes);
                     commit_collection_update(
                         &updated,
@@ -662,53 +646,42 @@ pub(super) fn execute(
             finish!(Dispatch::Continue);
         }
         REVERSEITEMS => {
-            let item = pop_item(stack)?;
-            match item {
-                StackValue::Array(id, mut items) => {
-                    items.reverse();
-                    let updated = StackValue::Array(id, items);
-                    commit_collection_update(
-                        &updated,
-                        stack,
-                        locals,
-                        args,
-                        static_fields,
-                        consumed_mutations,
-                        None,
-                    )?;
-                }
-                StackValue::Struct(id, mut items) => {
-                    items.reverse();
-                    let updated = StackValue::Struct(id, items);
-                    commit_collection_update(
-                        &updated,
-                        stack,
-                        locals,
-                        args,
-                        static_fields,
-                        consumed_mutations,
-                        None,
-                    )?;
-                }
-                StackValue::Buffer(id, mut bytes) => {
-                    bytes.reverse();
-                    let updated = StackValue::Buffer(id, bytes);
-                    commit_collection_update(
-                        &updated,
-                        stack,
-                        locals,
-                        args,
-                        static_fields,
-                        consumed_mutations,
-                        None,
-                    )?;
-                }
-                _ => {
-                    return Err(format!(
-                        "REVERSEITEMS expects an array, struct, or buffer at ip {ip}: {item:?}"
-                    ));
-                }
+            let mut item = pop_item(stack)?;
+            if !matches!(
+                item,
+                StackValue::Array(..) | StackValue::Struct(..) | StackValue::Buffer(..)
+            ) {
+                return Err(format!(
+                    "REVERSEITEMS expects an array, struct, or buffer at ip {ip}: {item:?}"
+                ));
             }
+            let updated = match &mut item {
+                StackValue::Array(id, items) => {
+                    items.reverse();
+                    let items = core::mem::take(items);
+                    StackValue::Array(*id, items)
+                }
+                StackValue::Struct(id, items) => {
+                    items.reverse();
+                    let items = core::mem::take(items);
+                    StackValue::Struct(*id, items)
+                }
+                StackValue::Buffer(id, bytes) => {
+                    bytes.reverse();
+                    let bytes = core::mem::take(bytes);
+                    StackValue::Buffer(*id, bytes)
+                }
+                _ => unreachable!("REVERSEITEMS input checked above"),
+            };
+            commit_collection_update(
+                &updated,
+                stack,
+                locals,
+                args,
+                static_fields,
+                consumed_mutations,
+                None,
+            )?;
         }
         // =============================================================================
         // TYPE OPERATIONS (0xd9, 0xdb)

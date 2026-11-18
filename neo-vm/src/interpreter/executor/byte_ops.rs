@@ -57,9 +57,9 @@ pub(super) fn execute(
             let si = pop_integer(stack)?;
             let src_item = pop_item(stack)?;
             let di = pop_integer(stack)?;
-            let dst_item = pop_item(stack)?;
-            let (dst_id, mut dst_bytes) = match dst_item {
-                StackValue::Buffer(id, bytes) => (id, bytes),
+            let mut dst_item = pop_item(stack)?;
+            let (dst_id, mut dst_bytes) = match &mut dst_item {
+                StackValue::Buffer(id, bytes) => (*id, core::mem::take(bytes)),
                 other => {
                     return Err(format!(
                         "MEMCPY expects buffer as destination, got {other:?}"

@@ -153,7 +153,7 @@ fn vm_equal_with_budget(
 
 pub(crate) fn convert_value(
     kind: u8,
-    value: StackValue,
+    mut value: StackValue,
     ids: &mut CompoundIds,
 ) -> Result<StackValue, String> {
     // Validate target type first, even for Null
@@ -181,24 +181,38 @@ pub(crate) fn convert_value(
             let converted = conversion_rules::convert_value(into_abi_value(value), kind)?;
             Ok(ids.import_abi(converted))
         }
-        NEOVM_STACK_ITEM_TYPE_ARRAY => Ok(match value {
-            StackValue::Array(_, _) => value,
-            StackValue::Struct(_, items) => ids.array(items),
-            other => return Err(format!("unsupported CONVERT source for Array: {other:?}")),
-        }),
-        NEOVM_STACK_ITEM_TYPE_STRUCT => Ok(match value {
-            StackValue::Struct(_, _) => value,
-            StackValue::Array(_, items) => ids.r#struct(items),
-            other => return Err(format!("unsupported CONVERT source for Struct: {other:?}")),
-        }),
-        NEOVM_STACK_ITEM_TYPE_MAP => Ok(match value {
-            StackValue::Map(_, _) => value,
-            other => return Err(format!("unsupported CONVERT source for Map: {other:?}")),
-        }),
-        NEOVM_STACK_ITEM_TYPE_INTEROP_INTERFACE => Ok(match value {
-            StackValue::Interop(_) => value,
-            other => return Err(format!("unsupported CONVERT source for Interop: {other:?}")),
-        }),
+        NEOVM_STACK_ITEM_TYPE_ARRAY => {
+            let items = match &mut value {
+                StackValue::Array(_, _) => None,
+                StackValue::Struct(_, items) => Some(core::mem::take(items)),
+                other => return Err(format!("unsupported CONVERT source for Array: {other:?}")),
+            };
+            Ok(match items {
+                Some(items) => ids.array(items),
+                None => value,
+            })
+        }
+        NEOVM_STACK_ITEM_TYPE_STRUCT => {
+            let items = match &mut value {
+                StackValue::Struct(_, _) => None,
+                StackValue::Array(_, items) => Some(core::mem::take(items)),
+                other => return Err(format!("unsupported CONVERT source for Struct: {other:?}")),
+            };
+            Ok(match items {
+                Some(items) => ids.r#struct(items),
+                None => value,
+            })
+        }
+        NEOVM_STACK_ITEM_TYPE_MAP => match &value {
+            StackValue::Map(_, _) => Ok(value),
+            other => Err(format!("unsupported CONVERT source for Map: {other:?}")),
+        },
+        NEOVM_STACK_ITEM_TYPE_INTEROP_INTERFACE => match &value {
+            StackValue::Interop(_) => Ok(value),
+            other => Err(format!(
+                "unsupported CONVERT source for Interop: {other:?}"
+            )),
+        },
         _ => Err(format!("unsupported CONVERT target 0x{kind:02x}")),
     }
 }
