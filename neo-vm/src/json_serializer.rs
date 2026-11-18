@@ -5,7 +5,6 @@
 // Old wrapper types removed - StackValue compounds are flat Vecs now
 use crate::StackItem;
 use crate::StackItemType;
-use crate::stack_item::{Array, Map, Struct};
 use num_bigint::BigInt;
 use num_traits::{FromPrimitive, ToPrimitive};
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
@@ -49,34 +48,56 @@ impl JsonSerializer {
     }
 
     /// Writes a [`JsonValue`] using C#-compatible escape semantics.
+    ///
+    /// The value tree is walked on an explicit task stack, so a payload as deep
+    /// as the stack item tree it came from is written without consuming native
+    /// stack.
     fn write_json_value(value: &JsonValue, out: &mut Vec<u8>) {
-        match value {
-            JsonValue::Null => out.extend_from_slice(b"null"),
-            JsonValue::Bool(true) => out.extend_from_slice(b"true"),
-            JsonValue::Bool(false) => out.extend_from_slice(b"false"),
-            JsonValue::Number(n) => out.extend_from_slice(n.to_string().as_bytes()),
-            JsonValue::String(s) => Self::write_json_string(s, out),
-            JsonValue::Array(items) => {
-                out.push(b'[');
-                for (i, item) in items.iter().enumerate() {
-                    if i > 0 {
-                        out.push(b',');
+        enum Task<'a> {
+            /// Write this value.
+            Value(&'a JsonValue),
+            /// Write this object key, quoted and escaped.
+            Key(&'a str),
+            /// Write this literal byte run.
+            Literal(&'static [u8]),
+        }
+
+        let mut tasks = vec![Task::Value(value)];
+        while let Some(task) = tasks.pop() {
+            match task {
+                Task::Literal(bytes) => out.extend_from_slice(bytes),
+                Task::Key(key) => Self::write_json_string(key, out),
+                Task::Value(value) => match value {
+                    JsonValue::Null => out.extend_from_slice(b"null"),
+                    JsonValue::Bool(true) => out.extend_from_slice(b"true"),
+                    JsonValue::Bool(false) => out.extend_from_slice(b"false"),
+                    JsonValue::Number(number) => {
+                        out.extend_from_slice(number.to_string().as_bytes());
                     }
-                    Self::write_json_value(item, out);
-                }
-                out.push(b']');
-            }
-            JsonValue::Object(obj) => {
-                out.push(b'{');
-                for (i, (k, v)) in obj.iter().enumerate() {
-                    if i > 0 {
-                        out.push(b',');
+                    JsonValue::String(text) => Self::write_json_string(text, out),
+                    JsonValue::Array(items) => {
+                        out.push(b'[');
+                        tasks.push(Task::Literal(b"]"));
+                        for (index, item) in items.iter().enumerate().rev() {
+                            tasks.push(Task::Value(item));
+                            if index > 0 {
+                                tasks.push(Task::Literal(b","));
+                            }
+                        }
                     }
-                    Self::write_json_string(k, out);
-                    out.push(b':');
-                    Self::write_json_value(v, out);
-                }
-                out.push(b'}');
+                    JsonValue::Object(entries) => {
+                        out.push(b'{');
+                        tasks.push(Task::Literal(b"}"));
+                        for (index, (key, item)) in entries.iter().enumerate().rev() {
+                            tasks.push(Task::Value(item));
+                            tasks.push(Task::Literal(b":"));
+                            tasks.push(Task::Key(key));
+                            if index > 0 {
+                                tasks.push(Task::Literal(b","));
+                            }
+                        }
+                    }
+                },
             }
         }
     }
@@ -127,103 +148,207 @@ impl JsonSerializer {
         Self::serialize_internal(item, &mut seen)
     }
 
+    /// Walks the item on an explicit frame stack.
+    ///
+    /// `seen` holds the compounds on the current path, exactly as the previous
+    /// recursive form did, so a chain nested as deep as `MaxStackSize`
+    /// serializes without consuming native stack.
     fn serialize_internal(
         item: &StackItem,
         seen: &mut HashSet<(usize, StackItemType)>,
     ) -> Result<JsonValue, String> {
-        match item {
-            StackItem::Null => Ok(JsonValue::Null),
-            StackItem::Boolean(value) => Ok(JsonValue::Bool(*value)),
-            StackItem::Integer(integer) => {
-                let int_value = integer
-                    .to_bigint()
-                    .to_i64()
-                    .ok_or_else(|| "Integer out of safe JSON range".to_string())?;
-                if !(Self::MIN_SAFE_INTEGER..=Self::MAX_SAFE_INTEGER).contains(&int_value) {
-                    return Err("Integer out of safe JSON range".to_string());
+        /// A compound whose elements are being serialized.
+        enum Frame {
+            /// An `Array` or `Struct` under construction.
+            List {
+                identity: (usize, StackItemType),
+                source: std::vec::IntoIter<StackItem>,
+                values: Vec<JsonValue>,
+            },
+            /// A `Map` under construction. Only the values are serialized; the
+            /// key of each entry is validated and turned into a string first.
+            Map {
+                identity: (usize, StackItemType),
+                source: std::vec::IntoIter<(StackItem, StackItem)>,
+                entries: JsonMap<String, JsonValue>,
+                pending_key: Option<String>,
+            },
+        }
+
+        /// Serializes an item that has no children of its own; `None` means the
+        /// item is a compound and needs a frame.
+        fn leaf(item: &StackItem) -> Result<Option<JsonValue>, String> {
+            match item {
+                StackItem::Null => Ok(Some(JsonValue::Null)),
+                StackItem::Boolean(value) => Ok(Some(JsonValue::Bool(*value))),
+                StackItem::Integer(integer) => {
+                    let int_value = integer
+                        .to_bigint()
+                        .to_i64()
+                        .ok_or_else(|| "Integer out of safe JSON range".to_string())?;
+                    if !(JsonSerializer::MIN_SAFE_INTEGER..=JsonSerializer::MAX_SAFE_INTEGER)
+                        .contains(&int_value)
+                    {
+                        return Err("Integer out of safe JSON range".to_string());
+                    }
+                    Ok(Some(JsonValue::Number(JsonNumber::from(int_value))))
                 }
-                Ok(JsonValue::Number(JsonNumber::from(int_value)))
-            }
-            StackItem::ByteString(bytes) => {
-                let string = String::from_utf8_lossy(bytes).to_string();
-                Ok(JsonValue::String(string))
-            }
-            StackItem::Buffer(buffer) => {
-                let string = buffer.with_data(|d| String::from_utf8_lossy(d).to_string());
-                Ok(JsonValue::String(string))
-            }
-            StackItem::Array(array) => Self::serialize_compound_array(array, seen),
-            StackItem::Struct(struct_item) => Self::serialize_compound_struct(struct_item, seen),
-            StackItem::Map(map) => Self::serialize_map(map, seen),
-            StackItem::Pointer(_) => Err("Cannot serialize Pointer to JSON".to_string()),
-            StackItem::InteropInterface(_) => {
-                Err("Cannot serialize InteropInterface to JSON".to_string())
+                StackItem::ByteString(bytes) => Ok(Some(JsonValue::String(
+                    String::from_utf8_lossy(bytes).to_string(),
+                ))),
+                StackItem::Buffer(buffer) => Ok(Some(JsonValue::String(
+                    buffer.with_data(|data| String::from_utf8_lossy(data).to_string()),
+                ))),
+                StackItem::Pointer(_) => Err("Cannot serialize Pointer to JSON".to_string()),
+                StackItem::InteropInterface(_) => {
+                    Err("Cannot serialize InteropInterface to JSON".to_string())
+                }
+                _ => Ok(None),
             }
         }
-    }
 
-    fn serialize_compound_array(
-        array: &Array,
-        seen: &mut HashSet<(usize, StackItemType)>,
-    ) -> Result<JsonValue, String> {
-        let identity = (array.id(), StackItemType::Array);
-        if !seen.insert(identity) {
-            return Err("Circular reference detected".to_string());
+        /// Opens the frame of a compound, marking it as being serialized.
+        fn open(
+            item: &StackItem,
+            seen: &mut HashSet<(usize, StackItemType)>,
+        ) -> Result<Frame, String> {
+            match item {
+                StackItem::Array(array) => {
+                    let identity = (array.id(), StackItemType::Array);
+                    if !seen.insert(identity) {
+                        return Err("Circular reference detected".to_string());
+                    }
+                    Ok(Frame::List {
+                        identity,
+                        source: array.items().into_iter(),
+                        values: Vec::with_capacity(array.len()),
+                    })
+                }
+                StackItem::Struct(structure) => {
+                    let identity = (structure.id(), StackItemType::Struct);
+                    if !seen.insert(identity) {
+                        return Err("Circular reference detected".to_string());
+                    }
+                    Ok(Frame::List {
+                        identity,
+                        source: structure.items().into_iter(),
+                        values: Vec::with_capacity(structure.len()),
+                    })
+                }
+                StackItem::Map(map) => {
+                    let identity = (map.id(), StackItemType::Map);
+                    if !seen.insert(identity) {
+                        return Err("Circular reference detected".to_string());
+                    }
+                    Ok(Frame::Map {
+                        identity,
+                        source: map.iter(),
+                        entries: JsonMap::new(),
+                        pending_key: None,
+                    })
+                }
+                _ => unreachable!("only compound items are opened"),
+            }
         }
 
-        let mut result = Vec::with_capacity(array.len());
-        for element in array {
-            result.push(Self::serialize_internal(&element, seen)?);
+        fn next_child(frame: &mut Frame) -> Result<Option<StackItem>, String> {
+            match frame {
+                Frame::List { source, .. } => Ok(source.next()),
+                Frame::Map {
+                    source,
+                    pending_key,
+                    ..
+                } => {
+                    let Some((key, value)) = source.next() else {
+                        return Ok(None);
+                    };
+                    let key_bytes = match key {
+                        StackItem::ByteString(bytes) => bytes,
+                        StackItem::Buffer(buffer) => buffer.data(),
+                        _ => return Err("Map key must be a byte string".to_string()),
+                    };
+                    *pending_key = Some(
+                        String::from_utf8(key_bytes)
+                            .map_err(|_| "Invalid UTF-8 in map key".to_string())?,
+                    );
+                    Ok(Some(value))
+                }
+            }
         }
 
-        seen.remove(&identity);
-        Ok(JsonValue::Array(result))
-    }
-
-    fn serialize_compound_struct(
-        structure: &Struct,
-        seen: &mut HashSet<(usize, StackItemType)>,
-    ) -> Result<JsonValue, String> {
-        let identity = (structure.id(), StackItemType::Struct);
-        if !seen.insert(identity) {
-            return Err("Circular reference detected".to_string());
+        fn accept(frame: &mut Frame, value: JsonValue) {
+            match frame {
+                Frame::List { values, .. } => values.push(value),
+                Frame::Map {
+                    entries,
+                    pending_key,
+                    ..
+                } => {
+                    if let Some(key) = pending_key.take() {
+                        entries.insert(key, value);
+                    }
+                }
+            }
         }
 
-        let mut result = Vec::with_capacity(structure.len());
-        for element in structure.iter() {
-            result.push(Self::serialize_internal(&element, seen)?);
+        fn close(frame: Frame, seen: &mut HashSet<(usize, StackItemType)>) -> JsonValue {
+            match frame {
+                Frame::List {
+                    identity, values, ..
+                } => {
+                    seen.remove(&identity);
+                    JsonValue::Array(values)
+                }
+                Frame::Map {
+                    identity, entries, ..
+                } => {
+                    seen.remove(&identity);
+                    JsonValue::Object(entries)
+                }
+            }
         }
 
-        seen.remove(&identity);
-        Ok(JsonValue::Array(result))
-    }
+        let mut frames: Vec<Frame> = Vec::new();
+        let mut pending = Some(item.clone());
+        let mut converted = JsonValue::Null;
 
-    fn serialize_map(
-        map: &Map,
-        seen: &mut HashSet<(usize, StackItemType)>,
-    ) -> Result<JsonValue, String> {
-        let identity = (map.id(), StackItemType::Map);
-        if !seen.insert(identity) {
-            return Err("Circular reference detected".to_string());
-        }
+        loop {
+            if let Some(item) = pending.take() {
+                if let Some(leaf) = leaf(&item)? {
+                    converted = leaf;
+                } else {
+                    let mut frame = open(&item, seen)?;
+                    let first = next_child(&mut frame)?;
+                    frames.push(frame);
+                    match first {
+                        Some(child) => pending = Some(child),
+                        None => {
+                            let frame = frames.pop().expect("open frame");
+                            converted = close(frame, seen);
+                        }
+                    }
+                    continue;
+                }
+            }
 
-        let mut result = JsonMap::new();
-        for (key, value) in map.iter() {
-            let key_bytes = match key {
-                StackItem::ByteString(bytes) => bytes.clone(),
-                StackItem::Buffer(buffer) => buffer.data(),
-                _ => return Err("Map key must be a byte string".to_string()),
+            if frames.is_empty() {
+                return Ok(converted);
+            }
+            let value = std::mem::replace(&mut converted, JsonValue::Null);
+            accept(frames.last_mut().expect("open frame"), value);
+
+            let child = match frames.last_mut() {
+                Some(frame) => next_child(frame)?,
+                None => None,
             };
-
-            let key_str =
-                String::from_utf8(key_bytes).map_err(|_| "Invalid UTF-8 in map key".to_string())?;
-
-            let value_json = Self::serialize_internal(&value, seen)?;
-            result.insert(key_str, value_json);
+            match child {
+                Some(child) => pending = Some(child),
+                None => {
+                    let frame = frames.pop().expect("open frame");
+                    converted = close(frame, seen);
+                }
+            }
         }
-
-        seen.remove(&identity);
-        Ok(JsonValue::Object(result))
     }
 
     /// Deserializes a JSON payload into a [`StackItem`].
