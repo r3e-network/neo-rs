@@ -5,7 +5,7 @@
 use crate::StackItemType;
 use crate::error::{VmError, VmResult};
 use crate::next_stack_item_id;
-use crate::reference_counter::{CompoundParent, ReferenceCounter};
+use crate::reference_counter::{StackReferenceRelease, SubItems};
 use crate::stack_item::StackItem;
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -20,8 +20,8 @@ pub struct Array {
 struct ArrayInner {
     /// The items in the array.
     items: Vec<StackItem>,
-    /// Reference counter shared with the VM (mirrors C# behaviour).
-    reference_counter: Option<ReferenceCounter>,
+    /// Number of stack references held on this array (C# `CompoundType.StackReferences`).
+    stack_references: usize,
     /// Unique identifier to mimic reference equality semantics.
     id: usize,
     /// Indicates whether the array is read-only.
@@ -30,45 +30,58 @@ struct ArrayInner {
 
 impl Array {
     /// Creates a new array with the specified items.
-    pub fn new(
-        mut items: Vec<StackItem>,
-        reference_counter: Option<ReferenceCounter>,
-    ) -> VmResult<Self> {
-        if let Some(rc) = &reference_counter {
-            for item in &mut items {
-                item.attach_reference_counter(rc)?;
-            }
-        }
-
-        let array = Self {
-            inner: Arc::new(Mutex::new(ArrayInner {
-                items,
-                reference_counter,
-                id: next_stack_item_id(),
-                is_read_only: false,
-            })),
-        };
-
-        Ok(array)
-    }
-
-    /// Creates a new array without a reference counter.
+    ///
+    /// As in neo-vm v3.10.1, an array holds no reference counter and none of
+    /// its methods touch one: the opcode handlers do the counting.
     #[must_use]
-    pub fn new_untracked(items: Vec<StackItem>) -> Self {
+    pub fn new(items: Vec<StackItem>) -> Self {
         Self {
             inner: Arc::new(Mutex::new(ArrayInner {
                 items,
-                reference_counter: None,
+                stack_references: 0,
                 id: next_stack_item_id(),
                 is_read_only: false,
             })),
         }
     }
 
-    /// Returns the reference counter associated with this array, if any.
+    /// Returns the number of stack references held on this array.
     #[must_use]
-    pub fn reference_counter(&self) -> Option<ReferenceCounter> {
-        self.inner.lock().reference_counter.clone()
+    pub fn stack_references(&self) -> usize {
+        self.inner.lock().stack_references
+    }
+
+    /// Returns whether this array is stack referenced (C# `IsStackReferenced`).
+    #[must_use]
+    pub fn is_stack_referenced(&self) -> bool {
+        self.inner.lock().stack_references != 0
+    }
+
+    /// Adds `count` stack references. Returns the sub items when this call
+    /// made the array stack referenced.
+    pub(crate) fn add_stack_references(&self, count: usize) -> Option<SubItems> {
+        let mut inner = self.inner.lock();
+        inner.stack_references += count;
+        (inner.stack_references == count).then(|| SubItems::collect(&inner.items))
+    }
+
+    /// Removes one stack reference, if the array is stack referenced.
+    pub(crate) fn remove_stack_reference(&self) -> StackReferenceRelease {
+        let mut inner = self.inner.lock();
+        if inner.stack_references == 0 {
+            return StackReferenceRelease::NotReferenced;
+        }
+        inner.stack_references -= 1;
+        if inner.stack_references == 0 {
+            StackReferenceRelease::Unreferenced(SubItems::collect(&inner.items))
+        } else {
+            StackReferenceRelease::StillReferenced
+        }
+    }
+
+    /// Takes a snapshot of the sub items (C# `SubItems`).
+    pub(crate) fn sub_items(&self) -> SubItems {
+        SubItems::collect(&self.inner.lock().items)
     }
 
     /// Returns the unique identifier for this array.
@@ -107,44 +120,26 @@ impl Array {
     }
 
     /// Sets the item at the specified index.
-    pub fn set(&self, index: usize, mut item: StackItem) -> VmResult<()> {
-        let mut inner = self.inner.lock();
-        if index >= inner.items.len() {
-            return Err(VmError::invalid_operation_msg(format!(
-                "Index out of range: {index}"
-            )));
-        }
-
-        Self::ensure_mutable(&inner)?;
-
-        if let Some(rc) = &inner.reference_counter {
-            item.attach_reference_counter(rc)?;
-            Self::validate_compound_reference(rc, &item)?;
-            let parent = CompoundParent::Array(inner.id);
-            if rc.is_stack_referenced(parent) {
-                rc.remove_compound_reference(&inner.items[index], parent);
-                rc.add_compound_reference(&item, parent);
+    pub fn set(&self, index: usize, item: StackItem) -> VmResult<()> {
+        // The replaced item is dropped after the lock is released.
+        let _replaced = {
+            let mut inner = self.inner.lock();
+            if index >= inner.items.len() {
+                return Err(VmError::invalid_operation_msg(format!(
+                    "Index out of range: {index}"
+                )));
             }
-        }
 
-        inner.items[index] = item;
+            Self::ensure_mutable(&inner)?;
+            std::mem::replace(&mut inner.items[index], item)
+        };
         Ok(())
     }
 
     /// Adds an item to the end of the array.
-    pub fn push(&self, mut item: StackItem) -> VmResult<()> {
+    pub fn push(&self, item: StackItem) -> VmResult<()> {
         let mut inner = self.inner.lock();
         Self::ensure_mutable(&inner)?;
-
-        if let Some(rc) = &inner.reference_counter {
-            item.attach_reference_counter(rc)?;
-            Self::validate_compound_reference(rc, &item)?;
-            let parent = CompoundParent::Array(inner.id);
-            if rc.is_stack_referenced(parent) {
-                rc.add_compound_reference(&item, parent);
-            }
-        }
-
         inner.items.push(item);
         Ok(())
     }
@@ -153,19 +148,10 @@ impl Array {
     pub fn pop(&self) -> VmResult<StackItem> {
         let mut inner = self.inner.lock();
         Self::ensure_mutable(&inner)?;
-        let item = inner
+        inner
             .items
             .pop()
-            .ok_or_else(|| VmError::invalid_operation_msg("Array is empty"))?;
-
-        if let Some(rc) = &inner.reference_counter {
-            let parent = CompoundParent::Array(inner.id);
-            if rc.is_stack_referenced(parent) {
-                rc.remove_compound_reference(&item, parent);
-            }
-        }
-
-        Ok(item)
+            .ok_or_else(|| VmError::invalid_operation_msg("Array is empty"))
     }
 
     /// Gets the number of items in the array.
@@ -182,29 +168,24 @@ impl Array {
 
     /// Removes all items from the array.
     pub fn clear(&self) -> VmResult<()> {
-        let mut inner = self.inner.lock();
-        Self::ensure_mutable(&inner)?;
-        if let Some(rc) = &inner.reference_counter {
-            let parent = CompoundParent::Array(inner.id);
-            if rc.is_stack_referenced(parent) {
-                for item in &inner.items {
-                    rc.remove_compound_reference(item, parent);
-                }
-            }
-        }
-        inner.items.clear();
+        // The removed items are dropped after the lock is released.
+        let _removed = {
+            let mut inner = self.inner.lock();
+            Self::ensure_mutable(&inner)?;
+            std::mem::take(&mut inner.items)
+        };
         Ok(())
     }
 
     /// Creates a deep copy of the array.
-    pub fn deep_copy(&self, reference_counter: Option<ReferenceCounter>) -> VmResult<Self> {
-        let items = self.with_items(|items| {
-            items
-                .iter()
-                .map(super::stack_item::StackItem::deep_clone)
-                .collect()
-        });
-        let copy = Self::new(items, reference_counter)?;
+    pub fn deep_copy(&self) -> VmResult<Self> {
+        // Snapshot first: cloning a sub item may need this array's lock.
+        let items = self
+            .items()
+            .iter()
+            .map(super::stack_item::StackItem::deep_clone)
+            .collect();
+        let copy = Self::new(items);
         copy.set_read_only(true);
         Ok(copy)
     }
@@ -216,7 +197,7 @@ impl Array {
     }
 
     /// Inserts an item at the specified index.
-    pub fn insert(&self, index: usize, mut item: StackItem) -> VmResult<()> {
+    pub fn insert(&self, index: usize, item: StackItem) -> VmResult<()> {
         let mut inner = self.inner.lock();
         if index > inner.items.len() {
             return Err(VmError::invalid_operation_msg(format!(
@@ -225,16 +206,6 @@ impl Array {
         }
 
         Self::ensure_mutable(&inner)?;
-
-        if let Some(rc) = &inner.reference_counter {
-            item.attach_reference_counter(rc)?;
-            Self::validate_compound_reference(rc, &item)?;
-            let parent = CompoundParent::Array(inner.id);
-            if rc.is_stack_referenced(parent) {
-                rc.add_compound_reference(&item, parent);
-            }
-        }
-
         inner.items.insert(index, item);
         Ok(())
     }
@@ -249,16 +220,7 @@ impl Array {
         }
 
         Self::ensure_mutable(&inner)?;
-        let removed = inner.items.remove(index);
-
-        if let Some(rc) = &inner.reference_counter {
-            let parent = CompoundParent::Array(inner.id);
-            if rc.is_stack_referenced(parent) {
-                rc.remove_compound_reference(&removed, parent);
-            }
-        }
-
-        Ok(removed)
+        Ok(inner.items.remove(index))
     }
 
     /// Returns an iterator over the items.
@@ -300,53 +262,6 @@ impl Array {
         } else {
             Ok(())
         }
-    }
-
-    fn validate_compound_reference(rc: &ReferenceCounter, item: &StackItem) -> VmResult<()> {
-        match item {
-            StackItem::Array(inner) => match inner.reference_counter() {
-                Some(child_rc) if child_rc.ptr_eq(rc) => Ok(()),
-                Some(_) | None => Err(VmError::invalid_operation_msg(
-                    "Can not set an Array without a ReferenceCounter.".to_string(),
-                )),
-            },
-            StackItem::Struct(inner) => match inner.reference_counter() {
-                Some(child_rc) if child_rc.ptr_eq(rc) => Ok(()),
-                Some(_) | None => Err(VmError::invalid_operation_msg(
-                    "Can not set an Array without a ReferenceCounter.".to_string(),
-                )),
-            },
-            StackItem::Map(inner) => match inner.reference_counter() {
-                Some(child_rc) if child_rc.ptr_eq(rc) => Ok(()),
-                Some(_) | None => Err(VmError::invalid_operation_msg(
-                    "Can not set an Array without a ReferenceCounter.".to_string(),
-                )),
-            },
-            _ => Ok(()),
-        }
-    }
-
-    /// Ensures the array and its children share the provided reference counter.
-    pub(crate) fn attach_reference_counter(&self, rc: &ReferenceCounter) -> VmResult<()> {
-        {
-            let mut inner = self.inner.lock();
-            if let Some(existing) = &inner.reference_counter {
-                if existing.ptr_eq(rc) {
-                    return Ok(());
-                }
-                return Err(VmError::invalid_operation_msg(
-                    "Array has mismatched reference counter.",
-                ));
-            }
-
-            for item in &mut inner.items {
-                item.attach_reference_counter(rc)?;
-            }
-
-            inner.reference_counter = Some(rc.clone());
-        }
-
-        Ok(())
     }
 }
 

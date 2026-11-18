@@ -413,42 +413,24 @@ pub fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
             )));
         }
 
-        let count = if rvcount >= 0 {
-            rvcount as usize
-        } else {
-            eval_stack_len
-        };
-        let mut items = Vec::with_capacity(count);
-        for i in 0..count {
-            let item = context
-                .evaluation_stack()
-                .peek(i)
-                .map_err(|_| VmError::stack_underflow_msg(i + 1, eval_stack_len))?
-                .clone();
-            items.push(item);
-        }
-
-        items.reverse();
+        // neo-vm v3.10.1 `Ret`: `EvaluationStack.CopyTo` does not touch the
+        // reference counter, and the unloaded context's evaluation stack is
+        // never cleared, so the stack references the items already hold are
+        // the ones the caller/result stack entries account for.
         if return_to_result_stack {
-            for item in &items {
-                engine.result_stack_mut().push(item.clone())?;
-            }
+            context
+                .evaluation_stack()
+                .copy_to(engine.result_stack_mut(), None)?;
         } else {
             let caller = engine
                 .current_context_mut()
                 .ok_or_else(|| VmError::invalid_operation_msg("No caller context"))?;
-            for item in &items {
-                caller.push(item.clone())?;
-            }
+            context
+                .evaluation_stack()
+                .copy_to(&mut caller.evaluation_stack_mut(), None)?;
         }
-        engine.unload_context(&mut context)?;
-        // The host has finished its unload bookkeeping. Clear the callee stack
-        // exactly once now that the caller/result stack owns its references;
-        // leaving the items for EvaluationStack::drop would release them twice.
-        context.evaluation_stack_mut().clear();
-    } else {
-        engine.unload_context(&mut context)?;
     }
+    engine.unload_context(&mut context)?;
 
     if engine.invocation_stack().is_empty() {
         engine.set_state(VMState::HALT);

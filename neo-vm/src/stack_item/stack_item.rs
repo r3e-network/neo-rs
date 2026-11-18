@@ -8,7 +8,6 @@ use crate::ExecutionEngineLimits;
 use crate::StackItemType;
 use crate::error::VmError;
 use crate::error::VmResult;
-use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
 use crate::stack_item::array::Array as ArrayItem;
 use crate::stack_item::buffer::Buffer as BufferItem;
@@ -139,19 +138,19 @@ impl StackItem {
     /// Creates an array stack item.
     #[inline]
     pub fn from_array<T: Into<Vec<Self>>>(value: T) -> Self {
-        Self::Array(ArrayItem::new_untracked(value.into()))
+        Self::Array(ArrayItem::new(value.into()))
     }
 
     /// Creates a struct stack item.
     #[inline]
     pub fn from_struct<T: Into<Vec<Self>>>(value: T) -> Self {
-        Self::Struct(StructItem::new_untracked(value.into()))
+        Self::Struct(StructItem::new(value.into()))
     }
 
     /// Creates a map stack item.
     #[inline]
     pub fn from_map<T: Into<VmOrderedDictionary<Self, Self>>>(value: T) -> Self {
-        Self::Map(MapItem::new_untracked(value.into()))
+        Self::Map(MapItem::new(value))
     }
 
     /// Creates a pointer stack item.
@@ -165,20 +164,6 @@ impl StackItem {
     #[inline]
     pub fn from_interface<T: InteropInterface + 'static>(value: T) -> Self {
         Self::InteropInterface(Arc::new(value))
-    }
-
-    /// Ensures any compound stack items share the provided reference counter.
-    ///
-    /// This is required for C# parity: all compound VM objects are expected to
-    /// belong to the engine's `ReferenceCounter`. Host-provided stack items may
-    /// be constructed without a counter and are attached when they enter the VM.
-    pub fn attach_reference_counter(&mut self, rc: &ReferenceCounter) -> VmResult<()> {
-        match self {
-            Self::Array(array) => array.attach_reference_counter(rc),
-            Self::Struct(structure) => structure.attach_reference_counter(rc),
-            Self::Map(map) => map.attach_reference_counter(rc),
-            _ => Ok(()),
-        }
     }
 
     /// Returns the type of the stack item.
@@ -456,11 +441,11 @@ impl StackItem {
                 Ok(Self::Struct(cloned))
             }
             Self::Array(array) => {
-                let copy = array.deep_copy(array.reference_counter())?;
+                let copy = array.deep_copy()?;
                 Ok(Self::Array(copy))
             }
             Self::Map(map) => {
-                let copy = map.deep_copy(map.reference_counter())?;
+                let copy = map.deep_copy()?;
                 Ok(Self::Map(copy))
             }
             _ => Ok(self.deep_clone()),
@@ -489,7 +474,7 @@ impl StackItem {
             Self::InteropInterface(i) => Self::InteropInterface(i.clone()),
 
             Self::Array(a) => {
-                let cloned_array = ArrayItem::new_untracked(Vec::new());
+                let cloned_array = ArrayItem::new(Vec::new());
                 let cloned_item = Self::Array(cloned_array.clone());
                 if let Some(self_id) = compound_identity(self) {
                     refs.insert(self_id, cloned_item.clone());
@@ -501,7 +486,7 @@ impl StackItem {
                 cloned_item
             }
             Self::Struct(s) => {
-                let cloned_struct = StructItem::new_untracked(Vec::new());
+                let cloned_struct = StructItem::new(Vec::new());
                 let cloned_item = Self::Struct(cloned_struct.clone());
                 if let Some(self_id) = compound_identity(self) {
                     refs.insert(self_id, cloned_item.clone());
@@ -513,7 +498,7 @@ impl StackItem {
                 cloned_item
             }
             Self::Map(m) => {
-                let cloned_map = MapItem::new_untracked(VmOrderedDictionary::new());
+                let cloned_map = MapItem::new(VmOrderedDictionary::new());
                 let cloned_item = Self::Map(cloned_map.clone());
                 if let Some(self_id) = compound_identity(self) {
                     refs.insert(self_id, cloned_item.clone());

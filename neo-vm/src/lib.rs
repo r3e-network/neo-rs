@@ -286,7 +286,7 @@ pub use vm::{
     DEFAULT_MAX_INVOCATION_DEPTH, DEFAULT_MAX_STACK_DEPTH, ExceptionHandlingContext,
     ExceptionHandlingState, ExecutionEngineLimits, FromOperand, Instruction, InstructionError,
     InstructionErrorKind, InstructionResult, MAX_ITEM_SIZE, MAX_SCRIPT_SIZE, OpCode,
-    ScriptInstruction, Tarjan, ValidatedScript, ValidationResult, VmOrderedDictionary,
+    ScriptInstruction, ValidatedScript, ValidationResult, VmOrderedDictionary,
 };
 pub use vm::{
     instruction_jump_target, instruction_try_targets, next_stack_item_id,
@@ -309,7 +309,7 @@ pub use interoperable::Interoperable;
 pub use json_serializer::JsonSerializer;
 pub use jump_table::JumpTable;
 pub use notify_event_args::NotifyEventArgs;
-pub use reference_counter::{CompoundParent, ReferenceCounter};
+pub use reference_counter::ReferenceCounter;
 pub use rpc_json::{
     stack_item_rpc_json, stack_item_rpc_json_deferred_size_check, stack_items_rpc_json_per_item,
 };

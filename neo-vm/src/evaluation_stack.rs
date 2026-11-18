@@ -51,10 +51,13 @@ impl EvaluationStack {
 
     /// Pushes an item onto the top of the stack.
     #[inline(always)]
-    pub fn push(&mut self, mut item: StackItem) -> VmResult<()> {
-        item.attach_reference_counter(&self.reference_counter)?;
-        self.reference_counter.add_stack_reference(&item, 1);
+    pub fn push(&mut self, item: StackItem) -> VmResult<()> {
+        // neo-vm v3.10.1 `EvaluationStack.Push`: add to the list, then
+        // `AddStackReference(item)`.
         self.stack.push(item);
+        if let Some(item) = self.stack.last() {
+            self.reference_counter.add_stack_reference(item, 1);
+        }
         Ok(())
     }
 
@@ -95,15 +98,17 @@ impl EvaluationStack {
     /// Inserts an item at the specified index counting from the top of the
     /// stack (0-based). Passing `0` is equivalent to `push`, while passing
     /// `len()` inserts the item at the bottom of the stack.
-    pub fn insert(&mut self, index_from_top: usize, mut item: StackItem) -> VmResult<()> {
+    pub fn insert(&mut self, index_from_top: usize, item: StackItem) -> VmResult<()> {
         if index_from_top > self.stack.len() {
             return Err(VmError::invalid_operation_msg("Insert index out of range"));
         }
 
-        item.attach_reference_counter(&self.reference_counter)?;
-        self.reference_counter.add_stack_reference(&item, 1);
+        // neo-vm v3.10.1 `EvaluationStack.Insert`: insert into the list, then
+        // `AddStackReference(item)`.
         let insert_pos = self.stack.len().saturating_sub(index_from_top);
         self.stack.insert(insert_pos, item);
+        self.reference_counter
+            .add_stack_reference(&self.stack[insert_pos], 1);
         Ok(())
     }
 
@@ -144,6 +149,9 @@ impl EvaluationStack {
 
     /// Copies `count` items (default: all) from the top of this stack to the
     /// target stack without removing them from the source stack.
+    ///
+    /// As in neo-vm v3.10.1 `EvaluationStack.CopyTo`, the reference counter is
+    /// not involved: the copied entries carry no stack reference of their own.
     pub fn copy_to(&self, target: &mut Self, count: Option<usize>) -> VmResult<()> {
         let count = count.unwrap_or(self.stack.len());
         if count > self.stack.len() {
@@ -154,17 +162,15 @@ impl EvaluationStack {
         }
 
         let start = self.stack.len() - count;
-        for item in &self.stack[start..] {
-            ensure_reference_counter_compatible(item, target.reference_counter())?;
-        }
-        for item in &self.stack[start..] {
-            target.push(item.clone())?;
-        }
+        target.stack.extend_from_slice(&self.stack[start..]);
         Ok(())
     }
 
     /// Moves `count` items (default: all) from the top of this stack to the
     /// target stack.
+    ///
+    /// As in neo-vm v3.10.1 `EvaluationStack.MoveTo`, the reference counter is
+    /// not involved: the stack references move with the entries.
     pub fn move_to(&mut self, target: &mut Self, count: Option<usize>) -> VmResult<()> {
         let count = count.unwrap_or(self.stack.len());
         if count > self.stack.len() {
@@ -175,18 +181,7 @@ impl EvaluationStack {
         }
 
         let start = self.stack.len() - count;
-        for item in &self.stack[start..] {
-            ensure_reference_counter_compatible(item, target.reference_counter())?;
-        }
-
-        // Transfer ownership of the tail slice to the target stack.
-        let mut moved = self.stack.split_off(start);
-        for item in &moved {
-            self.reference_counter.remove_stack_reference(item);
-        }
-        for item in moved.drain(..) {
-            target.push(item)?;
-        }
+        target.stack.extend(self.stack.drain(start..));
         Ok(())
     }
 
@@ -228,55 +223,6 @@ impl EvaluationStack {
         let item = self.stack.remove(idx);
         self.reference_counter.remove_stack_reference(&item);
         Ok(item)
-    }
-}
-
-fn ensure_reference_counter_compatible(item: &StackItem, rc: &ReferenceCounter) -> VmResult<()> {
-    match item {
-        StackItem::Array(array) => match array.reference_counter() {
-            Some(existing) if existing.ptr_eq(rc) => Ok(()),
-            Some(_) => Err(VmError::invalid_operation_msg(
-                "Array has mismatched reference counter.",
-            )),
-            None => {
-                for child in array.items() {
-                    ensure_reference_counter_compatible(&child, rc)?;
-                }
-                Ok(())
-            }
-        },
-        StackItem::Struct(structure) => match structure.reference_counter() {
-            Some(existing) if existing.ptr_eq(rc) => Ok(()),
-            Some(_) => Err(VmError::invalid_operation_msg(
-                "Struct has mismatched reference counter.",
-            )),
-            None => {
-                for child in structure.items() {
-                    ensure_reference_counter_compatible(&child, rc)?;
-                }
-                Ok(())
-            }
-        },
-        StackItem::Map(map) => match map.reference_counter() {
-            Some(existing) if existing.ptr_eq(rc) => Ok(()),
-            Some(_) => Err(VmError::invalid_operation_msg(
-                "Map has mismatched reference counter.",
-            )),
-            None => {
-                for (key, value) in map.items().iter() {
-                    ensure_reference_counter_compatible(key, rc)?;
-                    ensure_reference_counter_compatible(value, rc)?;
-                }
-                Ok(())
-            }
-        },
-        _ => Ok(()),
-    }
-}
-
-impl Drop for EvaluationStack {
-    fn drop(&mut self) {
-        self.clear();
     }
 }
 

@@ -8,7 +8,7 @@ use crate::StackItemType;
 use crate::VmOrderedDictionary;
 use crate::error::{VmError, VmResult};
 use crate::next_stack_item_id;
-use crate::reference_counter::{CompoundParent, ReferenceCounter};
+use crate::reference_counter::{StackReferenceRelease, SubItems};
 use crate::stack_item::StackItem;
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -27,39 +27,18 @@ struct MapInner {
     items: VmOrderedDictionary<StackItem, StackItem>,
     /// Unique identifier mirroring reference equality semantics.
     id: usize,
-    /// Reference counter shared with the VM (mirrors C# `CompoundType` semantics).
-    reference_counter: Option<ReferenceCounter>,
+    /// Number of stack references held on this map (C# `CompoundType.StackReferences`).
+    stack_references: usize,
     /// Indicates whether the map is read-only.
     is_read_only: bool,
 }
 
 impl Map {
-    /// Creates a new map with the specified items and reference counter.
-    pub fn new<T>(items: T, reference_counter: Option<ReferenceCounter>) -> VmResult<Self>
-    where
-        T: Into<VmOrderedDictionary<StackItem, StackItem>>,
-    {
-        let mut items = items.into();
-        if let Some(rc) = &reference_counter {
-            for (_, value) in items.iter_mut() {
-                value.attach_reference_counter(rc)?;
-            }
-        }
-
-        let map = Self {
-            inner: Arc::new(Mutex::new(MapInner {
-                items,
-                id: next_stack_item_id(),
-                reference_counter,
-                is_read_only: false,
-            })),
-        };
-
-        Ok(map)
-    }
-
-    /// Creates a map without a reference counter.
-    pub fn new_untracked<T>(items: T) -> Self
+    /// Creates a new map with the specified items.
+    ///
+    /// As in neo-vm v3.10.1, a map holds no reference counter and none of its
+    /// methods touch one: the opcode handlers do the counting.
+    pub fn new<T>(items: T) -> Self
     where
         T: Into<VmOrderedDictionary<StackItem, StackItem>>,
     {
@@ -67,16 +46,54 @@ impl Map {
             inner: Arc::new(Mutex::new(MapInner {
                 items: items.into(),
                 id: next_stack_item_id(),
-                reference_counter: None,
+                stack_references: 0,
                 is_read_only: false,
             })),
         }
     }
 
-    /// Returns the reference counter assigned by the reference counter, if any.
+    /// Returns the number of stack references held on this map.
     #[must_use]
-    pub fn reference_counter(&self) -> Option<ReferenceCounter> {
-        self.inner.lock().reference_counter.clone()
+    pub fn stack_references(&self) -> usize {
+        self.inner.lock().stack_references
+    }
+
+    /// Returns whether this map is stack referenced (C# `IsStackReferenced`).
+    #[must_use]
+    pub fn is_stack_referenced(&self) -> bool {
+        self.inner.lock().stack_references != 0
+    }
+
+    /// Adds `count` stack references. Returns the sub items when this call
+    /// made the map stack referenced.
+    pub(crate) fn add_stack_references(&self, count: usize) -> Option<SubItems> {
+        let mut inner = self.inner.lock();
+        inner.stack_references += count;
+        (inner.stack_references == count).then(|| Self::collect_sub_items(&inner))
+    }
+
+    /// Removes one stack reference, if the map is stack referenced.
+    pub(crate) fn remove_stack_reference(&self) -> StackReferenceRelease {
+        let mut inner = self.inner.lock();
+        if inner.stack_references == 0 {
+            return StackReferenceRelease::NotReferenced;
+        }
+        inner.stack_references -= 1;
+        if inner.stack_references == 0 {
+            StackReferenceRelease::Unreferenced(Self::collect_sub_items(&inner))
+        } else {
+            StackReferenceRelease::StillReferenced
+        }
+    }
+
+    /// Takes a snapshot of the sub items (C# `SubItems`).
+    pub(crate) fn sub_items(&self) -> SubItems {
+        Self::collect_sub_items(&self.inner.lock())
+    }
+
+    /// C# `Map.SubItems`: every key, then every value.
+    fn collect_sub_items(inner: &MapInner) -> SubItems {
+        SubItems::collect(inner.items.keys().chain(inner.items.values()))
     }
 
     /// Returns the unique identifier for this map (used for reference equality).
@@ -120,29 +137,22 @@ impl Map {
         })
     }
 
+    /// Gets the value for the specified key, or `None` if the key is absent
+    /// (C# `Map.TryGetValue`).
+    pub fn try_get(&self, key: &StackItem) -> VmResult<Option<StackItem>> {
+        self.validate_key(key)?;
+        Ok(self.inner.lock().items.get(key).cloned())
+    }
+
     /// Sets the value for the specified key.
-    pub fn set(&self, key: StackItem, mut value: StackItem) -> VmResult<()> {
-        let mut inner = self.inner.lock();
-        Self::ensure_mutable(&inner)?;
-        self.validate_key(&key)?;
-
-        if let Some(rc) = &inner.reference_counter {
-            value.attach_reference_counter(rc)?;
-            Self::validate_compound_reference(rc, &value)?;
-
-            let parent = CompoundParent::Map(inner.id);
-            if rc.is_stack_referenced(parent) {
-                if let Some(old_value) = inner.items.get(&key) {
-                    rc.remove_compound_reference(old_value, parent);
-                } else {
-                    rc.add_compound_reference(&key, parent);
-                }
-
-                rc.add_compound_reference(&value, parent);
-            }
-        }
-
-        inner.items.insert(key, value);
+    pub fn set(&self, key: StackItem, value: StackItem) -> VmResult<()> {
+        // A replaced value is dropped after the lock is released.
+        let _replaced = {
+            let mut inner = self.inner.lock();
+            Self::ensure_mutable(&inner)?;
+            self.validate_key(&key)?;
+            inner.items.insert(key, value)
+        };
         Ok(())
     }
 
@@ -151,20 +161,7 @@ impl Map {
         let mut inner = self.inner.lock();
         Self::ensure_mutable(&inner)?;
         self.validate_key(key)?;
-
-        let Some(value) = inner.items.remove(key) else {
-            return Ok(None);
-        };
-
-        if let Some(rc) = &inner.reference_counter {
-            let parent = CompoundParent::Map(inner.id);
-            if rc.is_stack_referenced(parent) {
-                rc.remove_compound_reference(key, parent);
-                rc.remove_compound_reference(&value, parent);
-            }
-        }
-
-        Ok(Some(value))
+        Ok(inner.items.remove(key))
     }
 
     /// Removes the value for the specified key.
@@ -193,18 +190,12 @@ impl Map {
 
     /// Removes all items from the map.
     pub fn clear(&self) -> VmResult<()> {
-        let mut inner = self.inner.lock();
-        Self::ensure_mutable(&inner)?;
-        if let Some(rc) = &inner.reference_counter {
-            let parent = CompoundParent::Map(inner.id);
-            if rc.is_stack_referenced(parent) {
-                for (key, value) in inner.items.iter() {
-                    rc.remove_compound_reference(key, parent);
-                    rc.remove_compound_reference(value, parent);
-                }
-            }
-        }
-        inner.items.clear();
+        // The removed entries are dropped after the lock is released.
+        let _removed = {
+            let mut inner = self.inner.lock();
+            Self::ensure_mutable(&inner)?;
+            std::mem::replace(&mut inner.items, VmOrderedDictionary::new())
+        };
         Ok(())
     }
 
@@ -227,15 +218,13 @@ impl Map {
     }
 
     /// Creates a deep copy of the map.
-    pub fn deep_copy(&self, reference_counter: Option<ReferenceCounter>) -> VmResult<Self> {
-        let items = self.with_items(|items| {
-            let mut new_items = VmOrderedDictionary::new();
-            for (k, v) in items.iter() {
-                new_items.insert(k.deep_clone(), v.deep_clone());
-            }
-            new_items
-        });
-        let copy = Self::new(items, reference_counter)?;
+    pub fn deep_copy(&self) -> VmResult<Self> {
+        // Snapshot first: cloning a value may need this map's lock.
+        let mut items = VmOrderedDictionary::new();
+        for (k, v) in self.iter() {
+            items.insert(k.deep_clone(), v.deep_clone());
+        }
+        let copy = Self::new(items);
         copy.set_read_only(true);
         Ok(copy)
     }
@@ -278,53 +267,6 @@ impl Map {
         }
         Ok(())
     }
-
-    fn validate_compound_reference(rc: &ReferenceCounter, item: &StackItem) -> VmResult<()> {
-        match item {
-            StackItem::Array(inner) => match inner.reference_counter() {
-                Some(child_rc) if child_rc.ptr_eq(rc) => Ok(()),
-                Some(_) | None => Err(VmError::invalid_operation_msg(
-                    "Can not set a Map without a ReferenceCounter.".to_string(),
-                )),
-            },
-            StackItem::Struct(inner) => match inner.reference_counter() {
-                Some(child_rc) if child_rc.ptr_eq(rc) => Ok(()),
-                Some(_) | None => Err(VmError::invalid_operation_msg(
-                    "Can not set a Map without a ReferenceCounter.".to_string(),
-                )),
-            },
-            StackItem::Map(inner) => match inner.reference_counter() {
-                Some(child_rc) if child_rc.ptr_eq(rc) => Ok(()),
-                Some(_) | None => Err(VmError::invalid_operation_msg(
-                    "Can not set a Map without a ReferenceCounter.".to_string(),
-                )),
-            },
-            _ => Ok(()),
-        }
-    }
-
-    /// Ensures the map and its children share the provided reference counter.
-    pub(crate) fn attach_reference_counter(&self, rc: &ReferenceCounter) -> VmResult<()> {
-        {
-            let mut inner = self.inner.lock();
-            if let Some(existing) = &inner.reference_counter {
-                if existing.ptr_eq(rc) {
-                    return Ok(());
-                }
-                return Err(VmError::invalid_operation_msg(
-                    "Map has mismatched reference counter.",
-                ));
-            }
-
-            for (_, value) in inner.items.iter_mut() {
-                value.attach_reference_counter(rc)?;
-            }
-
-            inner.reference_counter = Some(rc.clone());
-        }
-
-        Ok(())
-    }
 }
 
 impl From<Map> for VmOrderedDictionary<StackItem, StackItem> {
@@ -340,7 +282,7 @@ mod tests {
 
     #[test]
     fn map_remove_entry_returns_none_for_missing_key() {
-        let map = Map::new(Vec::new(), None).expect("map");
+        let map = Map::new(Vec::new());
         let missing = StackItem::from_int(BigInt::from(42));
         assert!(
             map.remove_entry(&missing)
@@ -352,7 +294,7 @@ mod tests {
 
     #[test]
     fn map_rejects_null_and_buffer_keys() {
-        let map = Map::new(Vec::new(), None).expect("map");
+        let map = Map::new(Vec::new());
         assert!(
             map.set(StackItem::Null, StackItem::from_bool(true))
                 .is_err()

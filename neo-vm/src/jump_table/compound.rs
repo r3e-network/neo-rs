@@ -12,7 +12,16 @@ use crate::jump_table::{JumpTable, register_jump_handlers};
 use crate::stack_item::{Array, Map, StackItem, Struct};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
-use std::collections::BTreeMap;
+
+/// What the reference counter needs to know about `item`. A compound item
+/// shares its storage with the clone; any other item only adds one to the
+/// count, so its payload is not copied.
+fn counted(item: &StackItem) -> StackItem {
+    match item {
+        StackItem::Array(_) | StackItem::Struct(_) | StackItem::Map(_) => item.clone(),
+        _ => StackItem::Null,
+    }
+}
 
 fn collection_stack_item(value: Result<crate::StackValue, String>) -> VmResult<StackItem> {
     StackItem::try_from(value.map_err(VmError::invalid_operation_msg)?)
@@ -114,12 +123,13 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 
 /// Implements the NEWARRAY0 operation.
 fn new_array0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let max_items = engine.limits().max_stack_size as usize;
     // Get the current context
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    let array = collection_stack_item(crate::semantics::collections::new_array(0))?;
+    let array = collection_stack_item(crate::semantics::collections::new_array(0, max_items))?;
     context.push(array)?;
 
     Ok(())
@@ -127,6 +137,7 @@ fn new_array0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
 
 /// Implements the NEWARRAY operation.
 fn new_array(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let max_items = engine.limits().max_stack_size as usize;
     // Get the current context
     let context = engine
         .current_context_mut()
@@ -139,7 +150,7 @@ fn new_array(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
         .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid array size"))?;
 
-    let array = collection_stack_item(crate::semantics::collections::new_array(count))?;
+    let array = collection_stack_item(crate::semantics::collections::new_array(count, max_items))?;
     context.push(array)?;
 
     Ok(())
@@ -147,6 +158,7 @@ fn new_array(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 
 /// Implements the `NewarrayT` operation.
 fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+    let max_items = engine.limits().max_stack_size as usize;
     // Get the current context
     let context = engine
         .current_context_mut()
@@ -172,8 +184,9 @@ fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
         )));
     }
 
-    let array =
-        collection_stack_item(crate::semantics::collections::new_array_t(count, type_byte))?;
+    let array = collection_stack_item(crate::semantics::collections::new_array_t(
+        count, type_byte, max_items,
+    ))?;
     context.push(array)?;
 
     Ok(())
@@ -181,12 +194,13 @@ fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 
 /// Implements the NEWSTRUCT0 operation.
 fn new_struct0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let max_items = engine.limits().max_stack_size as usize;
     // Get the current context
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    let structure = collection_stack_item(crate::semantics::collections::new_struct(0))?;
+    let structure = collection_stack_item(crate::semantics::collections::new_struct(0, max_items))?;
     context.push(structure)?;
 
     Ok(())
@@ -194,6 +208,7 @@ fn new_struct0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
 
 /// Implements the NEWSTRUCT operation.
 fn new_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let max_items = engine.limits().max_stack_size as usize;
     // Get the current context
     let context = engine
         .current_context_mut()
@@ -206,7 +221,8 @@ fn new_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
         .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct size"))?;
 
-    let structure = collection_stack_item(crate::semantics::collections::new_struct(count))?;
+    let structure =
+        collection_stack_item(crate::semantics::collections::new_struct(count, max_items))?;
     context.push(structure)?;
 
     Ok(())
@@ -235,24 +251,33 @@ fn append(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 
     let mut item = context.pop()?;
     let collection = context.pop()?;
+    if !matches!(collection, StackItem::Array(_) | StackItem::Struct(_)) {
+        return Err(VmError::invalid_type_simple(
+            "Expected Array, Struct, or Map",
+        ));
+    }
 
     if let StackItem::Struct(structure) = item {
         item = StackItem::Struct(structure.clone_with_limits(&limits)?);
     }
 
-    match collection {
+    // C# v3.10.1: `array.Add(newItem)`, then, if the array is stack
+    // referenced, `AddStackReference(newItem)`.
+    // APPEND pops both operands and does not push the array back (Pop 2, Push 0).
+    let added = counted(&item);
+    let referenced = match collection {
         StackItem::Array(array) => {
             array.push(item)?;
-            // APPEND pops both operands and does not push the array back (Pop 2, Push 0).
+            array.is_stack_referenced()
         }
         StackItem::Struct(structure) => {
             structure.push(item)?;
+            structure.is_stack_referenced()
         }
-        _ => {
-            return Err(VmError::invalid_type_simple(
-                "Expected Array, Struct, or Map",
-            ));
-        }
+        _ => false,
+    };
+    if referenced {
+        context.reference_counter().add_stack_reference(&added, 1);
     }
 
     Ok(())
@@ -311,7 +336,12 @@ fn remove(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
                     "Index out of range: {index}"
                 )));
             }
-            let _ = array.remove(index)?;
+            // C# v3.10.1: `RemoveAt(i)` first, then release the removed item
+            // if the array is stack referenced.
+            let removed = array.remove(index)?;
+            if array.is_stack_referenced() {
+                context.reference_counter().remove_stack_reference(&removed);
+            }
         }
         StackItem::Struct(structure) => {
             let index = key
@@ -323,10 +353,21 @@ fn remove(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
                     "Index out of range: {index}"
                 )));
             }
-            let _ = structure.remove(index)?;
+            let removed = structure.remove(index)?;
+            if structure.is_stack_referenced() {
+                context.reference_counter().remove_stack_reference(&removed);
+            }
         }
         StackItem::Map(map) => {
-            let _ = map.remove_entry(&key)?;
+            // C# v3.10.1: `map.Remove(key)` first; a removed entry releases
+            // its key and its value if the map is stack referenced.
+            if let Some(removed) = map.remove_entry(&key)?
+                && map.is_stack_referenced()
+            {
+                let reference_counter = context.reference_counter();
+                reference_counter.remove_stack_reference(&key);
+                reference_counter.remove_stack_reference(&removed);
+            }
         }
         _ => {
             return Err(VmError::invalid_type_simple(
@@ -348,22 +389,32 @@ fn clear_items(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
     // Pop the collection from the stack
     let collection = context.pop()?;
 
-    // Clear the collection
-    match collection {
+    // Clear the collection. C# v3.10.1: take the sub items, `Clear()`, then
+    // release every sub item if the collection is stack referenced.
+    let (sub_items, referenced) = match collection {
         StackItem::Array(array) => {
+            let sub_items = array.sub_items();
             array.clear()?;
+            (sub_items, array.is_stack_referenced())
         }
         StackItem::Struct(structure) => {
+            let sub_items = structure.sub_items();
             structure.clear()?;
+            (sub_items, structure.is_stack_referenced())
         }
         StackItem::Map(map) => {
+            let sub_items = map.sub_items();
             map.clear()?;
+            (sub_items, map.is_stack_referenced())
         }
         _ => {
             return Err(VmError::invalid_type_simple(
                 "Expected Array, Struct, or Map",
             ));
         }
+    };
+    if referenced {
+        context.reference_counter().remove_sub_items(sub_items);
     }
 
     Ok(())
@@ -379,14 +430,28 @@ fn pop_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
     // Pop the collection from the stack
     let collection = context.pop()?;
 
+    // C# v3.10.1: push the last item, `RemoveAt(index)`, then release the
+    // removed item if the collection is stack referenced.
     match collection {
         StackItem::Array(array) => {
-            let popped_item = array.pop()?;
-            context.push(popped_item)?;
+            let last = array
+                .with_items(|items| items.last().cloned())
+                .ok_or_else(|| VmError::invalid_operation_msg("Array is empty"))?;
+            context.push(last)?;
+            let removed = array.pop()?;
+            if array.is_stack_referenced() {
+                context.reference_counter().remove_stack_reference(&removed);
+            }
         }
         StackItem::Struct(structure) => {
-            let popped_item = structure.pop()?;
-            context.push(popped_item)?;
+            let last = structure
+                .with_items(|items| items.last().cloned())
+                .ok_or_else(|| VmError::invalid_operation_msg("Struct is empty"))?;
+            context.push(last)?;
+            let removed = structure.pop()?;
+            if structure.is_stack_referenced() {
+                context.reference_counter().remove_stack_reference(&removed);
+            }
         }
         _ => return Err(VmError::invalid_type_simple("Expected Array or Struct")),
     }
@@ -451,8 +516,7 @@ fn keys(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
         StackItem::Map(map) => {
             let keys: Vec<StackItem> =
                 map.with_items(|items| items.iter().map(|(k, _)| k.clone()).collect());
-            let array = Array::new(keys, Some(context.reference_counter().clone()))?;
-            context.push(StackItem::Array(array))?;
+            context.push(StackItem::Array(Array::new(keys)))?;
         }
         _ => return Err(VmError::invalid_type_simple("Expected Map")),
     }
@@ -495,8 +559,7 @@ fn values(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
         }
     }
 
-    let array = Array::new(values_out, Some(context.reference_counter().clone()))?;
-    context.push(StackItem::Array(array))?;
+    context.push(StackItem::Array(Array::new(values_out)))?;
     Ok(())
 }
 
@@ -521,7 +584,7 @@ fn pack_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
         return Err(VmError::stack_underflow_msg(required, stack_len));
     }
 
-    let map_item = Map::new(BTreeMap::new(), Some(context.reference_counter().clone()))?;
+    let map_item = Map::new(crate::VmOrderedDictionary::new());
 
     for _ in 0..count {
         let key = context.pop()?;
@@ -557,8 +620,7 @@ fn pack_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
         items.push(context.pop()?);
     }
 
-    let structure = Struct::new(items, Some(context.reference_counter().clone()))?;
-    context.push(StackItem::Struct(structure))?;
+    context.push(StackItem::Struct(Struct::new(items)))?;
 
     Ok(())
 }
@@ -587,8 +649,7 @@ fn pack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
         items.push(context.pop()?);
     }
 
-    let array = Array::new(items, Some(context.reference_counter().clone()))?;
-    context.push(StackItem::Array(array))?;
+    context.push(StackItem::Array(Array::new(items)))?;
 
     Ok(())
 }
@@ -703,32 +764,60 @@ fn set_item(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
+    // C# v3.10.1 clones a Struct value right after popping it, before the
+    // key and the collection are popped.
     let mut value = context.pop()?;
-    let key = context.pop()?;
-    let collection = context.pop()?;
-
     if let StackItem::Struct(structure) = value {
         value = StackItem::Struct(structure.clone_with_limits(&limits)?);
     }
+    let key = context.pop()?;
+    let collection = context.pop()?;
 
     match collection {
+        // C# v3.10.1: release the replaced item if the array is stack
+        // referenced, assign, then add the new item if the array is stack
+        // referenced.
         StackItem::Array(array) => {
-            if let Some(rc) = array.reference_counter() {
-                value.attach_reference_counter(&rc)?;
-            }
             let idx = normalize_index("VMArray", &key.as_integer()?, array.len())?;
+            let added = counted(&value);
+            if array.is_stack_referenced()
+                && let Some(replaced) = array.with_items(|items| items.get(idx).map(counted))
+            {
+                context
+                    .reference_counter()
+                    .remove_stack_reference(&replaced);
+            }
             array.set(idx, value)?;
+            if array.is_stack_referenced() {
+                context.reference_counter().add_stack_reference(&added, 1);
+            }
         }
         StackItem::Struct(structure) => {
-            if let Some(rc) = structure.reference_counter() {
-                value.attach_reference_counter(&rc)?;
-            }
             let idx = normalize_index("Struct", &key.as_integer()?, structure.len())?;
+            let added = counted(&value);
+            if structure.is_stack_referenced()
+                && let Some(replaced) = structure.with_items(|items| items.get(idx).map(counted))
+            {
+                context
+                    .reference_counter()
+                    .remove_stack_reference(&replaced);
+            }
             structure.set(idx, value)?;
+            if structure.is_stack_referenced() {
+                context.reference_counter().add_stack_reference(&added, 1);
+            }
         }
+        // C# v3.10.1: if the map is stack referenced, a new key gets a
+        // reference and an existing key releases its old value, then the new
+        // value gets a reference; the assignment comes last.
         StackItem::Map(map) => {
-            if let Some(rc) = map.reference_counter() {
-                value.attach_reference_counter(&rc)?;
+            if map.is_stack_referenced() {
+                let reference_counter = context.reference_counter();
+                match map.try_get(&key)? {
+                    None => reference_counter.add_stack_reference(&key, 1),
+                    Some(replaced) => reference_counter.remove_stack_reference(&replaced),
+                }
+                reference_counter.add_stack_reference(&value, 1);
             }
             map.set(key, value)?;
         }

@@ -69,14 +69,12 @@ fn convert(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
             ) => item.convert_to(target_type)?,
 
             // Convert to Array/Struct
-            (StackItem::Struct(items), StackItemType::Array) => StackItem::Array(Array::new(
-                items.into(),
-                Some(context.reference_counter().clone()),
-            )?),
-            (StackItem::Array(items), StackItemType::Struct) => StackItem::Struct(Struct::new(
-                items.into(),
-                Some(context.reference_counter().clone()),
-            )?),
+            (StackItem::Struct(items), StackItemType::Array) => {
+                StackItem::Array(Array::new(items.into()))
+            }
+            (StackItem::Array(items), StackItemType::Struct) => {
+                StackItem::Struct(Struct::new(items.into()))
+            }
 
             // Map, Pointer, InteropInterface conversions are only valid to the same type
             (item, target_type) => {

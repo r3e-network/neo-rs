@@ -341,8 +341,7 @@ impl ExecutionContext {
 
     /// Push an item onto the evaluation stack
     #[inline(always)]
-    pub fn push(&mut self, mut item: crate::stack_item::StackItem) -> VmResult<()> {
-        item.attach_reference_counter(self.reference_counter())?;
+    pub fn push(&mut self, item: crate::stack_item::StackItem) -> VmResult<()> {
         self.shared_states.evaluation_stack_mut().push(item)
     }
 
@@ -378,11 +377,14 @@ impl ExecutionContext {
         // Create a new shared states with the new reference counter
         let shared_states = SharedStates::new(self.script().clone(), reference_counter.clone());
 
-        // Copy the evaluation stack
+        // Copy the evaluation stack. The entries are pushed so that the new
+        // reference counter accounts for them.
         {
             let source_stack = self.evaluation_stack();
             let mut target_stack = shared_states.evaluation_stack_mut();
-            source_stack.copy_to(&mut target_stack, None)?;
+            for item in source_stack.iter() {
+                target_stack.push(item.clone())?;
+            }
         }
 
         // Create the new context
@@ -726,11 +728,19 @@ mod tests {
 
         assert!(slot.set(5, StackItem::from_int(5)).is_err());
 
+        assert_eq!(reference_counter.count(), 3);
+        // neo-vm v3.10.1 `Slot.ClearReferences` only releases the stack
+        // references; the stored items are left in place.
         slot.clear_references();
+        assert_eq!(reference_counter.count(), 0);
         assert_eq!(slot.len(), 3);
-        assert!(
-            slot.iter()
-                .all(crate::stack_item::stack_item::StackItem::is_null)
+        let values: Vec<BigInt> = slot
+            .iter()
+            .map(|item| item.as_int().expect("VM operation should succeed"))
+            .collect();
+        assert_eq!(
+            values,
+            vec![BigInt::from(1), BigInt::from(42), BigInt::from(3)]
         );
     }
 

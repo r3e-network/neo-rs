@@ -139,9 +139,8 @@ impl Slot {
     /// internal void `ClearReferences()`
     /// Matches C# Slot.ClearReferences: only removes stack references, doesn't replace items.
     pub(crate) fn clear_references(&mut self) {
-        for item in &mut self.items {
+        for item in &self.items {
             self.reference_counter.remove_stack_reference(item);
-            *item = StackItem::Null;
         }
     }
 

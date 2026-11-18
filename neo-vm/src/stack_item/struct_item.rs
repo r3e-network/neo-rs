@@ -5,7 +5,7 @@
 use crate::StackItemType;
 use crate::error::{VmError, VmResult};
 use crate::next_stack_item_id;
-use crate::reference_counter::{CompoundParent, ReferenceCounter};
+use crate::reference_counter::{StackReferenceRelease, SubItems};
 use crate::stack_item::StackItem;
 use parking_lot::Mutex;
 use std::collections::HashSet;
@@ -23,44 +23,24 @@ struct StructInner {
     items: Vec<StackItem>,
     /// Unique identifier mirroring reference equality semantics.
     id: usize,
-    /// Reference counter shared with the VM (mirrors C# `CompoundType` semantics).
-    reference_counter: Option<ReferenceCounter>,
+    /// Number of stack references held on this struct (C# `CompoundType.StackReferences`).
+    stack_references: usize,
     /// Indicates whether the struct is read-only.
     is_read_only: bool,
 }
 
 impl Struct {
-    /// Creates a new struct with the specified items and reference counter.
-    pub fn new(
-        mut items: Vec<StackItem>,
-        reference_counter: Option<ReferenceCounter>,
-    ) -> VmResult<Self> {
-        if let Some(rc) = &reference_counter {
-            for item in &mut items {
-                item.attach_reference_counter(rc)?;
-            }
-        }
-
-        let structure = Self {
-            inner: Arc::new(Mutex::new(StructInner {
-                items,
-                id: next_stack_item_id(),
-                reference_counter,
-                is_read_only: false,
-            })),
-        };
-
-        Ok(structure)
-    }
-
-    /// Creates a struct without a reference counter.
+    /// Creates a new struct with the specified items.
+    ///
+    /// As in neo-vm v3.10.1, a struct holds no reference counter and none of
+    /// its methods touch one: the opcode handlers do the counting.
     #[must_use]
-    pub fn new_untracked(items: Vec<StackItem>) -> Self {
+    pub fn new(items: Vec<StackItem>) -> Self {
         Self {
             inner: Arc::new(Mutex::new(StructInner {
                 items,
                 id: next_stack_item_id(),
-                reference_counter: None,
+                stack_references: 0,
                 is_read_only: false,
             })),
         }
@@ -72,10 +52,43 @@ impl Struct {
         self.inner.lock().id
     }
 
-    /// Returns the reference counter assigned by the reference counter, if any.
+    /// Returns the number of stack references held on this struct.
     #[must_use]
-    pub fn reference_counter(&self) -> Option<ReferenceCounter> {
-        self.inner.lock().reference_counter.clone()
+    pub fn stack_references(&self) -> usize {
+        self.inner.lock().stack_references
+    }
+
+    /// Returns whether this struct is stack referenced (C# `IsStackReferenced`).
+    #[must_use]
+    pub fn is_stack_referenced(&self) -> bool {
+        self.inner.lock().stack_references != 0
+    }
+
+    /// Adds `count` stack references. Returns the sub items when this call
+    /// made the struct stack referenced.
+    pub(crate) fn add_stack_references(&self, count: usize) -> Option<SubItems> {
+        let mut inner = self.inner.lock();
+        inner.stack_references += count;
+        (inner.stack_references == count).then(|| SubItems::collect(&inner.items))
+    }
+
+    /// Removes one stack reference, if the struct is stack referenced.
+    pub(crate) fn remove_stack_reference(&self) -> StackReferenceRelease {
+        let mut inner = self.inner.lock();
+        if inner.stack_references == 0 {
+            return StackReferenceRelease::NotReferenced;
+        }
+        inner.stack_references -= 1;
+        if inner.stack_references == 0 {
+            StackReferenceRelease::Unreferenced(SubItems::collect(&inner.items))
+        } else {
+            StackReferenceRelease::StillReferenced
+        }
+    }
+
+    /// Takes a snapshot of the sub items (C# `SubItems`).
+    pub(crate) fn sub_items(&self) -> SubItems {
+        SubItems::collect(&self.inner.lock().items)
     }
 
     /// Returns whether the struct is marked as read-only.
@@ -112,41 +125,26 @@ impl Struct {
     }
 
     /// Sets the item at the specified index.
-    pub fn set(&self, index: usize, mut item: StackItem) -> VmResult<()> {
-        let mut inner = self.inner.lock();
-        if index >= inner.items.len() {
-            return Err(VmError::invalid_operation_msg(format!(
-                "Index out of range: {index}"
-            )));
-        }
-
-        Self::ensure_mutable(&inner)?;
-        if let Some(rc) = &inner.reference_counter {
-            item.attach_reference_counter(rc)?;
-            Self::validate_compound_reference(rc, &item)?;
-            let parent = CompoundParent::Struct(inner.id);
-            if rc.is_stack_referenced(parent) {
-                rc.remove_compound_reference(&inner.items[index], parent);
-                rc.add_compound_reference(&item, parent);
+    pub fn set(&self, index: usize, item: StackItem) -> VmResult<()> {
+        // The replaced item is dropped after the lock is released.
+        let _replaced = {
+            let mut inner = self.inner.lock();
+            if index >= inner.items.len() {
+                return Err(VmError::invalid_operation_msg(format!(
+                    "Index out of range: {index}"
+                )));
             }
-        }
 
-        inner.items[index] = item;
+            Self::ensure_mutable(&inner)?;
+            std::mem::replace(&mut inner.items[index], item)
+        };
         Ok(())
     }
 
     /// Adds an item to the end of the struct.
-    pub fn push(&self, mut item: StackItem) -> VmResult<()> {
+    pub fn push(&self, item: StackItem) -> VmResult<()> {
         let mut inner = self.inner.lock();
         Self::ensure_mutable(&inner)?;
-        if let Some(rc) = &inner.reference_counter {
-            item.attach_reference_counter(rc)?;
-            Self::validate_compound_reference(rc, &item)?;
-            let parent = CompoundParent::Struct(inner.id);
-            if rc.is_stack_referenced(parent) {
-                rc.add_compound_reference(&item, parent);
-            }
-        }
         inner.items.push(item);
         Ok(())
     }
@@ -155,19 +153,10 @@ impl Struct {
     pub fn pop(&self) -> VmResult<StackItem> {
         let mut inner = self.inner.lock();
         Self::ensure_mutable(&inner)?;
-        let item = inner
+        inner
             .items
             .pop()
-            .ok_or_else(|| VmError::invalid_operation_msg("Struct is empty"))?;
-
-        if let Some(rc) = &inner.reference_counter {
-            let parent = CompoundParent::Struct(inner.id);
-            if rc.is_stack_referenced(parent) {
-                rc.remove_compound_reference(&item, parent);
-            }
-        }
-
-        Ok(item)
+            .ok_or_else(|| VmError::invalid_operation_msg("Struct is empty"))
     }
 
     /// Removes the item at the specified index.
@@ -180,16 +169,7 @@ impl Struct {
         }
 
         Self::ensure_mutable(&inner)?;
-        let removed = inner.items.remove(index);
-
-        if let Some(rc) = &inner.reference_counter {
-            let parent = CompoundParent::Struct(inner.id);
-            if rc.is_stack_referenced(parent) {
-                rc.remove_compound_reference(&removed, parent);
-            }
-        }
-
-        Ok(removed)
+        Ok(inner.items.remove(index))
     }
 
     /// Gets the number of items in the struct.
@@ -206,17 +186,12 @@ impl Struct {
 
     /// Removes all items from the struct.
     pub fn clear(&self) -> VmResult<()> {
-        let mut inner = self.inner.lock();
-        Self::ensure_mutable(&inner)?;
-        if let Some(rc) = &inner.reference_counter {
-            let parent = CompoundParent::Struct(inner.id);
-            if rc.is_stack_referenced(parent) {
-                for item in &inner.items {
-                    rc.remove_compound_reference(item, parent);
-                }
-            }
-        }
-        inner.items.clear();
+        // The removed items are dropped after the lock is released.
+        let _removed = {
+            let mut inner = self.inner.lock();
+            Self::ensure_mutable(&inner)?;
+            std::mem::take(&mut inner.items)
+        };
         Ok(())
     }
 
@@ -241,14 +216,14 @@ impl Struct {
     }
 
     /// Creates a deep copy of the struct.
-    pub fn deep_copy(&self, reference_counter: Option<ReferenceCounter>) -> VmResult<Self> {
-        let items = self.with_items(|items| {
-            items
-                .iter()
-                .map(super::stack_item::StackItem::deep_clone)
-                .collect()
-        });
-        let copy = Self::new(items, reference_counter)?;
+    pub fn deep_copy(&self) -> VmResult<Self> {
+        // Snapshot first: cloning a sub item may need this struct's lock.
+        let items = self
+            .items()
+            .iter()
+            .map(super::stack_item::StackItem::deep_clone)
+            .collect();
+        let copy = Self::new(items);
         copy.set_read_only(true);
         Ok(copy)
     }
@@ -272,7 +247,7 @@ impl Struct {
             ));
         }
 
-        let clone = Self::new(Vec::new(), self.reference_counter())?;
+        let clone = Self::new(Vec::new());
 
         for item in self.items() {
             *remaining -= 1;
@@ -319,53 +294,6 @@ impl Struct {
         } else {
             Ok(())
         }
-    }
-
-    fn validate_compound_reference(rc: &ReferenceCounter, item: &StackItem) -> VmResult<()> {
-        match item {
-            StackItem::Array(inner) => match inner.reference_counter() {
-                Some(child_rc) if child_rc.ptr_eq(rc) => Ok(()),
-                Some(_) | None => Err(VmError::invalid_operation_msg(
-                    "Can not set a Struct without a ReferenceCounter.".to_string(),
-                )),
-            },
-            StackItem::Struct(inner) => match inner.reference_counter() {
-                Some(child_rc) if child_rc.ptr_eq(rc) => Ok(()),
-                Some(_) | None => Err(VmError::invalid_operation_msg(
-                    "Can not set a Struct without a ReferenceCounter.".to_string(),
-                )),
-            },
-            StackItem::Map(inner) => match inner.reference_counter() {
-                Some(child_rc) if child_rc.ptr_eq(rc) => Ok(()),
-                Some(_) | None => Err(VmError::invalid_operation_msg(
-                    "Can not set a Struct without a ReferenceCounter.".to_string(),
-                )),
-            },
-            _ => Ok(()),
-        }
-    }
-
-    /// Ensures the struct and its children share the provided reference counter.
-    pub(crate) fn attach_reference_counter(&self, rc: &ReferenceCounter) -> VmResult<()> {
-        {
-            let mut inner = self.inner.lock();
-            if let Some(existing) = &inner.reference_counter {
-                if existing.ptr_eq(rc) {
-                    return Ok(());
-                }
-                return Err(VmError::invalid_operation_msg(
-                    "Struct has mismatched reference counter.",
-                ));
-            }
-
-            for item in &mut inner.items {
-                item.attach_reference_counter(rc)?;
-            }
-
-            inner.reference_counter = Some(rc.clone());
-        }
-
-        Ok(())
     }
 }
 

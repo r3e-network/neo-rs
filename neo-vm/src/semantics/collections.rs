@@ -10,13 +10,6 @@ use crate::{
     MAX_ITEM_SIZE, StackValue, new_array_default_value_for_neovm_type_tag, semantics::numeric,
 };
 
-/// Default NeoVM `ExecutionEngineLimits.MaxStackSize`.
-///
-/// Collection constructors in C# reject counts larger than this before
-/// allocating; without the check a script can request an arbitrary allocation
-/// (e.g. `NEWARRAY` with `i32::MAX`) and abort the node.
-const MAX_COLLECTION_ITEMS: usize = 2 * 1024;
-
 /// Convert a primitive NeoVM value into an index used by collection opcodes.
 pub fn collection_index_value(value: &StackValue) -> Result<i64, String> {
     match value {
@@ -78,32 +71,42 @@ pub fn map_entry_index_by<T>(
         .position(|(candidate, _)| key_equal(candidate, key)))
 }
 
-/// Create a null-filled array.
-pub fn new_array(count: i64) -> Result<StackValue, String> {
-    let count = bounded_collection_count(count, "NEWARRAY: negative count")?;
+/// Create a null-filled array of at most `max_items` items.
+///
+/// Collection constructors in C# reject counts larger than the engine's
+/// `ExecutionEngineLimits.MaxStackSize` before allocating; without the check a
+/// script can request an arbitrary allocation (e.g. `NEWARRAY` with
+/// `i32::MAX`) and abort the node.
+pub fn new_array(count: i64, max_items: usize) -> Result<StackValue, String> {
+    let count = bounded_collection_count(count, max_items, "NEWARRAY: negative count")?;
     Ok(StackValue::Array(vec![StackValue::Null; count]))
 }
 
-/// Create a type-filled array using NeoVM `NEWARRAY_T` defaults.
-pub fn new_array_t(count: i64, type_tag: u8) -> Result<StackValue, String> {
-    let count = bounded_collection_count(count, "NEWARRAY_T: negative count")?;
+/// Create a type-filled array using NeoVM `NEWARRAY_T` defaults, of at most
+/// `max_items` (`MaxStackSize`) items.
+pub fn new_array_t(count: i64, type_tag: u8, max_items: usize) -> Result<StackValue, String> {
+    let count = bounded_collection_count(count, max_items, "NEWARRAY_T: negative count")?;
     Ok(StackValue::Array(vec![
         new_array_default_value_for_neovm_type_tag(type_tag);
         count
     ]))
 }
 
-/// Create a null-filled struct.
-pub fn new_struct(count: i64) -> Result<StackValue, String> {
-    let count = bounded_collection_count(count, "NEWSTRUCT: negative count")?;
+/// Create a null-filled struct of at most `max_items` (`MaxStackSize`) items.
+pub fn new_struct(count: i64, max_items: usize) -> Result<StackValue, String> {
+    let count = bounded_collection_count(count, max_items, "NEWSTRUCT: negative count")?;
     Ok(StackValue::Struct(vec![StackValue::Null; count]))
 }
 
-fn bounded_collection_count(count: i64, negative_message: &'static str) -> Result<usize, String> {
+fn bounded_collection_count(
+    count: i64,
+    max_items: usize,
+    negative_message: &'static str,
+) -> Result<usize, String> {
     let count = non_negative_count(count, negative_message)?;
-    if count > MAX_COLLECTION_ITEMS {
+    if count > max_items {
         return Err(format!(
-            "collection size {count} exceeds MaxStackSize {MAX_COLLECTION_ITEMS}"
+            "collection size {count} exceeds MaxStackSize {max_items}"
         ));
     }
     Ok(count)
@@ -505,12 +508,16 @@ mod tests {
         // C# JumpTable.Compound rejects counts above Limits.MaxStackSize before
         // allocating. Without this an attacker can request i32::MAX items and
         // abort the process.
-        assert!(new_array(MAX_COLLECTION_ITEMS as i64 + 1).is_err());
-        assert!(new_array(i64::from(i32::MAX)).is_err());
-        assert!(new_array_t(MAX_COLLECTION_ITEMS as i64 + 1, 0x00).is_err());
-        assert!(new_struct(MAX_COLLECTION_ITEMS as i64 + 1).is_err());
-        assert!(new_array(MAX_COLLECTION_ITEMS as i64).is_ok());
-        assert!(new_array_t(MAX_COLLECTION_ITEMS as i64, 0x00).is_ok());
-        assert!(new_struct(MAX_COLLECTION_ITEMS as i64).is_ok());
+        const MAX_STACK_SIZE: usize = 2 * 1024;
+        assert!(new_array(MAX_STACK_SIZE as i64 + 1, MAX_STACK_SIZE).is_err());
+        assert!(new_array(i64::from(i32::MAX), MAX_STACK_SIZE).is_err());
+        assert!(new_array_t(MAX_STACK_SIZE as i64 + 1, 0x00, MAX_STACK_SIZE).is_err());
+        assert!(new_struct(MAX_STACK_SIZE as i64 + 1, MAX_STACK_SIZE).is_err());
+        assert!(new_array(MAX_STACK_SIZE as i64, MAX_STACK_SIZE).is_ok());
+        assert!(new_array_t(MAX_STACK_SIZE as i64, 0x00, MAX_STACK_SIZE).is_ok());
+        assert!(new_struct(MAX_STACK_SIZE as i64, MAX_STACK_SIZE).is_ok());
+        // The bound is the engine's configured limit, not a constant.
+        assert!(new_array(5, 4).is_err());
+        assert!(new_array(MAX_STACK_SIZE as i64 + 1, MAX_STACK_SIZE + 1).is_ok());
     }
 }

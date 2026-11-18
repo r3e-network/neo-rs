@@ -50,13 +50,11 @@ impl ExecutionEngine {
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
         if context.instruction_pointer() >= context.script().len() {
-            // Perform implicit RET when reaching end of script, delegating to
-            // the canonical RET handler so shared evaluation stacks and host
-            // `on_context_unloaded` hooks behave identically to an explicit RET.
-            crate::jump_table::control::ret(self, &Instruction::ret())?;
-            let _ = self.reference_counter.check_zero_referred();
-            self.is_jumping = false;
-            return Ok(());
+            // neo-vm v3.10.1 `ExecuteNext` substitutes `Instruction.RET` when
+            // the instruction pointer is past the end of the script and runs
+            // it through the same pre/post instruction hooks as any other
+            // instruction, without moving the instruction pointer.
+            return self.execute_instruction(&Instruction::ret(), None);
         }
 
         self.execute_next_internal()
@@ -114,20 +112,32 @@ impl ExecutionEngine {
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
             .current_instruction()?;
 
-        // Cache instruction size before execution to avoid re-fetching in move_next.
-        let instruction_size = instruction.size();
+        self.execute_instruction(&instruction, Some(context_index))
+    }
 
-        self.pre_execute_instruction(&instruction)?;
+    /// Runs one instruction through the pre hook, its handler and the post
+    /// hook, matching the body of neo-vm v3.10.1 `ExecutionEngine.ExecuteNext`.
+    ///
+    /// `context_index` is the context whose instruction pointer is advanced
+    /// when the instruction did not jump; it is `None` for the implicit `RET`
+    /// at the end of a script.
+    #[inline(always)]
+    fn execute_instruction(
+        &mut self,
+        instruction: &Instruction,
+        context_index: Option<usize>,
+    ) -> VmResult<()> {
+        self.pre_execute_instruction(instruction)?;
 
         if let Some(host) = self.interop_host {
-            host.pre_execute_instruction(self, &instruction)?;
+            host.pre_execute_instruction(self, instruction)?;
         }
 
         // Execute the instruction - direct array access for optimal dispatch
         let opcode = instruction.opcode();
         let handler = self.jump_table.get_handler_by_u8(opcode.byte());
         let result = match handler {
-            Some(h) => h(self, &instruction),
+            Some(h) => h(self, instruction),
             None => Err(VmError::unsupported_operation(format!(
                 "Unsupported opcode: {opcode:?}"
             ))),
@@ -139,20 +149,24 @@ impl ExecutionEngine {
                 if self.limits.catch_engine_exceptions
                     && let VmError::CatchableException { message } = err
                 {
+                    // A caught engine exception is handled like THROW and the
+                    // instruction then completes normally, so the post
+                    // instruction check below still runs.
                     let exception = StackItem::from_byte_string(message.into_bytes());
                     self.execute_throw(Some(exception))?;
-                    return Ok(());
+                } else {
+                    return Err(err);
                 }
-                return Err(err);
             }
         }
 
-        self.post_execute_instruction(&instruction)?;
+        self.post_execute_instruction(instruction)?;
 
         if !self.is_jumping
+            && let Some(context_index) = context_index
             && let Some(context) = self.invocation_stack.get_mut(context_index)
         {
-            context.advance_ip(instruction_size);
+            context.advance_ip(instruction.size());
         }
         self.is_jumping = false;
 
@@ -171,38 +185,13 @@ impl ExecutionEngine {
 
     /// Called after executing an instruction.
     ///
-    /// # Stack Overflow Detection Strategy (H-4)
-    ///
-    /// The VM uses a two-phase stack overflow detection:
-    ///
-    /// 1. **Pre-execution check** (in `pre_execute_instruction`): Triggers when stack
-    ///    usage reaches 90% of limit, performing a thorough GC check before allowing
-    ///    the instruction to execute.
-    ///
-    /// 2. **Post-execution check** (this method): Always runs after instruction execution.
-    ///    Uses a fast path when under limit, and thorough GC check when at/over limit.
-    ///
-    /// This dual-check approach prevents:
-    /// - Instructions that create many items from overflowing before post-check
-    /// - Malicious scripts from exploiting the execution-to-check gap
+    /// Matches neo-vm v3.10.1 `ExecutionEngine.PostExecuteInstruction`: the
+    /// only check is `ReferenceCounter.PostExecuteInstruction`, which faults
+    /// when the reference count is above `MaxStackSize`. Nothing is collected.
     #[inline(always)]
     fn post_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
-        if self.reference_counter.count() < self.limits.max_stack_size as usize {
-            if let Some(host) = self.interop_host {
-                host.post_execute_instruction(self, instruction)?;
-            }
-            return Ok(());
-        }
-
-        // Reference accounting now adds children on the first stack reference
-        // and releases them on the last, so enforce the real counter directly.
-        let current = self.reference_counter.check_zero_referred();
-        if current > self.limits.max_stack_size as usize {
-            return Err(VmError::invalid_operation_msg(format!(
-                "MaxStackSize exceed: {}/{}",
-                current, self.limits.max_stack_size
-            )));
-        }
+        self.reference_counter
+            .post_execute_instruction(self.limits.max_stack_size)?;
 
         if let Some(host) = self.interop_host {
             host.post_execute_instruction(self, instruction)?;

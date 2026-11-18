@@ -76,10 +76,6 @@ impl ExecutionEngine {
         // Unload the context
         self.unload_context(&mut context)?;
 
-        // Check for zero-referenced items and clean them up. The return value is the count
-        // of items checked, which is informational and doesn't require handling.
-        let _ = self.reference_counter.check_zero_referred();
-
         Ok(context)
     }
 

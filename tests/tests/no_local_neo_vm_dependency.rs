@@ -3150,6 +3150,7 @@ fn reference_graph_helpers_are_owned_by_neo_vm_rs() {
     let vm_module = read_source(workspace.join("neo-vm/src/lib.rs"));
     let stack_item_module = read_source(workspace.join("neo-vm/src/stack_item/mod.rs"));
     let reference_counter = read_source(workspace.join("neo-vm/src/reference_counter.rs"));
+    let graph_helpers = read_source(workspace.join("neo-vm/src/vm/graph.rs"));
 
     assert!(
         !workspace
@@ -3167,9 +3168,16 @@ fn reference_graph_helpers_are_owned_by_neo_vm_rs() {
         "compound stack item id allocation should not keep a local stack_item_vertex facade"
     );
     assert!(
-        reference_counter.contains("use crate::Tarjan;")
-            || reference_counter.contains("use neo_vm::Tarjan;"),
-        "ReferenceCounter should use the crate's shared Tarjan implementation directly"
+        !reference_counter.contains("Tarjan")
+            && !reference_counter.contains("find_components")
+            && !vm_module.contains("Tarjan"),
+        "the unused Tarjan SCC helper stays deleted: ReferenceCounter counts references \
+         directly, and neo-vm must neither revive nor re-export the graph helper"
+    );
+    assert!(
+        graph_helpers.contains("pub fn next_stack_item_id")
+            && !graph_helpers.contains("find_components"),
+        "neo-vm/src/vm/graph.rs should hold compound stack item identity allocation only"
     );
 
     let relative = "neo-vm/src/stack_item/map.rs";
@@ -3179,11 +3187,6 @@ fn reference_graph_helpers_are_owned_by_neo_vm_rs() {
             && !source.contains("stack_item_vertex::next_stack_item_id"),
         "{relative} should allocate compound ids through the crate helper directly"
     );
-
-    let mut shared_tarjan = neo_vm::Tarjan::new();
-    shared_tarjan.add_edge(1, 2);
-    shared_tarjan.add_edge(2, 1);
-    assert_eq!(shared_tarjan.find_components().len(), 1);
 }
 
 #[test]

@@ -294,7 +294,7 @@ mod tests {
 
     #[test]
     fn reports_circular_reference() {
-        let array = crate::stack_item::Array::new_untracked(vec![StackItem::Null]);
+        let array = crate::stack_item::Array::new(vec![StackItem::Null]);
         let item = StackItem::Array(array.clone());
         array.set(0, item.clone()).unwrap();
 
@@ -305,7 +305,7 @@ mod tests {
 
     #[test]
     fn deferred_size_check_preserves_rpc_circular_reference_precedence() {
-        let array = crate::stack_item::Array::new_untracked(vec![StackItem::Null]);
+        let array = crate::stack_item::Array::new(vec![StackItem::Null]);
         let item = StackItem::Array(array.clone());
         array.set(0, item.clone()).unwrap();
 
