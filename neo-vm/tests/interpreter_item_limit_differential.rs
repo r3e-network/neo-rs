@@ -348,16 +348,13 @@ fn nesting_past_the_limit_faults_where_canonical_halts() {
 /// Shapes whose canonical count the interpreter cannot reproduce. It stops
 /// counting on them instead of guessing.
 ///
-/// Task 52: on the cases marked below the canonical engine halts only because
-/// its reference counter stops following a compound once APPEND or SETITEM
-/// has stored it. That is a defect of the canonical engine, not behaviour to
-/// match, and nothing here asserts that it halts: `assert_not_stricter` holds
-/// either way and says nothing about a case the canonical engine faults on.
-/// Once the counter is fixed the marked cases should assert that both engines
-/// fault, which needs the interpreter to keep counting past APPEND and
-/// SETITEM.
+/// The canonical engine counts each of them the way neo-vm v3.10.1 does (task
+/// 52), and the state it reaches is pinned here. Where that state is a fault,
+/// `assert_not_stricter` holds whatever the interpreter does: for both
+/// engines to fault there, the interpreter has to keep counting past APPEND
+/// and SETITEM, which it does not do yet.
 #[test]
-fn shapes_the_canonical_counter_undercounts_never_fault_on_the_item_count() {
+fn shapes_the_interpreter_does_not_count_never_fault_on_the_item_count() {
     let append_array = [
         op(OpCode::NEWARRAY0),
         op(OpCode::DUP),
@@ -365,16 +362,17 @@ fn shapes_the_canonical_counter_undercounts_never_fault_on_the_item_count() {
         op(OpCode::APPEND),
     ]
     .concat();
-    let cases: Vec<(&str, Vec<u8>)> = vec![
-        // Task 52: the canonical engine halts on the next three only through
-        // the undercount. The stored array is released while it is still
-        // reachable.
+    let cases: Vec<(&str, VmState, Vec<u8>)> = vec![
+        // The stored array stays counted for as long as its parent is on the
+        // stack: 102, 502 and 503 references a round in the next three.
         (
             "array appended to an array",
+            VmState::Fault,
             [append_array.repeat(30), pushes(1900)].concat(),
         ),
         (
             "array stored with SETITEM",
+            VmState::Fault,
             [
                 [
                     new_array(1),
@@ -391,6 +389,7 @@ fn shapes_the_canonical_counter_undercounts_never_fault_on_the_item_count() {
         ),
         (
             "array stored in a map",
+            VmState::Fault,
             [
                 [
                     op(OpCode::NEWMAP),
@@ -405,9 +404,10 @@ fn shapes_the_canonical_counter_undercounts_never_fault_on_the_item_count() {
             ]
             .concat(),
         ),
-        // The canonical engine counts this one in full and faults.
+        // Two references a round, and 1400 pushes on top of them.
         (
             "buffer appended to an array",
+            VmState::Fault,
             [
                 [
                     op(OpCode::NEWARRAY0),
@@ -422,10 +422,11 @@ fn shapes_the_canonical_counter_undercounts_never_fault_on_the_item_count() {
             ]
             .concat(),
         ),
-        // Each round leaves one array whose only stack reference was taken
-        // by the release of its parent.
+        // Each round leaves one array on the stack; the reference its parent
+        // held goes when the parent is released.
         (
             "parent released with its appended child",
+            VmState::Halt,
             [
                 op(OpCode::NEWARRAY0),
                 op(OpCode::NEWARRAY0),
@@ -437,11 +438,11 @@ fn shapes_the_canonical_counter_undercounts_never_fault_on_the_item_count() {
             .concat()
             .repeat(1500),
         ),
-        // A chain grown from the inside never raises the canonical count.
-        // Task 52: the same undercount, on a chain short enough to halt
-        // without it.
+        // A chain grown from the inside counts one reference a link, on a
+        // chain short enough to halt.
         (
             "chain grown by APPEND",
+            VmState::Halt,
             [
                 op(OpCode::NEWARRAY0),
                 op(OpCode::DUP),
@@ -455,6 +456,7 @@ fn shapes_the_canonical_counter_undercounts_never_fault_on_the_item_count() {
         // stores a copy per reference.
         (
             "one struct packed many times",
+            VmState::Halt,
             [
                 [int(100), op(OpCode::NEWSTRUCT)].concat(),
                 op(OpCode::DUP).repeat(20),
@@ -464,10 +466,10 @@ fn shapes_the_canonical_counter_undercounts_never_fault_on_the_item_count() {
             ]
             .concat(),
         ),
-        // Task 52: the canonical engine halts on this one only through the
-        // undercount.
+        // The array holds a copy of the struct, 102 references a round.
         (
             "struct appended to an array",
+            VmState::Fault,
             [
                 [
                     op(OpCode::NEWARRAY0),
@@ -484,6 +486,7 @@ fn shapes_the_canonical_counter_undercounts_never_fault_on_the_item_count() {
         // A callee that only sees its own frame.
         (
             "array held by a suspended frame",
+            VmState::Halt,
             [
                 init_slot(1, 0),
                 new_array(1000),
@@ -495,10 +498,11 @@ fn shapes_the_canonical_counter_undercounts_never_fault_on_the_item_count() {
             ]
             .concat(),
         ),
-        // The canonical counter keeps the children of each removed array and
-        // faults.
+        // REMOVE gives back the removed array and its 300 children, which
+        // leaves one reference a round.
         (
             "children removed from a packed array",
+            VmState::Halt,
             [
                 [
                     new_array(300),
@@ -516,7 +520,8 @@ fn shapes_the_canonical_counter_undercounts_never_fault_on_the_item_count() {
         ),
     ];
 
-    for (label, script) in cases {
+    for (label, canonical, script) in cases {
+        assert_eq!(run_canonical(&script), canonical, "{label}");
         assert_not_stricter(&script, label);
     }
 }
@@ -637,8 +642,10 @@ impl Shape {
     }
 
     /// Whether `value` can be stored into this collection. A collection is
-    /// never stored into itself: the canonical engine does not return from
-    /// that instruction.
+    /// never stored into itself: the canonical engine used not to return
+    /// from that instruction. It does now (task 52), which
+    /// `reference_counter_v3_10_1.rs` covers; the generator is left as it
+    /// was.
     fn can_store(self, kinds: &[Kind], value: Self) -> bool {
         self.is(kinds) && self.object != value.object
     }
@@ -654,10 +661,10 @@ const COLLECTIONS: &[Kind] = &[Kind::Array, Kind::Struct, Kind::Map];
 /// the two places where exactly one of the engines copies a struct (PACK and
 /// PACKSTRUCT here, VALUES there).
 ///
-/// Task 52: for a stored compound that canonical count is an undercount, a
-/// defect. Scripts generated with `mutating` are only ever checked one way,
-/// never for the canonical state; the others never store a compound with
-/// APPEND or SETITEM.
+/// The canonical engine counts a stored compound in full, as neo-vm v3.10.1
+/// does (task 52), and the interpreter stops counting. Scripts generated with
+/// `mutating` are only ever checked one way, never for the canonical state;
+/// the others never store a compound with APPEND or SETITEM.
 fn random_script(rng: &mut Rng, mutating: bool) -> Vec<u8> {
     let mut script = [init_static_slot(2), init_slot(3, 0)].concat();
     let mut stack: Vec<Shape> = Vec::new();
