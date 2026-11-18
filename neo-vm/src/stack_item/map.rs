@@ -194,7 +194,7 @@ impl Map {
         let _removed = {
             let mut inner = self.inner.lock();
             Self::ensure_mutable(&inner)?;
-            std::mem::replace(&mut inner.items, VmOrderedDictionary::new())
+            std::mem::take(&mut inner.items)
         };
         Ok(())
     }
