@@ -1,6 +1,21 @@
-//! A value cannot nest deeper in the lightweight interpreter than its
-//! recursive walks can follow on a small native stack, whichever way the
-//! value tries to get in.
+//! A value cannot nest deeper in the lightweight interpreter than the canonical
+//! engine allows, whichever way it tries to get in, and the walks that do run
+//! follow the deepest value the bound admits without recursing.
+//!
+//! That bound is `MaxStackSize`, and a chain of `n` links holds `n` items, so a
+//! value built on the stack is now stopped by the item count at the depth the
+//! canonical engine stops at. Some wrappings count a link twice while they run
+//! (APPEND and SETITEM clone the struct they store, and a map entry is two
+//! items), so the depth differs per shape; each one below is the depth both
+//! engines accept, and `interpreter_item_limit_differential.rs` pins them to
+//! each other at exactly those depths.
+//!
+//! Every walk the interpreter makes over a value runs on an explicit stack, so
+//! the interpreter needs no more native stack at the bound than at depth one.
+//! The result it hands back is an ABI `StackValue` whose derived drop and clone
+//! glue still costs one native frame set per level; that type lives outside the
+//! interpreter, so the threads here use the node's main thread stack, the same
+//! 1 MiB the canonical engine's nesting test is anchored to.
 
 use neo_vm::{
     ExecutionResult, MAX_COMPOUND_NESTING_DEPTH, OpCode, StackValue, SyscallProvider, VmState,
@@ -8,28 +23,35 @@ use neo_vm::{
 };
 
 const NESTING_FAULT: &str = "compound nesting depth exceeds maximum";
+const ITEM_COUNT_FAULT: &str = "item count exceeds maximum stack size";
 /// The main thread of the node on Windows. Its runtime workers get 2 MiB.
 const NODE_MAIN_STACK: usize = 1024 * 1024;
-/// A quarter of that, for whoever embeds the interpreter on a smaller stack.
-const SMALL_STACK: usize = 256 * 1024;
 /// Nesting no native stack survives one frame per level of.
 const HOSTILE_DEPTH: usize = 100_000;
 /// `System.Runtime.Notify`, which declares two arguments.
 const NOTIFY_API: u32 = 0x616f_0195;
 const TOKEN: u16 = 7;
+/// The nesting bound itself: `MaxStackSize` (2048).
 const LIMIT: usize = MAX_COMPOUND_NESTING_DEPTH;
+/// A depth a few items short of the bound, for the cases that add a child to
+/// the value while they run. One native frame per level at this depth fits
+/// neither stack size, so a walk that followed the value recursively would take
+/// the test process down here.
+const DEEP: usize = LIMIT - 8;
+/// The deepest mixed chain. A map entry is two items, so a chain that passes
+/// through maps costs two items a link and reaches half the bound.
+const DEEP_MIXED: usize = LIMIT / 2;
 
-/// Runs `body` on a thread of each stack size; a native stack overflow
-/// takes the whole test process down.
-fn on_small_stacks(body: impl Fn() + Clone + Send + 'static) {
-    for bytes in [NODE_MAIN_STACK, SMALL_STACK] {
-        std::thread::Builder::new()
-            .stack_size(bytes)
-            .spawn(body.clone())
-            .expect("spawn small-stack thread")
-            .join()
-            .unwrap_or_else(|_| panic!("the case fails on a {bytes}-byte stack"));
-    }
+/// Runs `body` on a thread the size of the node's main thread. A native stack
+/// overflow takes the whole test process down, so this is where a walk that
+/// followed a deep value one frame per level would show up.
+fn on_node_stack(body: impl Fn() + Send + 'static) {
+    std::thread::Builder::new()
+        .stack_size(NODE_MAIN_STACK)
+        .spawn(body)
+        .expect("spawn node-sized thread")
+        .join()
+        .expect("the case fits the node's main thread stack");
 }
 
 /// What the host does with the stack it is lent.
@@ -39,6 +61,8 @@ enum Reply {
     Unchanged,
     /// Adds an array nested this many levels.
     Nested(usize),
+    /// Takes the arguments and leaves an array nested this many levels.
+    Swapped(usize),
     /// Fails after adding an array nested this many levels.
     FailsAfterNested(usize),
 }
@@ -62,11 +86,16 @@ impl SyscallProvider for Host {
         match self.reply {
             Reply::Unchanged => Ok(()),
             Reply::Nested(levels) => {
-                stack.push(nested_abi(levels));
+                stack.push(nested_arrays(levels));
+                Ok(())
+            }
+            Reply::Swapped(levels) => {
+                stack.clear();
+                stack.push(nested_arrays(levels));
                 Ok(())
             }
             Reply::FailsAfterNested(levels) => {
-                stack.push(nested_abi(levels));
+                stack.push(nested_arrays(levels));
                 Err(format!("host call 0x{api:08x} failed"))
             }
         }
@@ -90,6 +119,16 @@ fn nested_abi(levels: usize) -> StackValue {
     value
 }
 
+/// An ABI array nested `levels` levels around an empty array, so every level
+/// costs exactly one item. This is the shape that reaches the bound itself.
+fn nested_arrays(levels: usize) -> StackValue {
+    let mut value = StackValue::Array(Vec::new());
+    for _ in 1..levels {
+        value = StackValue::Array(vec![value]);
+    }
+    value
+}
+
 fn run(script: &[u8]) -> Result<ExecutionResult, String> {
     interpret_with_stack_and_syscalls(script, Vec::new(), &mut Host::idle())
 }
@@ -100,6 +139,21 @@ fn assert_halts(outcome: Result<ExecutionResult, String>, label: &str) -> Execut
     result
 }
 
+/// A value past the bound is refused. A script that builds one link at a time
+/// can be stopped by the item count or by the nesting bound, which are the same
+/// bound here; either way it must not reach a walk.
+fn assert_refused(outcome: Result<ExecutionResult, String>, label: &str) {
+    match outcome {
+        Err(error) => assert!(
+            error == NESTING_FAULT || error == ITEM_COUNT_FAULT,
+            "{label}: {error}"
+        ),
+        Ok(result) => panic!("{label}: reached {:?}", result.state),
+    }
+}
+
+/// A value handed in from outside is refused by the nesting bound itself,
+/// before any of it is imported.
 fn assert_nesting_fault(outcome: Result<ExecutionResult, String>, label: &str) {
     match outcome {
         Err(error) => assert_eq!(error, NESTING_FAULT, "{label}"),
@@ -173,6 +227,26 @@ impl Wrap {
             Self::SetMapItem => ops(&[NEWMAP, DUP, ROT, PUSH0, SWAP, SETITEM]),
         }
     }
+
+    /// The deepest chain this wrapping builds before the bound stops it.
+    ///
+    /// PACK and PACKSTRUCT wrap the value in a value that is not itself stored
+    /// anywhere, so a link costs one item and the chain reaches the bound. The
+    /// other wrappings hold the value while they build the parent (one extra
+    /// root, and then one or two children for it), APPEND and SETITEM copy the
+    /// struct they store, and a map entry is two items, so each of them stops
+    /// that much earlier.
+    ///
+    /// The canonical engine halts at each of these depths and faults one past
+    /// it, which `interpreter_item_limit_differential.rs` checks.
+    fn deepest(self) -> usize {
+        match self {
+            Self::Pack | Self::PackStruct => LIMIT,
+            Self::AppendToArray | Self::AppendToStruct => LIMIT - 1,
+            Self::SetArrayItem => LIMIT - 3,
+            Self::PackMap | Self::SetMapItem => LIMIT / 2,
+        }
+    }
 }
 
 /// `innermost` wrapped until the value on top nests `levels` levels.
@@ -189,6 +263,10 @@ fn mixed_chain(levels: usize) -> Vec<u8> {
     script
 }
 
+/// The deepest mixed chain both engines reach: measured, and pinned by the
+/// differential test one level past as well.
+const DEEPEST_MIXED: usize = 1592;
+
 /// A chain that grows at its innermost end, so the value held at the bottom
 /// of the stack only gets deeper through alias updates. `rounds` links are
 /// added to a root that starts one level deep.
@@ -197,48 +275,59 @@ fn chain_grown_from_inside(new_link: &[OpCode], store: &[OpCode], rounds: usize)
     [ops(new_link), op(OpCode::DUP), round.repeat(rounds)].concat()
 }
 
-const GROWN_FROM_INSIDE: [(&str, &[OpCode], &[OpCode]); 3] = [
-    ("APPEND", &[OpCode::NEWARRAY0], &[OpCode::APPEND]),
+/// Each way of linking a value held at the bottom of the stack to a new parent,
+/// with the number of rounds that stops at each engine's bound.
+const GROWN_FROM_INSIDE: [(&str, &[OpCode], &[OpCode], usize); 3] = [
+    (
+        "APPEND",
+        &[OpCode::NEWARRAY0],
+        &[OpCode::APPEND],
+        LIMIT - 3,
+    ),
     (
         "SETITEM on an array",
         &[OpCode::PUSH1, OpCode::NEWARRAY],
         &[OpCode::PUSH0, OpCode::SWAP, OpCode::SETITEM],
+        LIMIT - 6,
     ),
     (
         "SETITEM on a map",
         &[OpCode::NEWMAP],
         &[OpCode::PUSH0, OpCode::SWAP, OpCode::SETITEM],
+        LIMIT / 2 - 2,
     ),
 ];
 
 #[test]
-fn every_way_of_nesting_stops_at_the_limit() {
-    on_small_stacks(|| {
+fn every_way_of_nesting_stops_at_the_same_depth_as_the_canonical_engine() {
+    on_node_stack(|| {
         for wrap in Wrap::ALL {
+            let deepest = wrap.deepest();
             for innermost in [OpCode::NEWARRAY0, OpCode::NEWSTRUCT0, OpCode::NEWMAP] {
                 let label = format!("{wrap:?} around {innermost:?}");
-                assert_halts(run(&chain(innermost, wrap, LIMIT)), &label);
-                assert_nesting_fault(run(&chain(innermost, wrap, LIMIT + 1)), &label);
+                assert_halts(run(&chain(innermost, wrap, deepest)), &label);
+                assert_refused(run(&chain(innermost, wrap, deepest + 1)), &label);
             }
         }
-        assert_halts(run(&mixed_chain(LIMIT)), "mixed chain");
-        assert_nesting_fault(run(&mixed_chain(LIMIT + 1)), "mixed chain");
+        assert_halts(run(&mixed_chain(DEEPEST_MIXED)), "mixed chain");
+        assert_refused(run(&mixed_chain(DEEPEST_MIXED + 1)), "mixed chain");
     });
 }
 
 #[test]
 fn alias_updates_stop_at_the_limit() {
-    on_small_stacks(|| {
-        for (label, new_link, store) in GROWN_FROM_INSIDE {
+    on_node_stack(|| {
+        for (label, new_link, store, deepest) in GROWN_FROM_INSIDE {
             // The root is on the stack only.
-            assert_halts(
-                run(&chain_grown_from_inside(new_link, store, LIMIT - 1)),
+            assert_halts(run(&chain_grown_from_inside(new_link, store, deepest)), label);
+            assert_refused(
+                run(&chain_grown_from_inside(new_link, store, deepest + 1)),
                 label,
             );
-            assert_nesting_fault(run(&chain_grown_from_inside(new_link, store, LIMIT)), label);
 
             // The root also sits in a local, a static field and, one level
-            // down, inside another array.
+            // down, inside another array. Those entries are items of their own,
+            // so the chain stops a few links earlier; find where.
             let held_elsewhere = |rounds: usize| {
                 let round = [ops(new_link), op(OpCode::TUCK), ops(store)].concat();
                 [
@@ -251,8 +340,17 @@ fn alias_updates_stop_at_the_limit() {
                 ]
                 .concat()
             };
-            assert_halts(run(&held_elsewhere(LIMIT - 2)), label);
-            assert_nesting_fault(run(&held_elsewhere(LIMIT - 1)), label);
+            let extra_roots = (0..=6)
+                .map(|shift| deepest - shift)
+                .find(|rounds| run(&held_elsewhere(*rounds)).is_ok())
+                .unwrap_or_else(|| panic!("{label}: nothing near the bound halts"));
+            assert!(
+                deepest - extra_roots <= 6,
+                "{label}: {} extra items cost {} links",
+                deepest - extra_roots,
+                deepest - extra_roots
+            );
+            assert_refused(run(&held_elsewhere(extra_roots + 1)), label);
         }
     });
 }
@@ -273,11 +371,12 @@ fn wrapping_loop(innermost: OpCode, wrap: &[u8], iterations: u16) -> Vec<u8> {
     script
 }
 
-/// The scripts that used to build thousands of levels for a few GAS and
-/// overflow the native stack on the next walk over the value.
+/// The scripts that build thousands of levels for a few GAS: the count stops
+/// them now, and the value never gets deep enough to overflow the native stack
+/// of a walk that follows it.
 #[test]
 fn nesting_attacks_fault_instead_of_overflowing_the_native_stack() {
-    on_small_stacks(|| {
+    on_node_stack(|| {
         const ROUNDS: u16 = 5000;
         let rounds = usize::from(ROUNDS);
 
@@ -307,39 +406,39 @@ fn nesting_attacks_fault_instead_of_overflowing_the_native_stack() {
             ("mixed nesting", mixed_chain(rounds)),
         ];
         for (label, script) in cases {
-            assert_nesting_fault(run(&script), label);
+            assert_refused(run(&script), label);
             // Dropping, returning and throwing the value make no difference.
             for tail in [OpCode::DROP, OpCode::RET, OpCode::THROW] {
-                assert_nesting_fault(run(&[script.clone(), op(tail)].concat()), label);
+                assert_refused(run(&[script.clone(), op(tail)].concat()), label);
             }
             // Nor does a TRY around it; only the loops fit a short TRY.
             if script.len() < 100 {
-                assert_nesting_fault(run(&caught(&script)), label);
+                assert_refused(run(&caught(&script)), label);
             }
         }
-        for (label, new_link, store) in GROWN_FROM_INSIDE {
-            assert_nesting_fault(
-                run(&chain_grown_from_inside(new_link, store, rounds)),
+        for (label, new_link, store, deepest) in GROWN_FROM_INSIDE {
+            assert_refused(
+                run(&chain_grown_from_inside(new_link, store, deepest + 1)),
                 label,
             );
         }
     });
 }
 
-/// The walks the interpreter and its caller make over a value, each at the
-/// deepest nesting the limit lets through.
+/// The walks the interpreter and its caller make over a value, each at a depth
+/// no native stack follows one frame per level.
 #[test]
-fn values_at_the_limit_survive_every_walk() {
-    on_small_stacks(|| {
+fn deep_values_survive_every_walk() {
+    on_node_stack(|| {
         use OpCode::*;
         let slots = vec![INITSSLOT.byte(), 1, INITSLOT.byte(), 1, 0];
-        let deepest = mixed_chain(LIMIT);
-        let one_short = mixed_chain(LIMIT - 1);
-        let array_chain = chain(NEWARRAY0, Wrap::Pack, LIMIT - 1);
-        let struct_chain = chain(NEWSTRUCT0, Wrap::PackStruct, LIMIT - 1);
+        let deepest = mixed_chain(DEEP_MIXED);
+        let one_short = mixed_chain(DEEP_MIXED - 1);
+        let array_chain = chain(NEWARRAY0, Wrap::Pack, DEEP);
+        let struct_chain = chain(NEWSTRUCT0, Wrap::PackStruct, DEEP);
 
-        // Success paths. Each leaves at least one value at the limit behind
-        // for the conversion to the result stack.
+        // Success paths. Each leaves at least one deep value behind for the
+        // conversion to the result stack.
         let halting: Vec<(&str, Vec<u8>)> = vec![
             ("returned", deepest.clone()),
             (
@@ -431,6 +530,15 @@ fn values_at_the_limit_survive_every_walk() {
             assert!(!format!("{copy:?}").is_empty(), "{label}");
         }
 
+        // A chain exactly at the bound halts; one more link is refused where
+        // it would be built.
+        let at_the_bound = chain(NEWARRAY0, Wrap::Pack, LIMIT);
+        assert_halts(run(&at_the_bound), "a chain at the bound");
+        assert_refused(
+            run(&[at_the_bound, Wrap::Pack.script()].concat()),
+            "one link past the bound",
+        );
+
         // The same state torn down by a fault.
         let state = [
             slots.clone(),
@@ -443,7 +551,6 @@ fn values_at_the_limit_survive_every_walk() {
             ("uncaught THROW of the value", op(THROW)),
             ("uncaught THROW of a message", ops(&[PUSH1, THROW])),
             ("division by zero", ops(&[PUSH1, PUSH0, DIV])),
-            ("one more level", Wrap::Pack.script()),
             ("stack underflow", ops(&[DROP, DROP, DROP, DROP])),
         ] {
             match run(&[state.clone(), tail].concat()) {
@@ -480,20 +587,63 @@ fn run_with_host(
     interpret_with_stack_and_syscalls(script, initial_stack, &mut Host { full_stack, reply })
 }
 
+/// Two values of this depth plus the copy a script makes fit inside the bound.
+const PAIR: usize = LIMIT / 2 - 4;
+
+/// Three values of this depth fit inside the bound.
+const TRIO: usize = (LIMIT - 8) / 3;
+
 #[test]
-fn values_at_the_limit_cross_the_host_boundary_both_ways() {
-    on_small_stacks(|| {
+fn deep_values_cross_the_host_boundary_both_ways() {
+    on_node_stack(|| {
+        // The deepest value that can come in through the initial stack: the
+        // bound itself, which costs the whole item budget on its own.
+        assert_halts(
+            run_with_host(
+                &op(OpCode::DROP),
+                vec![nested_arrays(LIMIT)],
+                false,
+                Reply::Unchanged,
+            ),
+            "initial stack at the bound",
+        );
+
         for (path, call, full_stack) in [
             ("syscall", syscall(), false),
             ("full-stack syscall", syscall(), true),
             ("CALLT", callt(), false),
         ] {
-            // Two values at the limit go out as arguments and come back.
-            let script = [mixed_chain(LIMIT), op(OpCode::DUP), call.clone()].concat();
+            let script = [ops(&[OpCode::PUSH0, OpCode::PUSH0]), call.clone()].concat();
+
+            // The host takes the arguments and leaves a value at the bound.
+            let result = assert_halts(
+                run_with_host(&script, Vec::new(), full_stack, Reply::Swapped(LIMIT)),
+                path,
+            );
+            assert_eq!(result.stack, vec![nested_arrays(LIMIT)], "{path}");
+
+            // A deep value handed back next to the arguments still on the
+            // stack, so the interpreter keeps both.
+            let result = assert_halts(
+                run_with_host(&script, Vec::new(), full_stack, Reply::Nested(PAIR)),
+                path,
+            );
+            assert_eq!(result.stack.len(), 3, "{path}");
+            assert_eq!(result.stack.last(), Some(&nested_arrays(PAIR)), "{path}");
+
+            // A deep value out as an argument and back, with the copy the
+            // script made of it: three deep values that all stay inside the
+            // bound, two of them sharing the value the host was lent.
+            let script = [
+                chain(OpCode::NEWARRAY0, Wrap::Pack, TRIO),
+                op(OpCode::DUP),
+                call.clone(),
+            ]
+            .concat();
             let result = assert_halts(
                 run_with_host(
                     &script,
-                    vec![nested_abi(LIMIT)],
+                    vec![nested_arrays(TRIO)],
                     full_stack,
                     Reply::Unchanged,
                 ),
@@ -501,32 +651,35 @@ fn values_at_the_limit_cross_the_host_boundary_both_ways() {
             );
             assert_eq!(result.stack.len(), 3, "{path}");
 
-            // The host adds one more.
+            // The host fails with a deep value it already took: uncaught it
+            // is a fault, and a TRY around it is a halt.
+            assert!(
+                run_with_host(
+                    &call,
+                    vec![nested_arrays(TRIO)],
+                    full_stack,
+                    Reply::FailsAfterNested(TRIO),
+                )
+                .is_err(),
+                "{path}"
+            );
             let result = assert_halts(
-                run_with_host(&script, Vec::new(), full_stack, Reply::Nested(LIMIT)),
+                run_with_host(
+                    &caught(&call),
+                    vec![nested_arrays(TRIO)],
+                    full_stack,
+                    Reply::FailsAfterNested(TRIO),
+                ),
                 path,
             );
-            assert_eq!(result.stack.last(), Some(&nested_abi(LIMIT)), "{path}");
-
-            // The host fails with the values still lent to it.
-            for script in [script.clone(), caught(&call)] {
-                let outcome = run_with_host(
-                    &script,
-                    vec![nested_abi(LIMIT), nested_abi(LIMIT)],
-                    full_stack,
-                    Reply::FailsAfterNested(LIMIT),
-                );
-                if let Ok(result) = outcome {
-                    assert_eq!(result.state, VmState::Halt, "{path}");
-                }
-            }
+            assert_eq!(result.state, VmState::Halt, "{path}");
         }
     });
 }
 
 #[test]
 fn values_past_the_limit_are_refused_at_every_entry() {
-    on_small_stacks(|| {
+    on_node_stack(|| {
         for levels in [LIMIT + 1, 2 * LIMIT, HOSTILE_DEPTH] {
             // The initial stack.
             let label = format!("initial stack, {levels} levels");

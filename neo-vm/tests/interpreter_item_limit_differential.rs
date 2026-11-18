@@ -1,6 +1,6 @@
-//! The lightweight interpreter must fault on the item count wherever it can
-//! tell that the canonical engine does, and must never fault on it where the
-//! canonical engine halts.
+//! The lightweight interpreter reaches the same state as the canonical engine
+//! on the item count and on compound nesting: it faults exactly where the
+//! canonical engine faults, and halts everywhere the canonical engine halts.
 
 use neo_vm::{
     ExecutionEngine, ExecutionEngineLimits, InterpreterSemantics, MAX_COMPOUND_NESTING_DEPTH,
@@ -8,7 +8,6 @@ use neo_vm::{
 };
 
 const ITEM_COUNT_FAULT: &str = "item count exceeds maximum stack size";
-const NESTING_FAULT: &str = "compound nesting depth exceeds maximum";
 /// `StackItemType` codes that CONVERT takes.
 const ARRAY_TYPE: u8 = 0x40;
 const STRUCT_TYPE: u8 = 0x41;
@@ -46,14 +45,18 @@ impl Fast {
             Self::Fault(_) => VmState::Fault,
         }
     }
-
-    fn is_limit_fault(&self) -> bool {
-        matches!(self, Self::Fault(message) if message == ITEM_COUNT_FAULT || message == NESTING_FAULT)
-    }
 }
 
 fn run_fast(script: &[u8]) -> Fast {
-    match interpret_with_stack_and_syscalls(script, Vec::new(), &mut PureHost) {
+    run_fast_with(script, Vec::new(), &mut PureHost)
+}
+
+fn run_fast_with(
+    script: &[u8],
+    stack: Vec<StackValue>,
+    host: &mut impl SyscallProvider,
+) -> Fast {
+    match interpret_with_stack_and_syscalls(script, stack, host) {
         Ok(result) if result.state == VmState::Halt => Fast::Halt,
         Ok(result) => Fast::Fault(result.fault_message.unwrap_or_default()),
         Err(error) => Fast::Fault(error),
@@ -75,17 +78,6 @@ fn assert_same_state(script: &[u8], label: &str) -> VmState {
     let canonical = run_canonical(script);
     assert_eq!(fast.state(), canonical, "{label}: lightweight {fast:?}");
     canonical
-}
-
-/// The lightweight interpreter raises neither of its limits on a script the
-/// canonical engine halts on.
-fn assert_not_stricter(script: &[u8], label: &str) {
-    let fast = run_fast(script);
-    let canonical = run_canonical(script);
-    assert!(
-        canonical != VmState::Halt || !fast.is_limit_fault(),
-        "{label}: canonical {canonical:?}, lightweight {fast:?}"
-    );
 }
 
 /// Both engines halt on `build(n)` up to `last_halt` and fault past it.
@@ -327,34 +319,32 @@ fn nesting_up_to_the_limit_matches_canonical() {
     });
 }
 
-/// The one place the lightweight interpreter is deliberately stricter: the
-/// canonical engine has no nesting limit, and nothing short of one keeps the
-/// recursive walks over a value inside the native stack.
+/// The depths at which the interpreter used to be stricter than the canonical
+/// engine. Both now reach the same state there: the interpreter's nesting limit
+/// is `MaxStackSize`, and the canonical count ends at the same depth.
 #[test]
-fn nesting_past_the_limit_faults_where_canonical_halts() {
+fn nesting_depths_the_interpreter_used_to_reject_now_match_canonical() {
     on_large_stack(|| {
-        for levels in [MAX_COMPOUND_NESTING_DEPTH + 1, 1000, 2048] {
-            let script = array_chain(levels);
-            assert_eq!(run_canonical(&script), VmState::Halt, "{levels} levels");
+        for levels in [65, 1000, MAX_COMPOUND_NESTING_DEPTH] {
             assert_eq!(
-                run_fast(&script),
-                Fast::Fault(NESTING_FAULT.to_string()),
+                assert_same_state(&array_chain(levels), &format!("{levels} levels")),
+                VmState::Halt,
                 "{levels} levels"
             );
         }
     });
 }
 
-/// Shapes whose canonical count the interpreter cannot reproduce. It stops
-/// counting on them instead of guessing.
-///
-/// The canonical engine counts each of them the way neo-vm v3.10.1 does (task
-/// 52), and the state it reaches is pinned here. Where that state is a fault,
-/// `assert_not_stricter` holds whatever the interpreter does: for both
-/// engines to fault there, the interpreter has to keep counting past APPEND
-/// and SETITEM, which it does not do yet.
+/// Shapes whose count changes as a value moves between the stack, the slots and
+/// a collection. The canonical state is pinned here, and the interpreter must
+/// reach it: it counts a stored compound, a removed child and a copied struct
+/// the way neo-vm v3.10.1 does.
 #[test]
-fn shapes_the_interpreter_does_not_count_never_fault_on_the_item_count() {
+fn shapes_shared_between_the_engines_reach_the_canonical_state() {
+    // A chain grown from the inside, short enough to stay under the item
+    // limit: one reference a link.
+    const CHAIN_LINKS: usize = 60;
+
     let append_array = [
         op(OpCode::NEWARRAY0),
         op(OpCode::DUP),
@@ -438,8 +428,7 @@ fn shapes_the_interpreter_does_not_count_never_fault_on_the_item_count() {
             .concat()
             .repeat(1500),
         ),
-        // A chain grown from the inside counts one reference a link, on a
-        // chain short enough to halt.
+        // A chain grown from the inside counts one reference a link.
         (
             "chain grown by APPEND",
             VmState::Halt,
@@ -448,7 +437,7 @@ fn shapes_the_interpreter_does_not_count_never_fault_on_the_item_count() {
                 op(OpCode::DUP),
                 [op(OpCode::NEWARRAY0), op(OpCode::TUCK), op(OpCode::APPEND)]
                     .concat()
-                    .repeat(MAX_COMPOUND_NESTING_DEPTH - 2),
+                    .repeat(CHAIN_LINKS),
             ]
             .concat(),
         ),
@@ -522,7 +511,7 @@ fn shapes_the_interpreter_does_not_count_never_fault_on_the_item_count() {
 
     for (label, canonical, script) in cases {
         assert_eq!(run_canonical(&script), canonical, "{label}");
-        assert_not_stricter(&script, label);
+        assert_eq!(run_fast(&script).state(), canonical, "{label}");
     }
 }
 
@@ -551,19 +540,22 @@ fn one_array_twice() -> Vec<StackValue> {
     vec![StackValue::Array(vec![StackValue::Integer(1); 1500]); 2]
 }
 
-/// ABI values carry no identity, so the interpreter cannot tell whether two
-/// arrays from the host are one object, which the canonical engine counts
-/// once. It stops counting instead of counting them twice.
+/// A host can hand the interpreter two arrays that are one object on its side.
+///
+/// ABI values carry no identity, so the interpreter counts the two as two
+/// compounds with 1500 children each. That is exactly what the canonical engine
+/// sees once `external_vm::external_to_canonical` builds one item per reference
+/// in the stack it is given, so both engines fault on the same item count.
 #[test]
-fn compounds_from_the_host_never_fault_on_the_item_count() {
-    let halts = |outcome: Result<neo_vm::ExecutionResult, String>, label: &str| {
-        let result = outcome.unwrap_or_else(|error| panic!("{label}: {error}"));
-        assert_eq!(result.state, VmState::Halt, "{label}");
-    };
+fn compounds_from_the_host_are_counted_once_per_reference() {
+    let single = run_fast_with(&pushes(10), vec![one_array_twice()[0].clone()], &mut PureHost);
+    assert_eq!(single, Fast::Halt, "one array of 1500");
 
-    halts(
-        interpret_with_stack_and_syscalls(&pushes(10), one_array_twice(), &mut PureHost),
-        "initial stack",
+    let initial = run_fast_with(&pushes(10), one_array_twice(), &mut PureHost);
+    assert_eq!(
+        initial,
+        Fast::Fault(ITEM_COUNT_FAULT.to_string()),
+        "two arrays of 1500 on the initial stack"
     );
 
     // `System.Runtime.Notify`, which declares two arguments.
@@ -576,9 +568,11 @@ fn compounds_from_the_host_never_fault_on_the_item_count() {
         ("CALLT", &callt, false),
     ] {
         let script = [call.clone(), pushes(10)].concat();
-        halts(
-            interpret_with_stack_and_syscalls(&script, Vec::new(), &mut SharingHost { full_stack }),
-            label,
+        let outcome = run_fast_with(&script, Vec::new(), &mut SharingHost { full_stack });
+        assert_eq!(
+            outcome,
+            Fast::Fault(ITEM_COUNT_FAULT.to_string()),
+            "{label}"
         );
     }
 }
@@ -613,9 +607,20 @@ struct Shape {
     kind: Kind,
     /// Whether one of its direct children is a struct.
     struct_child: bool,
-    /// Which object it is; copies of one collection share the number, and
-    /// every primitive is 0.
-    object: usize,
+    /// Every object reachable inside it, as a set of object numbers, this
+    /// value's own number included. Copies of one collection hold the same
+    /// bit, and every primitive holds none.
+    inside: u128,
+}
+
+/// The bit that stands for an object number. Primitives share number 0 and
+/// are not objects, so they have no bit.
+const fn object_bit(object: usize) -> u128 {
+    if object == 0 {
+        0
+    } else {
+        1u128 << (object as u32 % u128::BITS)
+    }
 }
 
 impl Shape {
@@ -625,7 +630,7 @@ impl Shape {
         Self {
             kind,
             struct_child: false,
-            object,
+            inside: object_bit(object),
         }
     }
 
@@ -633,7 +638,19 @@ impl Shape {
         Self {
             kind,
             struct_child: children.iter().any(|child| child.kind == Kind::Struct),
-            object,
+            inside: children.iter().fold(object_bit(object), |inside, child| {
+                inside | child.inside
+            }),
+        }
+    }
+
+    /// A copy of this value under a new object number, as CONVERT and VALUES
+    /// make one.
+    fn derived(self, kind: Kind, object: usize) -> Self {
+        Self {
+            kind,
+            inside: self.inside | object_bit(object),
+            ..self
         }
     }
 
@@ -641,13 +658,21 @@ impl Shape {
         kinds.contains(&self.kind)
     }
 
-    /// Whether `value` can be stored into this collection. A collection is
-    /// never stored into itself: the canonical engine used not to return
-    /// from that instruction. It does now (task 52), which
-    /// `reference_counter_v3_10_1.rs` covers; the generator is left as it
-    /// was.
+    /// Whether `value` can be stored into this collection.
+    ///
+    /// The canonical engine shares one object where the interpreter keeps a
+    /// copy of a value, and it propagates a mutation through every alias.
+    /// Storing a value that already holds this collection would close an
+    /// aliasing cycle the interpreter cannot represent, so the generator does
+    /// not emit it: everything it emits is an acyclic tree of aliases, which
+    /// is the shape both engines count alike.
+    ///
+    /// A collection stored into itself is excluded for the same reason: the
+    /// canonical engine used not to return from that instruction. It does now
+    /// (task 52), which `reference_counter_v3_10_1.rs` covers; the generator
+    /// is left as it was.
     fn can_store(self, kinds: &[Kind], value: Self) -> bool {
-        self.is(kinds) && self.object != value.object
+        self.is(kinds) && (self.inside & value.inside) == 0
     }
 }
 
@@ -656,15 +681,10 @@ const COLLECTIONS: &[Kind] = &[Kind::Array, Kind::Struct, Kind::Map];
 
 /// Emits a script of collection operations that mostly type-check.
 ///
-/// `mutating` adds the operations whose canonical count the interpreter does
-/// not reproduce: storing one compound into another, removing children, and
-/// the two places where exactly one of the engines copies a struct (PACK and
-/// PACKSTRUCT here, VALUES there).
-///
-/// The canonical engine counts a stored compound in full, as neo-vm v3.10.1
-/// does (task 52), and the interpreter stops counting. Scripts generated with
-/// `mutating` are only ever checked one way, never for the canonical state;
-/// the others never store a compound with APPEND or SETITEM.
+/// `mutating` adds the operations that move compounds between the stack, the
+/// slots and a collection: storing one compound into another, removing
+/// children, and the operations that copy a struct (PACK and PACKSTRUCT here,
+/// VALUES in the canonical engine).
 fn random_script(rng: &mut Rng, mutating: bool) -> Vec<u8> {
     let mut script = [init_static_slot(2), init_slot(3, 0)].concat();
     let mut stack: Vec<Shape> = Vec::new();
@@ -753,19 +773,11 @@ fn random_script(rng: &mut Rng, mutating: bool) -> Vec<u8> {
                     (ARRAY_TYPE, Kind::Array)
                 };
                 emit(&[op(OpCode::DUP), vec![OpCode::CONVERT.byte(), target]]);
-                stack.push(Shape {
-                    kind,
-                    object: fresh(),
-                    ..top
-                });
+                stack.push(top.derived(kind, fresh()));
             }
             (16, Some(top)) if top.is(COLLECTIONS) && (mutating || !top.struct_child) => {
                 emit(&[op(OpCode::DUP), op(OpCode::VALUES)]);
-                stack.push(Shape {
-                    kind: Kind::Array,
-                    object: fresh(),
-                    ..top
-                });
+                stack.push(top.derived(Kind::Array, fresh()));
             }
             (17, Some(top)) if below.is_some_and(|below| below.can_store(SEQUENCES, top)) => {
                 emit(&[op(OpCode::OVER), op(OpCode::SWAP), op(OpCode::APPEND)]);
@@ -808,22 +820,18 @@ fn random_script(rng: &mut Rng, mutating: bool) -> Vec<u8> {
 
 /// Compares the engines on generated scripts and returns how many of them
 /// the interpreter faulted on the item count.
-fn compare_random_scripts(seed: u64, mutating: bool, exact: bool) -> usize {
+fn compare_random_scripts(seed: u64, mutating: bool) -> usize {
     let mut rng = Rng(seed);
     let mut item_count_faults = 0;
     for case in 0..4000 {
         let script = random_script(&mut rng, mutating);
         let fast = run_fast(&script);
         let canonical = run_canonical(&script);
-        let label = format!("case {case}, script {script:02x?}");
-
-        assert!(
-            canonical != VmState::Halt || !fast.is_limit_fault(),
-            "canonical {canonical:?}, lightweight {fast:?}, {label}"
+        assert_eq!(
+            fast.state(),
+            canonical,
+            "lightweight {fast:?}, case {case}, script {script:02x?}"
         );
-        if exact {
-            assert_eq!(fast.state(), canonical, "lightweight {fast:?}, {label}");
-        }
         if fast == Fast::Fault(ITEM_COUNT_FAULT.to_string()) {
             item_count_faults += 1;
         }
@@ -833,7 +841,14 @@ fn compare_random_scripts(seed: u64, mutating: bool, exact: bool) -> usize {
 
 #[test]
 fn random_collection_scripts_reach_the_canonical_state() {
-    let item_count_faults = compare_random_scripts(0x9e37_79b9_7f4a_7c15, false, true);
+    let mut item_count_faults = 0;
+    for seed in [
+        0x9e37_79b9_7f4a_7c15u64,
+        0x0123_4567_89ab_cdef,
+        0xfedc_ba98_7654_3210,
+    ] {
+        item_count_faults += compare_random_scripts(seed, false);
+    }
     assert!(
         item_count_faults > 100,
         "only {item_count_faults} generated scripts reached the item limit"
@@ -841,6 +856,18 @@ fn random_collection_scripts_reach_the_canonical_state() {
 }
 
 #[test]
-fn random_mutating_scripts_never_fault_on_a_limit_where_canonical_halts() {
-    compare_random_scripts(0xd1b5_4a32_d192_ed03, true, false);
+fn random_mutating_scripts_reach_the_canonical_state() {
+    let mut item_count_faults = 0;
+    for seed in [
+        0xd1b5_4a32_d192_ed03u64,
+        0x2545_f491_4f6c_dd1d,
+        0xdead_beef_cafe_babe,
+    ] {
+        item_count_faults += compare_random_scripts(seed, true);
+    }
+    assert!(
+        item_count_faults > 100,
+        "only {item_count_faults} generated scripts reached the item limit"
+    );
 }
+
