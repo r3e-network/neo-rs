@@ -378,9 +378,9 @@ impl ExternalVmHost<'_> {
                 .ok_or_else(|| "No current execution context after host call".to_string())?;
             context.evaluation_stack().to_vec()
         };
-        // The conversion below recurses once per nesting level and the
-        // interpreter refuses such a value anyway, so fault with its message
-        // before walking a value that is too deep or contains itself.
+        // Both conversions walk the value on an explicit stack, so this check
+        // is here to end on a value that contains itself and to fault with the
+        // interpreter's own message for one nested past its bound.
         if items
             .iter()
             .any(|item| canonical_nesting_exceeds(item, neo_vm::MAX_COMPOUND_NESTING_DEPTH))
@@ -396,106 +396,175 @@ impl ExternalVmHost<'_> {
     }
 
     fn external_to_canonical(&self, value: VmStackValue) -> std::result::Result<StackItem, String> {
-        match value {
-            VmStackValue::Null => Ok(StackItem::Null),
-            VmStackValue::Boolean(value) => Ok(StackItem::from_bool(value)),
-            VmStackValue::Integer(value) => Ok(StackItem::from_i64(value)),
-            VmStackValue::BigInteger(bytes) => Ok(StackItem::from_int(
-                num_bigint::BigInt::from_signed_bytes_le(&bytes),
-            )),
-            VmStackValue::ByteString(bytes) => Ok(StackItem::from_byte_string(bytes)),
-            VmStackValue::Buffer(bytes) => Ok(StackItem::from_buffer(bytes)),
-            VmStackValue::Array(items) => Ok(StackItem::from_array(
-                items
-                    .into_iter()
-                    .map(|item| self.external_to_canonical(item))
-                    .collect::<std::result::Result<Vec<_>, _>>()?,
-            )),
-            VmStackValue::Struct(items) => Ok(StackItem::from_struct(
-                items
-                    .into_iter()
-                    .map(|item| self.external_to_canonical(item))
-                    .collect::<std::result::Result<Vec<_>, _>>()?,
-            )),
-            VmStackValue::Map(entries) => {
-                let mut map = neo_vm::VmOrderedDictionary::with_capacity(entries.len());
-                for (key, value) in entries {
-                    map.insert(
-                        self.external_to_canonical(key)?,
-                        self.external_to_canonical(value)?,
-                    );
-                }
-                Ok(StackItem::from_map(map))
-            }
-            VmStackValue::Pointer(position) => {
-                let position = usize::try_from(position)
-                    .map_err(|_| format!("negative external VM pointer: {position}"))?;
-                let script = self
-                    .engine
-                    .vm_engine
-                    .engine()
-                    .current_context()
-                    .ok_or_else(|| "No script for external VM pointer".to_string())?
-                    .script_arc();
-                Ok(StackItem::from_pointer(script, position))
-            }
-            VmStackValue::Interop(handle) | VmStackValue::Iterator(handle) => self
-                .runtime_items
-                .get(&handle)
-                .cloned()
-                .ok_or_else(|| format!("unknown external VM host handle: {handle}")),
+        // Children are built before the compound that holds them, on an
+        // explicit work list: the interpreter admits values nested to its
+        // limit, which no recursive conversion survives on a thread stack.
+        enum Step {
+            Enter(VmStackValue),
+            Array(usize),
+            Struct(usize),
+            Map(usize),
         }
+
+        let mut steps = vec![Step::Enter(value)];
+        let mut built: Vec<StackItem> = Vec::new();
+        while let Some(step) = steps.pop() {
+            match step {
+                Step::Enter(value) => match value {
+                    VmStackValue::Null => built.push(StackItem::Null),
+                    VmStackValue::Boolean(value) => built.push(StackItem::from_bool(value)),
+                    VmStackValue::Integer(value) => built.push(StackItem::from_i64(value)),
+                    VmStackValue::BigInteger(bytes) => built.push(StackItem::from_int(
+                        num_bigint::BigInt::from_signed_bytes_le(&bytes),
+                    )),
+                    VmStackValue::ByteString(bytes) => {
+                        built.push(StackItem::from_byte_string(bytes));
+                    }
+                    VmStackValue::Buffer(bytes) => built.push(StackItem::from_buffer(bytes)),
+                    VmStackValue::Array(items) => {
+                        steps.push(Step::Array(items.len()));
+                        steps.extend(items.into_iter().rev().map(Step::Enter));
+                    }
+                    VmStackValue::Struct(items) => {
+                        steps.push(Step::Struct(items.len()));
+                        steps.extend(items.into_iter().rev().map(Step::Enter));
+                    }
+                    VmStackValue::Map(entries) => {
+                        steps.push(Step::Map(entries.len()));
+                        let mut flat = Vec::with_capacity(entries.len().saturating_mul(2));
+                        for (key, value) in entries {
+                            flat.push(key);
+                            flat.push(value);
+                        }
+                        steps.extend(flat.into_iter().rev().map(Step::Enter));
+                    }
+                    VmStackValue::Pointer(position) => {
+                        let position = usize::try_from(position)
+                            .map_err(|_| format!("negative external VM pointer: {position}"))?;
+                        let script = self
+                            .engine
+                            .vm_engine
+                            .engine()
+                            .current_context()
+                            .ok_or_else(|| "No script for external VM pointer".to_string())?
+                            .script_arc();
+                        built.push(StackItem::from_pointer(script, position));
+                    }
+                    VmStackValue::Interop(handle) | VmStackValue::Iterator(handle) => built.push(
+                        self.runtime_items
+                            .get(&handle)
+                            .cloned()
+                            .ok_or_else(|| {
+                                format!("unknown external VM host handle: {handle}")
+                            })?,
+                    ),
+                },
+                Step::Array(len) => {
+                    let items = take_tail(&mut built, len);
+                    built.push(StackItem::from_array(items));
+                }
+                Step::Struct(len) => {
+                    let items = take_tail(&mut built, len);
+                    built.push(StackItem::from_struct(items));
+                }
+                Step::Map(len) => {
+                    let mut flat = take_tail(&mut built, len.saturating_mul(2));
+                    let mut map = neo_vm::VmOrderedDictionary::with_capacity(len);
+                    let mut rest = flat.drain(..);
+                    while let (Some(key), Some(value)) = (rest.next(), rest.next()) {
+                        map.insert(key, value);
+                    }
+                    built.push(StackItem::from_map(map));
+                }
+            }
+        }
+        built
+            .pop()
+            .ok_or_else(|| "external VM value converted to nothing".to_string())
     }
 
     fn canonical_to_external(
         &mut self,
         item: StackItem,
     ) -> std::result::Result<VmStackValue, String> {
-        match item {
-            StackItem::Null => Ok(VmStackValue::Null),
-            StackItem::Boolean(value) => Ok(VmStackValue::Boolean(value)),
-            StackItem::Integer(value) => Ok(match value.to_i64() {
-                Some(value) => VmStackValue::Integer(value),
-                None => VmStackValue::BigInteger(value.to_signed_bytes_le()),
-            }),
-            StackItem::ByteString(bytes) => Ok(VmStackValue::ByteString(bytes)),
-            StackItem::Buffer(buffer) => Ok(VmStackValue::Buffer(buffer.data())),
-            StackItem::Array(array) => Ok(VmStackValue::Array(
-                array
-                    .items()
-                    .into_iter()
-                    .map(|item| self.canonical_to_external(item))
-                    .collect::<std::result::Result<Vec<_>, _>>()?,
-            )),
-            StackItem::Struct(structure) => Ok(VmStackValue::Struct(
-                structure
-                    .items()
-                    .into_iter()
-                    .map(|item| self.canonical_to_external(item))
-                    .collect::<std::result::Result<Vec<_>, _>>()?,
-            )),
-            StackItem::Map(map) => {
-                let mut entries = Vec::with_capacity(map.len());
-                for (key, value) in map.iter() {
-                    entries.push((
-                        self.canonical_to_external(key)?,
-                        self.canonical_to_external(value)?,
-                    ));
+        // Same shape as `external_to_canonical`, in the other direction.
+        enum Step {
+            Enter(StackItem),
+            Array(usize),
+            Struct(usize),
+            Map(usize),
+        }
+
+        let mut steps = vec![Step::Enter(item)];
+        let mut built: Vec<VmStackValue> = Vec::new();
+        while let Some(step) = steps.pop() {
+            match step {
+                Step::Enter(item) => match item {
+                    StackItem::Null => built.push(VmStackValue::Null),
+                    StackItem::Boolean(value) => built.push(VmStackValue::Boolean(value)),
+                    StackItem::Integer(value) => built.push(match value.to_i64() {
+                        Some(value) => VmStackValue::Integer(value),
+                        None => VmStackValue::BigInteger(value.to_signed_bytes_le()),
+                    }),
+                    StackItem::ByteString(bytes) => built.push(VmStackValue::ByteString(bytes)),
+                    StackItem::Buffer(buffer) => built.push(VmStackValue::Buffer(buffer.data())),
+                    StackItem::Array(array) => {
+                        steps.push(Step::Array(array.len()));
+                        steps.extend(array.items().into_iter().rev().map(Step::Enter));
+                    }
+                    StackItem::Struct(structure) => {
+                        steps.push(Step::Struct(structure.len()));
+                        steps.extend(structure.items().into_iter().rev().map(Step::Enter));
+                    }
+                    StackItem::Map(map) => {
+                        steps.push(Step::Map(map.len()));
+                        let mut flat = Vec::with_capacity(map.len().saturating_mul(2));
+                        for (key, value) in map.iter() {
+                            flat.push(key);
+                            flat.push(value);
+                        }
+                        steps.extend(flat.into_iter().rev().map(Step::Enter));
+                    }
+                    StackItem::Pointer(pointer) => built.push(VmStackValue::Pointer(
+                        i64::try_from(pointer.position()).map_err(|_| {
+                            "canonical pointer does not fit external VM i64".to_string()
+                        })?,
+                    )),
+                    StackItem::InteropInterface(interface) => {
+                        let handle = Arc::as_ptr(&interface).cast::<()>() as usize as u64;
+                        self.runtime_items
+                            .insert(handle, StackItem::InteropInterface(interface));
+                        built.push(VmStackValue::Interop(handle));
+                    }
+                },
+                Step::Array(len) => {
+                    let items = take_tail(&mut built, len);
+                    built.push(VmStackValue::Array(items));
                 }
-                Ok(VmStackValue::Map(entries))
-            }
-            StackItem::Pointer(pointer) => Ok(VmStackValue::Pointer(
-                i64::try_from(pointer.position())
-                    .map_err(|_| "canonical pointer does not fit external VM i64".to_string())?,
-            )),
-            StackItem::InteropInterface(interface) => {
-                let handle = Arc::as_ptr(&interface).cast::<()>() as usize as u64;
-                self.runtime_items
-                    .insert(handle, StackItem::InteropInterface(interface));
-                Ok(VmStackValue::Interop(handle))
+                Step::Struct(len) => {
+                    let items = take_tail(&mut built, len);
+                    built.push(VmStackValue::Struct(items));
+                }
+                Step::Map(len) => {
+                    let mut flat = take_tail(&mut built, len.saturating_mul(2));
+                    let mut entries = Vec::with_capacity(len);
+                    let mut rest = flat.drain(..);
+                    while let (Some(key), Some(value)) = (rest.next(), rest.next()) {
+                        entries.push((key, value));
+                    }
+                    built.push(VmStackValue::Map(entries));
+                }
             }
         }
+        built
+            .pop()
+            .ok_or_else(|| "canonical value converted to nothing".to_string())
     }
+}
+
+/// Moves the last `len` values out, so a compound can take its children.
+fn take_tail<T>(built: &mut Vec<T>, len: usize) -> Vec<T> {
+    built.split_off(built.len() - len)
 }
 
 impl ApplicationEngine {
@@ -585,8 +654,8 @@ impl ApplicationEngine {
             return None;
         }
         // The interpreter refuses values nested deeper than its limit, and the
-        // conversion below recurses once per level without noticing a value
-        // that contains itself. Such a context remains on the canonical engine.
+        // bridge's own walk would never end on a value that contains itself.
+        // Such a context remains on the canonical engine.
         if context
             .evaluation_stack()
             .iter()
@@ -660,25 +729,33 @@ impl ApplicationEngine {
 }
 /// Whether `item` nests more than `limit` compounds deep. The walk stops
 /// after `limit + 1` levels, so it also ends on a value that contains itself.
+///
+/// Children are held on an explicit work list rather than the native stack:
+/// `limit` is the canonical engine's own nesting bound, which a legal value can
+/// reach, and one native frame per level would not fit on a thread stack.
 fn canonical_nesting_exceeds(item: &StackItem, limit: usize) -> bool {
-    if !matches!(
-        item,
-        StackItem::Array(_) | StackItem::Struct(_) | StackItem::Map(_)
-    ) {
-        return false;
+    let mut pending: Vec<(StackItem, usize)> = vec![(item.clone(), limit)];
+    while let Some((item, remaining)) = pending.pop() {
+        let Some(room) = remaining.checked_sub(1) else {
+            return matches!(
+                item,
+                StackItem::Array(_) | StackItem::Struct(_) | StackItem::Map(_)
+            );
+        };
+        match item {
+            StackItem::Array(array) => {
+                pending.extend(array.items().into_iter().map(|child| (child, room)));
+            }
+            StackItem::Struct(structure) => {
+                pending.extend(structure.items().into_iter().map(|child| (child, room)));
+            }
+            StackItem::Map(map) => {
+                pending.extend(map.iter().map(|(_, value)| (value, room)));
+            }
+            _ => {}
+        }
     }
-    let Some(room) = limit.checked_sub(1) else {
-        return true;
-    };
-    let children: Vec<StackItem> = match item {
-        StackItem::Array(array) => array.items(),
-        StackItem::Struct(structure) => structure.items(),
-        StackItem::Map(map) => map.iter().map(|(_, value)| value).collect(),
-        _ => return false,
-    };
-    children
-        .iter()
-        .any(|child| canonical_nesting_exceeds(child, room))
+    false
 }
 /// A contract called from the interpreter runs inside the caller's host call,
 /// so every interpreter execution in a call chain stays on the native stack
@@ -842,11 +919,12 @@ fn external_vm_fault_message(message: Option<String>, ip: Option<u32>) -> String
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        EXTERNAL_VM_DEPTH, ExternalVmDepthGuard, MAX_EXTERNAL_VM_DEPTH, canonical_nesting_exceeds,
-        external_result_stack_limit, external_vm_depth_exhausted,
-        script_uses_application_engine_host,
+    use super::*;
+    use crate::application_engine::{
+        EngineNativeServices, NativeRegistry, NativeStateReader, TEST_MODE_GAS, WitnessHashResolver,
     };
+    use neo_primitives::{TriggerType, UInt160};
+    use neo_protocol::ProtocolSettings;
     use neo_vm::{MAX_COMPOUND_NESTING_DEPTH, OpCode, StackItem, SyscallProvider};
 
     struct NoHost;
@@ -1010,5 +1088,201 @@ mod tests {
         assert_eq!(external_result_stack_limit(0, false), Some(0));
         assert_eq!(external_result_stack_limit(1, false), Some(1));
         assert_eq!(external_result_stack_limit(-1, false), None);
+    }
+
+    /// The nesting bound the interpreter and the canonical engine share.
+    const BOUND: usize = MAX_COMPOUND_NESTING_DEPTH;
+    /// The deepest mixed value whose item count still fits the bound.
+    const BOUND_MIXED: usize = BOUND / 4 * 3;
+
+    struct NoopStateReader;
+    impl NativeStateReader for NoopStateReader {
+        fn contract(
+            &self,
+            _snapshot: &DataCache,
+            _hash: &UInt160,
+        ) -> crate::error::CoreResult<Option<ContractState>> {
+            Ok(None)
+        }
+        fn current_index(&self, _snapshot: &DataCache) -> crate::error::CoreResult<u32> {
+            Ok(0)
+        }
+        fn is_blocked(&self, _snapshot: &DataCache, _hash: &UInt160) -> crate::error::CoreResult<bool> {
+            Ok(false)
+        }
+        fn whitelisted_fee(
+            &self,
+            _snapshot: &DataCache,
+            _hash: &UInt160,
+            _method: &str,
+            _param_count: u32,
+        ) -> crate::error::CoreResult<Option<i64>> {
+            Ok(None)
+        }
+        fn oracle_original_signers(
+            &self,
+            _snapshot: &DataCache,
+            _id: u64,
+        ) -> crate::error::CoreResult<Option<Vec<neo_protocol::signer::Signer>>> {
+            Ok(None)
+        }
+    }
+
+    struct NoopResolver;
+    impl WitnessHashResolver for NoopResolver {
+        fn resolve(
+            &self,
+            _verifiable: &dyn neo_primitives::Verifiable,
+            _snapshot: &DataCache,
+        ) -> Vec<UInt160> {
+            Vec::new()
+        }
+    }
+
+    /// An engine running `script`, built the way the node builds one.
+    fn contract_engine(script: Vec<u8>) -> ApplicationEngine {
+        let mut engine = ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            None,
+            EngineNativeServices {
+                registry: NativeRegistry::empty(),
+                state_reader: Arc::new(NoopStateReader),
+                witness_hash_resolver: Arc::new(NoopResolver),
+                policy_hash: UInt160::zero(),
+                default_exec_fee_factor: 30,
+                default_storage_price: 100_000,
+            },
+        )
+        .expect("application engine");
+        engine
+            .load_script(script, CallFlags::ALL, None)
+            .expect("load script");
+        engine
+    }
+
+    /// Runs `body` on a thread the size of the node's main thread. The ABI value
+    /// the bridge hands back derives one native frame set per nesting level, so
+    /// a value at the bound needs the room the node really gives it.
+    fn on_a_node_sized_thread(body: impl FnOnce() + Send + 'static) {
+        std::thread::Builder::new()
+            .stack_size(1024 * 1024)
+            .spawn(body)
+            .expect("spawn node-sized thread")
+            .join()
+            .expect("the bridge fits the node's main thread stack");
+    }
+
+    /// One ABI value around both bridge conversions: in through
+    /// `replace_canonical_stack`, out through `export_canonical_stack`.
+    fn round_trip(value: VmStackValue) -> (Vec<StackItem>, Vec<VmStackValue>) {
+        let script = vec![OpCode::RET as u8];
+        let mut engine = contract_engine(script.clone());
+        let execution = ExternalVmExecution {
+            script,
+            initial_stack: Vec::new(),
+            initial_ip: 0,
+            result_stack_limit: None,
+            max_instructions: u64::MAX,
+            instructions_executed: 0,
+        };
+        let mut host = ExternalVmHost::new(&mut engine, &execution);
+        host.replace_canonical_stack(std::slice::from_ref(&value))
+            .expect("the bridge takes the value in");
+        let canonical = host
+            .engine
+            .vm_engine
+            .engine()
+            .current_context()
+            .expect("context")
+            .evaluation_stack()
+            .to_vec();
+        assert_eq!(canonical.len(), 1, "the bridge keeps one entry");
+        let mut exported = Vec::new();
+        host.export_canonical_stack(&mut exported)
+            .expect("the bridge hands the value back");
+        (canonical, exported)
+    }
+
+    /// An array nested `levels` levels around an empty array: one item a level,
+    /// which is the shape that reaches the bound itself.
+    fn nested_arrays(levels: usize) -> StackItem {
+        let mut item = StackItem::from_array(Vec::<StackItem>::new());
+        for _ in 1..levels {
+            item = StackItem::from_array(vec![item]);
+        }
+        item
+    }
+
+    #[test]
+    fn bridge_round_trips_values_up_to_the_nesting_bound() {
+        on_a_node_sized_thread(|| {
+            for levels in [1, 2, 3, 64, 512, BOUND_MIXED] {
+                let canonical = nested(levels);
+                let external =
+                    VmStackValue::try_from(canonical.clone()).expect("initial stack value");
+                let (replaced, exported) = round_trip(external.clone());
+                assert_eq!(replaced, vec![canonical], "{levels} levels");
+                assert_eq!(exported, vec![external], "{levels} levels");
+            }
+            // The bound itself, in the shape that costs one item a level.
+            let canonical = nested_arrays(BOUND);
+            let external = VmStackValue::try_from(canonical.clone()).expect("initial stack value");
+            let (replaced, exported) = round_trip(external.clone());
+            assert_eq!(replaced, vec![canonical]);
+            assert_eq!(exported, vec![external]);
+        });
+    }
+
+    /// The nesting depth of an ABI value, walked on an explicit stack.
+    fn external_depth(value: &VmStackValue) -> usize {
+        let mut deepest = 0;
+        let mut pending = vec![(value, 1)];
+        while let Some((value, depth)) = pending.pop() {
+            deepest = deepest.max(depth);
+            match value {
+                VmStackValue::Array(items) | VmStackValue::Struct(items) => {
+                    pending.extend(items.iter().map(|child| (child, depth + 1)));
+                }
+                VmStackValue::Map(entries) => {
+                    pending.extend(entries.iter().map(|(_, child)| (child, depth + 1)));
+                }
+                _ => {}
+            }
+        }
+        deepest
+    }
+
+    /// Four executions are the most the depth guard allows in one call chain,
+    /// so four interpreter runs share this native stack; the innermost one
+    /// carries a value at the nesting bound through both conversions.
+    #[test]
+    fn four_bridge_layers_carry_a_value_at_the_bound() {
+        on_a_node_sized_thread(|| {
+            fn descend(remaining: usize) {
+                if remaining == 0 {
+                    let value = VmStackValue::try_from(nested_arrays(BOUND))
+                        .expect("initial stack value");
+                    let (replaced, exported) = round_trip(value.clone());
+                    assert_eq!(replaced.len(), 1);
+                    assert_eq!(external_depth(&exported[0]), BOUND);
+                    assert_eq!(exported, vec![value]);
+                    return;
+                }
+                let _layer = ExternalVmDepthGuard::enter();
+                assert_eq!(
+                    external_vm_depth_exhausted(),
+                    remaining == 1,
+                    "{remaining} layers left"
+                );
+                descend(remaining - 1);
+            }
+            descend(MAX_EXTERNAL_VM_DEPTH);
+            assert!(!external_vm_depth_exhausted());
+        });
     }
 }
