@@ -254,6 +254,18 @@ impl Array {
         Ok(())
     }
 
+    /// One-lock snapshot of the fields the `Debug` renderer prints, as
+    /// `(items, id, stack_references, is_read_only)`.
+    pub(crate) fn debug_snapshot(&self) -> (Vec<StackItem>, usize, usize, bool) {
+        let inner = self.inner.lock();
+        (
+            inner.items.clone(),
+            inner.id,
+            inner.stack_references,
+            inner.is_read_only,
+        )
+    }
+
     fn ensure_mutable(inner: &ArrayInner) -> VmResult<()> {
         if inner.is_read_only {
             Err(VmError::invalid_operation_msg(

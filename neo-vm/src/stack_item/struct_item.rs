@@ -229,47 +229,99 @@ impl Struct {
     }
 
     /// Clones the struct respecting execution limits (mirrors C# Struct.Clone).
+    ///
+    /// Nested structs are cloned, everything else is shared, and one unit of
+    /// the budget is spent per sub item, so the walk is bounded by
+    /// `max_stack_size` instead of the native stack.
     pub fn clone_with_limits(&self, limits: &crate::ExecutionEngineLimits) -> VmResult<Self> {
         let mut remaining = i64::from(limits.max_stack_size) - 1;
         let mut visited = HashSet::new();
         self.clone_with_remaining(&mut remaining, &mut visited)
     }
 
+    /// The traversal of [`clone_with_limits`](Self::clone_with_limits) on an
+    /// explicit work stack: a struct nested as deep as `MaxStackSize` is
+    /// copied without adding one native frame per level.
     fn clone_with_remaining(
         &self,
         remaining: &mut i64,
         visited: &mut HashSet<usize>,
     ) -> VmResult<Self> {
-        let id = self.id();
-        if !visited.insert(id) {
+        /// One struct that is being copied: the rest of its sub items and the
+        /// struct they are copied into.
+        struct Frame {
+            source_id: usize,
+            target: Struct,
+            items: std::vec::IntoIter<StackItem>,
+        }
+
+        let root_id = self.id();
+        if !visited.insert(root_id) {
             return Err(VmError::invalid_operation_msg(
                 "Beyond struct subitem clone limits!",
             ));
         }
 
         let clone = Self::new(Vec::new());
+        let mut frames = vec![Frame {
+            source_id: root_id,
+            target: clone.clone(),
+            items: self.items().into_iter(),
+        }];
 
-        for item in self.items() {
+        while !frames.is_empty() {
+            let last = frames.len() - 1;
+            let Some(item) = frames[last].items.next() else {
+                visited.remove(&frames[last].source_id);
+                frames.pop();
+                continue;
+            };
+
             *remaining -= 1;
             if *remaining < 0 {
-                visited.remove(&id);
                 return Err(VmError::invalid_operation_msg(
                     "Beyond struct subitem clone limits!",
                 ));
             }
 
-            let cloned_item = match item {
+            let nested = match item {
                 StackItem::Struct(inner) => {
-                    StackItem::Struct(inner.clone_with_remaining(remaining, visited)?)
+                    if !visited.insert(inner.id()) {
+                        return Err(VmError::invalid_operation_msg(
+                            "Beyond struct subitem clone limits!",
+                        ));
+                    }
+                    Some(inner)
                 }
-                _ => item.clone(),
+                shared => {
+                    frames[last].target.push(shared)?;
+                    None
+                }
             };
 
-            clone.push(cloned_item)?;
+            if let Some(inner) = nested {
+                let target = Self::new(Vec::new());
+                frames[last].target.push(StackItem::Struct(target.clone()))?;
+                frames.push(Frame {
+                    source_id: inner.id(),
+                    target,
+                    items: inner.items().into_iter(),
+                });
+            }
         }
 
-        visited.remove(&id);
         Ok(clone)
+    }
+
+    /// One-lock snapshot of the fields the `Debug` renderer prints.
+    pub(crate) fn debug_snapshot(&self) -> (Vec<StackItem>, usize, usize, bool) {
+        let inner = self.inner.lock();
+        (
+            inner.items.clone(),
+            inner.id,
+            inner.stack_references,
+            inner.is_read_only,
+        )
     }
 
     /// Gets the type of the stack item.

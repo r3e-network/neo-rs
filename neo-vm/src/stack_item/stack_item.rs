@@ -49,7 +49,7 @@ fn compound_identity(item: &StackItem) -> Option<CompoundIdentity> {
 }
 
 /// Represents a value in the Neo VM.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum StackItem {
     /// Represents a null value.
     Null,
@@ -80,6 +80,350 @@ pub enum StackItem {
 
     /// Represents an interop interface.
     InteropInterface(Arc<dyn InteropInterface>),
+}
+
+/// The budget and cycle bookkeeping of [`StackItem::equals_with_limits`].
+struct LimitBudget {
+    /// Remaining `MaxStackSize` units; one is spent per compared struct sub item.
+    remaining_stack: u64,
+    /// Remaining `MaxComparableSize` units.
+    remaining_comparable: i64,
+    /// Struct pairs (by id) that are currently being compared.
+    visited: std::collections::HashSet<(usize, usize)>,
+}
+
+/// Renders the item tree on an explicit work stack.
+///
+/// A derived formatter adds one native frame per nesting level, so an item
+/// nested as deep as `MaxStackSize` (a legal depth) overflowed a 1 MiB thread
+/// stack. The emitted text — including the wrapper shapes of the compound
+/// items (`Type { inner: Mutex { data: TypeInner { .. } } }`) and their ids —
+/// is the same as the previous derived output, so log and error-message text
+/// does not change.
+impl fmt::Debug for StackItem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        /// One print job; the tree is walked by popping these.
+        enum Task {
+            /// Print a stack item at the given indentation column.
+            Item(StackItem, usize),
+            /// Already-rendered text.
+            Text(String),
+            /// A numeric field value.
+            Num(usize),
+            /// A boolean field value.
+            Bool(bool),
+            /// Newline followed by `n` spaces.
+            Indent(usize),
+        }
+
+        fn text(value: &str) -> Task {
+            Task::Text(value.to_string())
+        }
+
+        /// `value` with every line but the first shifted right by `indent`.
+        ///
+        /// The leaves are formatted by their own implementations at base
+        /// indentation and then moved to their position in the tree.
+        fn shift_lines(value: &str, indent: usize) -> String {
+            if indent == 0 {
+                return value.to_string();
+            }
+            let pad = " ".repeat(indent);
+            let mut out = String::with_capacity(value.len() + pad.len() * 8);
+            for (index, line) in value.split('\n').enumerate() {
+                if index > 0 {
+                    out.push('\n');
+                    out.push_str(&pad);
+                }
+                out.push_str(line);
+            }
+            out
+        }
+
+        /// `Prefix(payload)` laid out the way the derived implementation lays
+        /// it out at `indent`.
+        fn leaf(prefix: &str, payload: &dyn fmt::Debug, pretty: bool, indent: usize) -> String {
+            if !pretty {
+                return format!("{prefix}({payload:?})");
+            }
+            let body = shift_lines(&format!("{payload:#?}"), indent + 4);
+            format!(
+                "{prefix}(\n{}{body},\n{})",
+                " ".repeat(indent + 4),
+                " ".repeat(indent)
+            )
+        }
+
+        /// The elements of a list, as `Vec`'s implementation prints them.
+        fn push_list(out: &mut Vec<Task>, items: Vec<StackItem>, indent: usize, pretty: bool) {
+            if items.is_empty() {
+                out.push(text("[]"));
+                return;
+            }
+            out.push(text("["));
+            if pretty {
+                for item in items {
+                    out.push(Task::Indent(indent + 4));
+                    out.push(Task::Item(item, indent + 4));
+                    out.push(text(","));
+                }
+                out.push(Task::Indent(indent));
+            } else {
+                for (index, item) in items.into_iter().enumerate() {
+                    if index > 0 {
+                        out.push(text(", "));
+                    }
+                    out.push(Task::Item(item, 0));
+                }
+            }
+            out.push(text("]"));
+        }
+
+        fn push_num_field(out: &mut Vec<Task>, name: &str, value: usize, indent: usize) {
+            out.push(Task::Indent(indent));
+            out.push(Task::Text(format!("{name}: ")));
+            out.push(Task::Num(value));
+            out.push(text(","));
+        }
+
+        /// One `Array`/`Struct` node, in print order. `id_first` selects the
+        /// field order of the corresponding wrapper (`Struct` prints `id`
+        /// before `stack_references`).
+        #[allow(clippy::too_many_arguments)]
+        fn list_node(
+            kind: &str,
+            kind_inner: &str,
+            items: Vec<StackItem>,
+            id: usize,
+            stack_references: usize,
+            is_read_only: bool,
+            id_first: bool,
+            indent: usize,
+            pretty: bool,
+        ) -> Vec<Task> {
+            let mut out = Vec::new();
+            if pretty {
+                out.push(Task::Text(format!("{kind}(")));
+                out.push(Task::Indent(indent + 4));
+                out.push(Task::Text(format!("{kind} {{")));
+                out.push(Task::Indent(indent + 8));
+                out.push(text("inner: Mutex {"));
+                out.push(Task::Indent(indent + 12));
+                out.push(Task::Text(format!("data: {kind_inner} {{")));
+                out.push(Task::Indent(indent + 16));
+                out.push(text("items: "));
+                push_list(&mut out, items, indent + 16, pretty);
+                out.push(text(","));
+                if id_first {
+                    push_num_field(&mut out, "id", id, indent + 16);
+                    push_num_field(&mut out, "stack_references", stack_references, indent + 16);
+                } else {
+                    push_num_field(&mut out, "stack_references", stack_references, indent + 16);
+                    push_num_field(&mut out, "id", id, indent + 16);
+                }
+                out.push(Task::Indent(indent + 16));
+                out.push(text("is_read_only: "));
+                out.push(Task::Bool(is_read_only));
+                out.push(text(","));
+                out.push(Task::Indent(indent + 12));
+                out.push(text("},"));
+                out.push(Task::Indent(indent + 8));
+                out.push(text("},"));
+                out.push(Task::Indent(indent + 4));
+                out.push(text("},"));
+                out.push(Task::Indent(indent));
+                out.push(text(")"));
+                return out;
+            }
+
+            out.push(Task::Text(format!(
+                "{kind}({kind} {{ inner: Mutex {{ data: {kind_inner} {{ items: "
+            )));
+            push_list(&mut out, items, 0, pretty);
+            if id_first {
+                out.push(text(", id: "));
+                out.push(Task::Num(id));
+                out.push(text(", stack_references: "));
+                out.push(Task::Num(stack_references));
+            } else {
+                out.push(text(", stack_references: "));
+                out.push(Task::Num(stack_references));
+                out.push(text(", id: "));
+                out.push(Task::Num(id));
+            }
+            out.push(text(", is_read_only: "));
+            out.push(Task::Bool(is_read_only));
+            out.push(text(" } } })"));
+            out
+        }
+
+        /// One `Map` node, in print order.
+        fn map_node(
+            entries: Vec<(StackItem, StackItem)>,
+            id: usize,
+            stack_references: usize,
+            is_read_only: bool,
+            indent: usize,
+            pretty: bool,
+        ) -> Vec<Task> {
+            let mut out = Vec::new();
+            if pretty {
+                out.push(text("Map("));
+                out.push(Task::Indent(indent + 4));
+                out.push(text("Map {"));
+                out.push(Task::Indent(indent + 8));
+                out.push(text("inner: Mutex {"));
+                out.push(Task::Indent(indent + 12));
+                out.push(text("data: MapInner {"));
+                out.push(Task::Indent(indent + 16));
+                out.push(text("items: "));
+                if entries.is_empty() {
+                    out.push(text("{}"));
+                } else {
+                    out.push(text("{"));
+                    for (key, value) in entries {
+                        out.push(Task::Indent(indent + 20));
+                        out.push(Task::Item(key, indent + 20));
+                        out.push(text(": "));
+                        out.push(Task::Item(value, indent + 20));
+                        out.push(text(","));
+                    }
+                    out.push(Task::Indent(indent + 16));
+                    out.push(text("}"));
+                }
+                out.push(text(","));
+                push_num_field(&mut out, "id", id, indent + 16);
+                push_num_field(&mut out, "stack_references", stack_references, indent + 16);
+                out.push(Task::Indent(indent + 16));
+                out.push(text("is_read_only: "));
+                out.push(Task::Bool(is_read_only));
+                out.push(text(","));
+                out.push(Task::Indent(indent + 12));
+                out.push(text("},"));
+                out.push(Task::Indent(indent + 8));
+                out.push(text("},"));
+                out.push(Task::Indent(indent + 4));
+                out.push(text("},"));
+                out.push(Task::Indent(indent));
+                out.push(text(")"));
+                return out;
+            }
+
+            out.push(text("Map(Map { inner: Mutex { data: MapInner { items: {"));
+            for (index, (key, value)) in entries.into_iter().enumerate() {
+                if index > 0 {
+                    out.push(text(", "));
+                }
+                out.push(Task::Item(key, 0));
+                out.push(text(": "));
+                out.push(Task::Item(value, 0));
+            }
+            out.push(text("}, id: "));
+            out.push(Task::Num(id));
+            out.push(text(", stack_references: "));
+            out.push(Task::Num(stack_references));
+            out.push(text(", is_read_only: "));
+            out.push(Task::Bool(is_read_only));
+            out.push(text(" } } })"));
+            out
+        }
+
+        let pretty = f.alternate();
+        let mut tasks = vec![Task::Item(self.clone(), 0)];
+        while let Some(task) = tasks.pop() {
+            match task {
+                Task::Text(value) => f.write_str(&value)?,
+                Task::Num(value) => write!(f, "{value}")?,
+                Task::Bool(value) => write!(f, "{value}")?,
+                Task::Indent(spaces) => {
+                    f.write_str("\n")?;
+                    for _ in 0..spaces {
+                        f.write_str(" ")?;
+                    }
+                }
+                Task::Item(item, indent) => {
+                    let tokens = match &item {
+                        Self::Array(array) => {
+                            let (items, id, stack_references, is_read_only) = array.debug_snapshot();
+                            Some(list_node(
+                                "Array",
+                                "ArrayInner",
+                                items,
+                                id,
+                                stack_references,
+                                is_read_only,
+                                false,
+                                indent,
+                                pretty,
+                            ))
+                        }
+                        Self::Struct(structure) => {
+                            let (items, id, stack_references, is_read_only) =
+                                structure.debug_snapshot();
+                            Some(list_node(
+                                "Struct",
+                                "StructInner",
+                                items,
+                                id,
+                                stack_references,
+                                is_read_only,
+                                true,
+                                indent,
+                                pretty,
+                            ))
+                        }
+                        Self::Map(map) => {
+                            let (entries, id, stack_references, is_read_only) = map.debug_snapshot();
+                            let entries = entries
+                                .iter()
+                                .map(|(key, value)| (key.clone(), value.clone()))
+                                .collect();
+                            Some(map_node(
+                                entries,
+                                id,
+                                stack_references,
+                                is_read_only,
+                                indent,
+                                pretty,
+                            ))
+                        }
+                        Self::Null => {
+                            f.write_str("Null")?;
+                            None
+                        }
+                        Self::Boolean(value) => {
+                            f.write_str(&leaf("Boolean", value, pretty, indent))?;
+                            None
+                        }
+                        Self::Integer(value) => {
+                            f.write_str(&leaf("Integer", value, pretty, indent))?;
+                            None
+                        }
+                        Self::ByteString(value) => {
+                            f.write_str(&leaf("ByteString", value, pretty, indent))?;
+                            None
+                        }
+                        Self::Buffer(value) => {
+                            f.write_str(&leaf("Buffer", value, pretty, indent))?;
+                            None
+                        }
+                        Self::Pointer(value) => {
+                            f.write_str(&leaf("Pointer", value, pretty, indent))?;
+                            None
+                        }
+                        Self::InteropInterface(value) => {
+                            f.write_str(&leaf("InteropInterface", value, pretty, indent))?;
+                            None
+                        }
+                    };
+                    if let Some(tokens) = tokens {
+                        tasks.extend(tokens.into_iter().rev());
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 impl StackItem {
@@ -428,9 +772,162 @@ impl StackItem {
     }
 
     /// Creates a deep clone of the stack item.
+    ///
+    /// The tree is copied on an explicit frame stack and memoised by compound
+    /// identity, so a chain nested as deep as `MaxStackSize` is copied without
+    /// adding one native frame per level. Cycles are preserved: a compound
+    /// reached a second time resolves to the copy that is still being filled.
     #[must_use]
     pub fn deep_clone(&self) -> Self {
-        self.deep_clone_with_refs(&mut std::collections::HashMap::new())
+        /// The compound that a frame is filling.
+        enum Sink {
+            /// An `Array` under construction.
+            Array(ArrayItem),
+            /// A `Struct` under construction.
+            Struct(StructItem),
+            /// A `Map` under construction; its sub items arrive as key, value,
+            /// key, value, ... because the recursive form copied them in that
+            /// order.
+            Map {
+                map: MapItem,
+                pending_key: Option<StackItem>,
+            },
+        }
+
+        /// One compound being copied and the source items it still needs.
+        struct Frame {
+            sink: Sink,
+            target: StackItem,
+            source: std::vec::IntoIter<StackItem>,
+        }
+
+        /// Copies an item that has no children of its own.
+        fn clone_leaf(item: &StackItem) -> Option<StackItem> {
+            match item {
+                StackItem::Null => Some(StackItem::Null),
+                StackItem::Boolean(value) => Some(StackItem::Boolean(*value)),
+                StackItem::Integer(value) => Some(StackItem::Integer(value.clone())),
+                StackItem::ByteString(value) => Some(StackItem::ByteString(value.clone())),
+                StackItem::Buffer(buffer) => Some(StackItem::Buffer(BufferItem::new(buffer.data()))),
+                StackItem::Pointer(pointer) => Some(StackItem::Pointer(pointer.clone())),
+                StackItem::InteropInterface(interface) => {
+                    Some(StackItem::InteropInterface(interface.clone()))
+                }
+                _ => None,
+            }
+        }
+
+        /// Opens the copy of a compound and records it in `refs` before any
+        /// child is visited.
+        fn open(
+            item: &StackItem,
+            refs: &mut std::collections::HashMap<CompoundIdentity, StackItem>,
+        ) -> Frame {
+            match item {
+                StackItem::Array(array) => {
+                    let copy = ArrayItem::new(Vec::new());
+                    let target = StackItem::Array(copy.clone());
+                    refs.insert(compound_identity(item).expect("compound item"), target.clone());
+                    Frame {
+                        sink: Sink::Array(copy),
+                        target,
+                        source: array.items().into_iter(),
+                    }
+                }
+                StackItem::Struct(structure) => {
+                    let copy = StructItem::new(Vec::new());
+                    let target = StackItem::Struct(copy.clone());
+                    refs.insert(compound_identity(item).expect("compound item"), target.clone());
+                    Frame {
+                        sink: Sink::Struct(copy),
+                        target,
+                        source: structure.items().into_iter(),
+                    }
+                }
+                StackItem::Map(map) => {
+                    let copy = MapItem::new(VmOrderedDictionary::new());
+                    let target = StackItem::Map(copy.clone());
+                    refs.insert(compound_identity(item).expect("compound item"), target.clone());
+                    let mut source = Vec::with_capacity(map.len() * 2);
+                    for (key, value) in map.iter() {
+                        source.push(key);
+                        source.push(value);
+                    }
+                    Frame {
+                        sink: Sink::Map {
+                            map: copy,
+                            pending_key: None,
+                        },
+                        target,
+                        source: source.into_iter(),
+                    }
+                }
+                _ => unreachable!("only compound items are opened"),
+            }
+        }
+
+        /// Stores a finished child copy in the compound being filled. The
+        /// recursive form ignored the `push`/`set` results here as well.
+        fn accept(sink: &mut Sink, cloned: StackItem) {
+            match sink {
+                Sink::Array(array) => {
+                    let _ = array.push(cloned);
+                }
+                Sink::Struct(structure) => {
+                    let _ = structure.push(cloned);
+                }
+                Sink::Map { map, pending_key } => match pending_key.take() {
+                    None => *pending_key = Some(cloned),
+                    Some(key) => {
+                        let _ = map.set(key, cloned);
+                    }
+                },
+            }
+        }
+
+        let mut refs: std::collections::HashMap<CompoundIdentity, StackItem> =
+            std::collections::HashMap::new();
+        let mut frames: Vec<Frame> = Vec::new();
+        let mut pending = Some(self.clone());
+        let mut cloned = StackItem::Null;
+
+        loop {
+            if let Some(item) = pending.take() {
+                if let Some(known) = compound_identity(&item).and_then(|identity| refs.get(&identity))
+                {
+                    cloned = known.clone();
+                } else if let Some(leaf) = clone_leaf(&item) {
+                    cloned = leaf;
+                } else {
+                    let mut frame = open(&item, &mut refs);
+                    let first = frame.source.next();
+                    frames.push(frame);
+                    match first {
+                        Some(child) => pending = Some(child),
+                        None => {
+                            let frame = frames.pop().expect("open frame");
+                            cloned = frame.target;
+                        }
+                    }
+                    continue;
+                }
+            }
+
+            if frames.is_empty() {
+                return cloned;
+            }
+            let value = std::mem::replace(&mut cloned, StackItem::Null);
+            accept(&mut frames.last_mut().expect("open frame").sink, value);
+
+            let child = frames.last_mut().and_then(|frame| frame.source.next());
+            match child {
+                Some(child) => pending = Some(child),
+                None => {
+                    let frame = frames.pop().expect("open frame");
+                    cloned = frame.target;
+                }
+            }
+        }
     }
 
     /// Creates a deep copy respecting execution limits (mirrors C# behaviour).
@@ -452,73 +949,6 @@ impl StackItem {
         }
     }
 
-    /// Creates a deep clone of the stack item with reference tracking to handle cycles.
-    fn deep_clone_with_refs(
-        &self,
-        refs: &mut std::collections::HashMap<CompoundIdentity, Self>,
-    ) -> Self {
-        if let Some(self_id) = compound_identity(self)
-            && let Some(cloned) = refs.get(&self_id)
-        {
-            return cloned.clone();
-        }
-
-        // Clone the item based on its type
-        let result = match self {
-            Self::Null => Self::Null,
-            Self::Boolean(b) => Self::Boolean(*b),
-            Self::Integer(i) => Self::Integer(i.clone()),
-            Self::ByteString(b) => Self::ByteString(b.clone()),
-            Self::Buffer(b) => Self::Buffer(BufferItem::new(b.data())),
-            Self::Pointer(p) => Self::Pointer(p.clone()),
-            Self::InteropInterface(i) => Self::InteropInterface(i.clone()),
-
-            Self::Array(a) => {
-                let cloned_array = ArrayItem::new(Vec::new());
-                let cloned_item = Self::Array(cloned_array.clone());
-                if let Some(self_id) = compound_identity(self) {
-                    refs.insert(self_id, cloned_item.clone());
-                }
-                for item in a.items() {
-                    let child = item.deep_clone_with_refs(refs);
-                    let _ = cloned_array.push(child);
-                }
-                cloned_item
-            }
-            Self::Struct(s) => {
-                let cloned_struct = StructItem::new(Vec::new());
-                let cloned_item = Self::Struct(cloned_struct.clone());
-                if let Some(self_id) = compound_identity(self) {
-                    refs.insert(self_id, cloned_item.clone());
-                }
-                for item in s.items() {
-                    let child = item.deep_clone_with_refs(refs);
-                    let _ = cloned_struct.push(child);
-                }
-                cloned_item
-            }
-            Self::Map(m) => {
-                let cloned_map = MapItem::new(VmOrderedDictionary::new());
-                let cloned_item = Self::Map(cloned_map.clone());
-                if let Some(self_id) = compound_identity(self) {
-                    refs.insert(self_id, cloned_item.clone());
-                }
-                for (k, v) in m.items().iter() {
-                    let key = k.deep_clone_with_refs(refs);
-                    let value = v.deep_clone_with_refs(refs);
-                    let _ = cloned_map.set(key, value);
-                }
-                cloned_item
-            }
-        };
-
-        if let Some(self_id) = compound_identity(self) {
-            refs.insert(self_id, result.clone());
-        }
-
-        result
-    }
-
     /// Clears all references to other stack items.
     pub fn clear_references(&mut self) {
         match self {
@@ -536,52 +966,101 @@ impl StackItem {
     }
 
     /// Computes a deterministic hash code compatible with the C# implementation.
+    ///
+    /// Child hashes are collected on a value stack and combined in source order
+    /// when their parent finishes, so a deeply nested item does not consume
+    /// native stack. A compound that (through a cycle) contains itself
+    /// contributes `0` instead of being folded forever.
     #[must_use]
     pub fn hash_code(&self) -> i32 {
-        match self {
-            Self::Null => 0,
-            Self::Boolean(b) => i32::from(*b),
-            Self::Integer(i) => hash_bytes(&i.to_signed_bytes_le()), // VmInteger has this method
-            Self::ByteString(b) => hash_bytes(b),
-            Self::Buffer(b) => b.with_data(hash_bytes),
-            Self::Array(array) => {
-                let mut hash = combine_hash(17, array.len() as i32);
-                for item in array {
-                    hash = combine_hash(hash, item.hash_code());
+        enum Task {
+            /// Hash this item.
+            Item(StackItem),
+            /// Fold the `children` hashes that sit on the top of `hashes`.
+            Finish {
+                identity: CompoundIdentity,
+                children: usize,
+            },
+        }
+
+        fn leaf_hash(item: &StackItem) -> Option<i32> {
+            match item {
+                StackItem::Null => Some(0),
+                StackItem::Boolean(value) => Some(i32::from(*value)),
+                StackItem::Integer(value) => Some(hash_bytes(&value.to_signed_bytes_le())),
+                StackItem::ByteString(bytes) => Some(hash_bytes(bytes)),
+                StackItem::Buffer(buffer) => Some(buffer.with_data(hash_bytes)),
+                StackItem::Pointer(pointer) => {
+                    let script_ptr = pointer.script() as *const Script as usize as u64;
+                    let mut hash = 17;
+                    hash = combine_hash(hash, (script_ptr & 0xFFFF_FFFF) as i32);
+                    hash = combine_hash(hash, ((script_ptr >> 32) & 0xFFFF_FFFF) as i32);
+                    hash = combine_hash(hash, pointer.position() as i32);
+                    Some(hash)
                 }
-                hash
-            }
-            Self::Struct(structure) => {
-                let mut hash = combine_hash(17, structure.len() as i32);
-                for item in structure.items() {
-                    hash = combine_hash(hash, item.hash_code());
+                StackItem::InteropInterface(interface) => {
+                    let addr = Arc::as_ptr(interface).cast::<()>() as usize as u64;
+                    let mut hash = 17;
+                    hash = combine_hash(hash, (addr & 0xFFFF_FFFF) as i32);
+                    hash = combine_hash(hash, ((addr >> 32) & 0xFFFF_FFFF) as i32);
+                    Some(hash)
                 }
-                hash
-            }
-            Self::Map(map) => {
-                let mut hash = combine_hash(17, map.len() as i32);
-                for (key, value) in map.items().iter() {
-                    hash = combine_hash(hash, key.hash_code());
-                    hash = combine_hash(hash, value.hash_code());
-                }
-                hash
-            }
-            Self::Pointer(pointer) => {
-                let script_ptr = pointer.script() as *const Script as usize as u64;
-                let mut hash = 17;
-                hash = combine_hash(hash, (script_ptr & 0xFFFF_FFFF) as i32);
-                hash = combine_hash(hash, ((script_ptr >> 32) & 0xFFFF_FFFF) as i32);
-                hash = combine_hash(hash, pointer.position() as i32);
-                hash
-            }
-            Self::InteropInterface(interface) => {
-                let addr = Arc::as_ptr(interface).cast::<()>() as usize as u64;
-                let mut hash = 17;
-                hash = combine_hash(hash, (addr & 0xFFFF_FFFF) as i32);
-                hash = combine_hash(hash, ((addr >> 32) & 0xFFFF_FFFF) as i32);
-                hash
+                _ => None,
             }
         }
+
+        let mut tasks = vec![Task::Item(self.clone())];
+        let mut hashes: Vec<i32> = Vec::new();
+        let mut visited = std::collections::HashSet::new();
+
+        while let Some(task) = tasks.pop() {
+            match task {
+                Task::Item(item) => {
+                    if let Some(hash) = leaf_hash(&item) {
+                        hashes.push(hash);
+                        continue;
+                    }
+                    let Some(identity) = compound_identity(&item) else {
+                        continue;
+                    };
+                    if !visited.insert(identity) {
+                        hashes.push(0);
+                        continue;
+                    }
+                    let children: Vec<StackItem> = match &item {
+                        StackItem::Array(array) => array.items(),
+                        StackItem::Struct(structure) => structure.items(),
+                        StackItem::Map(map) => {
+                            let entries = map.items();
+                            entries
+                                .iter()
+                                .flat_map(|(key, value)| [key.clone(), value.clone()])
+                                .collect()
+                        }
+                        _ => Vec::new(),
+                    };
+                    tasks.push(Task::Finish {
+                        identity,
+                        children: children.len(),
+                    });
+                    for child in children.into_iter().rev() {
+                        tasks.push(Task::Item(child));
+                    }
+                }
+                Task::Finish { identity, children } => {
+                    visited.remove(&identity);
+                    let start = hashes.len() - children;
+                    let mut hash = combine_hash(17, children as i32);
+                    for child in &hashes[start..] {
+                        hash = combine_hash(hash, *child);
+                    }
+                    hashes.truncate(start);
+                    hashes.push(hash);
+                }
+            }
+        }
+
+        hashes.pop().unwrap_or(0)
     }
 
     /// Converts the stack item to the specified type.
@@ -666,260 +1145,568 @@ impl StackItem {
         other: &Self,
         limits: &ExecutionEngineLimits,
     ) -> VmResult<bool> {
-        let mut remaining_stack = u64::from(limits.max_stack_size);
-        let mut remaining_comparable = i64::from(limits.max_comparable_size);
-        let mut visited = std::collections::HashSet::new();
-        self.equals_with_budget(
-            other,
-            limits,
-            &mut remaining_stack,
-            &mut remaining_comparable,
-            &mut visited,
-        )
+        let mut budget = LimitBudget {
+            remaining_stack: u64::from(limits.max_stack_size),
+            remaining_comparable: i64::from(limits.max_comparable_size),
+            visited: std::collections::HashSet::new(),
+        };
+        self.equals_with_budget(other, &mut budget)
     }
 
-    fn equals_with_budget(
-        &self,
-        other: &Self,
-        limits: &ExecutionEngineLimits,
-        remaining_stack: &mut u64,
-        remaining_comparable: &mut i64,
-        visited: &mut std::collections::HashSet<(usize, usize)>,
-    ) -> VmResult<bool> {
-        match (self, other) {
-            (Self::Null, Self::Null) => Ok(true),
-            (Self::Null, _) | (_, Self::Null) => Ok(false),
-            (Self::Buffer(a), Self::Buffer(b)) => Ok(a.id() == b.id()),
-            (Self::Array(a), Self::Array(b)) => Ok(a.id() == b.id()),
-            (Self::Map(a), Self::Map(b)) => Ok(a.id() == b.id()),
-            (Self::Struct(a), Self::Struct(b)) => Self::struct_equals_with_budget(
-                a,
-                b,
-                limits,
-                remaining_stack,
-                remaining_comparable,
-                visited,
-            ),
-            (Self::Boolean(a), Self::Boolean(b)) => Ok(a == b),
-            (Self::Integer(a), Self::Integer(b)) => Ok(a.to_bigint() == b.to_bigint()),
-            (Self::ByteString(a), Self::ByteString(b)) => {
-                if *remaining_comparable == 0 {
-                    return Err(VmError::invalid_operation_msg(
-                        "The operand exceeds the maximum comparable size",
-                    ));
+    /// Walks the pair on an explicit step stack.
+    ///
+    /// C# `Struct.Equals(StackItem other, ExecutionLimits limits)` keeps a
+    /// `Queue<StackItem>`, spends one `MaxStackSize` unit per compared sub item
+    /// and one `MaxComparableSize` unit per non-`ByteString` sub item. The walk
+    /// below spends the budget at exactly the same points, so a struct nested
+    /// as deep as `MaxStackSize` compares without adding one native frame per
+    /// level.
+    fn equals_with_budget(&self, other: &Self, budget: &mut LimitBudget) -> VmResult<bool> {
+        /// One unit of work, consumed in LIFO order.
+        enum Step {
+            /// Compare the two items.
+            Compare(StackItem, StackItem),
+            /// Spend the per-sub-item budget of a pair of struct elements.
+            Account(StackItem, StackItem),
+            /// Leave a struct pair that was being compared.
+            Leave(usize, usize),
+        }
+
+        /// Outcome of one comparison, before the stack is updated.
+        enum Outcome {
+            Equal,
+            NotEqual,
+            Error(VmError),
+            Struct {
+                left: Box<StructItem>,
+                right: Box<StructItem>,
+                key: (usize, usize),
+            },
+        }
+
+        /// Releases every struct pair that is still being compared.
+        fn unwind(steps: &mut [Step], budget: &mut LimitBudget) {
+            for step in steps.iter() {
+                if let Step::Leave(a_id, b_id) = step {
+                    budget.visited.remove(&(*a_id, *b_id));
                 }
-                if a.len() as i64 > *remaining_comparable {
-                    return Err(VmError::invalid_operation_msg(format!(
-                        "The operand exceeds the maximum comparable size, {}/{}",
-                        a.len(),
-                        remaining_comparable
-                    )));
-                }
-                if b.len() as i64 > *remaining_comparable {
-                    return Err(VmError::invalid_operation_msg(format!(
-                        "The operand exceeds the maximum comparable size, {}/{}",
-                        b.len(),
-                        remaining_comparable
-                    )));
-                }
-                let compared = a.len().max(b.len()).max(1) as i64;
-                *remaining_comparable -= compared;
-                Ok(a == b)
             }
-            (Self::Pointer(a), Self::Pointer(b)) => Ok(a == b),
-            (Self::InteropInterface(a), Self::InteropInterface(b)) => Ok(Arc::ptr_eq(a, b)),
-            _ => Ok(false),
-        }
-    }
-
-    fn struct_equals_with_budget(
-        a: &StructItem,
-        b: &StructItem,
-        limits: &ExecutionEngineLimits,
-        remaining_stack: &mut u64,
-        remaining_comparable: &mut i64,
-        visited: &mut std::collections::HashSet<(usize, usize)>,
-    ) -> VmResult<bool> {
-        if a.id() == b.id() {
-            return Ok(true);
-        }
-        let key = (a.id(), b.id());
-        if !visited.insert(key) {
-            // C# uses ReferenceEquals(a, b) to short-circuit cycles inside
-            // structs; if we re-enter the same pair treat it as equal.
-            return Ok(true);
         }
 
-        let result = (|| {
-            let a_items = a.items();
-            let b_items = b.items();
-            if a_items.len() != b_items.len() {
-                return Ok(false);
-            }
-            for (left, right) in a_items.iter().zip(b_items.iter()) {
-                if *remaining_stack == 0 {
-                    return Err(VmError::invalid_operation_msg(
-                        "Too many struct items to compare in struct comparison",
-                    ));
+        /// The element-wise comparison of a struct pair for every item kind
+        /// that is not descended into.
+        fn inline_compare(left: &StackItem, right: &StackItem) -> bool {
+            match (left, right) {
+                (StackItem::Buffer(a), StackItem::Buffer(b)) => a.id() == b.id(),
+                (StackItem::Array(a), StackItem::Array(b)) => a.id() == b.id(),
+                (StackItem::Map(a), StackItem::Map(b)) => a.id() == b.id(),
+                (StackItem::Boolean(a), StackItem::Boolean(b)) => a == b,
+                (StackItem::Integer(a), StackItem::Integer(b)) => a.to_bigint() == b.to_bigint(),
+                (StackItem::Pointer(a), StackItem::Pointer(b)) => a == b,
+                (StackItem::InteropInterface(a), StackItem::InteropInterface(b)) => {
+                    Arc::ptr_eq(a, b)
                 }
-                *remaining_stack -= 1;
+                _ => false,
+            }
+        }
 
-                match left {
-                    Self::ByteString(_) => {
-                        if !left.equals_with_budget(
-                            right,
-                            limits,
-                            remaining_stack,
-                            remaining_comparable,
-                            visited,
-                        )? {
-                            return Ok(false);
-                        }
+        fn compare_byte_strings(a: &[u8], b: &[u8], remaining: &mut i64) -> VmResult<bool> {
+            if *remaining == 0 {
+                return Err(VmError::invalid_operation_msg(
+                    "The operand exceeds the maximum comparable size",
+                ));
+            }
+            if a.len() as i64 > *remaining {
+                return Err(VmError::invalid_operation_msg(format!(
+                    "The operand exceeds the maximum comparable size, {}/{}",
+                    a.len(),
+                    *remaining
+                )));
+            }
+            if b.len() as i64 > *remaining {
+                return Err(VmError::invalid_operation_msg(format!(
+                    "The operand exceeds the maximum comparable size, {}/{}",
+                    b.len(),
+                    *remaining
+                )));
+            }
+            let compared = a.len().max(b.len()).max(1) as i64;
+            *remaining -= compared;
+            Ok(a == b)
+        }
+
+        let mut steps = vec![Step::Compare(self.clone(), other.clone())];
+        while let Some(step) = steps.pop() {
+            match step {
+                Step::Leave(a_id, b_id) => {
+                    budget.visited.remove(&(a_id, b_id));
+                }
+                Step::Account(left, right) => {
+                    if budget.remaining_stack == 0 {
+                        unwind(&mut steps, budget);
+                        return Err(VmError::invalid_operation_msg(
+                            "Too many struct items to compare in struct comparison",
+                        ));
                     }
-                    Self::Struct(_) => {
-                        if *remaining_comparable == 0 {
-                            return Err(VmError::invalid_operation_msg(
-                                "The operand exceeds the maximum comparable size in struct comparison",
-                            ));
-                        }
-                        *remaining_comparable -= 1;
-                        if !left.equals_with_budget(
-                            right,
-                            limits,
-                            remaining_stack,
-                            remaining_comparable,
-                            visited,
-                        )? {
-                            return Ok(false);
-                        }
+                    budget.remaining_stack -= 1;
+                    if matches!(left, StackItem::ByteString(_)) {
+                        // Byte strings spend the comparable budget inside
+                        // their own comparison.
+                        steps.push(Step::Compare(left, right));
+                        continue;
                     }
-                    _ => {
-                        if *remaining_comparable == 0 {
-                            return Err(VmError::invalid_operation_msg(
-                                "The operand exceeds the maximum comparable size in struct comparison",
-                            ));
-                        }
-                        *remaining_comparable -= 1;
-                        let equal = match (left, right) {
-                            (Self::Buffer(x), Self::Buffer(y)) => x.id() == y.id(),
-                            (Self::Array(x), Self::Array(y)) => x.id() == y.id(),
-                            (Self::Map(x), Self::Map(y)) => x.id() == y.id(),
-                            (Self::Boolean(x), Self::Boolean(y)) => x == y,
-                            (Self::Integer(x), Self::Integer(y)) => x.to_bigint() == y.to_bigint(),
-                            (Self::Pointer(x), Self::Pointer(y)) => x == y,
-                            (Self::InteropInterface(x), Self::InteropInterface(y)) => {
-                                Arc::ptr_eq(x, y)
+                    if budget.remaining_comparable == 0 {
+                        unwind(&mut steps, budget);
+                        return Err(VmError::invalid_operation_msg(
+                            "The operand exceeds the maximum comparable size in struct comparison",
+                        ));
+                    }
+                    budget.remaining_comparable -= 1;
+                    if matches!(left, StackItem::Struct(_)) {
+                        steps.push(Step::Compare(left, right));
+                    } else if !inline_compare(&left, &right) {
+                        unwind(&mut steps, budget);
+                        return Ok(false);
+                    }
+                }
+                Step::Compare(left, right) => {
+                    let outcome = match (&left, &right) {
+                        (Self::Null, Self::Null) => Outcome::Equal,
+                        (Self::Null, _) | (_, Self::Null) => Outcome::NotEqual,
+                        (Self::Buffer(a), Self::Buffer(b)) => {
+                            if a.id() == b.id() {
+                                Outcome::Equal
+                            } else {
+                                Outcome::NotEqual
                             }
-                            _ => false,
-                        };
-                        if !equal {
+                        }
+                        (Self::Array(a), Self::Array(b)) => {
+                            if a.id() == b.id() {
+                                Outcome::Equal
+                            } else {
+                                Outcome::NotEqual
+                            }
+                        }
+                        (Self::Map(a), Self::Map(b)) => {
+                            if a.id() == b.id() {
+                                Outcome::Equal
+                            } else {
+                                Outcome::NotEqual
+                            }
+                        }
+                        (Self::Struct(a), Self::Struct(b)) => {
+                            if a.id() == b.id() {
+                                Outcome::Equal
+                            } else {
+                                let key = (a.id(), b.id());
+                                if budget.visited.insert(key) {
+                                    Outcome::Struct {
+                                        left: Box::new(a.clone()),
+                                        right: Box::new(b.clone()),
+                                        key,
+                                    }
+                                } else {
+                                    // C# uses ReferenceEquals(a, b) to
+                                    // short-circuit cycles inside structs; if
+                                    // the same pair is re-entered treat it as
+                                    // equal.
+                                    Outcome::Equal
+                                }
+                            }
+                        }
+                        (Self::Boolean(a), Self::Boolean(b)) => {
+                            if a == b {
+                                Outcome::Equal
+                            } else {
+                                Outcome::NotEqual
+                            }
+                        }
+                        (Self::Integer(a), Self::Integer(b)) => {
+                            if a.to_bigint() == b.to_bigint() {
+                                Outcome::Equal
+                            } else {
+                                Outcome::NotEqual
+                            }
+                        }
+                        (Self::ByteString(a), Self::ByteString(b)) => {
+                            match compare_byte_strings(a, b, &mut budget.remaining_comparable) {
+                                Ok(true) => Outcome::Equal,
+                                Ok(false) => Outcome::NotEqual,
+                                Err(error) => Outcome::Error(error),
+                            }
+                        }
+                        (Self::Pointer(a), Self::Pointer(b)) => {
+                            if a == b {
+                                Outcome::Equal
+                            } else {
+                                Outcome::NotEqual
+                            }
+                        }
+                        (Self::InteropInterface(a), Self::InteropInterface(b)) => {
+                            if Arc::ptr_eq(a, b) {
+                                Outcome::Equal
+                            } else {
+                                Outcome::NotEqual
+                            }
+                        }
+                        _ => Outcome::NotEqual,
+                    };
+
+                    match outcome {
+                        Outcome::Equal => {}
+                        Outcome::NotEqual => {
+                            unwind(&mut steps, budget);
                             return Ok(false);
+                        }
+                        Outcome::Error(error) => {
+                            unwind(&mut steps, budget);
+                            return Err(error);
+                        }
+                        Outcome::Struct { left, right, key } => {
+                            // The pair stays visited until all elements are
+                            // compared; `unwind` releases it on an early
+                            // return, exactly like the recursive form.
+                            steps.push(Step::Leave(key.0, key.1));
+                            let left_items = left.items();
+                            let right_items = right.items();
+                            if left_items.len() != right_items.len() {
+                                unwind(&mut steps, budget);
+                                return Ok(false);
+                            }
+                            let mut children = Vec::with_capacity(left_items.len());
+                            for (left, right) in left_items.into_iter().zip(right_items) {
+                                // `Account` spends the budget and then requests the
+                                // comparison of the pair itself.
+                                children.push(Step::Account(left, right));
+                            }
+                            steps.extend(children.into_iter().rev());
                         }
                     }
                 }
             }
-            Ok(true)
-        })();
-
-        visited.remove(&key);
-        result
+        }
+        Ok(true)
     }
 
     /// Checks if two stack items are equal with reference tracking to handle cycles.
+    ///
+    /// The pair is compared on an explicit frame stack, so an array or struct
+    /// nested as deep as `MaxStackSize` compares without adding one native
+    /// frame per level. The verdict — and the moments at which a pair leaves
+    /// the visited set — is the same as the previous recursive form.
     fn equals_with_refs(
         &self,
         other: &Self,
         visited: &mut std::collections::HashSet<(CompoundIdentity, CompoundIdentity)>,
     ) -> VmResult<bool> {
-        let mut visited_key = None;
-        if let (Some(self_id), Some(other_id)) = (compound_identity(self), compound_identity(other))
-        {
-            if visited.contains(&(self_id, other_id)) || visited.contains(&(other_id, self_id)) {
-                return Ok(true);
-            }
-
-            visited.insert((self_id, other_id));
-            visited_key = Some((self_id, other_id));
+        /// A compound pair whose elements are being compared.
+        enum Frame {
+            /// An `Array` or `Struct`, compared element by element.
+            Sequence {
+                left: Vec<StackItem>,
+                right: Vec<StackItem>,
+                /// Index of the next element to compare.
+                index: usize,
+                key: Option<(CompoundIdentity, CompoundIdentity)>,
+            },
+            /// A `Map`, compared entry by entry: for every left entry, search
+            /// the right entries for one whose key and value are both equal.
+            Map {
+                left: Vec<(StackItem, StackItem)>,
+                right: Vec<(StackItem, StackItem)>,
+                left_index: usize,
+                right_index: usize,
+                stage: Stage,
+                key: Option<(CompoundIdentity, CompoundIdentity)>,
+            },
         }
 
-        // C# Neo VM PrimitiveType.Equals is TYPE-STRICT: only items of the SAME
-        // concrete primitive type (Integer, ByteString, Boolean) compare equal,
-        // and only by value within that type. Cross-type comparison (e.g.
-        // `Integer(1) == ByteString([0x01])`) returns FALSE in C#, even when
-        // the byte representations match. Verified via mainnet RPC invokescript
-        // against C# v3.9.1.
-        let result = match (self, other) {
-            (Self::Null, Self::Null) => Ok(true),
-            // Buffer uses reference equality (compound type in C# Neo VM).
-            // Buffer == Buffer → same reference only; Buffer == anything_else → false.
-            (Self::Buffer(a), Self::Buffer(b)) => Ok(a.id() == b.id()),
-            (Self::Buffer(_), _) | (_, Self::Buffer(_)) => Ok(false),
-            // Same-type primitive comparisons (TYPE-STRICT, matches C# PrimitiveType.Equals).
-            (Self::Boolean(a), Self::Boolean(b)) => Ok(a == b),
-            (Self::Integer(a), Self::Integer(b)) => Ok(a.to_bigint() == b.to_bigint()),
-            (Self::ByteString(a), Self::ByteString(b)) => Ok(a == b),
-            // Cross-type primitive comparison: always FALSE (no byte-wise coercion).
-            (a, b)
-                if matches!(a, Self::Boolean(_) | Self::Integer(_) | Self::ByteString(_))
-                    && matches!(b, Self::Boolean(_) | Self::Integer(_) | Self::ByteString(_)) =>
-            {
-                Ok(false)
-            }
-            (Self::Pointer(a), Self::Pointer(b)) => Ok(a == b),
-            (Self::InteropInterface(a), Self::InteropInterface(b)) => Ok(Arc::ptr_eq(a, b)),
-            (Self::Array(a), Self::Array(b)) => {
-                if a.len() != b.len() {
-                    return Ok(false);
-                }
-
-                for (ai, bi) in a.iter().zip(b.iter()) {
-                    if !ai.equals_with_refs(&bi, visited)? {
-                        return Ok(false);
-                    }
-                }
-
-                Ok(true)
-            }
-            (Self::Struct(a), Self::Struct(b)) => {
-                if a.len() != b.len() {
-                    return Ok(false);
-                }
-
-                for (ai, bi) in a.iter().zip(b.iter()) {
-                    if !ai.equals_with_refs(&bi, visited)? {
-                        return Ok(false);
-                    }
-                }
-
-                Ok(true)
-            }
-            (Self::Map(a), Self::Map(b)) => {
-                if a.len() != b.len() {
-                    return Ok(false);
-                }
-
-                let b_items = b.items();
-                for (ak, av) in a.items().iter() {
-                    let found = b_items.iter().any(|(bk, bv)| {
-                        ak.equals_with_refs(bk, visited).unwrap_or(false)
-                            && av.equals_with_refs(bv, visited).unwrap_or(false)
-                    });
-
-                    if !found {
-                        return Ok(false);
-                    }
-                }
-
-                Ok(true)
-            }
-            _ => Ok(false),
-        };
-
-        if let Some((self_id, other_id)) = visited_key {
-            visited.remove(&(self_id, other_id));
+        #[derive(Clone, Copy)]
+        enum Stage {
+            Key,
+            Value,
         }
 
-        result
+        /// What the comparison of one pair produced.
+        enum Outcome {
+            /// Decided without descending. `release` is false where the
+            /// recursive form returned early, which skipped removing the pair
+            /// from the visited set.
+            Decided {
+                value: bool,
+                release: bool,
+                key: Option<(CompoundIdentity, CompoundIdentity)>,
+            },
+            /// Descend into `frame`, starting with the given pair.
+            Descend {
+                frame: Box<Frame>,
+                first: (StackItem, StackItem),
+            },
+        }
+
+        /// What an open frame needs next.
+        enum Advance {
+            /// Compare the given pair.
+            Request(StackItem, StackItem),
+            /// The frame is done; `release` tells whether its pair leaves the
+            /// visited set.
+            Done { release: bool },
+        }
+
+        fn frame_key(frame: &Frame) -> Option<(CompoundIdentity, CompoundIdentity)> {
+            match frame {
+                Frame::Sequence { key, .. } | Frame::Map { key, .. } => *key,
+            }
+        }
+
+        /// Compares one pair. Growth of the visited set is undone by the
+        /// caller, at the point the recursive form did it.
+        fn compare_pair(
+            left: &StackItem,
+            right: &StackItem,
+            visited: &mut std::collections::HashSet<(CompoundIdentity, CompoundIdentity)>,
+        ) -> Outcome {
+            let key = match (compound_identity(left), compound_identity(right)) {
+                (Some(left_id), Some(right_id)) => {
+                    if visited.contains(&(left_id, right_id))
+                        || visited.contains(&(right_id, left_id))
+                    {
+                        return Outcome::Decided {
+                            value: true,
+                            release: false,
+                            key: None,
+                        };
+                    }
+                    let key = (left_id, right_id);
+                    visited.insert(key);
+                    Some(key)
+                }
+                _ => None,
+            };
+
+            // C# Neo VM PrimitiveType.Equals is TYPE-STRICT: only items of the
+            // SAME concrete primitive type (Integer, ByteString, Boolean)
+            // compare equal, and only by value within that type. Cross-type
+            // comparison (e.g. `Integer(1) == ByteString([0x01])`) returns
+            // FALSE in C#, even when the byte representations match.
+            let decided = |value: bool| Outcome::Decided {
+                value,
+                release: true,
+                key,
+            };
+            match (left, right) {
+                (StackItem::Null, StackItem::Null) => decided(true),
+                // Buffer uses reference equality (compound type in C# Neo VM).
+                (StackItem::Buffer(a), StackItem::Buffer(b)) => decided(a.id() == b.id()),
+                (StackItem::Buffer(_), _) | (_, StackItem::Buffer(_)) => decided(false),
+                (StackItem::Boolean(a), StackItem::Boolean(b)) => decided(a == b),
+                (StackItem::Integer(a), StackItem::Integer(b)) => {
+                    decided(a.to_bigint() == b.to_bigint())
+                }
+                (StackItem::ByteString(a), StackItem::ByteString(b)) => decided(a == b),
+                (a, b)
+                    if matches!(
+                        a,
+                        StackItem::Boolean(_) | StackItem::Integer(_) | StackItem::ByteString(_)
+                    ) && matches!(
+                        b,
+                        StackItem::Boolean(_) | StackItem::Integer(_) | StackItem::ByteString(_)
+                    ) =>
+                {
+                    decided(false)
+                }
+                (StackItem::Pointer(a), StackItem::Pointer(b)) => decided(a == b),
+                (StackItem::InteropInterface(a), StackItem::InteropInterface(b)) => {
+                    decided(Arc::ptr_eq(a, b))
+                }
+                (StackItem::Array(a), StackItem::Array(b)) => {
+                    if a.len() != b.len() {
+                        return Outcome::Decided {
+                            value: false,
+                            release: false,
+                            key,
+                        };
+                    }
+                    let left_items = a.items();
+                    let right_items = b.items();
+                    let Some(first) = left_items
+                        .first()
+                        .map(|item| (item.clone(), right_items[0].clone()))
+                    else {
+                        return decided(true);
+                    };
+                    Outcome::Descend {
+                        frame: Box::new(Frame::Sequence {
+                            left: left_items,
+                            right: right_items,
+                            index: 1,
+                            key,
+                        }),
+                        first,
+                    }
+                }
+                (StackItem::Struct(a), StackItem::Struct(b)) => {
+                    if a.len() != b.len() {
+                        return Outcome::Decided {
+                            value: false,
+                            release: false,
+                            key,
+                        };
+                    }
+                    let left_items = a.items();
+                    let right_items = b.items();
+                    let Some(first) = left_items
+                        .first()
+                        .map(|item| (item.clone(), right_items[0].clone()))
+                    else {
+                        return decided(true);
+                    };
+                    Outcome::Descend {
+                        frame: Box::new(Frame::Sequence {
+                            left: left_items,
+                            right: right_items,
+                            index: 1,
+                            key,
+                        }),
+                        first,
+                    }
+                }
+                (StackItem::Map(a), StackItem::Map(b)) => {
+                    if a.len() != b.len() {
+                        return Outcome::Decided {
+                            value: false,
+                            release: false,
+                            key,
+                        };
+                    }
+                    let left_entries: Vec<_> = a
+                        .items()
+                        .iter()
+                        .map(|(key, value)| (key.clone(), value.clone()))
+                        .collect();
+                    let right_entries: Vec<_> = b
+                        .items()
+                        .iter()
+                        .map(|(key, value)| (key.clone(), value.clone()))
+                        .collect();
+                    let Some(first) = left_entries
+                        .first()
+                        .map(|(left_key, _)| (left_key.clone(), right_entries[0].0.clone()))
+                    else {
+                        return decided(true);
+                    };
+                    Outcome::Descend {
+                        frame: Box::new(Frame::Map {
+                            left: left_entries,
+                            right: right_entries,
+                            left_index: 0,
+                            right_index: 0,
+                            stage: Stage::Key,
+                            key,
+                        }),
+                        first,
+                    }
+                }
+                _ => decided(false),
+            }
+        }
+
+        /// Consumes the verdict of a child comparison and says what the frame
+        /// needs next. A swallowed error becomes `false`, matching the
+        /// `unwrap_or(false)` of the recursive map search.
+        fn advance(frame: &mut Frame, result: &mut VmResult<bool>) -> Advance {
+            match frame {
+                Frame::Sequence { left, right, index, .. } => {
+                    if !matches!(result, Ok(true)) {
+                        return Advance::Done { release: false };
+                    }
+                    if *index >= left.len() {
+                        return Advance::Done { release: true };
+                    }
+                    let pair = (left[*index].clone(), right[*index].clone());
+                    *index += 1;
+                    Advance::Request(pair.0, pair.1)
+                }
+                Frame::Map {
+                    left,
+                    right,
+                    left_index,
+                    right_index,
+                    stage,
+                    ..
+                } => {
+                    if matches!(result, Ok(true)) {
+                        match stage {
+                            Stage::Key => {
+                                *stage = Stage::Value;
+                                let left_value = left[*left_index].1.clone();
+                                let right_value = right[*right_index].1.clone();
+                                return Advance::Request(left_value, right_value);
+                            }
+                            Stage::Value => {
+                                // This left entry found a match.
+                                *left_index += 1;
+                                if *left_index >= left.len() {
+                                    return Advance::Done { release: true };
+                                }
+                                *right_index = 0;
+                            }
+                        }
+                    } else {
+                        // The candidate failed, or its comparison errored and
+                        // the error was swallowed: try the next candidate.
+                        *result = Ok(false);
+                        *right_index += 1;
+                        if *right_index >= right.len() {
+                            return Advance::Done { release: false };
+                        }
+                    }
+                    *stage = Stage::Key;
+                    let left_key = left[*left_index].0.clone();
+                    let right_key = right[*right_index].0.clone();
+                    Advance::Request(left_key, right_key)
+                }
+            }
+        }
+
+        let mut frames: Vec<Frame> = Vec::new();
+        let mut pending = Some((self.clone(), other.clone()));
+        let mut result: VmResult<bool> = Ok(true);
+
+        loop {
+            if let Some((left, right)) = pending.take() {
+                match compare_pair(&left, &right, visited) {
+                    Outcome::Decided {
+                        value,
+                        release,
+                        key,
+                    } => {
+                        if release && let Some(key) = key {
+                            visited.remove(&key);
+                        }
+                        result = Ok(value);
+                    }
+                    Outcome::Descend { frame, first } => {
+                        frames.push(*frame);
+                        pending = Some(first);
+                        continue;
+                    }
+                }
+            }
+
+            let Some(frame) = frames.last_mut() else {
+                return result;
+            };
+            match advance(frame, &mut result) {
+                Advance::Request(left, right) => pending = Some((left, right)),
+                Advance::Done { release } => {
+                    let frame = frames.pop().expect("open frame");
+                    if release && let Some(key) = frame_key(&frame) {
+                        visited.remove(&key);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -932,94 +1719,311 @@ impl PartialEq for StackItem {
 
 impl Eq for StackItem {}
 
-impl TryFrom<crate::StackValue> for StackItem {
+impl TryFrom<StackValue> for StackItem {
     type Error = VmError;
 
-    fn try_from(value: crate::StackValue) -> VmResult<Self> {
-        match value {
-            crate::StackValue::Integer(value) => Ok(Self::from_i64(value)),
-            crate::StackValue::BigInteger(bytes) => {
-                Ok(Self::from_int(BigInt::from_signed_bytes_le(&bytes)))
+    fn try_from(value: StackValue) -> VmResult<Self> {
+        /// A compound whose elements are being converted.
+        enum Frame {
+            /// An `Array` or `Struct` under construction; `structure` picks
+            /// which one.
+            List {
+                structure: bool,
+                source: std::vec::IntoIter<StackValue>,
+                items: Vec<StackItem>,
+            },
+            /// A `Map` under construction; elements arrive as key, value, ...
+            Map {
+                source: std::vec::IntoIter<StackValue>,
+                entries: VmOrderedDictionary<StackItem, StackItem>,
+                pending_key: Option<StackItem>,
+            },
+        }
+
+        /// Converts an item that has no children of its own.
+        fn convert_leaf(value: &StackValue) -> VmResult<Option<StackItem>> {
+            match value {
+                StackValue::Integer(value) => Ok(Some(StackItem::from_i64(*value))),
+                StackValue::BigInteger(bytes) => Ok(Some(StackItem::from_int(BigInt::from_signed_bytes_le(
+                    bytes,
+                )))),
+                StackValue::ByteString(bytes) => Ok(Some(StackItem::from_byte_string(bytes.clone()))),
+                StackValue::Buffer(bytes) => Ok(Some(StackItem::from_buffer(bytes.clone()))),
+                StackValue::Boolean(value) => Ok(Some(StackItem::from_bool(*value))),
+                StackValue::Null => Ok(Some(StackItem::Null)),
+                StackValue::Pointer(_)
+                | StackValue::Interop(_)
+                | StackValue::Iterator(_) => Err(VmError::invalid_operation_msg(format!(
+                    "Cannot convert {value:?} into neo-vm StackItem without host runtime identity"
+                ))),
+                _ => Ok(None),
             }
-            crate::StackValue::ByteString(bytes) => Ok(Self::from_byte_string(bytes)),
-            crate::StackValue::Buffer(bytes) => Ok(Self::from_buffer(bytes)),
-            crate::StackValue::Boolean(value) => Ok(Self::from_bool(value)),
-            crate::StackValue::Array(items) => {
-                let items = items
-                    .into_iter()
-                    .map(Self::try_from)
-                    .collect::<VmResult<Vec<_>>>()?;
-                Ok(Self::from_array(items))
-            }
-            crate::StackValue::Struct(items) => {
-                let items = items
-                    .into_iter()
-                    .map(Self::try_from)
-                    .collect::<VmResult<Vec<_>>>()?;
-                Ok(Self::from_struct(items))
-            }
-            crate::StackValue::Map(entries) => {
-                let mut map = VmOrderedDictionary::with_capacity(entries.len());
-                for (key, value) in entries {
-                    map.insert(Self::try_from(key)?, Self::try_from(value)?);
+        }
+
+        /// Opens the frame of a compound value.
+        fn open(value: StackValue) -> Frame {
+            match value {
+                StackValue::Array(items) => Frame::List {
+                    structure: false,
+                    items: Vec::with_capacity(items.len()),
+                    source: items.into_iter(),
+                },
+                StackValue::Struct(items) => Frame::List {
+                    structure: true,
+                    items: Vec::with_capacity(items.len()),
+                    source: items.into_iter(),
+                },
+                StackValue::Map(entries) => {
+                    let capacity = entries.len();
+                    let mut source = Vec::with_capacity(capacity * 2);
+                    for (key, value) in entries {
+                        source.push(key);
+                        source.push(value);
+                    }
+                    Frame::Map {
+                        source: source.into_iter(),
+                        entries: VmOrderedDictionary::with_capacity(capacity),
+                        pending_key: None,
+                    }
                 }
-                Ok(Self::from_map(map))
+                _ => unreachable!("only compound values are opened"),
             }
-            crate::StackValue::Null => Ok(Self::Null),
-            crate::StackValue::Pointer(_)
-            | crate::StackValue::Interop(_)
-            | crate::StackValue::Iterator(_) => Err(VmError::invalid_operation_msg(format!(
-                "Cannot convert {value:?} into neo-vm StackItem without host runtime identity"
-            ))),
+        }
+
+        fn next_child(frame: &mut Frame) -> Option<StackValue> {
+            match frame {
+                Frame::List { source, .. } | Frame::Map { source, .. } => source.next(),
+            }
+        }
+
+        fn accept(frame: &mut Frame, item: StackItem) {
+            match frame {
+                Frame::List { items, .. } => items.push(item),
+                Frame::Map {
+                    entries,
+                    pending_key,
+                    ..
+                } => match pending_key.take() {
+                    None => *pending_key = Some(item),
+                    Some(key) => {
+                        let _ = entries.insert(key, item);
+                    }
+                },
+            }
+        }
+
+        fn close(frame: Frame) -> StackItem {
+            match frame {
+                Frame::List {
+                    structure,
+                    items,
+                    ..
+                } => {
+                    if structure {
+                        StackItem::from_struct(items)
+                    } else {
+                        StackItem::from_array(items)
+                    }
+                }
+                Frame::Map { entries, .. } => StackItem::from_map(entries),
+            }
+        }
+
+        let mut frames: Vec<Frame> = Vec::new();
+        let mut pending = Some(value);
+        let mut converted = StackItem::Null;
+
+        loop {
+            if let Some(value) = pending.take() {
+                if let Some(item) = convert_leaf(&value)? {
+                    converted = item;
+                } else {
+                    let mut frame = open(value);
+                    let first = next_child(&mut frame);
+                    frames.push(frame);
+                    match first {
+                        Some(child) => pending = Some(child),
+                        None => {
+                            let frame = frames.pop().expect("open frame");
+                            converted = close(frame);
+                        }
+                    }
+                    continue;
+                }
+            }
+
+            if frames.is_empty() {
+                return Ok(converted);
+            }
+            let item = std::mem::replace(&mut converted, StackItem::Null);
+            accept(frames.last_mut().expect("open frame"), item);
+
+            let child = frames.last_mut().and_then(next_child);
+            match child {
+                Some(child) => pending = Some(child),
+                None => {
+                    let frame = frames.pop().expect("open frame");
+                    converted = close(frame);
+                }
+            }
         }
     }
 }
 
-impl TryFrom<StackItem> for crate::StackValue {
+impl TryFrom<StackItem> for StackValue {
     type Error = VmError;
 
     fn try_from(value: StackItem) -> VmResult<Self> {
-        match value {
-            StackItem::Null => Ok(Self::Null),
-            StackItem::Boolean(value) => Ok(Self::Boolean(value)),
-            StackItem::Integer(value) => match value.to_i64() {
-                Some(value) => Ok(Self::Integer(value)),
-                None => Ok(Self::BigInteger(value.to_signed_bytes_le())),
+        /// A compound whose elements are being converted.
+        enum Frame {
+            /// An `Array` or `Struct` under construction; `structure` picks
+            /// which one.
+            List {
+                structure: bool,
+                source: std::vec::IntoIter<StackItem>,
+                items: Vec<StackValue>,
             },
-            StackItem::ByteString(bytes) => Ok(Self::ByteString(bytes)),
-            StackItem::Buffer(buffer) => Ok(Self::Buffer(buffer.data())),
-            StackItem::Array(array) => {
-                let items = array
-                    .items()
-                    .into_iter()
-                    .map(Self::try_from)
-                    .collect::<VmResult<Vec<_>>>()?;
-                Ok(Self::Array(items))
+            /// A `Map` under construction; elements arrive as key, value, ...
+            Map {
+                source: std::vec::IntoIter<StackItem>,
+                entries: Vec<(StackValue, StackValue)>,
+                pending_key: Option<StackValue>,
+            },
+        }
+
+        fn convert_leaf(value: &StackItem) -> VmResult<Option<StackValue>> {
+            match value {
+                StackItem::Null => Ok(Some(StackValue::Null)),
+                StackItem::Boolean(value) => Ok(Some(StackValue::Boolean(*value))),
+                StackItem::Integer(value) => Ok(Some(match value.to_i64() {
+                    Some(value) => StackValue::Integer(value),
+                    None => StackValue::BigInteger(value.to_signed_bytes_le()),
+                })),
+                StackItem::ByteString(bytes) => Ok(Some(StackValue::ByteString(bytes.clone()))),
+                StackItem::Buffer(buffer) => Ok(Some(StackValue::Buffer(buffer.data()))),
+                StackItem::Pointer(pointer) => {
+                    let position = i64::try_from(pointer.position()).map_err(|_| {
+                        VmError::overflow("StackItem pointer position does not fit neo-vm-rs i64")
+                    })?;
+                    Ok(Some(StackValue::Pointer(position)))
+                }
+                StackItem::InteropInterface(_) => Err(VmError::invalid_operation_msg(
+                    "Cannot convert InteropInterface into neo-vm-rs StackValue without a host handle",
+                )),
+                _ => Ok(None),
             }
-            StackItem::Struct(structure) => {
-                let items = structure
-                    .items()
-                    .into_iter()
-                    .map(Self::try_from)
-                    .collect::<VmResult<Vec<_>>>()?;
-                Ok(Self::Struct(items))
+        }
+
+        fn open(value: StackItem) -> Frame {
+            match value {
+                StackItem::Array(array) => {
+                    let items = array.items();
+                    Frame::List {
+                        structure: false,
+                        items: Vec::with_capacity(items.len()),
+                        source: items.into_iter(),
+                    }
+                }
+                StackItem::Struct(structure) => {
+                    let items = structure.items();
+                    Frame::List {
+                        structure: true,
+                        items: Vec::with_capacity(items.len()),
+                        source: items.into_iter(),
+                    }
+                }
+                StackItem::Map(map) => {
+                    let entries = map.iter();
+                    let capacity = entries.len();
+                    let mut source = Vec::with_capacity(capacity * 2);
+                    for (key, entry) in entries {
+                        source.push(key);
+                        source.push(entry);
+                    }
+                    Frame::Map {
+                        source: source.into_iter(),
+                        entries: Vec::with_capacity(capacity),
+                        pending_key: None,
+                    }
+                }
+                _ => unreachable!("only compound items are opened"),
             }
-            StackItem::Map(map) => {
-                let entries = map
-                    .iter()
-                    .map(|(key, value)| Ok((Self::try_from(key)?, Self::try_from(value)?)))
-                    .collect::<VmResult<Vec<_>>>()?;
-                Ok(Self::Map(entries))
+        }
+
+        fn next_child(frame: &mut Frame) -> Option<StackItem> {
+            match frame {
+                Frame::List { source, .. } | Frame::Map { source, .. } => source.next(),
             }
-            StackItem::Pointer(pointer) => {
-                let position = i64::try_from(pointer.position()).map_err(|_| {
-                    VmError::overflow("StackItem pointer position does not fit neo-vm-rs i64")
-                })?;
-                Ok(Self::Pointer(position))
+        }
+
+        fn accept(frame: &mut Frame, item: StackValue) {
+            match frame {
+                Frame::List { items, .. } => items.push(item),
+                Frame::Map {
+                    entries,
+                    pending_key,
+                    ..
+                } => match pending_key.take() {
+                    None => *pending_key = Some(item),
+                    Some(key) => entries.push((key, item)),
+                },
             }
-            StackItem::InteropInterface(_) => Err(VmError::invalid_operation_msg(
-                "Cannot convert InteropInterface into neo-vm-rs StackValue without a host handle",
-            )),
+        }
+
+        fn close(frame: Frame) -> StackValue {
+            match frame {
+                Frame::List {
+                    structure,
+                    items,
+                    ..
+                } => {
+                    if structure {
+                        StackValue::Struct(items)
+                    } else {
+                        StackValue::Array(items)
+                    }
+                }
+                Frame::Map { entries, .. } => StackValue::Map(entries),
+            }
+        }
+
+        let mut frames: Vec<Frame> = Vec::new();
+        let mut pending = Some(value);
+        let mut converted = StackValue::Null;
+
+        loop {
+            if let Some(value) = pending.take() {
+                if let Some(item) = convert_leaf(&value)? {
+                    converted = item;
+                } else {
+                    let mut frame = open(value);
+                    let first = next_child(&mut frame);
+                    frames.push(frame);
+                    match first {
+                        Some(child) => pending = Some(child),
+                        None => {
+                            let frame = frames.pop().expect("open frame");
+                            converted = close(frame);
+                        }
+                    }
+                    continue;
+                }
+            }
+
+            if frames.is_empty() {
+                return Ok(converted);
+            }
+            let item = std::mem::replace(&mut converted, StackValue::Null);
+            accept(frames.last_mut().expect("open frame"), item);
+
+            let child = frames.last_mut().and_then(next_child);
+            match child {
+                Some(child) => pending = Some(child),
+                None => {
+                    let frame = frames.pop().expect("open frame");
+                    converted = close(frame);
+                }
+            }
         }
     }
 }
