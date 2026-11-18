@@ -61,105 +61,266 @@ fn render_stack_item_with_size_check(
     render_stack_item(item, &mut context, &mut budget)
 }
 
+/// Renders one stack item iteratively so that a chain nested as deep as the
+/// engine's `MaxStackSize` limit fits into a small thread stack.
+///
+/// The traversal order, the cycle set and every budget subtraction are
+/// unchanged with respect to the former recursive implementation: the type
+/// header subtracts first, a compound subtracts `2 + len - 1` after it inserted
+/// its identity and before descending, each map entry subtracts 17 before its
+/// key is rendered, and finalisation subtracts 9 before the size check.
 fn render_stack_item(
     item: &StackItem,
     context: &mut HashSet<(usize, StackItemType)>,
     budget: &mut RenderBudget,
 ) -> Result<Value, VmError> {
-    let type_name = stack_item_type_name(item);
-    let mut obj = Map::new();
-    obj.insert("type".to_string(), Value::String(type_name.to_string()));
-    budget.subtract(11 + type_name.len() as isize)?;
-
-    let mut value = None;
-    match item {
-        StackItem::Null | StackItem::InteropInterface(_) => {}
-        StackItem::Boolean(flag) => {
-            budget.subtract(if *flag { 4 } else { 5 })?;
-            value = Some(Value::Bool(*flag));
-        }
-        StackItem::Integer(integer) => {
-            let text = integer.to_string();
-            budget.subtract(2 + text.len() as isize)?;
-            value = Some(Value::String(text));
-        }
-        StackItem::ByteString(bytes) => {
-            let encoded = BASE64_STANDARD.encode(bytes);
-            budget.subtract(2 + encoded.len() as isize)?;
-            value = Some(Value::String(encoded));
-        }
-        StackItem::Buffer(buffer) => {
-            let encoded = buffer.with_data(|d| BASE64_STANDARD.encode(d));
-            budget.subtract(2 + encoded.len() as isize)?;
-            value = Some(Value::String(encoded));
-        }
-        StackItem::Pointer(pointer) => {
-            let pos = pointer.position();
-            budget.subtract(pos.to_string().len() as isize)?;
-            value = Some(Value::Number(JsonNumber::from(pos as u64)));
-        }
-        StackItem::Array(array) => {
-            let identity = (array.id(), StackItemType::Array);
-            if !context.insert(identity) {
-                return Err(VmError::invalid_operation_msg(
-                    "Circular reference in stack item",
-                ));
-            }
-            budget.subtract(2 + array.len().saturating_sub(1) as isize)?;
-            let values = array
-                .iter()
-                .map(|entry| render_stack_item(&entry, context, budget))
-                .collect::<Result<Vec<_>, _>>()?;
-            context.remove(&identity);
-            value = Some(Value::Array(values));
-        }
-        StackItem::Struct(structure) => {
-            let identity = (structure.id(), StackItemType::Struct);
-            if !context.insert(identity) {
-                return Err(VmError::invalid_operation_msg(
-                    "Circular reference in stack item",
-                ));
-            }
-            budget.subtract(2 + structure.len().saturating_sub(1) as isize)?;
-            let values = structure
-                .iter()
-                .map(|entry| render_stack_item(&entry, context, budget))
-                .collect::<Result<Vec<_>, _>>()?;
-            context.remove(&identity);
-            value = Some(Value::Array(values));
-        }
-        StackItem::Map(map) => {
-            let identity = (map.id(), StackItemType::Map);
-            if !context.insert(identity) {
-                return Err(VmError::invalid_operation_msg(
-                    "Circular reference in stack item",
-                ));
-            }
-            budget.subtract(2 + map.len().saturating_sub(1) as isize)?;
-            let values = map
-                .iter()
-                .map(|(key, value)| {
-                    budget.subtract(17)?;
-                    let key = render_stack_item(&key, context, budget)?;
-                    let value = render_stack_item(&value, context, budget)?;
-                    let mut entry = Map::new();
-                    entry.insert("key".to_string(), key);
-                    entry.insert("value".to_string(), value);
-                    Ok(Value::Object(entry))
-                })
-                .collect::<Result<Vec<_>, VmError>>()?;
-            context.remove(&identity);
-            value = Some(Value::Array(values));
-        }
+    /// Per-map-entry progress; a frame that carries a stage is always waiting
+    /// for exactly one completed child value.
+    enum Stage {
+        /// The key was rendered, the entry value is pending.
+        AwaitingKey(Value),
+        /// The value item still has to be rendered.
+        AwaitingValue(StackItem),
     }
 
-    if let Some(value) = value {
+    enum Frame {
+        List {
+            identity: (usize, StackItemType),
+            obj: Map<String, Value>,
+            source: std::vec::IntoIter<StackItem>,
+            values: Vec<Value>,
+        },
+        Map {
+            identity: (usize, StackItemType),
+            obj: Map<String, Value>,
+            source: std::vec::IntoIter<(StackItem, StackItem)>,
+            values: Vec<Value>,
+            stage: Stage,
+        },
+    }
+
+    enum Work {
+        Render(StackItem),
+        Resume(Frame),
+    }
+
+    fn finish(
+        identity: (usize, StackItemType),
+        mut obj: Map<String, Value>,
+        values: Vec<Value>,
+        context: &mut HashSet<(usize, StackItemType)>,
+        budget: &mut RenderBudget,
+        rendered: &mut Vec<Value>,
+    ) -> Result<(), VmError> {
+        context.remove(&identity);
         budget.subtract(9)?;
-        obj.insert("value".to_string(), value);
+        obj.insert("value".to_string(), Value::Array(values));
+        budget.check()?;
+        rendered.push(Value::Object(obj));
+        Ok(())
     }
 
-    budget.check()?;
-    Ok(Value::Object(obj))
+    fn pop_child(rendered: &mut Vec<Value>) -> Result<Value, VmError> {
+        rendered
+            .pop()
+            .ok_or_else(|| VmError::invalid_operation_msg("Stack item rendering lost a value"))
+    }
+
+    let mut work = vec![Work::Render(item.clone())];
+    let mut rendered: Vec<Value> = Vec::new();
+
+    while let Some(task) = work.pop() {
+        match task {
+            Work::Render(item) => {
+                let type_name = stack_item_type_name(&item);
+                let mut obj = Map::new();
+                obj.insert("type".to_string(), Value::String(type_name.to_string()));
+                budget.subtract(11 + type_name.len() as isize)?;
+
+                let mut value = None;
+                match item {
+                    StackItem::Null | StackItem::InteropInterface(_) => {}
+                    StackItem::Boolean(flag) => {
+                        budget.subtract(if flag { 4 } else { 5 })?;
+                        value = Some(Value::Bool(flag));
+                    }
+                    StackItem::Integer(integer) => {
+                        let text = integer.to_string();
+                        budget.subtract(2 + text.len() as isize)?;
+                        value = Some(Value::String(text));
+                    }
+                    StackItem::ByteString(bytes) => {
+                        let encoded = BASE64_STANDARD.encode(bytes.as_slice());
+                        budget.subtract(2 + encoded.len() as isize)?;
+                        value = Some(Value::String(encoded));
+                    }
+                    StackItem::Buffer(buffer) => {
+                        let encoded = buffer.with_data(|data| BASE64_STANDARD.encode(data));
+                        budget.subtract(2 + encoded.len() as isize)?;
+                        value = Some(Value::String(encoded));
+                    }
+                    StackItem::Pointer(pointer) => {
+                        let pos = pointer.position();
+                        budget.subtract(pos.to_string().len() as isize)?;
+                        value = Some(Value::Number(JsonNumber::from(pos as u64)));
+                    }
+                    StackItem::Array(array) => {
+                        let identity = (array.id(), StackItemType::Array);
+                        if !context.insert(identity) {
+                            return Err(VmError::invalid_operation_msg(
+                                "Circular reference in stack item",
+                            ));
+                        }
+                        budget.subtract(2 + array.len().saturating_sub(1) as isize)?;
+                        let mut source = array.iter();
+                        match source.next() {
+                            None => {
+                                finish(identity, obj, Vec::new(), context, budget, &mut rendered)?;
+                            }
+                            Some(first) => {
+                                work.push(Work::Resume(Frame::List {
+                                    identity,
+                                    obj,
+                                    source,
+                                    values: Vec::new(),
+                                }));
+                                work.push(Work::Render(first));
+                            }
+                        }
+                        continue;
+                    }
+                    StackItem::Struct(structure) => {
+                        let identity = (structure.id(), StackItemType::Struct);
+                        if !context.insert(identity) {
+                            return Err(VmError::invalid_operation_msg(
+                                "Circular reference in stack item",
+                            ));
+                        }
+                        budget.subtract(2 + structure.len().saturating_sub(1) as isize)?;
+                        let mut source = structure.iter();
+                        match source.next() {
+                            None => {
+                                finish(identity, obj, Vec::new(), context, budget, &mut rendered)?;
+                            }
+                            Some(first) => {
+                                work.push(Work::Resume(Frame::List {
+                                    identity,
+                                    obj,
+                                    source,
+                                    values: Vec::new(),
+                                }));
+                                work.push(Work::Render(first));
+                            }
+                        }
+                        continue;
+                    }
+                    StackItem::Map(map) => {
+                        let identity = (map.id(), StackItemType::Map);
+                        if !context.insert(identity) {
+                            return Err(VmError::invalid_operation_msg(
+                                "Circular reference in stack item",
+                            ));
+                        }
+                        budget.subtract(2 + map.len().saturating_sub(1) as isize)?;
+                        let mut source = map.iter();
+                        match source.next() {
+                            None => {
+                                finish(identity, obj, Vec::new(), context, budget, &mut rendered)?;
+                            }
+                            Some((key, entry_value)) => {
+                                budget.subtract(17)?;
+                                work.push(Work::Resume(Frame::Map {
+                                    identity,
+                                    obj,
+                                    source,
+                                    values: Vec::new(),
+                                    stage: Stage::AwaitingValue(entry_value),
+                                }));
+                                work.push(Work::Render(key));
+                            }
+                        }
+                        continue;
+                    }
+                }
+
+                if let Some(value) = value {
+                    budget.subtract(9)?;
+                    obj.insert("value".to_string(), value);
+                }
+
+                budget.check()?;
+                rendered.push(Value::Object(obj));
+            }
+            Work::Resume(frame) => match frame {
+                Frame::List {
+                    identity,
+                    obj,
+                    mut source,
+                    mut values,
+                } => {
+                    values.push(pop_child(&mut rendered)?);
+                    match source.next() {
+                        None => {
+                            finish(identity, obj, values, context, budget, &mut rendered)?;
+                        }
+                        Some(child) => {
+                            work.push(Work::Resume(Frame::List {
+                                identity,
+                                obj,
+                                source,
+                                values,
+                            }));
+                            work.push(Work::Render(child));
+                        }
+                    }
+                }
+                Frame::Map {
+                    identity,
+                    obj,
+                    mut source,
+                    mut values,
+                    stage,
+                } => match stage {
+                    Stage::AwaitingValue(entry_value) => {
+                        let key = pop_child(&mut rendered)?;
+                        work.push(Work::Resume(Frame::Map {
+                            identity,
+                            obj,
+                            source,
+                            values,
+                            stage: Stage::AwaitingKey(key),
+                        }));
+                        work.push(Work::Render(entry_value));
+                    }
+                    Stage::AwaitingKey(key) => {
+                        let entry_value = pop_child(&mut rendered)?;
+                        let mut entry = Map::new();
+                        entry.insert("key".to_string(), key);
+                        entry.insert("value".to_string(), entry_value);
+                        values.push(Value::Object(entry));
+                        match source.next() {
+                            None => {
+                                finish(identity, obj, values, context, budget, &mut rendered)?;
+                            }
+                            Some((next_key, next_value)) => {
+                                budget.subtract(17)?;
+                                work.push(Work::Resume(Frame::Map {
+                                    identity,
+                                    obj,
+                                    source,
+                                    values,
+                                    stage: Stage::AwaitingValue(next_value),
+                                }));
+                                work.push(Work::Render(next_key));
+                            }
+                        }
+                    }
+                },
+            },
+        }
+    }
+
+    pop_child(&mut rendered)
 }
 
 const fn stack_item_type_name(item: &StackItem) -> &'static str {
