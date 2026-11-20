@@ -152,6 +152,11 @@ impl NodeConfig {
         if let Some(cache_mb) = self.storage.cache_size {
             config.cache_size = Some(megabytes_to_bytes(cache_mb));
         }
+        // Passed through verbatim: `0` is the documented "no row cache" value
+        // and must not be read as "unset, derive it from the block cache".
+        if let Some(row_cache_mb) = self.storage.row_cache_size {
+            config.row_cache_size_bytes = Some(megabytes_to_bytes(u64::from(row_cache_mb)));
+        }
         if let Some(write_mb) = self.storage.write_buffer_size {
             config.write_buffer_size = Some(megabytes_to_bytes(write_mb));
         }

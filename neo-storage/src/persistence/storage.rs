@@ -46,6 +46,15 @@ pub struct StorageConfig {
     pub max_open_files: Option<u32>,
     /// Block cache size in bytes.
     pub cache_size: Option<usize>,
+    /// Row cache size in bytes.
+    ///
+    /// `None` keeps the historical behaviour of deriving the row cache from the
+    /// block cache (a quarter of it, clamped to 64-512 MiB). `Some(0)` disables
+    /// the row cache entirely, and `Some(bytes)` allocates exactly that many
+    /// bytes for it. An explicit value never re-enters the derived clamp: an
+    /// operator asking for a size gets that size.
+    #[serde(default)]
+    pub row_cache_size_bytes: Option<usize>,
     /// Write buffer size in bytes.
     pub write_buffer_size: Option<usize>,
     /// Enable statistics collection.
@@ -62,6 +71,8 @@ impl Default for StorageConfig {
             compaction_strategy: CompactionStrategy::Level,
             max_open_files: Some(1000),
             cache_size: Some(512 * 1024 * 1024), // 512MB block cache
+            // Derived from the block cache until an operator sets a size.
+            row_cache_size_bytes: None,
             write_buffer_size: Some(256 * 1024 * 1024), // 256MB write buffer (matches build_db_options)
             enable_statistics: false,
             read_only: false,
@@ -152,6 +163,46 @@ mod tests {
         assert_eq!(config.max_open_files, Some(1000));
         assert!(!config.enable_statistics);
         assert!(!config.read_only);
+    }
+
+    #[test]
+    fn storage_config_default_derives_row_cache() {
+        let config = StorageConfig::default();
+        assert_eq!(config.cache_size, Some(512 * 1024 * 1024));
+        assert!(
+            config.row_cache_size_bytes.is_none(),
+            "an unset row cache must keep deriving from the block cache"
+        );
+    }
+
+    #[test]
+    fn storage_config_row_cache_survives_serde_roundtrip() {
+        for configured in [None, Some(0), Some(256 * 1024 * 1024)] {
+            let config = StorageConfig {
+                row_cache_size_bytes: configured,
+                ..Default::default()
+            };
+            let serialized = serde_json::to_value(&config).unwrap();
+            assert_eq!(
+                serialized["row_cache_size_bytes"],
+                serde_json::json!(configured)
+            );
+            let restored: StorageConfig = serde_json::from_value(serialized).unwrap();
+            assert_eq!(restored.row_cache_size_bytes, configured);
+        }
+    }
+
+    #[test]
+    fn storage_config_missing_row_cache_deserializes_to_derived_default() {
+        // A serialized config written before the knob existed must still load
+        // and keep the derived row cache rather than failing on a missing field.
+        let mut serialized = serde_json::to_value(StorageConfig::default()).unwrap();
+        serialized
+            .as_object_mut()
+            .unwrap()
+            .remove("row_cache_size_bytes");
+        let restored: StorageConfig = serde_json::from_value(serialized).unwrap();
+        assert!(restored.row_cache_size_bytes.is_none());
     }
 
     #[test]

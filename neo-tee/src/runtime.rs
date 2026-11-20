@@ -548,6 +548,9 @@ mod tests {
     // Privacy mode (strictly opt-in) — default-off and enabled-on behavior
     // ------------------------------------------------------------------
 
+    // The privacy tests below are the only users of these types, and every one of
+    // them compiles only when `tee-sgx` is off, so the import is gated the same way.
+    #[cfg(not(feature = "tee-sgx"))]
     use crate::mempool::{ContentState, MODE_TEE_SEALED_KEY, MempoolCiphertext};
 
     #[test]

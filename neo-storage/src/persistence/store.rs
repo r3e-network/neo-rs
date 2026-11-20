@@ -22,6 +22,43 @@ pub struct StoreAccelerationStats {
     pub write_buffer: Option<WriteBatchStatsSnapshot>,
 }
 
+/// Observation-only counters for one backend cache (block or row).
+///
+/// Every value is a byte count sampled at call time; nothing here influences
+/// caching behaviour.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CacheUsageStats {
+    /// Configured capacity in bytes.
+    pub capacity: usize,
+    /// Bytes currently held by the cache.
+    pub usage: usize,
+    /// Bytes held by entries that may not be evicted (index/filter pinning).
+    pub pinned_usage: usize,
+}
+
+/// Observation-only snapshot of the storage-engine caches behind a store.
+///
+/// Sizes are reported separately from usage so an operator can tell a cold but
+/// correctly sized cache from a small one that is thrashing. Optional fields
+/// mean the backend could not answer the question, which callers must not read
+/// as zero.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StoreCacheStats {
+    /// Block cache capacity, usage and pinned usage.
+    pub block_cache: CacheUsageStats,
+    /// Row cache counters, `None` when the backend runs without a row cache.
+    pub row_cache: Option<CacheUsageStats>,
+    /// Bytes of SST index blocks, when the backend reports them.
+    pub index_size: Option<usize>,
+    /// Bytes of SST filter blocks, when the backend reports them.
+    pub filter_size: Option<usize>,
+    /// Bytes of SST data blocks, when the backend reports them.
+    pub data_block_size: Option<usize>,
+    /// Backend estimate of memory held by table readers (index + filter blocks
+    /// not served from the block cache).
+    pub estimate_table_readers_mem: Option<usize>,
+}
+
 /// This interface provides methods for reading, writing from/to database.
 /// Developers should implement this interface to provide new storage engines for NEO.
 pub trait Store: ReadOnlyStore + WriteStore<Vec<u8>, Vec<u8>> + Send + Sync + Any {
@@ -86,6 +123,15 @@ pub trait Store: ReadOnlyStore + WriteStore<Vec<u8>, Vec<u8>> + Send + Sync + An
     /// buffer must not fabricate counters. Implementations return a snapshot
     /// only; the store's behaviour never depends on who reads it.
     fn acceleration_stats(&self) -> Option<StoreAccelerationStats> {
+        None
+    }
+
+    /// Returns the storage-engine cache counters behind this store, if the
+    /// backend has any.
+    ///
+    /// The default reports nothing: a backend without block or row caches must
+    /// not fabricate counters. Reading this never changes cache contents.
+    fn cache_stats(&self) -> Option<StoreCacheStats> {
         None
     }
 }

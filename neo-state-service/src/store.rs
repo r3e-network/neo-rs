@@ -22,7 +22,7 @@ use tracing::warn;
 /// committed locally. Only an actually committed block advances it, so recovery
 /// may adopt the root it points at and nothing newer.
 pub(crate) const PREFIX_LOCAL_ROOT_INDEX: u8 = 0xf2;
-const PREFIX_VALIDATED_ROOT_INDEX: u8 = 0xf3;
+pub(crate) const PREFIX_VALIDATED_ROOT_INDEX: u8 = 0xf3;
 
 /// Stores quorum-validated network roots and tracks locally committed roots.
 ///

@@ -12,6 +12,8 @@
 
 pub mod commit_handlers;
 pub mod context;
+// Canonical key/value schema for out-of-process read-only auditors.
+pub mod record_schema;
 pub mod services;
 mod state_root;
 mod store;

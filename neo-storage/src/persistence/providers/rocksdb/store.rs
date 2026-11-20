@@ -6,7 +6,7 @@ use crate::{
         read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
         seek_direction::SeekDirection,
         storage::StorageConfig,
-        store::{OnNewSnapshotDelegate, Store, StoreAccelerationStats},
+        store::{OnNewSnapshotDelegate, Store, StoreAccelerationStats, StoreCacheStats},
         store_snapshot::StoreSnapshot,
         write_batch_buffer::{WriteBatchConfig, WriteBatchStatsSnapshot},
         write_store::WriteStore,
@@ -39,6 +39,9 @@ pub struct RocksDbStore {
     pub(crate) batch_config: RwLock<WriteBatchConfig>,
     pub(crate) read_cache: Option<Arc<StorageReadCache>>,
     pub(crate) read_ahead_config: ReadAheadConfig,
+    /// Handles to the block and row caches this database runs with, retained
+    /// purely so cache statistics can be read back.
+    pub(crate) caches: provider::CacheHandles,
     /// Commit version of the database contents. Every write path advances it so
     /// readers can tell whether a value they just read predates a commit.
     cache_generation: Arc<AtomicU64>,
@@ -71,7 +74,8 @@ impl RocksDbStore {
             );
         }
 
-        let options = provider::build_db_options(config, enable_bloom_filters);
+        let (options, caches) =
+            provider::build_db_options_with_caches(config, enable_bloom_filters);
         let db = if config.read_only {
             Arc::new(DB::open_for_read_only(&options, &config.path, false)?)
         } else {
@@ -96,6 +100,7 @@ impl RocksDbStore {
             batch_config: RwLock::new(batch_config),
             read_cache,
             read_ahead_config,
+            caches,
             cache_generation: Arc::new(AtomicU64::new(0)),
             cache_gate: Arc::new(RwLock::new(())),
             memtable_only_writes: Arc::new(AtomicBool::new(false)),
@@ -203,6 +208,24 @@ impl RocksDbStore {
 fn fail_fast_read(op: &str, err: &rocksdb::Error) -> ! {
     error!(target: "neo", error = %err, op, "rocksdb read failed; failing fast");
     panic!("RocksDB {op} failed: {err}");
+}
+
+/// Reads the byte count that follows `key` in a RocksDB property text blob.
+///
+/// `rocksdb.aggregated-table-properties` renders the table properties as
+/// `# <name>=<value>` pairs, so the parser anchors on the key and then reads the
+/// digits after the next `=`. Reading digits straight after the key would be
+/// wrong: the index entry is named `index block size (user-key? N, delta-value?
+/// N)` and would yield the flag inside the name instead of the size.
+fn property_bytes(properties: &str, key: &str) -> Option<usize> {
+    let after_key = &properties[properties.find(key)? + key.len()..];
+    let value = &after_key[after_key.find('=')? + 1..];
+    let digits: String = value
+        .chars()
+        .skip_while(|ch| ch.is_ascii_whitespace())
+        .take_while(|ch| ch.is_ascii_digit())
+        .collect();
+    digits.parse().ok()
 }
 
 /// Publishes a read-cache entry only when no invalidation happened since the
@@ -583,6 +606,10 @@ impl Store for RocksDbStore {
         self.read_cache_generation()
     }
 
+    fn cache_stats(&self) -> Option<StoreCacheStats> {
+        Some(RocksDbStore::cache_stats(self))
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -611,6 +638,7 @@ impl Clone for RocksDbStore {
             batch_config: RwLock::new(*self.batch_config.read()),
             read_cache: self.read_cache.clone(),
             read_ahead_config: self.read_ahead_config,
+            caches: self.caches.clone(),
             cache_generation: Arc::clone(&self.cache_generation),
             cache_gate: Arc::clone(&self.cache_gate),
             memtable_only_writes: Arc::clone(&self.memtable_only_writes),
@@ -1113,6 +1141,42 @@ impl RocksDbStore {
         Ok(())
     }
 
+    /// Returns the storage-engine cache counters for this database.
+    ///
+    /// Block and row cache numbers come from the live `Cache` handles the
+    /// database was opened with, which is the only source for the row cache:
+    /// RocksDB publishes no row-cache property. Index, filter and data-block
+    /// sizes come from the aggregated table properties, so they describe
+    /// flushed SST files only; values still in a memtable are not counted.
+    pub fn cache_stats(&self) -> StoreCacheStats {
+        let table_block_sizes = self
+            .db
+            .property_value("rocksdb.aggregated-table-properties")
+            .ok()
+            .flatten()
+            .map(|properties| {
+                (
+                    property_bytes(&properties, "index block size"),
+                    property_bytes(&properties, "filter block size"),
+                    property_bytes(&properties, "data block size"),
+                )
+            })
+            .unwrap_or((None, None, None));
+        StoreCacheStats {
+            block_cache: self.caches.block_cache_usage(),
+            row_cache: self.caches.row_cache_usage(),
+            index_size: table_block_sizes.0,
+            filter_size: table_block_sizes.1,
+            data_block_size: table_block_sizes.2,
+            estimate_table_readers_mem: self
+                .db
+                .property_int_value("rocksdb.estimate-table-readers-mem")
+                .ok()
+                .flatten()
+                .and_then(|bytes| usize::try_from(bytes).ok()),
+        }
+    }
+
     /// Returns the per-level SST file counts, lowest level first.
     ///
     /// Level 0 accumulates one file per memtable flush, so its count is the
@@ -1251,6 +1315,24 @@ impl RocksDbStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn property_bytes_reads_the_value_not_the_parenthesised_key() {
+        // Real shape of `rocksdb.aggregated-table-properties`: one `; `-separated
+        // list of `# name=value` pairs, where the index entry carries digits in
+        // its own name.
+        let properties = "# data blocks=20; # entries=5120; # data block size=2097152; \
+             # index block size (user-key? 1, delta-value? 1)=1234; # filter block size=256;";
+
+        assert_eq!(property_bytes(properties, "data block size"), Some(2097152));
+        assert_eq!(
+            property_bytes(properties, "index block size"),
+            Some(1234),
+            "the digits inside `(user-key? 1, ...)` must not be mistaken for the size"
+        );
+        assert_eq!(property_bytes(properties, "filter block size"), Some(256));
+        assert_eq!(property_bytes(properties, "top-level index size"), None);
+    }
 
     #[test]
     fn committed_snapshot_invalidates_latest_state_read_cache() {

@@ -62,9 +62,10 @@ pub use events::{EventHandler, EventManager, PluginEvent, broadcast_plugin_event
 pub use services::SystemContext;
 
 pub use neo_system::{
-    ExecutionMode, ExecutionProfileSnapshot, ExecutionStats, FastPathStatsSnapshot, NeoSystem,
-    NeoSystemBuilder, NeoSystemContext, ParallelExecutionSnapshot, ReadinessStatus,
-    STATE_STORE_SERVICE, ServiceRegistry, TRANSACTION_EXECUTION_OBSERVATION_RULE_VERSION,
+    EmptyBlockProfileSnapshot, ExecutionMode, ExecutionProfileSnapshot, ExecutionStats,
+    FastPathStatsSnapshot, NeoSystem, NeoSystemBuilder, NeoSystemContext,
+    PERSISTENCE_STAGE_NESTING, ParallelExecutionSnapshot, ReadinessStatus, STATE_STORE_SERVICE,
+    ServiceRegistry, TRANSACTION_EXECUTION_OBSERVATION_RULE_VERSION,
     TRANSACTION_EXECUTION_OBSERVATION_SCHEMA_VERSION, TransactionExecutionExceptionCategory,
     TransactionExecutionObservation, TransactionExecutionSink, TransactionExecutionStage,
     TransactionRouterHandle,

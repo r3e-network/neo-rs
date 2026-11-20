@@ -20,10 +20,21 @@ mod hsm_integration;
 mod hsm_wallet;
 #[cfg(feature = "full")]
 mod import_acc;
+// Empty-block write-back planning is pure arithmetic, so it is compiled and
+// tested for every feature set; without `full` only its tests read it.
+#[cfg_attr(not(feature = "full"), allow(dead_code))]
+mod import_batching;
+// The stub importer keeps an identical `ImportSummary` surface, so without the
+// `full` feature nothing reads these observation-only helpers.
+#[cfg_attr(not(feature = "full"), allow(dead_code))]
+mod import_telemetry;
 mod migration;
 #[cfg(not(feature = "full"))]
 #[allow(missing_docs)]
 mod import_acc {
+    use crate::import_telemetry::{
+        FastPathDeltas, ImportCounters, LogsDeltas, ParallelDeltas, PersistenceProfileDeltas,
+    };
     use anyhow::{Result, bail};
     use neo_system::NeoSystem;
     use std::{path::Path, sync::Arc};
@@ -36,6 +47,16 @@ mod import_acc {
         pub skipped: u64,
         pub final_height: u32,
         pub elapsed_secs: f64,
+        /// Run-cumulative block/transaction counters.
+        pub counters: ImportCounters,
+        /// Fast-path counter delta measured across this run.
+        pub fast_path: FastPathDeltas,
+        /// Speculative-scheduler counter delta measured across this run.
+        pub parallel: ParallelDeltas,
+        /// Opt-in persistence-profile delta measured across this run.
+        pub profile: PersistenceProfileDeltas,
+        /// ApplicationLogs write coalescing measured across this run.
+        pub logs: LogsDeltas,
     }
 
     pub fn import_acc_file(

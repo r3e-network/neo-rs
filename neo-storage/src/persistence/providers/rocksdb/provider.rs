@@ -2,7 +2,7 @@ use crate::error::{StorageError, StorageResult};
 use crate::persistence::{
     read_cache::ReadCacheConfig,
     storage::{CompactionStrategy, CompressionAlgorithm, StorageConfig},
-    store::Store,
+    store::{CacheUsageStats, Store},
     store_provider::StoreProvider,
     write_batch_buffer::{WriteBatchBuffer, WriteBatchConfig},
 };
@@ -29,6 +29,60 @@ impl BatchCommitter {
         let buffer = WriteBatchBuffer::new(db, config);
 
         Self { buffer }
+    }
+}
+
+/// Live handles to the caches one RocksDB instance was opened with.
+///
+/// RocksDB keeps its own references to both caches, so retaining these costs a
+/// pointer bump and is the only way to read row-cache counters: no RocksDB
+/// property reports row-cache usage, and the block-cache properties cannot say
+/// which role (data block, index, filter) an entry belongs to.
+#[derive(Clone)]
+pub(crate) struct CacheHandles {
+    block_cache: Cache,
+    block_cache_capacity: usize,
+    row_cache: Option<Cache>,
+    row_cache_capacity: usize,
+}
+
+impl CacheHandles {
+    /// Block cache capacity, usage and pinned usage as the database sees them.
+    pub(crate) fn block_cache_usage(&self) -> CacheUsageStats {
+        CacheUsageStats {
+            capacity: self.block_cache_capacity,
+            usage: self.block_cache.get_usage(),
+            pinned_usage: self.block_cache.get_pinned_usage(),
+        }
+    }
+
+    /// Row cache counters, `None` when this database runs without a row cache.
+    ///
+    /// `rocksdb` 0.21 exposes no row-cache hit/miss counters, so usage here is
+    /// the cache's own accounting rather than a lookup statistic.
+    pub(crate) fn row_cache_usage(&self) -> Option<CacheUsageStats> {
+        self.row_cache.as_ref().map(|cache| CacheUsageStats {
+            capacity: self.row_cache_capacity,
+            usage: cache.get_usage(),
+            pinned_usage: cache.get_pinned_usage(),
+        })
+    }
+}
+
+/// Resolves the row cache capacity from the operator setting and the block
+/// cache size.
+///
+/// `None` keeps the historical derivation (a quarter of the block cache,
+/// clamped to 64-512 MiB) so existing deployments size identically. `Some(0)`
+/// means "no row cache", and any other explicit value is used verbatim: an
+/// operator who names a size must not silently get a clamped one.
+pub(crate) fn resolve_row_cache_capacity(
+    block_cache_capacity: usize,
+    configured: Option<usize>,
+) -> usize {
+    match configured {
+        None => (block_cache_capacity / 4).clamp(64 * 1024 * 1024, 512 * 1024 * 1024),
+        Some(bytes) => bytes,
     }
 }
 
@@ -281,7 +335,16 @@ pub(crate) fn reverse_prefix_iterator_from<'a>(
     db.iterator_opt(mode, opts)
 }
 
-pub(crate) fn build_db_options(config: &StorageConfig, enable_bloom_filters: bool) -> Options {
+/// Builds the database options together with the cache handles the database
+/// will run with.
+///
+/// Callers must keep the returned [`CacheHandles`] alive for the lifetime of the
+/// database to report cache statistics; RocksDB owns its own references, so a
+/// dropped handle only loses observability, never correctness.
+pub(crate) fn build_db_options_with_caches(
+    config: &StorageConfig,
+    enable_bloom_filters: bool,
+) -> (Options, CacheHandles) {
     let mut options = Options::default();
     options.create_if_missing(true);
     options.set_error_if_exists(false);
@@ -362,9 +425,13 @@ pub(crate) fn build_db_options(config: &StorageConfig, enable_bloom_filters: boo
     // index/filter pinning, and the binary-and-hash data-block index.
     let cache_size = config.cache_size.unwrap_or(256 * 1024 * 1024);
     let cache = Cache::new_lru_cache(cache_size);
-    let row_cache_size = (cache_size / 4).clamp(64 * 1024 * 1024, 512 * 1024 * 1024);
-    let row_cache = Cache::new_lru_cache(row_cache_size);
-    options.set_row_cache(&row_cache);
+    let row_cache_size = resolve_row_cache_capacity(cache_size, config.row_cache_size_bytes);
+    // A zero row cache means the operator disabled it: no cache is created and
+    // RocksDB keeps its "no row cache" default instead of a 0-byte cache.
+    let row_cache = (row_cache_size > 0).then(|| Cache::new_lru_cache(row_cache_size));
+    if let Some(row_cache) = &row_cache {
+        options.set_row_cache(row_cache);
+    }
     let mut table_options = BlockBasedOptions::default();
     table_options.set_block_cache(&cache);
     // Hash-probe the data block after the binary search narrows its key range;
@@ -380,6 +447,12 @@ pub(crate) fn build_db_options(config: &StorageConfig, enable_bloom_filters: boo
         // Cache index and filter blocks in block cache
         table_options.set_cache_index_and_filter_blocks(true);
         table_options.set_pin_l0_filter_and_index_blocks_in_cache(true);
+        // `rocksdb` 0.21 has no binding for
+        // `cache_index_and_filter_blocks_with_high_priority`, so index and
+        // filter blocks cannot be marked high priority in the cache. Pinning
+        // the top-level index and filter instead keeps the per-table metadata
+        // every lookup needs resident, so data-block pressure cannot evict it.
+        table_options.set_pin_top_level_index_and_filter(true);
     }
 
     options.set_block_based_table_factory(&table_options);
@@ -388,5 +461,56 @@ pub(crate) fn build_db_options(config: &StorageConfig, enable_bloom_filters: boo
         options.enable_statistics();
     }
 
-    options
+    (
+        options,
+        CacheHandles {
+            block_cache: cache,
+            block_cache_capacity: cache_size,
+            row_cache,
+            row_cache_capacity: row_cache_size,
+        },
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_row_cache_capacity;
+
+    const MIB: usize = 1024 * 1024;
+
+    #[test]
+    fn unset_row_cache_derives_a_quarter_of_the_block_cache() {
+        assert_eq!(resolve_row_cache_capacity(1024 * MIB, None), 256 * MIB);
+    }
+
+    #[test]
+    fn derived_row_cache_stays_inside_the_historical_clamp() {
+        // Below the floor: a small block cache still yields 64 MiB of row cache.
+        assert_eq!(resolve_row_cache_capacity(32 * MIB, None), 64 * MIB);
+        assert_eq!(resolve_row_cache_capacity(0, None), 64 * MIB);
+        // Above the ceiling: the derivation caps at 512 MiB.
+        assert_eq!(resolve_row_cache_capacity(4 * 1024 * MIB, None), 512 * MIB);
+    }
+
+    #[test]
+    fn zero_disables_the_row_cache() {
+        assert_eq!(resolve_row_cache_capacity(1024 * MIB, Some(0)), 0);
+    }
+
+    #[test]
+    fn explicit_row_cache_size_is_never_clamped() {
+        assert_eq!(
+            resolve_row_cache_capacity(1024 * MIB, Some(256 * MIB)),
+            256 * MIB
+        );
+        // Below the derived floor and above its ceiling are both honoured.
+        assert_eq!(
+            resolve_row_cache_capacity(1024 * MIB, Some(8 * MIB)),
+            8 * MIB
+        );
+        assert_eq!(
+            resolve_row_cache_capacity(64 * MIB, Some(2 * 1024 * MIB)),
+            2 * 1024 * MIB
+        );
+    }
 }

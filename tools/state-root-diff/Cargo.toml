@@ -28,6 +28,9 @@ base64.workspace = true
 reqwest = { workspace = true, features = ["rustls-tls"] }
 clap = { version = "4.0", features = ["derive"] }
 sysinfo.workspace = true
+# Read-only RocksDB access for the state-root sweep; the writable open path in
+# neo-storage is deliberately not imported by that binary.
+rocksdb = { workspace = true }
 
 [dev-dependencies]
 tempfile.workspace = true
@@ -43,6 +46,11 @@ path = "mainnet_state_verifier.rs"
 [[bin]]
 name = "transfer-pattern-profiler"
 path = "transfer_pattern_profiler.rs"
+
+# Task 59: strictly read-only state-root sweep for external replay audits.
+[[bin]]
+name = "state-root-sweep"
+path = "state_root_sweep.rs"
 
 [lints]
 workspace = true

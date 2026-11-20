@@ -389,3 +389,83 @@ fn bundled_configs_keep_prefetch_disabled() {
         );
     }
 }
+
+// --- [storage] row cache --------------------------------------------------
+
+const MIB: usize = 1024 * 1024;
+
+/// An unset `row_cache_size` keeps deriving the row cache from the block cache.
+#[test]
+fn storage_row_cache_absent_keeps_derived_default() {
+    let cfg: NodeConfig = toml::from_str(
+        r#"
+        [storage]
+        path = "Data_Test"
+        cache_size = 1024
+        "#,
+    )
+    .expect("storage table without row_cache_size should parse");
+
+    let storage = cfg.storage_config();
+    assert_eq!(storage.cache_size, Some(1024 * MIB));
+    assert_eq!(
+        storage.row_cache_size_bytes, None,
+        "an absent knob must keep the derived row cache"
+    );
+}
+
+/// `row_cache_size = 0` is the documented way to disable the row cache.
+#[test]
+fn storage_row_cache_zero_disables_the_cache() {
+    let cfg: NodeConfig = toml::from_str(
+        r#"
+        [storage]
+        row_cache_size = 0
+        "#,
+    )
+    .expect("a zero row cache should parse");
+
+    assert_eq!(cfg.storage_config().row_cache_size_bytes, Some(0));
+}
+
+/// An explicit size is converted from MiB and forwarded verbatim.
+#[test]
+fn storage_row_cache_explicit_size_is_forwarded_in_bytes() {
+    let cfg: NodeConfig = toml::from_str(
+        r#"
+        [storage]
+        row_cache_size = 256
+        "#,
+    )
+    .expect("an explicit row cache should parse");
+
+    assert_eq!(cfg.storage_config().row_cache_size_bytes, Some(256 * MIB));
+}
+
+/// The Neo CLI spelling is accepted as an alias, like every other storage key.
+#[test]
+fn storage_row_cache_accepts_pascal_case_alias() {
+    let cfg: NodeConfig = toml::from_str(
+        r#"
+        [storage]
+        RowCacheSize = 384
+        "#,
+    )
+    .expect("the PascalCase alias should parse");
+
+    assert_eq!(cfg.storage_config().row_cache_size_bytes, Some(384 * MIB));
+}
+
+/// A misspelled key must still fail closed instead of being silently ignored.
+#[test]
+fn storage_rejects_unknown_row_cache_field() {
+    let err = toml::from_str::<NodeConfig>(
+        r#"
+        [storage]
+        row_cache_sizes = 256
+        "#,
+    )
+    .expect_err("a misspelled row cache key should be rejected");
+    let msg = err.to_string().to_ascii_lowercase();
+    assert!(msg.contains("unknown"), "unexpected error message: {msg}");
+}

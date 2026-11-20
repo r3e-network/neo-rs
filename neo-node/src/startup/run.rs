@@ -307,6 +307,171 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
             skipped = summary.skipped,
             final_height = summary.final_height,
             elapsed_secs = summary.elapsed_secs,
+            imported_blocks = summary.counters.imported_blocks,
+            empty_blocks = summary.counters.empty_blocks,
+            non_empty_blocks = summary.counters.non_empty_blocks,
+            transactions = summary.counters.transactions,
+            empty_block_batches = summary.counters.empty_block_batches,
+            batched_empty_blocks = summary.counters.batched_empty_blocks,
+            logs_flush_count = summary.logs.flush_count,
+            logs_flushed_records = summary.logs.flushed_records,
+            logs_flushed_bytes = summary.logs.flushed_bytes,
+            logs_pending_records = summary.logs.pending_records,
+            fast_path_direct_attempts = summary.fast_path.direct_attempts,
+            fast_path_direct_halts = summary.fast_path.direct_halts,
+            fast_path_direct_faults = summary.fast_path.direct_faults,
+            fast_path_eligibility_declines = summary.fast_path.eligibility_declines,
+            fast_path_canonical_fallbacks = summary.fast_path.canonical_fallbacks,
+            fast_path_verification_mismatches = summary.fast_path.verification_mismatches,
+            parallel_speculative_blocks = summary.parallel.speculative_blocks,
+            parallel_speculative_transactions = summary.parallel.speculative_transactions,
+            parallel_conflicts = summary.parallel.conflicts,
+            parallel_reexecutions = summary.parallel.reexecutions,
+            parallel_serial_fallbacks = summary.parallel.serial_fallbacks,
+            parallel_elapsed_ms = crate::import_telemetry::nanos_to_millis(
+                summary.parallel.parallel_nanos
+            ),
+            serial_elapsed_ms =
+                crate::import_telemetry::nanos_to_millis(summary.parallel.serial_nanos),
+            profile_state = summary.profile.state_label(),
+            profile_enabled_at_end = summary.profile.end_enabled,
+            profile_blocks = summary.profile.blocks,
+            profile_transaction_executions = summary.profile.transaction_executions,
+            profile_external_instructions = summary.profile.external_instructions,
+            profile_snapshot_open_ms =
+                crate::import_telemetry::nanos_to_millis(summary.profile.snapshot_open_nanos),
+            profile_on_persist_ms =
+                crate::import_telemetry::nanos_to_millis(summary.profile.on_persist_nanos),
+            profile_transaction_loop_ms =
+                crate::import_telemetry::nanos_to_millis(summary.profile.transaction_loop_nanos),
+            profile_post_persist_ms =
+                crate::import_telemetry::nanos_to_millis(summary.profile.post_persist_nanos),
+            profile_state_root_stage_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.participant_precommit_nanos
+            ),
+            profile_chain_commit_ms =
+                crate::import_telemetry::nanos_to_millis(summary.profile.store_commit_nanos),
+            profile_store_database_write_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.store_database_write_nanos
+            ),
+            profile_store_writer_snapshot_open_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.store_writer_snapshot_open_nanos
+            ),
+            profile_store_change_application_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.store_change_application_nanos
+            ),
+            profile_store_write_batch_build_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.store_write_batch_build_nanos
+            ),
+            profile_store_cache_invalidation_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.store_cache_invalidation_nanos
+            ),
+            profile_transaction_hash_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.transaction_hash_nanos
+            ),
+            profile_transaction_vm_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.transaction_vm_nanos
+            ),
+            profile_state_change_extraction_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.state_change_extraction_nanos
+            ),
+            profile_mpt_ms =
+                crate::import_telemetry::nanos_to_millis(summary.profile.mpt_nanos),
+            profile_mpt_update_ms =
+                crate::import_telemetry::nanos_to_millis(summary.profile.mpt_update_nanos),
+            profile_mpt_commit_ms =
+                crate::import_telemetry::nanos_to_millis(summary.profile.mpt_commit_nanos),
+            profile_mpt_root_hash_ms =
+                crate::import_telemetry::nanos_to_millis(summary.profile.mpt_root_hash_nanos),
+            profile_mpt_hash_ms =
+                crate::import_telemetry::nanos_to_millis(summary.profile.mpt_hash_nanos),
+            profile_mpt_serialization_ms =
+                crate::import_telemetry::nanos_to_millis(summary.profile.mpt_serialization_nanos),
+            profile_mpt_hash256_ms =
+                crate::import_telemetry::nanos_to_millis(summary.profile.mpt_hash256_nanos),
+            profile_mpt_node_cache_ms =
+                crate::import_telemetry::nanos_to_millis(summary.profile.mpt_node_cache_nanos),
+            profile_mpt_node_read_ms =
+                crate::import_telemetry::nanos_to_millis(summary.profile.mpt_node_read_nanos),
+            profile_mpt_node_deserialize_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.mpt_node_deserialize_nanos
+            ),
+            profile_mpt_node_encode_ms =
+                crate::import_telemetry::nanos_to_millis(summary.profile.mpt_node_encode_nanos),
+            profile_mpt_node_write_ms =
+                crate::import_telemetry::nanos_to_millis(summary.profile.mpt_node_write_nanos),
+            profile_runtime_update_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.runtime_update_nanos
+            ),
+            profile_post_commit_ms =
+                crate::import_telemetry::nanos_to_millis(summary.profile.post_commit_nanos),
+            profile_empty_block_blocks = summary.profile.empty_blocks.blocks,
+            profile_empty_block_snapshot_open_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.empty_blocks.snapshot_open_nanos
+            ),
+            profile_empty_block_on_persist_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.empty_blocks.on_persist_nanos
+            ),
+            profile_empty_block_transaction_loop_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.empty_blocks.transaction_loop_nanos
+            ),
+            profile_empty_block_post_persist_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.empty_blocks.post_persist_nanos
+            ),
+            profile_empty_block_state_root_stage_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.empty_blocks.participant_precommit_nanos
+            ),
+            profile_empty_block_state_change_extraction_ms =
+                crate::import_telemetry::nanos_to_millis(
+                    summary.profile.empty_blocks.state_change_extraction_nanos
+                ),
+            profile_empty_block_mpt_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.empty_blocks.mpt_nanos
+            ),
+            profile_empty_block_mpt_update_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.empty_blocks.mpt_update_nanos
+            ),
+            profile_empty_block_mpt_commit_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.empty_blocks.mpt_commit_nanos
+            ),
+            profile_empty_block_mpt_hash_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.empty_blocks.mpt_hash_nanos
+            ),
+            profile_empty_block_mpt_serialization_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.empty_blocks.mpt_serialization_nanos
+            ),
+            profile_empty_block_mpt_hash256_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.empty_blocks.mpt_hash256_nanos
+            ),
+            profile_empty_block_mpt_node_cache_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.empty_blocks.mpt_node_cache_nanos
+            ),
+            profile_empty_block_mpt_node_read_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.empty_blocks.mpt_node_read_nanos
+            ),
+            profile_empty_block_mpt_node_deserialize_ms =
+                crate::import_telemetry::nanos_to_millis(
+                    summary.profile.empty_blocks.mpt_node_deserialize_nanos
+                ),
+            profile_empty_block_mpt_node_encode_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.empty_blocks.mpt_node_encode_nanos
+            ),
+            profile_empty_block_mpt_node_write_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.empty_blocks.mpt_node_write_nanos
+            ),
+            profile_empty_block_chain_commit_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.empty_blocks.store_commit_nanos
+            ),
+            profile_empty_block_store_database_write_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.empty_blocks.store_database_write_nanos
+            ),
+            profile_empty_block_runtime_update_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.empty_blocks.runtime_update_nanos
+            ),
+            profile_empty_block_post_commit_ms = crate::import_telemetry::nanos_to_millis(
+                summary.profile.empty_blocks.post_commit_nanos
+            ),
+            profile_stage_nesting = neo_system::PERSISTENCE_STAGE_NESTING,
             "acc import summary"
         );
         if cli.import_only {

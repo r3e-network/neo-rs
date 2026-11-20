@@ -85,6 +85,25 @@ const PROFILE_MPT_NODE_ENCODE: usize = 26;
 const PROFILE_MPT_NODE_WRITE: usize = 27;
 const PROFILE_STAGE_COUNT: usize = 28;
 
+/// How the profiled persistence stages nest inside one another.
+///
+/// Every stage in [`ExecutionProfileSnapshot`] is measured where the pipeline
+/// already does the work; several of them therefore overlap. Consumers that
+/// publish these timings (for example the offline `.acc` import summary) must
+/// label the nesting instead of adding stages together, because a sum would
+/// count the same wall-clock time more than once:
+///
+/// - `transaction_vm` runs inside `transaction_loop`;
+/// - `state_change_extraction` and `mpt` run inside `participant_precommit`
+///   (the state-root staging path);
+/// - `store_database_write` runs inside `store_commit` (the chain commit).
+///
+/// All requested visibilities already exist as stages; no additional timers are
+/// needed to observe snapshot creation, OnPersist, the transaction loop,
+/// PostPersist, state-root staging, or the chain commit.
+pub const PERSISTENCE_STAGE_NESTING: &str = "transaction_vm<transaction_loop; state_change_extraction+mpt<participant_precommit; \
+     store_database_write<store_commit";
+
 /// Aggregated opt-in wall-clock timings for the real persistence pipeline.
 /// `transaction_vm` is nested in `transaction_loop`; `mpt` and
 /// `state_change_extraction` are nested in `participant_precommit`; all
@@ -2432,5 +2451,22 @@ mod tests {
         assert!(!system.execution_stats().profile_snapshot().enabled);
 
         system.shutdown().await.expect("shutdown");
+    }
+
+    #[test]
+    fn persistence_stage_nesting_names_every_overlapping_stage() {
+        // Consumers such as the offline `.acc` import summary publish each stage
+        // as its own measurement, so the rule that overlapping stages are never
+        // summed has to stay discoverable at the definition site.
+        for relation in [
+            "transaction_vm<transaction_loop",
+            "state_change_extraction+mpt<participant_precommit",
+            "store_database_write<store_commit",
+        ] {
+            assert!(
+                PERSISTENCE_STAGE_NESTING.contains(relation),
+                "PERSISTENCE_STAGE_NESTING lost the {relation} relation"
+            );
+        }
     }
 }

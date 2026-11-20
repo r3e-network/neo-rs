@@ -58,7 +58,8 @@ pub use builder::NeoSystemBuilder;
 pub use neo_smart_contract::application_engine::execution_strategy::ExecutionMode;
 pub use parallel_execution::{ParallelTransactionLoop, parallel_execute_block};
 pub use persistence::{
-    ExecutionProfileSnapshot, ExecutionStats, FastPathStatsSnapshot, ParallelExecutionSnapshot,
+    EmptyBlockProfileSnapshot, ExecutionProfileSnapshot, ExecutionStats, FastPathStatsSnapshot,
+    PERSISTENCE_STAGE_NESTING, ParallelExecutionSnapshot,
 };
 pub use registry::ServiceRegistry;
 pub use system::{ReadinessStatus, STATE_STORE_SERVICE};

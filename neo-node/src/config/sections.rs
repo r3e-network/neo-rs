@@ -89,6 +89,13 @@ pub struct StorageSection {
     pub backend: Option<String>,
     #[serde(alias = "CacheSize")]
     pub cache_size: Option<u64>,
+    /// Row cache size in MiB.
+    ///
+    /// Unset derives the row cache from the block cache (the historical
+    /// behaviour), `0` disables the row cache, and any other value allocates
+    /// exactly that many MiB for it.
+    #[serde(alias = "RowCacheSize")]
+    pub row_cache_size: Option<u32>,
     #[serde(alias = "Compression")]
     pub compression: Option<String>,
     #[serde(alias = "WriteBufferSize")]

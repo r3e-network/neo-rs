@@ -35,7 +35,7 @@ pub use read_cache::{
 };
 pub use read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric};
 pub use seek_direction::SeekDirection;
-pub use store::{Store, StoreAccelerationStats};
+pub use store::{CacheUsageStats, Store, StoreAccelerationStats, StoreCacheStats};
 pub use store_cache::StoreCache;
 pub use store_factory::StoreFactory;
 pub use store_provider::StoreProvider;

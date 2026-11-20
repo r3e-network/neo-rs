@@ -20,9 +20,194 @@ use std::any::Any;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tracing::error;
+use tracing::{error, warn};
 
 use super::ApplicationLogsSettings;
+
+/// Serialized bytes an import session may hold before it commits on its own.
+///
+/// One checkpoint interval can cover tens of thousands of blocks, and a
+/// transaction-bearing block can carry a large log. The cap bounds the memory a
+/// session pins between two checkpoints without changing what is stored: an
+/// automatic commit writes exactly the records the next checkpoint would have
+/// written.
+pub const DEFAULT_ACCEPTED_BYTE_CAP: u64 = 64 * 1024 * 1024;
+
+/// One application-log record staged inside a persistence unit.
+///
+/// The key and JSON value are exactly what a standalone block would have put
+/// into the logs snapshot, so promotion cannot change the stored bytes.
+struct StagedLog {
+    key: Vec<u8>,
+    value: Vec<u8>,
+}
+
+impl StagedLog {
+    /// Serialized size this record occupies in the logs database.
+    fn byte_len(&self) -> u64 {
+        u64::try_from(self.key.len().saturating_add(self.value.len())).unwrap_or(u64::MAX)
+    }
+}
+
+/// Records held by the persistence unit that is currently open.
+///
+/// `staged` holds records written by a committing callback whose committed
+/// callback has not fired yet. `committed` holds records whose committed
+/// callback already fired inside this unit. Neither list has reached the logs
+/// database, so a chain-commit failure can still discard both.
+///
+/// `watermark` is the newest block the unit covers. It travels with the records
+/// so a commit can report the exact height its bytes make durable.
+#[derive(Default)]
+struct OpenUnit {
+    staged: Vec<StagedLog>,
+    committed: Vec<StagedLog>,
+    watermark: Option<(u32, UInt256)>,
+}
+
+/// Outcome of an import-scoped persistence-unit lifecycle call.
+///
+/// The lifecycle is defensive by construction: a repeated `begin` keeps the
+/// unit that is already open, and `finish`/`abort` without an open unit change
+/// nothing. Callers can therefore react to misuse instead of unwinding a panic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PersistenceUnitOutcome {
+    /// `begin` opened a new unit.
+    Started,
+    /// `finish` promoted this many staged records to accepted-pending.
+    Finished {
+        /// Records the finished unit handed to `flush_accepted`.
+        records: usize,
+    },
+    /// `abort` discarded this many staged records.
+    Aborted {
+        /// Records dropped from the unit that was open.
+        records: usize,
+    },
+    /// `begin` while a unit was already open; the open unit is untouched.
+    AlreadyOpen,
+    /// `finish`/`abort` without an open unit; no record was changed.
+    NotOpen,
+}
+
+/// Outcome of one accepted-record commit.
+///
+/// `watermark` is the block watermark the committed bytes cover. The bytes sit
+/// in the backend, not on disk, until
+/// [`ApplicationLogsService::try_flush_durable`] confirms the flush, so a caller
+/// must not certify a checkpoint from this value alone.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AcceptedFlush {
+    /// Records written by this commit.
+    pub records: u64,
+    /// Serialized bytes those records occupy.
+    pub bytes: u64,
+    /// Highest block whose records a commit has written, if a block boundary was
+    /// promoted with them. Durability requires the separate fallible flush.
+    pub watermark: Option<(u32, UInt256)>,
+}
+
+/// Logs persistence telemetry of one import session.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LogsFlushTelemetry {
+    /// Commits that wrote at least one record.
+    pub flushes: u64,
+    /// Records those commits wrote.
+    pub records: u64,
+    /// Serialized bytes those commits wrote.
+    pub bytes: u64,
+    /// Records still waiting for a commit.
+    pub pending_records: u64,
+    /// Highest height whose records are durable.
+    pub watermark: Option<(u32, UInt256)>,
+}
+
+/// Outcome of an import-session lifecycle call.
+///
+/// Like [`PersistenceUnitOutcome`], the lifecycle is defensive: a repeated
+/// `begin` keeps the session that is already open, and `end` without a session
+/// flushes nothing. Callers react to misuse instead of unwinding a panic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportSessionOutcome {
+    /// `begin` opened a session with a fresh watermark and flush counters.
+    Started,
+    /// `begin` while a session was already open; its state is untouched.
+    AlreadyOpen,
+    /// `end` committed the records still pending and left batching mode.
+    Ended {
+        /// Records the closing commit wrote.
+        records: u64,
+        /// Serialized bytes the closing commit wrote.
+        bytes: u64,
+    },
+    /// `end` without an open session; nothing was written.
+    NotOpen,
+}
+
+/// Records promoted by finished persistence units plus the import session state.
+///
+/// Online operation never promotes a record, so every field but `byte_cap`
+/// keeps its default unless an import session is open.
+struct AcceptedLogs {
+    /// Records a finished unit promoted and no commit has written yet.
+    records: Vec<StagedLog>,
+    /// Serialized size of `records`.
+    pending_bytes: u64,
+    /// Newest block covered by `records`.
+    pending_watermark: Option<(u32, UInt256)>,
+    /// Newest block whose records a commit wrote but no durable flush confirmed.
+    ///
+    /// The import profile disables the write-ahead log, so bytes accepted by a
+    /// commit are still lost on a crash until a durable flush succeeds. Keeping
+    /// this stage separate from `durable_watermark` is what stops a checkpoint
+    /// from certifying records that never reached disk.
+    committed_watermark: Option<(u32, UInt256)>,
+    /// Newest block whose records are durable in the logs database.
+    durable_watermark: Option<(u32, UInt256)>,
+    /// Whether [`ApplicationLogsService::begin_import_session`] is in effect.
+    session_active: bool,
+    /// Automatic commit threshold in serialized bytes; zero commits every unit.
+    byte_cap: u64,
+    /// Commits that wrote at least one record.
+    flushes: u64,
+    /// Records those commits wrote.
+    flushed_records: u64,
+    /// Serialized bytes those commits wrote.
+    flushed_bytes: u64,
+}
+
+impl Default for AcceptedLogs {
+    fn default() -> Self {
+        Self {
+            records: Vec::new(),
+            pending_bytes: 0,
+            pending_watermark: None,
+            committed_watermark: None,
+            durable_watermark: None,
+            session_active: false,
+            byte_cap: DEFAULT_ACCEPTED_BYTE_CAP,
+            flushes: 0,
+            flushed_records: 0,
+            flushed_bytes: 0,
+        }
+    }
+}
+
+impl AcceptedLogs {
+    /// Promotes the records of a finished unit and returns their byte size.
+    ///
+    /// A unit's blocks are always newer than what is already pending, so its
+    /// watermark replaces the pending one instead of being merged.
+    fn push(&mut self, records: Vec<StagedLog>, watermark: Option<(u32, UInt256)>) -> u64 {
+        let bytes = records.iter().map(StagedLog::byte_len).sum();
+        self.pending_bytes = self.pending_bytes.saturating_add(bytes);
+        self.records.extend(records);
+        if watermark.is_some() {
+            self.pending_watermark = watermark;
+        }
+        bytes
+    }
+}
 
 /// ApplicationLogs storage and commit handler.
 pub struct ApplicationLogsService {
@@ -30,6 +215,10 @@ pub struct ApplicationLogsService {
     store: Arc<dyn Store>,
     snapshot: Mutex<Option<Arc<dyn StoreSnapshot>>>,
     disabled: AtomicBool,
+    /// Records promoted by finished units plus the import session state.
+    accepted: Mutex<AcceptedLogs>,
+    /// The import-scoped persistence unit, when one is open.
+    unit: Mutex<Option<OpenUnit>>,
 }
 
 impl ApplicationLogsService {
@@ -43,6 +232,8 @@ impl ApplicationLogsService {
             store,
             snapshot: Mutex::new(None),
             disabled: AtomicBool::new(false),
+            accepted: Mutex::new(AcceptedLogs::default()),
+            unit: Mutex::new(None),
         }
     }
 
@@ -62,16 +253,287 @@ impl ApplicationLogsService {
     }
 
     fn start_batch(&self) {
+        if self.unit.lock().is_some() {
+            // A persistence unit stages its own records. Installing a snapshot
+            // here would commit them before the chain commit is known.
+            return;
+        }
         let mut guard = self.snapshot.lock();
         *guard = Some(self.store.snapshot());
     }
 
-    /// Flushes committed logs to durable storage.
+    /// Opens an import-scoped persistence unit.
+    ///
+    /// From this point on, committed callbacks stage their records in memory
+    /// instead of committing them to the logs database, so the unit can be
+    /// discarded if the matching chain commit fails. Online operation never
+    /// opens a unit and keeps its per-block snapshot/commit behaviour.
+    pub fn begin_persistence_unit(&self) -> PersistenceUnitOutcome {
+        let mut unit = self.unit.lock();
+        if unit.is_some() {
+            return PersistenceUnitOutcome::AlreadyOpen;
+        }
+        *unit = Some(OpenUnit::default());
+        // A standalone block may have left a snapshot behind; it must not absorb
+        // records that belong to this unit.
+        self.snapshot.lock().take();
+        PersistenceUnitOutcome::Started
+    }
+
+    /// Closes the open unit after its physical chain commit succeeded.
+    ///
+    /// Every staged record becomes accepted-pending: eligible for the next
+    /// [`Self::flush_accepted`] but still reversible until that flush runs.
+    /// Inside an import session nothing is committed here, so consecutive units
+    /// accumulate into one logs write per checkpoint. When the promoted records
+    /// push the pending set past the byte cap the commit happens immediately, so
+    /// a long checkpoint interval cannot grow the set without bound.
+    ///
+    /// Returns the commit error of an automatic flush; the records are then left
+    /// pending, exactly as a failed explicit flush leaves them.
+    ///
+    /// An automatic commit is the only case where records reach the logs database
+    /// before the next checkpoint's chain flush. That trade-off bounds the memory
+    /// a very long checkpoint interval can pin, at the cost of the logs possibly
+    /// leading the chain by at most one interval if a crash loses the chain
+    /// memtable. The opposite direction — logs behind the chain — is what the
+    /// importer detects on resume.
+    pub fn finish_persistence_unit(&self) -> Result<PersistenceUnitOutcome, String> {
+        let (count, cap_reached) = {
+            let mut unit = self.unit.lock();
+            let Some(open) = unit.as_mut() else {
+                return Ok(PersistenceUnitOutcome::NotOpen);
+            };
+            let mut records = std::mem::take(&mut open.committed);
+            records.append(&mut open.staged);
+            let watermark = open.watermark;
+            *unit = None;
+            let count = records.len();
+            let mut accepted = self.accepted.lock();
+            accepted.push(records, watermark);
+            let cap_reached =
+                accepted.session_active && accepted.pending_bytes >= accepted.byte_cap;
+            (count, cap_reached)
+        };
+        if cap_reached {
+            // The records are already promoted, so a failure here is reported but
+            // must not undo the unit: the next flush retries the same bytes.
+            self.flush_accepted()?;
+        }
+        Ok(PersistenceUnitOutcome::Finished { records: count })
+    }
+
+    /// Discards every record staged since [`Self::begin_persistence_unit`].
+    ///
+    /// Records promoted by an earlier finished unit are preserved, because they
+    /// belong to an already committed chain state.
+    pub fn abort_persistence_unit(&self) -> PersistenceUnitOutcome {
+        let mut unit = self.unit.lock();
+        let Some(open) = unit.as_ref() else {
+            return PersistenceUnitOutcome::NotOpen;
+        };
+        let discarded = open.committed.len() + open.staged.len();
+        *unit = None;
+        self.snapshot.lock().take();
+        PersistenceUnitOutcome::Aborted { records: discarded }
+    }
+
+    /// Commits all accepted-pending records to the logs database.
+    ///
+    /// Returns how many records and bytes were written together with the block
+    /// watermark those bytes cover. Zero pending records is not an error and
+    /// performs no store work. The records are written through a single store
+    /// batch, which is the same write path a per-block commit takes, so a caller
+    /// that finished one unit per block still gets one logs write per block while
+    /// a coalesced session gets one write for the whole checkpoint interval.
+    ///
+    /// Durability is completed by the caller: an import checkpoint calls
+    /// [`Self::try_flush_durable`] right after this commit. The watermark moves
+    /// in two stages — this commit parks it as *committed*, and only a successful
+    /// durable flush promotes it to *durable*, which is the value
+    /// [`Self::watermark`] reports. This method never forces a memtable flush,
+    /// because a per-unit call must stay as cheap as the per-block commit it
+    /// replaces.
+    ///
+    /// A failed commit returns the records to the pending set, so a retry writes
+    /// the same bytes and the reported pending count keeps describing what is not
+    /// yet durable.
+    pub fn flush_accepted(&self) -> Result<AcceptedFlush, String> {
+        let (records, bytes, watermark) = {
+            let mut accepted = self.accepted.lock();
+            if accepted.records.is_empty() {
+                return Ok(AcceptedFlush::default());
+            }
+            let records = std::mem::take(&mut accepted.records);
+            let bytes = std::mem::take(&mut accepted.pending_bytes);
+            let watermark = accepted.pending_watermark.take();
+            (records, bytes, watermark)
+        };
+        let count = u64::try_from(records.len()).unwrap_or(u64::MAX);
+
+        if let Err(err) = self.write_accepted(&records) {
+            self.restore_accepted(records, bytes, watermark);
+            return Err(err);
+        }
+
+        let mut accepted = self.accepted.lock();
+        accepted.flushes = accepted.flushes.saturating_add(1);
+        accepted.flushed_records = accepted.flushed_records.saturating_add(count);
+        accepted.flushed_bytes = accepted.flushed_bytes.saturating_add(bytes);
+        if watermark.is_some() {
+            accepted.committed_watermark = watermark;
+        }
+        let committed_watermark = accepted.committed_watermark;
+        Ok(AcceptedFlush {
+            records: count,
+            bytes,
+            watermark: committed_watermark,
+        })
+    }
+
+    /// Writes one batch of accepted records through a single store commit.
+    fn write_accepted(&self, records: &[StagedLog]) -> Result<(), String> {
+        let mut write = self.store.snapshot();
+        let Some(snapshot) = Arc::get_mut(&mut write) else {
+            return Err("application logs flush failed: snapshot is still shared".to_string());
+        };
+        // The records stay owned by the pending set until the commit succeeds, so
+        // the bytes are copied into the snapshot instead of being moved.
+        for record in records {
+            snapshot
+                .put(record.key.clone(), record.value.clone())
+                .map_err(|err| format!("failed to write staged application log: {err}"))?;
+        }
+        snapshot
+            .try_commit()
+            .map_err(|err| format!("application logs flush commit failed: {err}"))?;
+        Ok(())
+    }
+
+    /// Returns records of a failed commit to the pending set.
+    fn restore_accepted(
+        &self,
+        records: Vec<StagedLog>,
+        bytes: u64,
+        watermark: Option<(u32, UInt256)>,
+    ) {
+        let mut accepted = self.accepted.lock();
+        accepted.pending_bytes = accepted.pending_bytes.saturating_add(bytes);
+        let pending = std::mem::take(&mut accepted.records);
+        accepted.records = records;
+        accepted.records.extend(pending);
+        if accepted.pending_watermark.is_none() {
+            accepted.pending_watermark = watermark;
+        }
+    }
+
+    /// Opens the import-scoped batching session.
+    ///
+    /// From this point on a finished persistence unit only *promotes* its records
+    /// to the accepted-pending set; nothing reaches the logs database until a
+    /// [`Self::flush_accepted`] call, which the importer issues at checkpoint
+    /// boundaries. Online operation never opens a session, so its per-block
+    /// commit stays exactly as it was.
+    ///
+    /// Opening a session resets the watermark and the flush counters, because
+    /// they describe one import run.
+    pub fn begin_import_session(&self) -> ImportSessionOutcome {
+        let mut accepted = self.accepted.lock();
+        if accepted.session_active {
+            return ImportSessionOutcome::AlreadyOpen;
+        }
+        accepted.session_active = true;
+        accepted.committed_watermark = None;
+        accepted.durable_watermark = None;
+        accepted.flushes = 0;
+        accepted.flushed_records = 0;
+        accepted.flushed_bytes = 0;
+        ImportSessionOutcome::Started
+    }
+
+    /// Commits the records still pending and leaves batching mode.
+    ///
+    /// The counters and the watermark stay readable afterwards, so the importer
+    /// can report and verify them once the session is closed.
+    pub fn end_import_session(&self) -> Result<ImportSessionOutcome, String> {
+        if !self.accepted.lock().session_active {
+            return Ok(ImportSessionOutcome::NotOpen);
+        }
+        let flushed = self.flush_accepted()?;
+        self.accepted.lock().session_active = false;
+        Ok(ImportSessionOutcome::Ended {
+            records: flushed.records,
+            bytes: flushed.bytes,
+        })
+    }
+
+    /// Returns whether this service is in import batching mode.
+    pub fn import_session_active(&self) -> bool {
+        self.accepted.lock().session_active
+    }
+
+    /// Sets the byte cap that triggers an automatic commit.
+    ///
+    /// A cap of zero commits after every finished unit, which reproduces the
+    /// per-block write pattern of online operation.
+    pub fn set_accepted_byte_cap(&self, bytes: u64) {
+        self.accepted.lock().byte_cap = bytes;
+    }
+
+    /// Returns the highest block whose records are durable in the logs database.
+    ///
+    /// `None` means nothing was committed in this import session. Import resume
+    /// validation compares this against the chain height: a logs watermark
+    /// behind the chain is what a crash between the two store flushes leaves.
+    pub fn watermark(&self) -> Option<(u32, UInt256)> {
+        self.accepted.lock().durable_watermark
+    }
+
+    /// Returns the logs persistence telemetry of this import session.
+    pub fn flush_telemetry(&self) -> LogsFlushTelemetry {
+        let accepted = self.accepted.lock();
+        LogsFlushTelemetry {
+            flushes: accepted.flushes,
+            records: accepted.flushed_records,
+            bytes: accepted.flushed_bytes,
+            pending_records: u64::try_from(accepted.records.len()).unwrap_or(u64::MAX),
+            watermark: accepted.durable_watermark,
+        }
+    }
+
+    /// Forces the committed logs to durable storage and advances the watermark
+    /// they cover.
     ///
     /// Import uses a RocksDB profile with the write-ahead log disabled, so a
-    /// checkpoint must flush this store or a restart drops the logs.
+    /// checkpoint must flush this store or a restart drops the logs. The flush is
+    /// fallible for exactly that reason: [`Store::flush`] logs a backend error and
+    /// returns, which cannot back a success report, so this method surfaces the
+    /// error instead.
+    ///
+    /// The watermark is promoted only after the backend confirms the flush. A
+    /// failure therefore leaves the logs certified only up to their last durable
+    /// commit, and the caller fails its checkpoint instead of reporting one.
+    pub fn try_flush_durable(&self) -> Result<(), String> {
+        self.store
+            .try_flush_durable()
+            .map_err(|err| format!("application logs durable flush failed: {err}"))?;
+        let mut accepted = self.accepted.lock();
+        if accepted.committed_watermark.is_some() {
+            accepted.durable_watermark = accepted.committed_watermark;
+        }
+        Ok(())
+    }
+
+    /// Flushes the logs to durable storage, best effort.
+    ///
+    /// Startup and the offline rewrite paths only want the bytes written before
+    /// the process moves on, so they log a backend failure instead of aborting a
+    /// node. The import checkpoint must fail closed and therefore calls
+    /// [`Self::try_flush_durable`] directly.
     pub fn flush(&self) {
-        self.store.flush();
+        if let Err(err) = self.try_flush_durable() {
+            warn!(target: "neo", error = %err, "best-effort application logs flush failed");
+        }
     }
 
     /// Rewrites OnPersist and PostPersist `vmstate` values that were stored as
@@ -162,6 +624,17 @@ impl ApplicationLogsService {
     }
 
     fn commit_batch(&self) -> Result<(), String> {
+        {
+            let mut unit = self.unit.lock();
+            if let Some(open) = unit.as_mut() {
+                // Inside a unit the committed callback only promotes this block's
+                // records. `finish` moves them out and `abort` drops them, so no
+                // records reach the database before the chain commit is known.
+                let staged = std::mem::take(&mut open.staged);
+                open.committed.extend(staged);
+                return Ok(());
+            }
+        }
         let mut guard = self.snapshot.lock();
         let Some(snapshot_arc) = guard.as_mut() else {
             return Ok(());
@@ -198,7 +671,33 @@ impl ApplicationLogsService {
             .apply(|| self.disabled.store(true, Ordering::SeqCst));
     }
 
+    /// Records which block the open unit is about to write records for.
+    ///
+    /// The boundary is what makes a commit report a durable height. Outside a
+    /// unit (online mode) nothing is tracked, because that path commits inside
+    /// the committed callback and has no interval to describe.
+    fn note_block_boundary(&self, height: u32, hash: UInt256) {
+        let mut unit = self.unit.lock();
+        if let Some(open) = unit.as_mut() {
+            open.watermark = Some((height, hash));
+        }
+    }
+
     fn write_log(&self, prefix: u8, hash: &UInt256, value: Value) -> Result<(), String> {
+        let mut key = Vec::with_capacity(1 + 32);
+        key.push(prefix);
+        key.extend_from_slice(&hash.to_bytes());
+        let bytes = serde_json::to_vec(&value)
+            .map_err(|err| format!("failed to serialize application log: {err}"))?;
+
+        {
+            let mut unit = self.unit.lock();
+            if let Some(open) = unit.as_mut() {
+                open.staged.push(StagedLog { key, value: bytes });
+                return Ok(());
+            }
+        }
+
         let mut guard = self.snapshot.lock();
         let Some(snapshot_arc) = guard.as_mut() else {
             return Ok(());
@@ -206,11 +705,6 @@ impl ApplicationLogsService {
         let Some(snapshot) = Arc::get_mut(snapshot_arc) else {
             return Err("application logs write failed: snapshot is still shared".to_string());
         };
-        let mut key = Vec::with_capacity(1 + 32);
-        key.push(prefix);
-        key.extend_from_slice(&hash.to_bytes());
-        let bytes = serde_json::to_vec(&value)
-            .map_err(|err| format!("failed to serialize application log: {err}"))?;
         snapshot
             .put(key, bytes)
             .map_err(|err| format!("failed to write application log to storage: {err}"))?;
@@ -345,6 +839,10 @@ impl CommittingHandler for ApplicationLogsService {
             self.start_batch();
 
             let block_hash = block.hash();
+            // A unit can span several blocks (a coalesced run of empty blocks),
+            // and the callbacks arrive in ascending height, so the newest note
+            // wins and the unit reports the height it actually reaches.
+            self.note_block_boundary(block.index(), block_hash);
             let block_log = self.block_log_json(&block_hash, application_executed_list);
             self.write_log(Self::PREFIX_BLOCK, &block_hash, block_log)?;
 
@@ -762,6 +1260,681 @@ mod tests {
             exception_policy,
             ..ApplicationLogsSettings::default()
         }
+    }
+
+    fn memory_service() -> (
+        ApplicationLogsService,
+        Arc<neo_storage::persistence::providers::MemoryStore>,
+    ) {
+        let store = Arc::new(neo_storage::persistence::providers::MemoryStore::new());
+        let service = ApplicationLogsService::new(
+            settings(UnhandledExceptionPolicy::Ignore),
+            Arc::clone(&store) as Arc<dyn Store>,
+        );
+        (service, store)
+    }
+
+    /// A logs store that supports the fallible durable flush interface.
+    ///
+    /// `MemoryStore` inherits the trait default that rejects explicit durable
+    /// flushes, so a checkpoint cannot run against it. This wrapper keeps the
+    /// memory storage, adds the flush gate, records how many records the store
+    /// already held at each flush, and can be armed to fail.
+    struct DurableMemoryStore {
+        inner: neo_storage::persistence::providers::MemoryStore,
+        flush_fails: AtomicBool,
+        flushes: Arc<Mutex<Vec<usize>>>,
+    }
+
+    impl DurableMemoryStore {
+        fn new(flushes: Arc<Mutex<Vec<usize>>>) -> Self {
+            Self {
+                inner: neo_storage::persistence::providers::MemoryStore::new(),
+                flush_fails: AtomicBool::new(false),
+                flushes,
+            }
+        }
+
+        fn fail_flushes(&self) {
+            self.flush_fails.store(true, Ordering::SeqCst);
+        }
+    }
+
+    impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for DurableMemoryStore {
+        fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
+            self.inner.try_get(key)
+        }
+
+        fn find(
+            &self,
+            key_prefix: Option<&Vec<u8>>,
+            direction: SeekDirection,
+        ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
+            self.inner.find(key_prefix, direction)
+        }
+    }
+
+    impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for DurableMemoryStore {
+        fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
+            self.inner.try_get(key)
+        }
+
+        fn find(
+            &self,
+            key_prefix: Option<&StorageKey>,
+            direction: SeekDirection,
+        ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+            self.inner.find(key_prefix, direction)
+        }
+    }
+
+    impl ReadOnlyStore for DurableMemoryStore {}
+
+    impl WriteStore<Vec<u8>, Vec<u8>> for DurableMemoryStore {
+        fn delete(&mut self, key: Vec<u8>) -> Result<(), StorageError> {
+            self.inner.delete(key)
+        }
+
+        fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> Result<(), StorageError> {
+            self.inner.put(key, value)
+        }
+    }
+
+    impl Store for DurableMemoryStore {
+        fn snapshot(&self) -> Arc<dyn StoreSnapshot> {
+            self.inner.snapshot()
+        }
+
+        fn on_new_snapshot(&self, handler: OnNewSnapshotDelegate) {
+            self.inner.on_new_snapshot(handler);
+        }
+
+        fn try_flush_durable(&self) -> neo_storage::StorageResult<()> {
+            let stored_records = self
+                .inner
+                .find(None::<&Vec<u8>>, SeekDirection::Forward)
+                .count();
+            self.flushes.lock().push(stored_records);
+            if self.flush_fails.load(Ordering::SeqCst) {
+                return Err(StorageError::CommitFailed(
+                    "injected application logs flush failure".to_string(),
+                ));
+            }
+            Ok(())
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+    }
+
+    /// A logs service over a store that supports the fallible durable flush.
+    fn durable_service() -> (
+        ApplicationLogsService,
+        Arc<DurableMemoryStore>,
+        Arc<Mutex<Vec<usize>>>,
+    ) {
+        let flushes = Arc::new(Mutex::new(Vec::new()));
+        let store = Arc::new(DurableMemoryStore::new(Arc::clone(&flushes)));
+        let service = ApplicationLogsService::new(
+            settings(UnhandledExceptionPolicy::Ignore),
+            Arc::clone(&store) as Arc<dyn Store>,
+        );
+        (service, store, flushes)
+    }
+
+    fn block_log_hash(byte: u8) -> UInt256 {
+        UInt256::from_bytes(&[byte; 32]).expect("32-byte hash")
+    }
+
+    fn stored_block_log(
+        store: &neo_storage::persistence::providers::MemoryStore,
+        hash: &UInt256,
+    ) -> Option<Value> {
+        let mut key = vec![ApplicationLogsService::PREFIX_BLOCK];
+        key.extend_from_slice(&hash.to_bytes());
+        let raw = store.try_get(&key)?;
+        serde_json::from_slice(&raw).ok()
+    }
+
+    /// Writes one block's records the way the committing callback does,
+    /// including the per-block snapshot request that must be a no-op inside a
+    /// unit and the block boundary that makes a commit report a height.
+    fn commit_one_inside_unit(service: &ApplicationLogsService, hash: &UInt256, height: u32) {
+        service.note_block_boundary(height, *hash);
+        service.start_batch();
+        service
+            .write_log(
+                ApplicationLogsService::PREFIX_BLOCK,
+                hash,
+                serde_json::json!({ "blockhash": hash.to_string() }),
+            )
+            .expect("stage application log");
+        service
+            .commit_batch()
+            .expect("promote staged application log inside the unit");
+    }
+
+    /// Persists one block inside its own unit, exactly as the importer does.
+    fn finish_one_unit(service: &ApplicationLogsService, hash: &UInt256, height: u32) {
+        assert_eq!(
+            service.begin_persistence_unit(),
+            PersistenceUnitOutcome::Started
+        );
+        commit_one_inside_unit(service, hash, height);
+        assert_eq!(
+            service.finish_persistence_unit().expect("finish unit"),
+            PersistenceUnitOutcome::Finished { records: 1 }
+        );
+    }
+
+    #[test]
+    fn persistence_unit_abort_discards_records_staged_since_begin() {
+        let (service, store) = memory_service();
+        let hash = block_log_hash(0x11);
+
+        assert_eq!(
+            service.begin_persistence_unit(),
+            PersistenceUnitOutcome::Started
+        );
+        commit_one_inside_unit(&service, &hash, 1);
+        assert_eq!(
+            service.abort_persistence_unit(),
+            PersistenceUnitOutcome::Aborted { records: 1 }
+        );
+
+        assert_eq!(service.flush_accepted().expect("flush").records, 0);
+        assert!(
+            stored_block_log(&store, &hash).is_none(),
+            "an aborted unit must not leave any application log behind"
+        );
+    }
+
+    #[test]
+    fn persistence_unit_finish_preserves_records_until_flush() {
+        let (service, store) = memory_service();
+        let hash = block_log_hash(0x22);
+
+        assert_eq!(
+            service.begin_persistence_unit(),
+            PersistenceUnitOutcome::Started
+        );
+        commit_one_inside_unit(&service, &hash, 1);
+        assert!(
+            stored_block_log(&store, &hash).is_none(),
+            "a record staged inside a unit must not reach the store before flush"
+        );
+
+        assert_eq!(
+            service.finish_persistence_unit().expect("finish unit"),
+            PersistenceUnitOutcome::Finished { records: 1 }
+        );
+        assert!(
+            stored_block_log(&store, &hash).is_none(),
+            "finishing a unit only promotes records, it does not commit them"
+        );
+
+        assert_eq!(service.flush_accepted().expect("flush").records, 1);
+        let stored = stored_block_log(&store, &hash).expect("committed block log");
+        assert_eq!(
+            stored["blockhash"].as_str(),
+            Some(hash.to_string().as_str())
+        );
+        assert_eq!(
+            service.flush_accepted().expect("second flush").records,
+            0,
+            "a flush must not resend records it already committed"
+        );
+    }
+
+    #[test]
+    fn persistence_unit_abort_keeps_records_of_an_earlier_finished_unit() {
+        let (service, store) = memory_service();
+        let kept = block_log_hash(0x33);
+        let dropped = block_log_hash(0x44);
+
+        finish_one_unit(&service, &kept, 1);
+
+        service.begin_persistence_unit();
+        commit_one_inside_unit(&service, &dropped, 2);
+        assert_eq!(
+            service.abort_persistence_unit(),
+            PersistenceUnitOutcome::Aborted { records: 1 }
+        );
+
+        assert_eq!(service.flush_accepted().expect("flush").records, 1);
+        assert!(stored_block_log(&store, &kept).is_some());
+        assert!(stored_block_log(&store, &dropped).is_none());
+    }
+
+    #[test]
+    fn persistence_unit_lifecycle_survives_misuse() {
+        let (service, _store) = memory_service();
+        let hash = block_log_hash(0x55);
+
+        // finish/abort without an open unit are no-ops, not panics.
+        assert_eq!(
+            service.finish_persistence_unit().expect("finish unit"),
+            PersistenceUnitOutcome::NotOpen
+        );
+        assert_eq!(
+            service.abort_persistence_unit(),
+            PersistenceUnitOutcome::NotOpen
+        );
+
+        // A second begin keeps the unit that is already open.
+        assert_eq!(
+            service.begin_persistence_unit(),
+            PersistenceUnitOutcome::Started
+        );
+        commit_one_inside_unit(&service, &hash, 1);
+        assert_eq!(
+            service.begin_persistence_unit(),
+            PersistenceUnitOutcome::AlreadyOpen
+        );
+        assert_eq!(
+            service.finish_persistence_unit().expect("finish unit"),
+            PersistenceUnitOutcome::Finished { records: 1 }
+        );
+        assert_eq!(service.flush_accepted().expect("flush").records, 1);
+
+        // A double finish cannot re-promote anything.
+        assert_eq!(
+            service.finish_persistence_unit().expect("finish unit"),
+            PersistenceUnitOutcome::NotOpen
+        );
+        assert_eq!(service.flush_accepted().expect("flush").records, 0);
+    }
+
+    #[test]
+    fn online_mode_keeps_per_block_snapshot_commit() {
+        let (service, store) = memory_service();
+        let hash = block_log_hash(0x66);
+
+        // No unit is opened in online mode: the committing callback installs a
+        // snapshot and the committed callback commits it, exactly as before.
+        service.note_block_boundary(1, hash);
+        service.start_batch();
+        service
+            .write_log(
+                ApplicationLogsService::PREFIX_BLOCK,
+                &hash,
+                serde_json::json!({ "blockhash": hash.to_string() }),
+            )
+            .expect("write application log");
+        assert!(stored_block_log(&store, &hash).is_none());
+
+        service.commit_batch().expect("commit application log");
+        assert!(stored_block_log(&store, &hash).is_some());
+        assert_eq!(
+            service.flush_accepted().expect("flush").records,
+            0,
+            "online mode never parks records in the accepted set"
+        );
+        assert!(
+            !service.import_session_active(),
+            "online mode never opens an import session"
+        );
+        assert_eq!(
+            service.watermark(),
+            None,
+            "nothing is tracked for the online per-block path"
+        );
+        assert_eq!(service.flush_telemetry(), LogsFlushTelemetry::default());
+    }
+
+    #[test]
+    fn import_session_coalesces_many_blocks_into_one_commit() {
+        let (service, store) = memory_service();
+        assert_eq!(
+            service.begin_import_session(),
+            ImportSessionOutcome::Started
+        );
+
+        let hashes = (1..=10u8).map(block_log_hash).collect::<Vec<_>>();
+        for (offset, hash) in hashes.iter().enumerate() {
+            let height = u32::try_from(offset).expect("test height") + 1;
+            finish_one_unit(&service, hash, height);
+        }
+
+        // Ten finished units park ten records and write nothing on their own.
+        let pending = service.flush_telemetry();
+        assert_eq!(pending.flushes, 0);
+        assert_eq!(pending.records, 0);
+        assert_eq!(pending.pending_records, 10);
+        for hash in &hashes {
+            assert!(stored_block_log(&store, hash).is_none());
+        }
+
+        let ended = service.end_import_session().expect("end session");
+        match ended {
+            ImportSessionOutcome::Ended { records, bytes } => {
+                assert_eq!(
+                    records, 10,
+                    "the closing commit writes every pending record"
+                );
+                assert!(bytes > 0, "the closing commit reports the bytes it wrote");
+            }
+            other => panic!("unexpected session outcome: {other:?}"),
+        }
+
+        // One commit carried all ten records, so the ten blocks cost one write.
+        let telemetry = service.flush_telemetry();
+        assert_eq!(telemetry.flushes, 1);
+        assert_eq!(telemetry.records, 10);
+        assert!(telemetry.bytes > 0);
+        assert_eq!(telemetry.pending_records, 0);
+        assert!(!service.import_session_active());
+        for hash in &hashes {
+            assert!(stored_block_log(&store, hash).is_some());
+        }
+    }
+
+    /// Dumps every record of a logs store, in key order.
+    fn dump_logs(
+        store: &neo_storage::persistence::providers::MemoryStore,
+    ) -> Vec<(Vec<u8>, Vec<u8>)> {
+        store.find(None, SeekDirection::Forward).collect()
+    }
+
+    /// The same ten blocks must store identical JSON whether they are committed
+    /// one unit at a time or accumulated into one coalesced commit.
+    ///
+    /// Coalescing only changes *when* records are written, never what is
+    /// written: both runs push the same key/value pairs into the same store.
+    #[test]
+    fn coalesced_commit_stores_the_same_json_as_per_block_commits() {
+        let hashes = (1..=10u8).map(block_log_hash).collect::<Vec<_>>();
+
+        // Per-block commits: a zero byte cap commits after every finished unit.
+        let (per_block, per_block_store) = memory_service();
+        per_block.set_accepted_byte_cap(0);
+        per_block.begin_import_session();
+        for (offset, hash) in hashes.iter().enumerate() {
+            let height = u32::try_from(offset).expect("test height") + 1;
+            finish_one_unit(&per_block, hash, height);
+        }
+        per_block.end_import_session().expect("end session");
+
+        // Coalesced commits: one unit per block, one commit at the end.
+        let (coalesced, coalesced_store) = memory_service();
+        coalesced.begin_import_session();
+        for (offset, hash) in hashes.iter().enumerate() {
+            let height = u32::try_from(offset).expect("test height") + 1;
+            finish_one_unit(&coalesced, hash, height);
+        }
+        coalesced.end_import_session().expect("end session");
+
+        assert_eq!(
+            per_block.flush_telemetry().flushes,
+            u64::try_from(hashes.len()).expect("record count"),
+            "the per-block run must commit once per block"
+        );
+        assert_eq!(
+            coalesced.flush_telemetry().flushes,
+            1,
+            "the coalesced run must commit once for the whole run"
+        );
+
+        let per_block_records = dump_logs(&per_block_store);
+        assert_eq!(per_block_records.len(), hashes.len());
+        assert_eq!(
+            per_block_records,
+            dump_logs(&coalesced_store),
+            "coalescing must not change the stored bytes"
+        );
+    }
+
+    /// Serialized size of one block-log record, measured through a session that
+    /// commits exactly that record.
+    fn single_record_bytes() -> u64 {
+        let (service, _store) = memory_service();
+        service.begin_import_session();
+        finish_one_unit(&service, &block_log_hash(0x01), 1);
+        service.end_import_session().expect("end session");
+        service.flush_telemetry().bytes
+    }
+
+    #[test]
+    fn accepted_byte_cap_forces_a_commit_mid_accumulation() {
+        let record_bytes = single_record_bytes();
+        assert!(record_bytes > 0);
+
+        // A cap only two records fit in: the third promotion crosses it, so the
+        // commit lands mid-accumulation instead of at the next checkpoint.
+        let (service, store) = memory_service();
+        service.set_accepted_byte_cap(record_bytes * 2 + 1);
+        assert_eq!(
+            service.begin_import_session(),
+            ImportSessionOutcome::Started
+        );
+
+        let hashes = (1..=5u8).map(block_log_hash).collect::<Vec<_>>();
+        for (offset, hash) in hashes.iter().enumerate() {
+            let height = u32::try_from(offset).expect("test height") + 1;
+            finish_one_unit(&service, hash, height);
+        }
+
+        let telemetry = service.flush_telemetry();
+        assert_eq!(telemetry.flushes, 1, "the cap must commit on its own");
+        assert_eq!(telemetry.records, 3, "the commit carries what crossed it");
+        assert_eq!(telemetry.pending_records, 2);
+        assert!(stored_block_log(&store, &hashes[0]).is_some());
+        assert!(stored_block_log(&store, &hashes[2]).is_some());
+        assert!(
+            stored_block_log(&store, &hashes[3]).is_none(),
+            "records after the cap commit stay pending"
+        );
+
+        service.end_import_session().expect("end session");
+        let telemetry = service.flush_telemetry();
+        assert_eq!(telemetry.flushes, 2);
+        assert_eq!(telemetry.records, 5);
+        assert_eq!(telemetry.pending_records, 0);
+
+        // A cap of zero reproduces the per-block write pattern.
+        let (per_block, _store) = memory_service();
+        per_block.set_accepted_byte_cap(0);
+        per_block.begin_import_session();
+        for (offset, hash) in hashes.iter().take(3).enumerate() {
+            let height = u32::try_from(offset).expect("test height") + 1;
+            finish_one_unit(&per_block, hash, height);
+        }
+        assert_eq!(
+            per_block.flush_telemetry().flushes,
+            3,
+            "a zero cap commits after every finished unit"
+        );
+    }
+
+    #[test]
+    fn watermark_tracks_the_last_durably_flushed_height() {
+        let (service, _store, _flushes) = durable_service();
+        assert_eq!(service.watermark(), None);
+
+        service.begin_import_session();
+        assert_eq!(
+            service.watermark(),
+            None,
+            "a new session starts without a watermark"
+        );
+
+        let first = block_log_hash(0x71);
+        finish_one_unit(&service, &first, 5);
+        assert_eq!(
+            service.watermark(),
+            None,
+            "promoting a unit is not durability"
+        );
+
+        let flushed = service.flush_accepted().expect("flush");
+        assert_eq!(flushed.records, 1);
+        assert_eq!(
+            flushed.watermark,
+            Some((5, first)),
+            "the commit reports the block its bytes cover"
+        );
+        assert_eq!(
+            service.watermark(),
+            None,
+            "a commit alone must not certify durability"
+        );
+
+        service.try_flush_durable().expect("durable flush");
+        assert_eq!(service.watermark(), Some((5, first)));
+
+        let second = block_log_hash(0x72);
+        finish_one_unit(&service, &second, 9);
+        service.flush_accepted().expect("flush");
+        service.try_flush_durable().expect("durable flush");
+        assert_eq!(service.watermark(), Some((9, second)));
+
+        // Ending the session keeps the watermark readable for resume validation.
+        service.end_import_session().expect("end session");
+        assert_eq!(service.watermark(), Some((9, second)));
+
+        // The next session starts from nothing again.
+        service.begin_import_session();
+        assert_eq!(service.watermark(), None);
+    }
+
+    /// The watermark is the logs database's durable claim, so it may only move
+    /// after the backend confirmed the flush.
+    #[test]
+    fn durable_flush_advances_the_watermark_only_after_the_store_flush() {
+        let (service, _store, flushes) = durable_service();
+        service.begin_import_session();
+
+        let hash = block_log_hash(0xC1);
+        finish_one_unit(&service, &hash, 4);
+        let flushed = service.flush_accepted().expect("commit");
+        assert_eq!(flushed.records, 1);
+        assert_eq!(service.watermark(), None, "the commit is not durability");
+
+        service.try_flush_durable().expect("durable flush");
+        assert_eq!(service.watermark(), Some((4, hash)));
+        assert_eq!(service.flush_telemetry().watermark, Some((4, hash)));
+
+        // The record was already in the store when the flush ran, so the commit
+        // preceded it, and the watermark was still unset right before the call, so
+        // its promotion can only have happened inside it.
+        let observed = flushes.lock();
+        assert_eq!(observed.len(), 1, "one commit must cost one durable flush");
+        assert_eq!(observed[0], 1, "the record was committed before the flush");
+    }
+
+    #[test]
+    fn durable_flush_failure_keeps_the_watermark_unadvanced() {
+        let (service, store, flushes) = durable_service();
+        service.begin_import_session();
+
+        let hash = block_log_hash(0xD1);
+        finish_one_unit(&service, &hash, 6);
+        assert_eq!(service.flush_accepted().expect("commit").records, 1);
+        assert!(stored_block_log(&store.inner, &hash).is_some());
+        assert_eq!(service.watermark(), None);
+
+        store.fail_flushes();
+        let error = service
+            .try_flush_durable()
+            .expect_err("a failing durable flush must surface its error");
+        assert!(
+            error.contains("injected application logs flush failure"),
+            "unexpected error: {error}"
+        );
+        assert_eq!(
+            service.watermark(),
+            None,
+            "a failed flush must not advance the watermark"
+        );
+        assert_eq!(
+            service.flush_telemetry().watermark,
+            None,
+            "the telemetry must not report an undurable watermark either"
+        );
+        assert!(
+            stored_block_log(&store.inner, &hash).is_some(),
+            "a failed flush must not undo the records the commit wrote"
+        );
+        assert_eq!(*flushes.lock(), vec![1], "the failing flush still ran");
+    }
+
+    #[test]
+    fn import_session_lifecycle_survives_misuse() {
+        let (service, store) = memory_service();
+
+        assert_eq!(
+            service.end_import_session().expect("end session"),
+            ImportSessionOutcome::NotOpen,
+            "ending without a session must not write anything"
+        );
+        assert!(!service.import_session_active());
+
+        assert_eq!(
+            service.begin_import_session(),
+            ImportSessionOutcome::Started
+        );
+        assert_eq!(
+            service.begin_import_session(),
+            ImportSessionOutcome::AlreadyOpen,
+            "a second begin keeps the open session"
+        );
+
+        let hash = block_log_hash(0x91);
+        finish_one_unit(&service, &hash, 1);
+        match service.end_import_session().expect("end session") {
+            ImportSessionOutcome::Ended { records, bytes } => {
+                assert_eq!(records, 1);
+                assert!(bytes > 0);
+            }
+            other => panic!("unexpected session outcome: {other:?}"),
+        }
+        assert!(stored_block_log(&store, &hash).is_some());
+        assert_eq!(
+            service.end_import_session().expect("second end"),
+            ImportSessionOutcome::NotOpen
+        );
+        assert!(!service.import_session_active());
+    }
+
+    #[test]
+    fn failed_commit_returns_the_records_to_the_pending_set() {
+        let service = ApplicationLogsService::new(
+            settings(UnhandledExceptionPolicy::Ignore),
+            Arc::new(FailingStore),
+        );
+        service.begin_import_session();
+        finish_one_unit(&service, &block_log_hash(0x81), 1);
+
+        let error = service.flush_accepted().expect_err("write failure");
+        assert!(error.contains("injected application logs write failure"));
+
+        let telemetry = service.flush_telemetry();
+        assert_eq!(telemetry.flushes, 0);
+        assert_eq!(telemetry.records, 0);
+        assert_eq!(
+            telemetry.pending_records, 1,
+            "a failed commit must keep its records pending"
+        );
+        assert_eq!(service.watermark(), None);
+    }
+
+    #[test]
+    fn automatic_cap_commit_failure_is_reported_and_keeps_records_pending() {
+        let service = ApplicationLogsService::new(
+            settings(UnhandledExceptionPolicy::Ignore),
+            Arc::new(FailingStore),
+        );
+        service.set_accepted_byte_cap(0);
+        service.begin_import_session();
+        service.begin_persistence_unit();
+        commit_one_inside_unit(&service, &block_log_hash(0xA1), 1);
+
+        let error = service
+            .finish_persistence_unit()
+            .expect_err("the automatic cap commit must report its failure");
+        assert!(error.contains("injected application logs write failure"));
+        assert_eq!(service.flush_telemetry().pending_records, 1);
     }
 
     #[test]
