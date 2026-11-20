@@ -242,11 +242,10 @@ impl TeeEnclave {
             Ok(None) => {
                 if counter_file_existed {
                     let context = format!(
-                        "monotonic counter file exists at {:?} but the rollback floor witness {:?} is missing \
+                        "monotonic counter file exists at {:?} but the rollback floor witness {floor_path:?} is missing \
                          (legacy pre-floor directory or deleted floor); refusing to initialize — \
                          restore the floor file or migrate the sealed-data directory",
-                        self.counter_file_path(),
-                        floor_path
+                        self.counter_file_path()
                     );
                     self.set_error_state(format!("Rollback floor invalid: {context}"));
                     return Err(TeeError::enclave_init_error(
@@ -259,21 +258,17 @@ impl TeeEnclave {
                     self.set_error_state(context.clone());
                     TeeError::enclave_init_error(EnclaveInitError::RollbackFloorInvalid, context)
                 })?;
-                info!(
-                    "Initialized rollback floor witness at {:?} (floor = 0)",
-                    floor_path
-                );
+                info!("Initialized rollback floor witness at {floor_path:?} (floor = 0)");
             }
             Ok(Some(floor_value)) => {
                 let counter_value = *self.monotonic_counter.read();
                 if floor_value > counter_value {
                     warn!(
-                        "rollback floor witness ({}) is ahead of the loaded monotonic counter ({}): \
-                         the sealed-data state was likely rolled back; unseal operations will fail closed",
-                        floor_value, counter_value
+                        "rollback floor witness ({floor_value}) is ahead of the loaded monotonic counter ({counter_value}): \
+                         the sealed-data state was likely rolled back; unseal operations will fail closed"
                     );
                 }
-                debug!("Loaded rollback floor witness: {}", floor_value);
+                debug!("Loaded rollback floor witness: {floor_value}");
             }
             Err(e) => {
                 let context = format!("failed to load rollback floor witness {floor_path:?}: {e}");
@@ -329,7 +324,7 @@ impl TeeEnclave {
 
             // Harden permissions on existing sealed-data directories as well.
             if let Err(e) = crate::fs_acl::restrict_owner_only(path) {
-                warn!("Failed to set directory permissions: {}", e);
+                warn!("Failed to set directory permissions: {e}");
             }
 
             return Ok(());
@@ -339,9 +334,9 @@ impl TeeEnclave {
         match std::fs::create_dir_all(path) {
             Ok(()) => {
                 if let Err(e) = crate::fs_acl::restrict_owner_only(path) {
-                    warn!("Failed to set directory permissions: {}", e);
+                    warn!("Failed to set directory permissions: {e}");
                 }
-                debug!("Created sealed data directory: {:?}", path);
+                debug!("Created sealed data directory: {path:?}");
                 Ok(())
             }
             Err(e) => Err(TeeError::enclave_init_error(
@@ -353,7 +348,7 @@ impl TeeEnclave {
 
     /// Set error state with message
     fn set_error_state(&self, error_msg: String) {
-        error!("Enclave initialization error: {}", error_msg);
+        error!("Enclave initialization error: {error_msg}");
         *self.state.write() = EnclaveState::Error;
         *self.init_error.write() = Some(error_msg);
     }
@@ -582,7 +577,7 @@ impl TeeEnclave {
                     }
                 }
                 Err(e) => {
-                    warn!("Failed to read machine_id: {}, generating new", e);
+                    warn!("Failed to read machine_id: {e}, generating new");
                     Self::generate_and_save_machine_id(&id_file)
                 }
             }
@@ -605,7 +600,7 @@ impl TeeEnclave {
         }
 
         if let Err(e) = crate::fs_acl::write_owner_only(id_file, &id) {
-            warn!("Failed to persist machine_id: {}", e);
+            warn!("Failed to persist machine_id: {e}");
         }
 
         id.to_vec()
@@ -622,7 +617,7 @@ impl TeeEnclave {
             if data.len() >= 8 {
                 let value = u64::from_le_bytes(data[..8].try_into().unwrap());
                 *self.monotonic_counter.write() = value;
-                debug!("Loaded monotonic counter: {}", value);
+                debug!("Loaded monotonic counter: {value}");
             } else {
                 return Err(TeeError::enclave_init_error(
                     EnclaveInitError::CounterLoadFailed,

@@ -94,11 +94,9 @@ pub fn deserialize_array<T: Serializable>(
         )));
     }
 
-    let mut result = Vec::with_capacity(count);
-    for _ in 0..count {
-        result.push(T::deserialize(reader)?);
-    }
-    Ok(result)
+    (0..count)
+        .map(|_| T::deserialize(reader))
+        .collect::<IoResult<Vec<_>>>()
 }
 
 /// Deserializes an array with an upper bound check and custom item reader.
@@ -117,11 +115,9 @@ where
         )));
     }
 
-    let mut result = Vec::with_capacity(count);
-    for _ in 0..count {
-        result.push(read_item(reader)?);
-    }
-    Ok(result)
+    (0..count)
+        .map(|_| read_item(reader))
+        .collect::<IoResult<Vec<_>>>()
 }
 
 /// Deserializes an array whose length must exactly match `expected`.
@@ -138,9 +134,7 @@ pub fn deserialize_exact_array<T: Serializable>(
         return Err(IoError::invalid_data(mismatch_message));
     }
 
-    let mut result = Vec::with_capacity(count);
-    for _ in 0..count {
-        result.push(T::deserialize(reader)?);
-    }
-    Ok(result)
+    (0..count)
+        .map(|_| T::deserialize(reader))
+        .collect::<IoResult<Vec<_>>>()
 }

@@ -1,6 +1,6 @@
 //! Migration from Go neo-go to neo-rs.
 
-use super::{MigrationConfig, MigrationResult};
+use super::{MigrationConfig, MigrationResult, detect_network_name};
 use anyhow::{Context, Result, bail};
 use neo_protocol::ProtocolSettings;
 use std::path::Path;
@@ -153,17 +153,6 @@ async fn convert_bolt_to_rocksdb(
         bolt_path.display(),
         target_dir.display()
     )
-}
-
-/// Detect network name from protocol settings
-fn detect_network_name(settings: &ProtocolSettings) -> String {
-    if settings.network == ProtocolSettings::mainnet().network {
-        "mainnet".to_string()
-    } else if settings.network == ProtocolSettings::testnet().network {
-        "testnet".to_string()
-    } else {
-        format!("custom-{}", settings.network)
-    }
 }
 
 #[cfg(test)]

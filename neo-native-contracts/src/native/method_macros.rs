@@ -180,7 +180,7 @@ macro_rules! neo_native_contract_methods {
             table = $table,
             aliases = [$($alias => $alias_kind $alias_handler),*],
             unknown = |method| neo_smart_contract::error::CoreError::native_contract(
-                ::std::format!("Unknown method: {}", method)
+                ::std::format!("Unknown method: {method}")
             )
         );
     };

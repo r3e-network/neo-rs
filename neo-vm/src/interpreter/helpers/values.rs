@@ -209,9 +209,7 @@ pub(crate) fn convert_value(
         },
         NEOVM_STACK_ITEM_TYPE_INTEROP_INTERFACE => match &value {
             StackValue::Interop(_) => Ok(value),
-            other => Err(format!(
-                "unsupported CONVERT source for Interop: {other:?}"
-            )),
+            other => Err(format!("unsupported CONVERT source for Interop: {other:?}")),
         },
         _ => Err(format!("unsupported CONVERT target 0x{kind:02x}")),
     }

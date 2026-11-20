@@ -462,32 +462,11 @@ impl Serializable for ContractManifest {
     }
 }
 
-impl Interoperable for ContractManifest {
-    fn from_stack_item(
-        &mut self,
-        stack_item: StackItem,
-    ) -> std::result::Result<(), neo_vm::VmError> {
-        let sv = StackValue::try_from(stack_item).map_err(|error| {
-            neo_vm::VmError::invalid_operation_msg(format!(
-                "ContractManifest expects Struct stack item: {error}"
-            ))
-        })?;
-        self.from_stack_value(sv)
-            .map_err(|e| neo_vm::VmError::invalid_operation_msg(e.to_string()))
-    }
-
-    fn to_stack_item(&self) -> std::result::Result<StackItem, neo_vm::VmError> {
-        StackItem::try_from(self.to_stack_value()).map_err(|error| {
-            neo_vm::VmError::invalid_operation_msg(format!(
-                "ContractManifest StackValue conversion failed: {error}"
-            ))
-        })
-    }
-
-    fn clone_box(&self) -> Box<dyn Interoperable> {
-        Box::new(self.clone())
-    }
-}
+impl_interoperable!(
+    ContractManifest,
+    "ContractManifest expects Struct stack item: {error}",
+    "ContractManifest StackValue conversion failed: {error}"
+);
 
 impl ContractManifest {
     /// Converts the manifest into a VM stack-value struct matching the
@@ -573,17 +552,15 @@ impl ContractManifest {
         self.name = String::from_utf8(name_bytes)
             .map_err(|_| Error::invalid_format("ContractManifest name must be valid UTF-8"))?;
 
-        self.groups = match &items[1] {
-            StackValue::Array(groups) => groups
-                .iter()
-                .filter_map(|item| ContractGroup::try_from_stack_value(item.clone()).ok())
-                .collect(),
-            _ => {
-                return Err(Error::invalid_format(
-                    "ContractManifest groups must be an Array",
-                ));
-            }
+        let StackValue::Array(groups) = &items[1] else {
+            return Err(Error::invalid_format(
+                "ContractManifest groups must be an Array",
+            ));
         };
+        self.groups = groups
+            .iter()
+            .filter_map(|item| ContractGroup::try_from_stack_value(item.clone()).ok())
+            .collect();
 
         if let StackValue::Map(features) = &items[2] {
             if !features.is_empty() {
@@ -596,41 +573,36 @@ impl ContractManifest {
         }
         self.features.clear();
 
-        self.supported_standards = match &items[3] {
-            StackValue::Array(standards) => standards
-                .iter()
-                .filter_map(|item| {
-                    let bytes = item.to_byte_string_bytes()?;
-                    String::from_utf8(bytes).ok()
-                })
-                .collect(),
-            _ => {
-                return Err(Error::invalid_format(
-                    "ContractManifest supported standards must be an Array",
-                ));
-            }
+        let StackValue::Array(standards) = &items[3] else {
+            return Err(Error::invalid_format(
+                "ContractManifest supported standards must be an Array",
+            ));
         };
+        self.supported_standards = standards
+            .iter()
+            .filter_map(|item| {
+                let bytes = item.to_byte_string_bytes()?;
+                String::from_utf8(bytes).ok()
+            })
+            .collect();
 
         let mut abi = ContractAbi::default();
         abi.from_stack_value(items[4].clone())?;
         self.abi = abi;
 
-        self.permissions = match &items[5] {
-            StackValue::Array(permissions) => {
-                let mut values = Vec::new();
-                for item in permissions {
-                    let mut permission = ContractPermission::default_wildcard();
-                    permission.from_stack_value(item.clone())?;
-                    values.push(permission);
-                }
-                values
-            }
-            _ => {
-                return Err(Error::invalid_format(
-                    "ContractManifest permissions must be an Array",
-                ));
-            }
+        let StackValue::Array(permissions) = &items[5] else {
+            return Err(Error::invalid_format(
+                "ContractManifest permissions must be an Array",
+            ));
         };
+        self.permissions = permissions
+            .iter()
+            .map(|item| {
+                let mut permission = ContractPermission::default_wildcard();
+                permission.from_stack_value(item.clone())?;
+                Ok(permission)
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         self.trusts = match &items[6] {
             StackValue::Null => WildCardContainer::create_wildcard(),
@@ -690,7 +662,7 @@ fn parse_extra_bytes(bytes: &[u8]) -> Option<Value> {
     let text = match std::str::from_utf8(bytes) {
         Ok(s) => s,
         Err(e) => {
-            tracing::error!("ContractManifest extra must be UTF-8: {}", e);
+            tracing::error!("ContractManifest extra must be UTF-8: {e}");
             return None;
         }
     };
@@ -701,7 +673,7 @@ fn parse_extra_bytes(bytes: &[u8]) -> Option<Value> {
         match serde_json::from_str(text) {
             Ok(value) => Some(value),
             Err(e) => {
-                tracing::error!("Invalid JSON in manifest extra: {}", e);
+                tracing::error!("Invalid JSON in manifest extra: {e}");
                 None
             }
         }

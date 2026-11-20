@@ -14,8 +14,8 @@ pub mod node;
 pub mod node_type;
 /// Optional MPT wall-clock profiling
 pub mod profile;
-/// Root branch buffer for optimized trie operations
-pub mod root_branch_buffer;
+/// Opt-in cache for repeated MPT proof construction
+pub mod proof_cache;
 /// MPT trie implementation
 pub mod trie;
 
@@ -24,12 +24,15 @@ mod tests;
 
 pub use cache::get_cache_count;
 pub use cache::get_cache_stats;
-pub use cache::{GlobalNodeCache, MptCache, MptStoreSnapshot};
+pub use cache::{GlobalNodeCache, MptCache, MptStoreSnapshot, NODE_KEY_PREFIX, node_key};
 /// Type alias for [`MptCache`].
 pub type Cache<S> = MptCache<S>;
 pub use error::{MptError, MptResult};
 pub use node::Node;
 pub use node_type::NodeType;
 pub use profile::{MptProfile, MptProfileSnapshot, MptProfileStage};
-pub use root_branch_buffer::RootBranchBuffer;
+pub use proof_cache::{
+    CommittedRoot, PROOF_FORMAT_VERSION, ProofBundle, ProofCache, ProofCacheConfig, ProofCacheKey,
+    ProofCacheNamespace, ProofCacheStats,
+};
 pub use trie::{Trie, TrieEntry};

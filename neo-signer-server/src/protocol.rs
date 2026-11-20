@@ -33,12 +33,12 @@ use neo_wallets::signing::{
     ALGORITHM_ECDSA_P256_SHA256, AttestationChallenge, AttestationEvidence, KeyInfo, KeyRef,
     ProviderSignature, REMOTE_SIGNER_PROTOCOL_VERSION, RemoteKeyInfoResponse, RemoteOperationQuery,
     RemoteOperationStatus, RemoteSignRejection, RemoteSignRequest, RemoteSignResponse,
-    SecurityLevel, SignError, SignErrorCode, SignPurpose, SignResult, validate_remote_schema,
+    SecurityLevel, SignError, SignErrorCode, SignPurpose, SignResult, now_unix_ms,
+    validate_remote_schema,
 };
 use parking_lot::Mutex;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 use zeroize::Zeroizing;
 
 /// Permanent rejection codes accepted by the node client's
@@ -49,14 +49,6 @@ pub const PERMANENT_REJECTION_CODES: &[&str] = &[
     "key_not_found",
     "policy_permanent_denial",
 ];
-
-pub(crate) fn now_unix_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .min(i64::MAX as u128) as i64
-}
 
 /// One live attested session. The private key authenticates every response
 /// and rejection bound to this session.

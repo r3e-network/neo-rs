@@ -68,6 +68,22 @@ impl NativeContract for GasToken {
     }
 
     fn on_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+        // An empty block burns no system or network fee, so there is neither a
+        // sender to debit nor a network fee to mint: the per-transaction loop
+        // would not iterate and `total_network_fee` would stay zero. Return while
+        // the block is still borrowed so the clone, the header hash, the snapshot
+        // handle and the policy contract are never built.
+        //
+        // GasToken OnPersist has no height- or hardfork-dependent branch (both
+        // the burn and the mint are driven purely by block transactions), so this
+        // early return cannot hide a per-height transition.
+        if engine
+            .persisting_block()
+            .is_some_and(|block| block.transactions.is_empty())
+        {
+            return Ok(());
+        }
+
         let block = engine.get_persisting_block()?;
         let block_hash = block.header.clone().hash();
 
@@ -134,17 +150,11 @@ impl NativeContract for GasToken {
             }
             self.burn(engine, &sender, &burn_amount).map_err(|err| {
                 CoreError::native_contract(format!(
-                    "GasToken burn failed at block {} ({}), tx {} sender {} (system_fee={}, network_fee={}, burn={}, balance={}): {}",
+                    "GasToken burn failed at block {} ({block_hash}), tx {} sender {sender} (system_fee={}, network_fee={}, burn={burn_amount}, balance={pre_balance}): {err}",
                     block.index(),
-                    block_hash,
                     tx.hash(),
-                    sender,
                     tx.system_fee(),
-                    tx.network_fee(),
-                    burn_amount,
-                    pre_balance,
-                    err
-                ))
+                    tx.network_fee()))
             })?;
             total_network_fee = total_network_fee.saturating_add(tx.network_fee());
 

@@ -6,12 +6,14 @@ mod config;
 pub mod execution;
 pub mod hardfork;
 pub mod header_wire;
+pub mod oracle_request;
 pub mod payloads;
 pub mod protocol_settings;
 pub mod signing_data;
 pub mod witness;
 
 pub use hardfork::{Hardfork, HardforkManager, HardforkParseError};
+pub use oracle_request::OracleRequest;
 pub use protocol_settings::ProtocolSettings;
 pub use signing_data::{SIGN_DATA_LENGTH, get_sign_data, get_sign_data_vec};
 
@@ -29,11 +31,11 @@ pub use payloads::signer;
 pub use payloads::transaction;
 pub use payloads::transaction_attribute;
 
-/// Witness condition authority (canonical source: `neo_io::witness_rule`).
+/// Witness condition authority (canonical source: `neo_primitives::witness_rule`).
 pub mod witness_condition {
-    pub use neo_io::witness_rule::WitnessCondition;
+    pub use neo_primitives::witness_rule::WitnessCondition;
 }
-/// Witness rule action authority (canonical source: `neo_io::witness_rule`).
+/// Witness rule action authority (canonical source: `neo_primitives::witness_rule`).
 pub mod witness_rule_action {
-    pub use neo_io::witness_rule::WitnessRuleAction;
+    pub use neo_primitives::WitnessRuleAction;
 }

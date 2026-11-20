@@ -71,21 +71,20 @@ macro_rules! impl_numeric_convertible {
                     let min = <$ty>::MIN as f64;
                     let max = <$ty>::MAX as f64;
                     if value < min || value > max {
-                        return Err(invalid_params(format!("Numeric value out of range for {}: {}", stringify!($ty), value)));
+                        return Err(invalid_params(format!("Numeric value out of range for {}: {value}", stringify!($ty))));
                     }
 
                     if !matches!(stringify!($ty), "f32" | "f64") {
                         let max_safe = MAX_SAFE_INTEGER as f64;
                         if value < -max_safe || value > max_safe {
                             return Err(invalid_params(format!(
-                                "Numeric value out of safe range for {}: {}",
-                                stringify!($ty),
-                                value
+                                "Numeric value out of safe range for {}: {value}",
+                                stringify!($ty)
                             )));
                         }
                         let rounded = value.round();
                         if (value - rounded).abs() > f64::EPSILON {
-                            return Err(invalid_params(format!("Non-integer value for {}: {}", stringify!($ty), value)));
+                            return Err(invalid_params(format!("Non-integer value for {}: {value}", stringify!($ty))));
                         }
                         return Ok(rounded as $ty);
                     }

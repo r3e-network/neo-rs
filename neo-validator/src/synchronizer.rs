@@ -288,8 +288,8 @@ impl Synchronizer {
                 height,
                 "state_root_mismatch",
                 format!(
-                    "neo-rs root {} differs from upstream root {}",
-                    outcome.state_root, remote_root
+                    "neo-rs root {} differs from upstream root {remote_root}",
+                    outcome.state_root
                 ),
             )?;
         }

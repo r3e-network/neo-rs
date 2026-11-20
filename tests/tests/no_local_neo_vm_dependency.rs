@@ -585,39 +585,28 @@ fn script_builder_emit_syscall_hashes_with_neo_vm_rs_directly() {
 #[test]
 fn witness_rules_project_through_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
-    // The witness-rule stack projection moved out of neo-core: the canonical
-    // trait projection lives in neo-vm and the mirror copy in the
-    // neo-smart-contract authority crate; guard both so the projection stays
-    // StackValue-first.
-    let witness_rule = [
-        read_source(workspace.join("neo-vm/src/stack_projection.rs")),
-        read_source(workspace.join("neo-smart-contract/src/protocol_projection/witness_rule.rs")),
-    ]
-    .join("\n");
+    // The witness-rule stack projection is owned by neo-vm: it sits above neo-io
+    // (which owns `WitnessCondition` / `WitnessRule`) and owns `StackValue` /
+    // `StackItem`, so the projection stays globally unique there and neo-io stays
+    // free of a VM dependency. neo-smart-contract keeps only a re-export shim;
+    // guard both sides so the projection stays StackValue-first and single-owner.
+    let canonical = read_source(workspace.join("neo-vm/src/stack_projection.rs"));
+    let shim =
+        read_source(workspace.join("neo-smart-contract/src/protocol_projection/witness_rule.rs"));
 
     assert!(
-        witness_rule.contains("use neo_vm::StackValue;")
-            || witness_rule.contains("use neo_vm::{StackItem, StackValue};"),
-        "witness rules should import StackValue through the neo-vm boundary for their \
-         data projection"
+        canonical.contains("use crate::{StackItem, StackValue};")
+            || canonical.contains("use crate::{StackValue, StackItem};"),
+        "the canonical projection should reach StackValue from its own crate root"
     );
     assert!(
-        witness_rule
-            .matches("fn to_stack_value(&self) -> StackValue")
-            .count()
-            >= 2,
+        canonical.contains("fn to_stack_value(&self) -> StackValue"),
         "WitnessCondition and WitnessRule should both expose direct StackValue projections"
     );
     assert!(
-        witness_rule
-            .matches("StackItem::try_from(self.to_stack_value())")
-            .count()
-            + witness_rule
-                .matches("stack_value_to_item(self.to_stack_value())")
-                .count()
-            >= 2,
-        "WitnessCondition::to_stack_item and WitnessRule::to_stack_item should adapt \
-         from the direct StackValue projection"
+        canonical.contains("stack_value_to_item(self.to_stack_value())")
+            || canonical.contains("StackItem::try_from(self.to_stack_value())"),
+        "the stack-item adapters should project through StackValue first"
     );
     for required in [
         "pub fn witness_condition_to_stack_value(condition: &WitnessCondition) -> StackValue",
@@ -632,8 +621,8 @@ fn witness_rules_project_through_neo_vm_rs_stack_value() {
         "witness_condition_to_stack_value(&rule.condition)",
     ] {
         assert!(
-            witness_rule.contains(required),
-            "missing recursive rule projection: {required}"
+            canonical.contains(required),
+            "missing recursive rule projection in neo-vm: {required}"
         );
     }
     for local_builder in [
@@ -643,11 +632,67 @@ fn witness_rules_project_through_neo_vm_rs_stack_value() {
         "StackItem::from_byte_string",
     ] {
         assert!(
-            !witness_rule.contains(local_builder),
+            !canonical.contains(local_builder),
             "witness rules should not hand-build stack-item shapes with {local_builder}; \
              build neo_vm::StackValue first"
         );
     }
+
+    // The smart-contract side must stay a pure re-export: a second copy of the
+    // projection is exactly the cross-crate duplication this guard forbids.
+    assert!(
+        shim.contains("pub use neo_vm::{"),
+        "neo-smart-contract should re-export the neo-vm projections"
+    );
+    for duplicated in [
+        "fn to_stack_value(&self) -> StackValue",
+        "fn witness_condition_to_stack_value(",
+        "fn witness_rule_to_stack_value(",
+        "StackValue::Boolean(",
+        "StackValue::ByteString(",
+    ] {
+        assert!(
+            !shim.contains(duplicated),
+            "neo-smart-contract must not re-implement the projection ({duplicated}); it \
+             only re-exports the neo-vm owner"
+        );
+    }
+
+    // The protocol model itself is owned by `neo-primitives`; `neo-io` keeps only
+    // the binary codec. Guard the split so the model is not duplicated back into
+    // the I/O crate.
+    let model = read_source(workspace.join("neo-primitives/src/witness_rule.rs"));
+    let codec = read_source(workspace.join("neo-io/src/witness_rule/mod.rs"));
+    for required in [
+        "pub enum WitnessCondition",
+        "pub struct WitnessRule",
+        "pub const MAX_SUBITEMS: usize = 16;",
+        "pub const MAX_NESTING_DEPTH: usize = 3;",
+        "pub fn is_valid(&self, max_depth: usize) -> bool",
+        "pub fn from_json_with_depth(json: &Value, max_depth: usize) -> Result<Self, String>",
+    ] {
+        assert!(
+            model.contains(required),
+            "neo-primitives should own the witness-rule protocol model: {required}"
+        );
+    }
+    for forbidden in [
+        "pub enum WitnessCondition",
+        "pub struct WitnessRule ",
+        "pub fn from_json",
+    ] {
+        assert!(
+            !codec.contains(forbidden),
+            "neo-io must keep only the witness-rule codec, not the model ({forbidden})"
+        );
+    }
+    assert!(
+        codec.contains(
+            "pub use neo_primitives::{WitnessCondition, WitnessRule, WitnessRuleAction};"
+        ) || codec
+            .contains("pub use neo_primitives::witness_rule::{WitnessCondition, WitnessRule}"),
+        "neo-io should re-export the neo-primitives witness-rule model"
+    );
 }
 
 #[test]
@@ -675,15 +720,11 @@ fn contract_parameter_definition_projection_uses_neo_vm_rs_stack_value() {
          local StackItem"
     );
     assert!(
-        parameter_definition.contains("StackItem::try_from(self.to_stack_value())"),
-        "ContractParameterDefinition::to_stack_item should adapt from the direct \
-         neo-vm-rs StackValue projection"
+        parameter_definition.contains("impl_interoperable!("),
+        "ContractParameterDefinition should bridge Interoperable through the shared \
+         impl_interoperable! adapter instead of hand-writing the StackValue hop"
     );
-    assert!(
-        parameter_definition.contains("StackValue::try_from(stack_item)"),
-        "ContractParameterDefinition::from_stack_item should adapt into neo-vm-rs \
-         StackValue before parsing"
-    );
+    assert_shared_interoperable_adapter(&workspace);
     for local_builder in [
         "StackItem::from_struct",
         "StackItem::from_int",
@@ -769,12 +810,9 @@ fn manifest_event_and_method_descriptors_project_through_neo_vm_rs_stack_value()
             "{name} should parse direct StackValue inputs before adapting local StackItem"
         );
         assert!(
-            source.contains("StackItem::try_from(self.to_stack_value())"),
-            "{name}::to_stack_item should adapt from the direct neo-vm-rs StackValue projection"
-        );
-        assert!(
-            source.contains("StackValue::try_from(stack_item)"),
-            "{name}::from_stack_item should adapt into neo-vm-rs StackValue before parsing"
+            source.contains("impl_interoperable!("),
+            "{name} should bridge Interoperable through the shared impl_interoperable! \
+             adapter instead of hand-writing the StackValue hop"
         );
         for local_builder in [
             "StackItem::from_struct",
@@ -790,6 +828,7 @@ fn manifest_event_and_method_descriptors_project_through_neo_vm_rs_stack_value()
             );
         }
     }
+    assert_shared_interoperable_adapter(&workspace);
 }
 
 #[test]
@@ -850,17 +889,15 @@ fn manifest_permissions_project_through_neo_vm_rs_stack_value() {
         "ContractPermission should parse direct StackValue inputs before adapting local StackItem"
     );
     assert!(
-        permission.contains("StackItem::try_from(self.to_stack_value())"),
-        "ContractPermission::to_stack_item should adapt from direct StackValue"
-    );
-    assert!(
-        permission.contains("StackValue::try_from(stack_item)"),
-        "ContractPermission::from_stack_item should adapt into StackValue first"
+        permission.contains("impl_interoperable!("),
+        "ContractPermission should bridge Interoperable through the shared \
+         impl_interoperable! adapter instead of hand-writing the StackValue hop"
     );
     assert!(
         !permission.contains("StackItem::from_struct"),
         "ContractPermission should not hand-build StackItem structs; build neo_vm::StackValue first"
     );
+    assert_shared_interoperable_adapter(&workspace);
 }
 
 #[test]
@@ -935,13 +972,11 @@ fn contract_abi_projects_through_neo_vm_rs_stack_value() {
         "ContractAbi::from_stack_value should invalidate the method cache after replacing methods"
     );
     assert!(
-        contract_abi.contains("StackItem::try_from(self.to_stack_value())"),
-        "ContractAbi::to_stack_item should adapt from direct StackValue"
+        contract_abi.contains("impl_interoperable!("),
+        "ContractAbi should bridge Interoperable through the shared impl_interoperable! \
+         adapter instead of hand-writing the StackValue hop"
     );
-    assert!(
-        contract_abi.contains("StackValue::try_from(stack_item)"),
-        "ContractAbi::from_stack_item should adapt into StackValue first"
-    );
+    assert_shared_interoperable_adapter(&workspace);
     for local_builder in ["StackItem::from_struct", "StackItem::from_array"] {
         assert!(
             !contract_abi.contains(local_builder),
@@ -972,12 +1007,9 @@ fn contract_manifest_and_state_project_through_neo_vm_rs_stack_value() {
         "ContractManifest should parse direct StackValue inputs before adapting local StackItem"
     );
     assert!(
-        manifest.contains("StackItem::try_from(self.to_stack_value())"),
-        "ContractManifest::to_stack_item should adapt from direct StackValue"
-    );
-    assert!(
-        manifest.contains("StackValue::try_from(stack_item)"),
-        "ContractManifest::from_stack_item should adapt into StackValue first"
+        manifest.contains("impl_interoperable!("),
+        "ContractManifest should bridge Interoperable through the shared \
+         impl_interoperable! adapter instead of hand-writing the StackValue hop"
     );
     for local_builder in [
         "StackItem::from_struct",
@@ -1011,13 +1043,11 @@ fn contract_manifest_and_state_project_through_neo_vm_rs_stack_value() {
         "ContractState should compose ContractManifest through StackValue, not local StackItem"
     );
     assert!(
-        contract_state.contains("StackItem::try_from(self.to_stack_value())"),
-        "ContractState::to_stack_item should adapt from direct StackValue"
+        contract_state.contains("impl_interoperable!("),
+        "ContractState should bridge Interoperable through the shared \
+         impl_interoperable! adapter instead of hand-writing the StackValue hop"
     );
-    assert!(
-        contract_state.contains("StackValue::try_from(stack_item)"),
-        "ContractState::from_stack_item should adapt into StackValue first"
-    );
+    assert_shared_interoperable_adapter(&workspace);
     for local_builder in [
         "StackItem::from_array",
         "StackItem::from_int",
@@ -1161,14 +1191,18 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
         "OracleRequest should import neo_vm::StackValue directly for native data projection"
     );
     assert!(
-        oracle_request.contains("pub fn to_stack_value(&self) -> StackValue"),
-        "OracleRequest should expose a direct StackValue projection"
+        oracle_request.contains("pub use neo_protocol::OracleRequest;")
+            && !oracle_request.contains("pub struct OracleRequest"),
+        "OracleRequest data must be the single neo-protocol definition, re-exported by the native \
+         contract"
     );
     assert!(
-        oracle_request.contains(
-            "pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError>"
-        ),
-        "OracleRequest should parse direct StackValue inputs without depending on local StackItem"
+        oracle_request.contains("pub trait OracleRequestStackProjection")
+            && oracle_request.contains("fn to_stack_value(&self) -> StackValue")
+            && oracle_request.contains(
+                "fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError>"
+            ),
+        "OracleRequest should expose a direct StackValue projection from the native contract"
     );
     assert!(
         !oracle_request.contains("use crate::neo_vm::StackItem")
@@ -1605,18 +1639,14 @@ fn token_management_states_project_through_neo_vm_rs_stack_value() {
          adapting local StackItem"
     );
     assert!(
-        source
-            .matches("stack_item_to_stack_value(stack_item")
-            .count()
-            >= 3,
-        "TokenManagement state from_stack_item paths should adapt into StackValue before parsing"
+        source.matches("impl_state_interoperable!(").count() >= 3,
+        "TokenState, AccountState, and NFTState should bridge Interoperable through the \
+         shared impl_state_interoperable! adapter"
     );
     assert!(
-        source
-            .matches("stack_value_to_stack_item(self.to_stack_value()")
-            .count()
-            >= 3,
-        "TokenManagement state to_stack_item paths should adapt from direct StackValue projections"
+        source.contains("let stack_value = stack_item_to_stack_value(stack_item, $context)")
+            && source.contains("stack_value_to_stack_item(self.to_stack_value(), $context)"),
+        "the shared token-management adapter should hop through StackValue before parsing"
     );
     assert!(
         storage.contains("BinarySerializer::deserialize_stack_value_with_limits"),
@@ -2014,9 +2044,10 @@ fn sign_reuses_neo_vm_rs_i64_semantics_with_bigint_fallback() {
         "SIGN should reuse neo-vm-rs StackValue arithmetic sign semantics"
     );
     assert!(
-        numeric.contains("fn value_from_stack_item(item: StackItem) -> VmResult<StackValue>"),
-        "SIGN should adapt local VM values at the StackValue boundary"
+        numeric.contains("fn unary_numeric("),
+        "SIGN should adapt local VM values in the shared StackValue unary adapter"
     );
+    assert_shared_stack_value_bridge(&workspace);
     assert!(
         !numeric.contains("value.sign()"),
         "SIGN should not keep a local BigInt sign fallback after neo-vm-rs owns BigInt \
@@ -2042,9 +2073,10 @@ fn sqrt_reuses_neo_vm_rs_i64_semantics_with_bigint_fallback() {
         "SQRT should reuse neo-vm-rs StackValue arithmetic sqrt semantics"
     );
     assert!(
-        numeric.contains("fn value_from_stack_item(item: StackItem) -> VmResult<StackValue>"),
-        "SQRT should adapt local VM values at the StackValue boundary"
+        numeric.contains("fn unary_numeric("),
+        "SQRT should adapt local VM values in the shared StackValue unary adapter"
     );
+    assert_shared_stack_value_bridge(&workspace);
     assert!(
         !numeric.contains("value.is_negative()"),
         "SQRT should not keep a local negative-value guard after neo-vm-rs owns the rule"
@@ -2152,7 +2184,7 @@ fn checked_binary_arithmetic_reuses_neo_vm_rs_i64_semantics_with_bigint_fallback
         "modulo_values",
     ] {
         assert!(
-            numeric.contains(&format!("binary_numeric(engine, arithmetic::{helper})")),
+            numeric.contains(&format!("binary_op(engine, arithmetic::{helper})")),
             "checked binary arithmetic should reuse neo-vm-rs StackValue helper {helper}"
         );
     }
@@ -2415,17 +2447,11 @@ fn min_max_reuse_neo_vm_rs_i64_semantics_with_bigint_fallback() {
     let numeric = read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
 
     assert!(
-        numeric.contains("binary_numeric(engine, arithmetic::min_values)"),
-        "MIN should reuse neo-vm-rs StackValue arithmetic min semantics"
-    );
-    assert!(
-        numeric.contains("binary_numeric(engine, arithmetic::max_values)"),
-        "MAX should reuse neo-vm-rs StackValue arithmetic max semantics"
-    );
-    assert!(
-        numeric.contains("fn binary_numeric("),
+        numeric.contains("binary_op(engine, arithmetic::min_values)")
+            && numeric.contains("binary_op(engine, arithmetic::max_values)"),
         "MIN/MAX should delegate through the shared StackValue binary adapter"
     );
+    assert_shared_stack_value_bridge(&workspace);
     assert!(
         !numeric.contains("if a < b { a } else { b }")
             && !numeric.contains("if a > b { a } else { b }"),
@@ -2613,10 +2639,14 @@ fn bitwise_opcodes_reuse_neo_vm_rs_i64_semantics_with_bigint_fallback() {
         );
     }
     assert!(
-        bitwise.contains("fn value_from_stack_item(item: StackItem) -> VmResult<StackValue>")
-            && bitwise.contains("fn binary_bitwise("),
-        "bitwise opcode handlers should adapt local operands through StackValue"
+        bitwise.contains("let value = value_from_stack_item(ctx.pop()?)?;")
+            && bitwise.contains("binary_op(engine, arithmetic::bitwise_and_values)")
+            && bitwise.contains("binary_op(engine, arithmetic::bitwise_or_values)")
+            && bitwise.contains("binary_op(engine, arithmetic::bitwise_xor_values)"),
+        "bitwise opcode handlers should adapt local operands through the shared StackValue \
+         adapters"
     );
+    assert_shared_stack_value_bridge(&workspace);
     assert!(
         !bitwise.contains("StackItem::from_int(!x)")
             && !bitwise.contains("StackItem::from_int(bigint_op(a, b))"),
@@ -3556,12 +3586,13 @@ fn rpc_server_imports_host_runtime_directly_from_neo_vm() {
                 "StackItem",
                 "StackValue",
                 "VmState",
-                "stack_item_rpc_json_deferred_size_check",
             ][..],
         ),
         (
             "neo-rpc-server/src/smart_contract/invocation.rs",
-            &["StackItem", "VmState"][..],
+            // VM state is projected through `final_rpc_vm_state_string`, so only
+            // the host stack model is imported from neo_vm directly.
+            &["StackItem"][..],
         ),
         (
             "neo-rpc-server/src/smart_contract/tests.rs",
@@ -3683,6 +3714,221 @@ fn imports_stack_item_via_neo_vm(source: &str) -> bool {
     source.contains("neo_vm::stack_item::*")
 }
 
+/// The oracle response-transaction rules (quorum, valid-until window, witness
+/// layout, verification pricing, size-based fee math and budget downgrades) are
+/// oracle-domain logic and must be implemented once, in `neo-oracle`. The host
+/// node may only supply the snapshot, native-contract and engine ports.
+#[test]
+fn oracle_response_tx_rules_are_owned_by_neo_oracle() {
+    let workspace = workspace_root();
+    let owner = read_source(workspace.join("neo-oracle/src/response_tx.rs"));
+    let host = read_source(workspace.join("neo-system/src/oracle_service/adapters.rs"));
+
+    for required in [
+        "pub fn create_response_tx(",
+        "let m = n - (n - 1) / 3;",
+        "while use_current_height && valid_until_block <= height",
+        "Contract::create_multi_sig_contract(m, oracle_nodes)",
+        "get_fixed_script()",
+        "MAX_RESULT_SIZE",
+        "OracleResponseCode::ResponseTooLarge",
+        "OracleResponseCode::InsufficientFunds",
+        "tx.set_system_fee(request.gas_for_response - final_network_fee);",
+    ] {
+        assert!(
+            owner.contains(required),
+            "neo-oracle should own the oracle response-transaction rule: {required}"
+        );
+    }
+
+    assert!(
+        host.contains("impl ResponseTxHost for CoreResponseTxBuilder")
+            && host.contains("neo_oracle::create_response_tx("),
+        "the host oracle adapter should delegate response-transaction construction to neo-oracle"
+    );
+    for duplicated in [
+        "(n - 1) / 3",
+        "OracleResponseCode::ResponseTooLarge",
+        "OracleResponseCode::InsufficientFunds",
+        "get_fixed_script()",
+        "MAX_RESULT_SIZE",
+        "fn create_response_tx(",
+    ] {
+        assert!(
+            !host.contains(duplicated),
+            "neo-system must not re-implement the oracle response-transaction rules ({duplicated})"
+        );
+    }
+}
+
+/// The quick-format single-signature invocation layout (`PUSHDATA1 0x40
+/// <signature>`) is parsed once, by
+/// `neo_vm::script::parse_single_signature_invocation`. Ledger witness
+/// validation, consensus commit-signature recovery and the smart-contract
+/// witness verifier must delegate to it instead of repeating the opcode and
+/// length checks.
+///
+/// The audit only inspects production code: a `#[cfg(test)]` fixture that
+/// builds a witness byte-by-byte is constructing test input, not a second
+/// parser, so the test modules are stripped before scanning.
+#[test]
+fn single_signature_invocation_layout_is_parsed_once() {
+    let workspace = workspace_root();
+
+    let canonical = read_source(workspace.join("neo-vm/src/script.rs"));
+    assert!(
+        canonical.contains(
+            "pub fn parse_single_signature_invocation(invocation: &[u8]) -> Option<&[u8]> {"
+        ),
+        "neo-vm should own the single-signature invocation layout"
+    );
+
+    for relative in [
+        "neo-ledger/src/validation/transaction_witness.rs",
+        "neo-consensus/src/service/helpers/signatures.rs",
+        "neo-smart-contract/src/witness_verification.rs",
+    ] {
+        let source = production_source(&read_source(workspace.join(relative)));
+        assert!(
+            source.contains("parse_single_signature_invocation("),
+            "{relative} should delegate the invocation layout to neo-vm"
+        );
+        assert!(
+            !source.contains("PUSHDATA1.byte()"),
+            "{relative} must not re-implement the PUSHDATA1 invocation layout in production code"
+        );
+    }
+}
+
+/// The production-only view keeps everything outside `#[cfg(test)]` items, so a
+/// fixture can never mask (or fake) a production delegation.
+#[test]
+fn production_source_strips_cfg_test_items_only() {
+    let source = "fn production() {}\n#[cfg(test)]\nmod tests {\n    fn fixture() { let brace = '}'; }\n}\nfn after() {}\n";
+    let stripped = production_source(source);
+
+    assert!(stripped.contains("fn production()"));
+    assert!(stripped.contains("fn after()"));
+    assert!(!stripped.contains("fixture"));
+    assert!(!stripped.contains("#[cfg(test)]"));
+}
+
+/// The P2P layer reads canonical chain state through the narrow `P2PContext`
+/// capabilities (`current_block_index`, `highest_header_index`,
+/// `header_tip_index`, `contains_block`, `contains_ledger_transaction`) instead
+/// of taking store snapshots and ledger/header-cache handles. The concrete
+/// implementation lives in the system adapter, which owns the ledger and
+/// native-contract vocabulary.
+#[test]
+fn p2p_context_exposes_narrow_chain_queries_only() {
+    let workspace = workspace_root();
+    let context = read_source(workspace.join("neo-p2p/src/p2p/context.rs"));
+
+    for required in [
+        "fn current_block_index(&self) -> u32;",
+        "fn highest_header_index(&self) -> u32;",
+        "fn header_tip_index(&self) -> Option<u32>;",
+        "fn contains_block(&self, hash: &UInt256) -> bool;",
+        "fn contains_ledger_transaction(&self, hash: &UInt256) -> bool;",
+    ] {
+        assert!(
+            context.contains(required),
+            "P2PContext should expose the narrow chain capability: {required}"
+        );
+    }
+
+    for leaked in ["StoreCache", "LedgerContext", "HeaderCache"] {
+        assert!(
+            !context.contains(leaked),
+            "P2PContext must not expose the concrete chain-state handle: {leaked}"
+        );
+    }
+
+    let mut sources = Vec::new();
+    collect_rs_files(&workspace.join("neo-p2p/src"), &mut sources);
+    assert!(
+        !sources.is_empty(),
+        "neo-p2p sources should be readable for the boundary audit"
+    );
+    // The destination-only `ports` leaves are documentation of the typed
+    // replacement and name the retired types by design; the actors are what
+    // must stop reaching for them.
+    for source in sources
+        .into_iter()
+        .filter(|path| !path.to_string_lossy().contains("ports"))
+    {
+        let text = read_source(&source);
+        for forbidden in [
+            "LedgerContract",
+            "store_cache()",
+            "neo_native_contracts",
+            "neo_storage",
+        ] {
+            assert!(
+                !text.contains(forbidden),
+                "{} must read chain state through P2PContext, not {forbidden}",
+                source.display()
+            );
+        }
+    }
+
+    let adapter = read_source(workspace.join("neo-system/src/neo_system/context.rs"));
+    for implemented in [
+        "impl P2PContext for NeoSystemContext",
+        "LedgerContract::new().contains_block(&self.store_cache(), hash)",
+        "self.ledger.highest_header_index()",
+        "self.header_cache.last().map(|header| header.index())",
+    ] {
+        assert!(
+            adapter.contains(implemented),
+            "the system context should implement the narrow chain capability: {implemented}"
+        );
+    }
+
+    let manifest = read_source(workspace.join("neo-p2p/Cargo.toml"));
+    for dropped in ["neo-storage", "neo-native-contracts"] {
+        assert!(
+            !manifest.contains(dropped),
+            "neo-p2p must not depend on {dropped} once chain reads are port-narrowed"
+        );
+    }
+}
+
+/// The manifest/state `Interoperable` bridges are generated by
+/// `impl_interoperable!`, so the `StackValue` <-> `StackItem` adaptation pair is
+/// stated once, in `neo-smart-contract/src/interop_impls.rs`. Guards assert the
+/// macro use at each type and the canonical conversions once, here.
+fn assert_shared_interoperable_adapter(workspace: &Path) {
+    let adapter = read_source(workspace.join("neo-smart-contract/src/interop_impls.rs"));
+    for required in [
+        "macro_rules! impl_interoperable",
+        "StackValue::try_from(stack_item)",
+        "StackItem::try_from(self.to_stack_value())",
+    ] {
+        assert!(
+            adapter.contains(required),
+            "the shared Interoperable adapter should keep the canonical StackValue hop: {required}"
+        );
+    }
+}
+
+/// `neo-vm`'s opcode families adapt operands through the shared jump-table
+/// bridge (`value_from_stack_item` / `binary_op`), so the `StackValue` hop is
+/// stated once instead of per family.
+fn assert_shared_stack_value_bridge(workspace: &Path) {
+    let bridge = read_source(workspace.join("neo-vm/src/jump_table/mod.rs"));
+    for required in [
+        "pub(crate) fn value_from_stack_item(item: StackItem) -> VmResult<StackValue>",
+        "pub(crate) fn binary_op(",
+        "let left = value_from_stack_item(ctx.pop()?)?;",
+    ] {
+        assert!(
+            bridge.contains(required),
+            "the shared jump-table bridge should own the StackValue adaptation: {required}"
+        );
+    }
+}
+
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -3703,7 +3949,11 @@ fn collect_manifests(dir: &Path, manifests: &mut Vec<PathBuf>) {
         let name = entry.file_name();
         let name = name.to_string_lossy();
 
-        if name == "target" || name == ".git" || name == "neo_csharp" {
+        // Scratch and tooling directories are never workspace members. Beyond
+        // `target` and the C# reference checkout this covers dot-prefixed build
+        // snapshots (`--target-dir .target-*`), agent worktrees and `.verify-*`
+        // source snapshots; walking them surfaces stale duplicate manifests.
+        if name == "target" || name == "neo_csharp" || name.starts_with('.') {
             continue;
         }
 
@@ -3737,6 +3987,109 @@ fn read_source(path: impl AsRef<Path>) -> String {
         .unwrap()
         .replace("\r\n", "\n")
         .replace('\r', "\n")
+}
+
+/// Returns `source` with every `#[cfg(test)]` item removed, so boundary scans
+/// audit production code only. Test fixtures spell out wire layouts on purpose
+/// (a synthetic `PUSHDATA1 <len> <signature>` invocation, for example) while the
+/// production path still delegates that layout to `neo-vm`; auditing the
+/// fixtures would report that delegation as duplication.
+fn production_source(source: &str) -> String {
+    const TEST_ATTRIBUTE: &str = "#[cfg(test)]";
+    let mut kept = String::with_capacity(source.len());
+    let mut rest = source;
+
+    while let Some(offset) = rest.find(TEST_ATTRIBUTE) {
+        kept.push_str(&rest[..offset]);
+        let mut item = rest[offset + TEST_ATTRIBUTE.len()..].trim_start();
+        // Attributes stacked above the gated item stay attached to it.
+        while let Some(attribute) = item.strip_prefix("#[") {
+            let Some(end) = attribute.find(']') else {
+                break;
+            };
+            item = attribute[end + 1..].trim_start();
+        }
+        let Some(length) = gated_item_length(item) else {
+            panic!(
+                "the boundary scan cannot delimit a #[cfg(test)] item; it needs a brace-delimited body or a trailing semicolon"
+            );
+        };
+        rest = &item[length..];
+    }
+
+    kept.push_str(rest);
+    kept
+}
+
+/// Byte length of the `#[cfg(test)]` item starting at `item`, covering both
+/// brace-delimited bodies (`mod tests { .. }`) and semicolon-terminated
+/// declarations (`mod tests;`).
+fn gated_item_length(item: &str) -> Option<usize> {
+    let open = item.find('{');
+    let semi = item.find(';');
+    match (open, semi) {
+        (Some(open), Some(semi)) if semi < open => Some(semi + 1),
+        (Some(open), _) => matching_brace(item, open).map(|close| close + 1),
+        (None, Some(semi)) => Some(semi + 1),
+        (None, None) => None,
+    }
+}
+
+/// Index of the `}` closing the `{` at `open`, ignoring braces inside string
+/// and character literals or comments.
+fn matching_brace(item: &str, open: usize) -> Option<usize> {
+    let bytes = item.as_bytes();
+    let mut depth = 0usize;
+    let mut index = open;
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+    let mut literal: Option<u8> = None;
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if in_line_comment {
+            in_line_comment = byte != b'\n';
+        } else if in_block_comment {
+            in_block_comment = !(byte == b'*' && bytes.get(index + 1) == Some(&b'/'));
+            if !in_block_comment {
+                index += 1;
+            }
+        } else if let Some(quote) = literal {
+            if byte == b'\\' {
+                index += 1;
+            } else if byte == quote {
+                literal = None;
+            }
+        } else if byte == b'/' && bytes.get(index + 1) == Some(&b'/') {
+            in_line_comment = true;
+            index += 1;
+        } else if byte == b'/' && bytes.get(index + 1) == Some(&b'*') {
+            in_block_comment = true;
+            index += 1;
+        } else if byte == b'"' || (byte == b'\'' && opens_char_literal(bytes, index)) {
+            literal = Some(byte);
+        } else if byte == b'{' {
+            depth += 1;
+        } else if byte == b'}' {
+            depth -= 1;
+            if depth == 0 {
+                return Some(index);
+            }
+        }
+        index += 1;
+    }
+
+    None
+}
+
+/// True when the apostrophe at `index` opens a character literal rather than a
+/// lifetime, judged by whether a closing quote follows it two or three bytes on.
+fn opens_char_literal(bytes: &[u8], index: usize) -> bool {
+    match bytes.get(index + 1) {
+        Some(b'\\') => bytes.get(index + 3) == Some(&b'\''),
+        Some(_) => bytes.get(index + 2) == Some(&b'\''),
+        None => false,
+    }
 }
 
 fn contains_neo_core_vmstate_import(source: &str) -> bool {

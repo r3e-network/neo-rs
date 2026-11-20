@@ -410,7 +410,7 @@ pub(crate) async fn start_rpc_server_if_enabled(
     {
         Ok(config) => config,
         Err(err) => {
-            tracing::error!("RPC TLS configuration error: {}", err);
+            tracing::error!("RPC TLS configuration error: {err}");
             None
         }
     };

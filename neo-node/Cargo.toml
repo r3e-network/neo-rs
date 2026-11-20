@@ -62,7 +62,10 @@ neo-mempool = { workspace = true }
 # Phase 1 S3: state-service surface bound directly from the extracted crate.
 neo-state-service = { workspace = true }
 # Wallet primitives (task D4): consumers bind to neo-wallets directly.
-neo-wallets = { workspace = true }
+# Phase 9 (F14): the assembly registers `MtlsRemoteSignerTransport` /
+# `RemoteSignerProvider`, so it activates the wallet's `remote` feature
+# explicitly instead of relying on that crate's default.
+neo-wallets = { workspace = true, features = ["remote"] }
 neo-ledger = { path = "../neo-ledger" }
 neo-native-contracts = { workspace = true }
 neo-ai-agent = { workspace = true }
@@ -104,8 +107,11 @@ hex.workspace = true
 prometheus = { workspace = true }
 parking_lot = { workspace = true }
 
-# Storage migration
-rocksdb = { workspace = true }
+# Storage migration.
+# Phase 9 (F14): no direct `rocksdb` edge. This crate never names the crate
+# itself — the RocksDB backend is reached through
+# `neo-storage::persistence::providers` behind the `full` feature
+# (`neo-storage/rocksdb`), which owns the optional dependency.
 # bolt = "0.5"  # Optional: for neo-go BoltDB support
 
 # Async runtime

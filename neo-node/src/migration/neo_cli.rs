@@ -1,6 +1,6 @@
 //! Migration from C# neo-cli to neo-rs.
 
-use super::{MigrationConfig, MigrationResult};
+use super::{MigrationConfig, MigrationResult, detect_network_name};
 use anyhow::{Context, Result, bail};
 use neo_protocol::ProtocolSettings;
 use std::path::Path;
@@ -51,7 +51,7 @@ fn parse_protocol_config(source_dir: &Path) -> Result<ProtocolSettings> {
         let name_str = file_name.to_string_lossy();
 
         if name_str.starts_with("protocol.") && name_str.ends_with(".json") {
-            debug!("Parsing protocol config: {}", name_str);
+            debug!("Parsing protocol config: {name_str}");
             let content = std::fs::read_to_string(entry.path())?;
             let settings = parse_protocol_json(&content)?;
             return Ok(settings);
@@ -122,17 +122,6 @@ async fn migrate_storage(
         source_storage.display(),
         target_dir.display()
     )
-}
-
-/// Detect network name from protocol settings.
-fn detect_network_name(settings: &ProtocolSettings) -> String {
-    if settings.network == ProtocolSettings::mainnet().network {
-        "mainnet".to_string()
-    } else if settings.network == ProtocolSettings::testnet().network {
-        "testnet".to_string()
-    } else {
-        format!("custom-{}", settings.network)
-    }
 }
 
 #[cfg(test)]

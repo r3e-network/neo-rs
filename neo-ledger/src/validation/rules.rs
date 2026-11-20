@@ -166,31 +166,26 @@ pub fn validate_no_duplicate_transactions(
 
 pub fn validate_witness_scripts(header: &Header) -> Result<(), BlockValidationError> {
     let witness = &header.witness;
-    if witness.invocation_script.len() > MAX_WITNESS_SCRIPT_SIZE {
+    if witness.invocation_script().len() > MAX_WITNESS_SCRIPT_SIZE {
         return Err(BlockValidationError::InvalidWitnessScript {
             reason: format!(
-                "Invocation script size {} exceeds maximum {}",
-                witness.invocation_script.len(),
-                MAX_WITNESS_SCRIPT_SIZE
+                "Invocation script size {} exceeds maximum {MAX_WITNESS_SCRIPT_SIZE}",
+                witness.invocation_script().len()
             ),
         });
     }
-    if witness.verification_script.len() > MAX_WITNESS_SCRIPT_SIZE {
+    if witness.verification_script().len() > MAX_WITNESS_SCRIPT_SIZE {
         return Err(BlockValidationError::InvalidWitnessScript {
             reason: format!(
-                "Verification script size {} exceeds maximum {}",
-                witness.verification_script.len(),
-                MAX_WITNESS_SCRIPT_SIZE
+                "Verification script size {} exceeds maximum {MAX_WITNESS_SCRIPT_SIZE}",
+                witness.verification_script().len()
             ),
         });
     }
-    if !witness.verification_script.is_empty() {
-        let first_opcode = witness.verification_script[0];
-        if first_opcode == 0xFF {
-            return Err(BlockValidationError::InvalidWitnessScript {
-                reason: "Invalid opcode in verification script".to_string(),
-            });
-        }
+    if witness.verification_script().first() == Some(&0xFF) {
+        return Err(BlockValidationError::InvalidWitnessScript {
+            reason: "Invalid opcode in verification script".to_string(),
+        });
     }
     Ok(())
 }
@@ -270,8 +265,7 @@ mod tests {
             }
             .to_string(),
             format!(
-                "Merkle root mismatch: expected {}, computed {}",
-                hash,
+                "Merkle root mismatch: expected {hash}, computed {}",
                 UInt256::default()
             )
         );

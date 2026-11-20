@@ -2,7 +2,7 @@
 """Generate VM differential-execution vectors.
 
 Produces `vectors/vm/diff-vectors.json`, consumed by BOTH:
-  - Rust  : neo-vm/examples/vm_diff_runner.rs
+  - Rust  : neo-rpc-client/examples/vm_diff_runner.rs
   - C#    : tools/csharp-vm-runner (Neo.VM 3.10.1)
 
 Design rules

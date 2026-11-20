@@ -18,7 +18,7 @@
 
 use neo_vm::{
     ExecutionEngine, ExecutionEngineLimits, JsonSerializer, OpCode, Script, StackItem, StackValue,
-    VmOrderedDictionary, VmState, stack_item_rpc_json,
+    VmOrderedDictionary, VmState,
 };
 use std::thread;
 
@@ -249,8 +249,13 @@ fn struct_clone_with_limits_at_max_depth_on_1mib_stack() {
 
 #[test]
 fn deep_clone_at_max_depth_on_1mib_stack() {
-    let (array, structure, map) =
-        on_big_stack(|| (nested_arrays(LEVELS), nested_structs(LEVELS), nested_maps(LEVELS)));
+    let (array, structure, map) = on_big_stack(|| {
+        (
+            nested_arrays(LEVELS),
+            nested_structs(LEVELS),
+            nested_maps(LEVELS),
+        )
+    });
 
     let (values, clones, verdicts) = on_1mib(move || {
         let array_clone = array.deep_clone();
@@ -264,7 +269,11 @@ fn deep_clone_at_max_depth_on_1mib_stack() {
             struct_levels(&struct_clone),
             map_levels(&map_clone),
         );
-        ((array, structure, map), (array_clone, struct_clone, map_clone), verdicts)
+        (
+            (array, structure, map),
+            (array_clone, struct_clone, map_clone),
+            verdicts,
+        )
     });
 
     assert_eq!(verdicts, (true, true, true, LEVELS, LEVELS, LEVELS));
@@ -297,15 +306,15 @@ fn struct_equals_with_limits_at_max_depth_on_1mib_stack() {
             .equals_with_limits(&clone, &tight)
             .map(|_| ())
             .map_err(|error| error.to_string());
-        (
-            (structure, clone, shallow),
-            (same, different, exhausted),
-        )
+        ((structure, clone, shallow), (same, different, exhausted))
     });
 
     let (same, different, exhausted) = verdicts;
     assert!(same, "a struct must equal its own deep clone");
-    assert!(!different, "structs of different depth must not compare equal");
+    assert!(
+        !different,
+        "structs of different depth must not compare equal"
+    );
     // One `MaxStackSize` unit per compared sub item, as in the reference.
     let exhausted = exhausted.expect_err("a comparison above the budget must fail");
     assert!(
@@ -339,11 +348,7 @@ fn partial_eq_at_max_depth_on_1mib_stack() {
             array == shallow_array,
             map == shallow_map,
         );
-        (
-            (array, shallow_array),
-            (array_clone, map_clone),
-            verdicts,
-        )
+        ((array, shallow_array), (array_clone, map_clone), verdicts)
     });
 
     assert_eq!(verdicts, (true, true, false, false));
@@ -356,8 +361,13 @@ fn partial_eq_at_max_depth_on_1mib_stack() {
 
 #[test]
 fn debug_compact_at_max_depth_on_1mib_stack() {
-    let (array, structure, map) =
-        on_big_stack(|| (nested_arrays(LEVELS), nested_structs(LEVELS), nested_maps(LEVELS)));
+    let (array, structure, map) = on_big_stack(|| {
+        (
+            nested_arrays(LEVELS),
+            nested_structs(LEVELS),
+            nested_maps(LEVELS),
+        )
+    });
 
     let (values, texts) = on_1mib(move || {
         let texts = (
@@ -371,10 +381,10 @@ fn debug_compact_at_max_depth_on_1mib_stack() {
     let (array_text, struct_text, map_text) = texts;
     // One `Type(Type {` wrapper per nesting level, and exactly one empty leaf.
     assert_eq!(array_text.matches("Array(Array {").count(), LEVELS);
-    assert_eq!(array_text.matches("ArrayInner {").count(), LEVELS);
+    assert_eq!(array_text.matches("CompoundInner {").count(), LEVELS);
     assert_eq!(array_text.matches("items: []").count(), 1);
     assert_eq!(struct_text.matches("Struct(Struct {").count(), LEVELS);
-    assert_eq!(struct_text.matches("StructInner {").count(), LEVELS);
+    assert_eq!(struct_text.matches("CompoundInner {").count(), LEVELS);
     assert_eq!(struct_text.matches("items: []").count(), 1);
     assert_eq!(map_text.matches("Map(Map {").count(), LEVELS);
     assert_eq!(map_text.matches("MapInner {").count(), LEVELS);
@@ -436,30 +446,6 @@ fn json_serializer_at_max_depth_on_1mib_stack() {
     drop_later(array);
 }
 
-#[test]
-fn rpc_json_at_max_depth_on_1mib_stack() {
-    let array = on_big_stack(|| nested_arrays(LEVELS));
-    let (array, value) = on_1mib(move || {
-        let value = stack_item_rpc_json(&array, None).expect("a nested array renders");
-        (array, value)
-    });
-    let types = on_big_stack(move || {
-        let text = value.to_string();
-        drop(value);
-        text.matches("\"type\"").count()
-    });
-    assert_eq!(types, LEVELS, "one envelope per nesting level");
-
-    let (array, error) = on_1mib(move || {
-        let error = stack_item_rpc_json(&array, Some(4096))
-            .expect_err("the size budget is exhausted long before the leaf")
-            .to_string();
-        (array, error)
-    });
-    assert!(error.contains("Max size reached"), "unexpected error: {error}");
-    drop_later(array);
-}
-
 // ---------------------------------------------------------------------------
 // StackItem <-> StackValue
 // ---------------------------------------------------------------------------
@@ -502,7 +488,12 @@ fn hash_code_at_max_depth_on_1mib_stack() {
 
 #[test]
 fn drop_at_max_depth_on_1mib_stack() {
-    let (array, structure, map) =
-        on_big_stack(|| (nested_arrays(LEVELS), nested_structs(LEVELS), nested_maps(LEVELS)));
+    let (array, structure, map) = on_big_stack(|| {
+        (
+            nested_arrays(LEVELS),
+            nested_structs(LEVELS),
+            nested_maps(LEVELS),
+        )
+    });
     on_1mib(move || drop((array, structure, map)));
 }

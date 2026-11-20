@@ -1,4 +1,6 @@
-use super::data_cache::{DataCache, DataCacheConfig, DataCacheResult, StoreFindFn, StoreGetFn};
+use super::data_cache::{
+    DataCache, DataCacheConfig, DataCacheResult, PrefetchConfig, StoreFindFn, StoreGetFn,
+};
 use super::seek_direction::SeekDirection;
 use crate::types::{StorageItem, StorageKey};
 use std::collections::BTreeMap;
@@ -136,7 +138,7 @@ impl DetachedSnapshot {
         });
         let config = DataCacheConfig {
             enable_read_cache: false,
-            enable_prefetching: false,
+            prefetch: PrefetchConfig::disabled(),
             track_reads_in_write_cache: false,
             ..DataCacheConfig::default()
         };

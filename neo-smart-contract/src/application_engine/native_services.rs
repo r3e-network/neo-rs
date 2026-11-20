@@ -23,6 +23,20 @@ pub trait NativeChainQueries: Send + Sync {
 pub trait NativeStateReader: Send + Sync {
     /// Reads the actual deployed contract record from the supplied snapshot.
     fn contract(&self, snapshot: &DataCache, hash: &UInt160) -> CoreResult<Option<ContractState>>;
+    /// Reads only the `update_counter` of a deployed contract record.
+    ///
+    /// This exists so the engine can address its deserialized-record cache
+    /// without paying for NEF checksum verification and manifest parsing first.
+    /// Implementations that cannot serve the peek cheaply return `None`, which
+    /// only disables that cache; the contract still loads through
+    /// [`Self::contract`].
+    fn contract_update_counter(
+        &self,
+        _snapshot: &DataCache,
+        _hash: &UInt160,
+    ) -> CoreResult<Option<u16>> {
+        Ok(None)
+    }
     /// Reads the persisted ledger height.
     fn current_index(&self, snapshot: &DataCache) -> CoreResult<u32>;
     /// Checks the actual policy blocked-account state.

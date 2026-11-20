@@ -91,7 +91,7 @@ macro_rules! uint_type {
                 match Self::from_bytes(value) {
                     Ok(result) => result,
                     Err(e) => {
-                        tracing::error!("Invalid {} input: {}", stringify!($name), e);
+                        tracing::error!("Invalid {} input: {e}", stringify!($name));
                         Self::zero()
                     }
                 }
@@ -431,9 +431,8 @@ macro_rules! protocol_enum {
                 let byte = <u8 as ::serde::Deserialize>::deserialize(deserializer)?;
                 Self::from_byte(byte).ok_or_else(|| {
                     ::serde::de::Error::custom(format!(
-                        "Invalid {} byte: {}",
-                        stringify!($name),
-                        byte
+                        "Invalid {} byte: {byte}",
+                        stringify!($name)
                     ))
                 })
             }
@@ -1128,8 +1127,7 @@ macro_rules! protocol_message_flags {
                 if byte & !Self::COMPRESSED.bits() != 0 {
                     ::tracing::warn!(
                         target: $warn_target,
-                        "message flags include unknown bits (0x{:02x}); preserving raw value",
-                        byte
+                        "message flags include unknown bits (0x{byte:02x}); preserving raw value"
                     );
                 }
                 Self::from_bits_retain(byte)
@@ -1210,7 +1208,7 @@ macro_rules! impl_display_hex {
         impl ::std::fmt::Display for $type {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 for byte in &self.$field {
-                    ::std::write!(f, "{:02x}", byte)?;
+                    ::std::write!(f, "{byte:02x}")?;
                 }
                 ::std::result::Result::Ok(())
             }
@@ -1355,93 +1353,6 @@ macro_rules! impl_hash_for_fields {
             }
         }
     };
-}
-
-/// Extension trait for `Option<T>` to simplify error handling.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use neo_primitives::macros::OptionExt;
-///
-/// let value: Option<u32> = Some(42);
-/// let result = value.ok_or_invalid_data("Value not found")?;
-/// ```
-pub trait OptionExt<T> {
-    /// Converts `Option<T>` to `PrimitiveResult<T>` with an invalid data error message.
-    fn ok_or_invalid_data(self, msg: &str) -> crate::PrimitiveResult<T>;
-}
-
-impl<T> OptionExt<T> for Option<T> {
-    fn ok_or_invalid_data(self, msg: &str) -> crate::PrimitiveResult<T> {
-        self.ok_or_else(|| crate::PrimitiveError::invalid_data(msg))
-    }
-}
-
-/// Extension trait for validating collection lengths.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use neo_primitives::macros::ValidateLength;
-///
-/// let data = vec![1, 2, 3];
-/// data.validate_max_length(10, "data")?;
-/// ```
-pub trait ValidateLength {
-    /// Validates that the length does not exceed the maximum.
-    fn validate_max_length(&self, max: usize, field_name: &str) -> crate::PrimitiveResult<()>;
-}
-
-impl<T> ValidateLength for Vec<T> {
-    fn validate_max_length(&self, max: usize, field_name: &str) -> crate::PrimitiveResult<()> {
-        if self.len() > max {
-            Err(crate::PrimitiveError::invalid_data(format!(
-                "{} exceeds maximum length of {} (got {})",
-                field_name,
-                max,
-                self.len()
-            )))
-        } else {
-            Ok(())
-        }
-    }
-}
-
-impl ValidateLength for [u8] {
-    fn validate_max_length(&self, max: usize, field_name: &str) -> crate::PrimitiveResult<()> {
-        if self.len() > max {
-            Err(crate::PrimitiveError::invalid_data(format!(
-                "{} exceeds maximum length of {} (got {})",
-                field_name,
-                max,
-                self.len()
-            )))
-        } else {
-            Ok(())
-        }
-    }
-}
-
-impl ValidateLength for str {
-    fn validate_max_length(&self, max: usize, field_name: &str) -> crate::PrimitiveResult<()> {
-        if self.len() > max {
-            Err(crate::PrimitiveError::invalid_data(format!(
-                "{} exceeds maximum length of {} (got {})",
-                field_name,
-                max,
-                self.len()
-            )))
-        } else {
-            Ok(())
-        }
-    }
-}
-
-impl ValidateLength for String {
-    fn validate_max_length(&self, max: usize, field_name: &str) -> crate::PrimitiveResult<()> {
-        self.as_str().validate_max_length(max, field_name)
-    }
 }
 
 #[cfg(test)]

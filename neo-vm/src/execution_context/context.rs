@@ -12,6 +12,7 @@ use crate::error::VmResult;
 use crate::evaluation_stack::EvaluationStack;
 use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
+use crate::stack_item::StackItem;
 use neo_crypto::Crypto;
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -59,15 +60,47 @@ impl ExecutionContext {
     /// This matches the C# implementation's constructor pattern.
     #[must_use]
     pub fn new(script: Script, rvcount: i32, reference_counter: &ReferenceCounter) -> Self {
+        Self::new_with_stack_buffer(script, rvcount, reference_counter, None)
+    }
+
+    /// Creates a new execution context, optionally reusing a recycled
+    /// evaluation-stack backing allocation.
+    ///
+    /// A `stack_buffer` is only ever supplied by the engine, which takes it
+    /// from its [`StackAllocator`](crate::memory::StackAllocator). It must be
+    /// empty: a brand new context holds no stack references, so it cannot
+    /// adopt storage that still contains entries.
+    #[must_use]
+    pub fn new_with_stack_buffer(
+        script: Script,
+        rvcount: i32,
+        reference_counter: &ReferenceCounter,
+        stack_buffer: Option<Vec<StackItem>>,
+    ) -> Self {
         Self {
             id: next_context_id(),
-            shared_states: SharedStates::new(script, reference_counter.clone()),
+            shared_states: SharedStates::new_with_stack_buffer(
+                script,
+                reference_counter.clone(),
+                stack_buffer,
+            ),
             instruction_pointer: 0,
             rvcount,
             local_variables: None,
             arguments: None,
             try_stack: None,
         }
+    }
+
+    /// Detaches this context's evaluation-stack backing allocation when the
+    /// context is its exclusive owner.
+    ///
+    /// Returns `None` while any other shared context still aliases the stack,
+    /// which is exactly the `CALL` case. The caller must be about to dispose of
+    /// the context: the entries leave with the allocation and are released when
+    /// it is dropped, as they would be when the context itself was dropped.
+    pub fn take_exclusive_evaluation_buffer(&mut self) -> Option<Vec<StackItem>> {
+        self.shared_states.take_exclusive_stack_buffer()
     }
 
     /// Returns the unique id assigned when this context object was created.
@@ -175,7 +208,10 @@ impl ExecutionContext {
     }
 
     /// Executes a closure with mutable access to static fields.
-    pub fn with_static_fields_mut<R, F: FnOnce(&mut Option<Slot>) -> R>(&self, f: F) -> R {
+    pub fn with_static_fields_mut<R, F>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut Option<Slot>) -> R,
+    {
         self.shared_states.with_static_fields_mut(f)
     }
 
@@ -320,22 +356,29 @@ impl ExecutionContext {
     /// Gets a state value for the specified type, creating it if it doesn't exist.
     /// Mirrors the C# ExecutionContext.GetState\<T>() helper.
     #[must_use]
-    pub fn get_state<T: 'static + Default + Send + Sync>(&self) -> Arc<Mutex<T>> {
+    pub fn get_state<T>(&self) -> Arc<Mutex<T>>
+    where
+        T: 'static + Default + Send + Sync,
+    {
         self.shared_states.get_state::<T>()
     }
 
     /// Gets a state value for the specified type using the provided factory when absent.
     /// Mirrors the C# ExecutionContext.GetState\<T>(Func\<T>) helper.
-    pub fn get_state_with_factory<T: 'static + Send + Sync, F: FnOnce() -> T>(
-        &self,
-        factory: F,
-    ) -> Arc<Mutex<T>> {
+    pub fn get_state_with_factory<T, F>(&self, factory: F) -> Arc<Mutex<T>>
+    where
+        T: 'static + Send + Sync,
+        F: FnOnce() -> T,
+    {
         self.shared_states.get_state_with_factory(factory)
     }
 
     /// Sets a state value by key.
     /// This matches the C# implementation's state setting behavior.
-    pub fn set_state<T: 'static + Send + Sync>(&self, value: T) {
+    pub fn set_state<T>(&self, value: T)
+    where
+        T: 'static + Send + Sync,
+    {
         self.shared_states.set_state(value);
     }
 
@@ -422,15 +465,19 @@ impl ExecutionContext {
     /// Gets a shared state by type, creating it if it doesn't exist.
     /// Mirrors the C# ExecutionContext.GetState\<T>() helper for shared state access.
     #[must_use]
-    pub fn get_shared_state<T: 'static + Default + Send + Sync>(&self) -> Arc<Mutex<T>> {
+    pub fn get_shared_state<T>(&self) -> Arc<Mutex<T>>
+    where
+        T: 'static + Default + Send + Sync,
+    {
         self.shared_states.get_state::<T>()
     }
 
     /// Gets a shared state by type, creating it with the provided factory if it doesn't exist.
-    pub fn get_shared_state_with_factory<T: 'static + Send + Sync, F: FnOnce() -> T>(
-        &self,
-        factory: F,
-    ) -> Arc<Mutex<T>> {
+    pub fn get_shared_state_with_factory<T, F>(&self, factory: F) -> Arc<Mutex<T>>
+    where
+        T: 'static + Send + Sync,
+        F: FnOnce() -> T,
+    {
         self.shared_states.get_state_with_factory(factory)
     }
 

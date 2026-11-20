@@ -206,7 +206,7 @@ where
         let mut tx_mut = tx.clone();
         let mut witnesses = tx_mut.witnesses().to_vec();
         if let Some(witness) = witnesses.get_mut(idx) {
-            witness.invocation_script = invocation_script;
+            witness.set_invocation_script(invocation_script);
         }
         tx_mut.set_witnesses(witnesses);
 
@@ -233,10 +233,8 @@ where
         message.extend_from_slice(&request_id.to_le_bytes());
         message.extend_from_slice(&tx_sign);
         let operation_id = format!(
-            "oracle-submission:{}:{}:{}:{}",
+            "oracle-submission:{}:{request_id}:{account}:{}",
             self.settings.network,
-            request_id,
-            account,
             hex::encode(Crypto::sha256(&message)),
         );
         let sign = self

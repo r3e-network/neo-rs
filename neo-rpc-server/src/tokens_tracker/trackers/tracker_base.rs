@@ -3,15 +3,25 @@
 //! Provides common functionality for NEP-11 and NEP-17 trackers including
 //! database operations and transfer record extraction.
 
+use super::token_transfer::TokenTransfer;
 use super::token_transfer_key::TokenTransferKey;
 use neo_io::{MemoryReader, Serializable, SerializableExtensions as SerializableExt};
 use neo_ledger::ApplicationExecuted;
+use neo_native_contracts::native::contract_management::ContractManagement;
+use neo_primitives::CallFlags;
+use neo_primitives::TriggerType;
 use neo_primitives::UInt160;
+use neo_primitives::UInt256;
+use neo_primitives::Verifiable;
 use neo_primitives::log_level::LogLevel;
 use neo_protocol::execution::Block;
+use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_storage::persistence::{DataCache, SeekDirection, Store, StoreSnapshot};
 use neo_system::NeoSystem;
+use neo_vm::OpCode;
+use neo_vm::ScriptBuilder;
 use neo_vm::StackItem;
+use neo_vm::VmState;
 use num_bigint::BigInt;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -30,6 +40,14 @@ pub struct TransferRecord {
     pub token_id: Option<Vec<u8>>,
     /// Transfer amount.
     pub amount: BigInt,
+}
+
+/// One `System.Contract.Call` to run through [`TrackerBase::call_contract`].
+pub struct ContractCall<'a> {
+    /// Method to call on the asset contract.
+    pub method: &'a str,
+    /// Arguments in call order, already serialized as byte strings.
+    pub args: Vec<Vec<u8>>,
 }
 
 /// Common view over transfer-key types (TokenTransferKey, Nep17TransferKey, Nep11TransferKey).
@@ -124,15 +142,15 @@ impl TrackerBase {
 
     /// Commits the current snapshot to the database.
     pub fn commit(&mut self) -> Result<(), String> {
-        if let Some(snapshot_arc) = self.snapshot.as_mut() {
-            if let Some(snapshot) = Arc::get_mut(snapshot_arc) {
-                snapshot
-                    .try_commit()
-                    .map_err(|e| format!("snapshot commit failed: {e}"))?;
-            } else {
-                return Err("snapshot commit failed: snapshot is still shared".to_string());
-            }
-        }
+        let Some(snapshot_arc) = self.snapshot.as_mut() else {
+            return Ok(());
+        };
+        let Some(snapshot) = Arc::get_mut(snapshot_arc) else {
+            return Err("snapshot commit failed: snapshot is still shared".to_string());
+        };
+        snapshot
+            .try_commit()
+            .map_err(|e| format!("snapshot commit failed: {e}"))?;
         Ok(())
     }
 
@@ -220,6 +238,71 @@ impl TrackerBase {
         Ok(results)
     }
 
+    /// Builds the script that makes every call in `calls` against `asset`.
+    ///
+    /// Each call is emitted as its packed arguments, the call flags, the method
+    /// name, the target contract and `System.Contract.Call`, one after another,
+    /// so a single execution answers all of them in order. Returns `None` when a
+    /// syscall cannot be encoded.
+    pub fn call_script(asset: &UInt160, calls: &[ContractCall<'_>]) -> Option<Vec<u8>> {
+        let mut builder = ScriptBuilder::new();
+        for call in calls {
+            for arg in &call.args {
+                builder.emit_push(arg);
+            }
+            builder.emit_push_int(call.args.len() as i64);
+            builder.emit_opcode(OpCode::PACK);
+            builder.emit_push_int(CallFlags::ALL.bits() as i64);
+            builder.emit_push(call.method.as_bytes());
+            builder.emit_push(&asset.to_bytes());
+            builder.emit_syscall("System.Contract.Call").ok()?;
+        }
+        Some(builder.to_array())
+    }
+
+    /// Runs `calls` against `asset` and returns the engine holding the answers.
+    ///
+    /// Both trackers keep balances current by re-executing `balanceOf` on the
+    /// token contract. Building the script, configuring the engine and treating
+    /// a failed call as no answer at all is the same work for both of them; only
+    /// the method, its arguments, the gas budget and how many answers to expect
+    /// differ per standard. Taking a list of calls is what lets NEP-11 ask for
+    /// the sender and the recipient in one script and still pay for a single
+    /// engine setup per transfer.
+    ///
+    /// The answers sit on the result stack in call order — the first call's
+    /// answer deepest — and stay unread; which of them means what belongs to the
+    /// caller, as does the reporting of a `None`.
+    pub fn call_contract(
+        &self,
+        snapshot: &DataCache,
+        current_block: Option<&Block>,
+        asset: UInt160,
+        gas_limit: i64,
+        calls: &[ContractCall<'_>],
+    ) -> Option<ApplicationEngine> {
+        let script = Self::call_script(&asset, calls)?;
+        let mut engine = ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            Arc::new(snapshot.clone()),
+            current_block
+                .cloned()
+                .map(neo_protocol::execution::conversions::convert_ledger_block),
+            self.neo_system.settings().clone(),
+            gas_limit,
+            None,
+            neo_native_contracts::native::composition::default_native_services(),
+        )
+        .ok()?;
+        engine
+            .load_script(script, CallFlags::ALL, Some(asset))
+            .and_then(|_| engine.execute())
+            .ok()?;
+
+        Some(engine)
+    }
+
     /// Extracts a transfer record from a `Transfer` notification payload.
     pub fn get_transfer_record(
         asset: &UInt160,
@@ -301,11 +384,102 @@ impl TrackerBase {
         })
     }
 
+    /// Visits every transfer notification in `executed_list` that belongs to a
+    /// contract advertising `standard`.
+    ///
+    /// Both trackers walk the same gauntlet before they can use a record — skip
+    /// faulted executions, keep `Transfer` events carrying exactly
+    /// `expected_state_items` arguments, resolve the emitting contract, check its
+    /// manifest — and only diverge on what the record means. The gauntlet lives
+    /// here so the two trackers cannot drift apart.
+    ///
+    /// `visit` receives the record, the transaction that emitted it (absent for
+    /// block-level notifications) and the running notification index.
+    pub fn for_each_transfer(
+        snapshot: &DataCache,
+        executed_list: &[ApplicationExecuted],
+        standard: &str,
+        expected_state_items: usize,
+        mut visit: impl FnMut(&TransferRecord, Option<&Arc<dyn Verifiable>>, &mut u32),
+    ) {
+        let mut transfer_index: u32 = 0;
+        for app in executed_list {
+            if app.vm_state.contains(VmState::FAULT) {
+                continue;
+            }
+            for notify in &app.notifications {
+                if notify.event_name != "Transfer" || notify.state.len() != expected_state_items {
+                    continue;
+                }
+
+                let Ok(Some(contract)) =
+                    ContractManagement::get_contract_from_snapshot(snapshot, &notify.script_hash)
+                else {
+                    continue;
+                };
+
+                if !contract.manifest.supports_standard(standard) {
+                    continue;
+                }
+
+                let Some(record) = Self::get_transfer_record(&notify.script_hash, &notify.state)
+                else {
+                    continue;
+                };
+
+                visit(
+                    &record,
+                    notify.script_container.as_ref(),
+                    &mut transfer_index,
+                );
+            }
+        }
+    }
+
+    /// Writes both sides of a transfer (sent and received) into the batch.
+    ///
+    /// NEP-11 and NEP-17 store the same [`TokenTransfer`] payload and differ only
+    /// in the key layout, so the key is built by `build_key` from the user and
+    /// the notification index.
+    #[allow(clippy::too_many_arguments)]
+    pub fn record_transfer_history<K: Serializable>(
+        &mut self,
+        sent_prefix: u8,
+        received_prefix: u8,
+        record: &TransferRecord,
+        block_index: u32,
+        tx_hash: UInt256,
+        transfer_index: u32,
+        build_key: impl Fn(UInt160, u32) -> K,
+    ) {
+        if record.from != UInt160::zero() {
+            let key = build_key(record.from, transfer_index);
+            let value = TokenTransfer {
+                amount: record.amount.clone(),
+                user_script_hash: record.to,
+                block_index,
+                tx_hash,
+            };
+            let _ = self.put(sent_prefix, &key, &value);
+        }
+
+        if record.to != UInt160::zero() {
+            let key = build_key(record.to, transfer_index);
+            let value = TokenTransfer {
+                amount: record.amount.clone(),
+                user_script_hash: record.from,
+                block_index,
+                tx_hash,
+            };
+            let _ = self.put(received_prefix, &key, &value);
+        }
+    }
+
     /// Base JSON conversion for a transfer pair (without NEP-11 tokenid).
     pub fn transfer_to_json<K: TokenTransferKeyView>(
         &self,
         key: &K,
-        value: &super::token_transfer::TokenTransfer,
+        value: &TokenTransfer,
     ) -> Value {
         let transfer_address = if value.user_script_hash == UInt160::zero() {
             Value::Null
@@ -457,5 +631,63 @@ mod tests {
             .expect_err("tracker commit should propagate snapshot commit failure");
 
         assert!(err.contains("injected tracker commit failure"));
+    }
+
+    fn balance_of_script(asset: &UInt160, caller: [u8; 20]) -> Vec<u8> {
+        TrackerBase::call_script(
+            asset,
+            &[ContractCall {
+                method: "balanceOf",
+                args: vec![caller.to_vec()],
+            }],
+        )
+        .expect("balanceOf script")
+    }
+
+    /// Pins the exact script the trackers execute against token contracts, so a
+    /// change to the emitter cannot silently alter the queries.
+    #[test]
+    fn call_script_emits_one_packed_contract_call() {
+        let asset = UInt160::zero();
+        let script = balance_of_script(&asset, [0xAA; 20]);
+
+        let mut expected = vec![OpCode::PUSHDATA1.byte(), 20];
+        expected.extend_from_slice(&[0xAA; 20]);
+        expected.push(OpCode::PUSH1.byte());
+        expected.push(OpCode::PACK.byte());
+        expected.push(OpCode::PUSH15.byte());
+        expected.push(OpCode::PUSHDATA1.byte());
+        expected.push(b"balanceOf".len() as u8);
+        expected.extend_from_slice(b"balanceOf");
+        expected.push(OpCode::PUSHDATA1.byte());
+        expected.push(20);
+        expected.extend_from_slice(&asset.to_bytes());
+        expected.push(OpCode::SYSCALL.byte());
+        expected.extend_from_slice(&neo_vm::interop_hash("System.Contract.Call").to_le_bytes());
+
+        assert_eq!(script, expected);
+    }
+
+    #[test]
+    fn call_script_chains_calls_in_order() {
+        let asset = UInt160::zero();
+        let first = balance_of_script(&asset, [0xAA; 20]);
+        let second = balance_of_script(&asset, [0xBB; 20]);
+        let both = TrackerBase::call_script(
+            &asset,
+            &[
+                ContractCall {
+                    method: "balanceOf",
+                    args: vec![vec![0xAA; 20]],
+                },
+                ContractCall {
+                    method: "balanceOf",
+                    args: vec![vec![0xBB; 20]],
+                },
+            ],
+        )
+        .expect("chained balanceOf script");
+
+        assert_eq!(both, [first, second].concat());
     }
 }

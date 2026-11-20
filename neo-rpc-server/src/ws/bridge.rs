@@ -45,7 +45,7 @@ impl WsEventBridge {
     pub fn notify_block_added(&self, hash: &UInt256, height: u32) {
         let event = WsEvent::block_added(hash, height);
         if let Err(e) = self.ws_sender.send(event) {
-            debug!("No WebSocket subscribers for block event: {}", e);
+            debug!("No WebSocket subscribers for block event: {e}");
         }
     }
 
@@ -53,7 +53,7 @@ impl WsEventBridge {
     pub fn notify_transaction_added(&self, hash: &UInt256) {
         let event = WsEvent::transaction_added(hash);
         if let Err(e) = self.ws_sender.send(event) {
-            debug!("No WebSocket subscribers for tx event: {}", e);
+            debug!("No WebSocket subscribers for tx event: {e}");
         }
     }
 
@@ -61,7 +61,7 @@ impl WsEventBridge {
     pub fn notify_transaction_removed(&self, hashes: &[UInt256], reason: &str) {
         let event = WsEvent::transaction_removed(hashes, reason);
         if let Err(e) = self.ws_sender.send(event) {
-            debug!("No WebSocket subscribers for tx removal event: {}", e);
+            debug!("No WebSocket subscribers for tx removal event: {e}");
         }
     }
 
@@ -74,7 +74,7 @@ impl WsEventBridge {
     ) {
         let event = WsEvent::notification(contract, event_name, state);
         if let Err(e) = self.ws_sender.send(event) {
-            debug!("No WebSocket subscribers for notification event: {}", e);
+            debug!("No WebSocket subscribers for notification event: {e}");
         }
     }
 

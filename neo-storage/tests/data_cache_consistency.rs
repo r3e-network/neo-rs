@@ -1,5 +1,5 @@
 use neo_storage::persistence::DataCache;
-use neo_storage::persistence::data_cache::DataCacheConfig;
+use neo_storage::persistence::data_cache::{DataCacheConfig, PrefetchConfig};
 use neo_storage::{StorageItem, StorageKey};
 use std::sync::Arc;
 
@@ -16,7 +16,10 @@ fn cached_parent(key: &StorageKey, initial: &[u8]) -> DataCache {
         None,
         DataCacheConfig {
             enable_read_cache: true,
-            enable_prefetching: true,
+            prefetch: PrefetchConfig {
+                enabled: true,
+                ..PrefetchConfig::default()
+            },
             ..Default::default()
         },
     )

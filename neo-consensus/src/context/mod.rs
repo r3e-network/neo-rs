@@ -22,6 +22,23 @@ pub const BLOCK_TIME_MS: u64 = DEFAULT_BLOCK_TIME_MS;
 /// Maximum validators in dBFT
 pub const MAX_VALIDATORS: usize = 21;
 
+/// Number of Byzantine validators dBFT tolerates for `validator_count` nodes:
+/// `f = (n - 1) / 3` (C# `ConsensusContext.F`).
+#[must_use]
+pub fn fault_tolerance(validator_count: usize) -> usize {
+    validator_count.saturating_sub(1) / 3
+}
+
+/// Signatures a dBFT block needs from `validator_count` validators:
+/// `M = n - f` with `f = (n - 1) / 3` (C# `ConsensusContext.M`).
+///
+/// This is the quorum used for the multi-sig witness, so block-size accounting
+/// and witness construction must both take it from here.
+#[must_use]
+pub fn required_signatures(validator_count: usize) -> usize {
+    validator_count - fault_tolerance(validator_count)
+}
+
 /// Default value of `ProtocolSettings.MaxTransactionsPerBlock` on Neo N3.
 /// Used to reject `PrepareRequest` proposals that carry more transactions than
 /// a block may hold (C# `OnPrepareRequestReceived`).
@@ -380,13 +397,13 @@ impl ConsensusContext {
     /// Returns the number of faulty nodes tolerated: f = (n-1)/3
     #[must_use]
     pub fn f(&self) -> usize {
-        self.validator_count().saturating_sub(1) / 3
+        fault_tolerance(self.validator_count())
     }
 
     /// Returns the number of nodes required for consensus: M = n - f
     #[must_use]
     pub fn m(&self) -> usize {
-        self.validator_count() - self.f()
+        required_signatures(self.validator_count())
     }
 
     /// Returns the primary (speaker) index for the current view
@@ -411,10 +428,7 @@ impl ConsensusContext {
     /// Returns true if this node is a backup (non-primary validator)
     #[must_use]
     pub fn is_backup(&self) -> bool {
-        match self.my_index {
-            Some(idx) => idx != self.primary_index(),
-            None => false,
-        }
+        self.my_index.is_some_and(|idx| idx != self.primary_index())
     }
 
     /// Returns true if we have enough prepare responses (M signatures)
@@ -880,10 +894,9 @@ impl ConsensusContext {
     /// time (oldest rejection first).
     #[must_use]
     pub fn has_recently_rejected_message(&self, hash: &UInt256, now: u64) -> bool {
-        match self.rejected_message_hashes.peek(hash) {
-            Some(&rejected_at) => now.saturating_sub(rejected_at) < REJECTED_MESSAGE_TTL_MS,
-            None => false,
-        }
+        self.rejected_message_hashes
+            .peek(hash)
+            .is_some_and(|&rejected_at| now.saturating_sub(rejected_at) < REJECTED_MESSAGE_TTL_MS)
     }
 
     /// Marks `hash` as verification-rejected at timestamp `now` (ms).
@@ -953,10 +966,11 @@ impl ConsensusContext {
         self.validators
             .iter()
             .filter(|v| {
-                match self.last_seen_messages.get(&v.index) {
-                    None => true,                                // No message seen from this validator
-                    Some(&last_block) => last_block < threshold, // Last message was too old
-                }
+                // No message seen from this validator, or the last message seen
+                // was too old, both count as failed.
+                self.last_seen_messages
+                    .get(&v.index)
+                    .is_none_or(|&last_block| last_block < threshold)
             })
             .count()
     }

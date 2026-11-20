@@ -446,6 +446,26 @@ impl AsRef<[u8]> for Script {
     }
 }
 
+/// Extracts the 64-byte signature from a single-signature invocation script.
+///
+/// Such an invocation is exactly `PUSHDATA1 0x40 <64-byte signature>`, i.e. 66
+/// bytes. The returned slice borrows from `invocation`; callers that need an
+/// owned copy clone it explicitly.
+///
+/// This is the single definition of the layout: ledger witness validation and
+/// consensus commit-signature recovery both delegate here instead of repeating
+/// the `PUSHDATA1`/length checks.
+pub fn parse_single_signature_invocation(invocation: &[u8]) -> Option<&[u8]> {
+    const SIGNATURE_LEN: usize = 64;
+    if invocation.len() != SIGNATURE_LEN + 2
+        || invocation[0] != crate::OpCode::PUSHDATA1.byte()
+        || invocation[1] != SIGNATURE_LEN as u8
+    {
+        return None;
+    }
+    Some(&invocation[2..])
+}
+
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {

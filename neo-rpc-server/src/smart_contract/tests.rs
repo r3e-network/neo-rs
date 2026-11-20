@@ -28,6 +28,7 @@ use neo_vm::{BinarySerializer, ExecutionEngineLimits, Interoperable, OpCode, Scr
 use num_bigint::BigInt;
 use serde_json::{Value, json};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::session::Session;
 
@@ -55,6 +56,9 @@ fn assert_invalid_params_data(err: &crate::rpc_exception::RpcException, data: &s
 struct TestWallet {
     name: String,
     account: Arc<dyn WalletAccount>,
+    /// Counts account lookups so a test can prove the invocation endpoints
+    /// never consult the wallet.
+    account_lookups: Arc<AtomicUsize>,
 }
 
 #[async_trait::async_trait]
@@ -108,6 +112,7 @@ impl Wallet for TestWallet {
     }
 
     fn get_account(&self, script_hash: &UInt160) -> Option<Arc<dyn WalletAccount>> {
+        self.account_lookups.fetch_add(1, Ordering::SeqCst);
         if &self.account.script_hash() == script_hash {
             Some(Arc::clone(&self.account))
         } else {
@@ -116,10 +121,12 @@ impl Wallet for TestWallet {
     }
 
     fn get_accounts(&self) -> Vec<Arc<dyn WalletAccount>> {
+        self.account_lookups.fetch_add(1, Ordering::SeqCst);
         vec![Arc::clone(&self.account)]
     }
 
     fn get_default_account(&self) -> Option<Arc<dyn WalletAccount>> {
+        self.account_lookups.fetch_add(1, Ordering::SeqCst);
         Some(Arc::clone(&self.account))
     }
 
@@ -1099,7 +1106,7 @@ async fn traverse_iterator_returns_items_and_can_terminate_session() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn invokefunction_with_wallet_returns_signed_tx() {
+async fn invokefunction_never_signs_with_an_open_wallet() {
     let server = make_server(RpcServerConfig::default());
     let handlers = RpcServerSmartContract::register_handlers();
     let invokefunction = find_handler(&handlers, "invokefunction");
@@ -1110,9 +1117,11 @@ async fn invokefunction_with_wallet_returns_signed_tx() {
     let account = StandardWalletAccount::new_with_key(key_pair, Some(contract), settings, None);
     let account_hash = account.script_hash();
     fund_gas(&server.system(), account_hash, 100_000_000);
+    let lookups = Arc::new(AtomicUsize::new(0));
     server.set_wallet(Some(Arc::new(TestWallet {
         name: "test".to_string(),
         account: Arc::new(account),
+        account_lookups: Arc::clone(&lookups),
     })));
 
     let signers = json!([{
@@ -1128,25 +1137,47 @@ async fn invokefunction_with_wallet_returns_signed_tx() {
         signers,
     ];
     let result = (invokefunction.callback())(&server, &params).expect("invoke result");
-    assert!(result.get("tx").is_some());
-    assert!(result.get("pendingsignature").is_none());
+
+    assert_eq!(result.get("state").and_then(Value::as_str), Some("HALT"));
+    // The signing bypass is gone: an open wallet plus signers no longer yields
+    // a node-signed transaction or a signature context for later collection.
+    assert!(result.get("tx").is_none(), "invocation must never sign");
+    assert!(
+        result.get("pendingsignature").is_none(),
+        "invocation must never build a signing context"
+    );
+    // Simulation is wallet-free: the wallet is not even consulted.
+    assert_eq!(
+        lookups.load(Ordering::SeqCst),
+        0,
+        "invocation must not consult the node wallet"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn invokefunction_with_watch_only_wallet_returns_pending_signature() {
+async fn invokescript_never_builds_a_signing_context_for_a_locked_signer() {
     let server = make_server(RpcServerConfig::default());
     let handlers = RpcServerSmartContract::register_handlers();
-    let invokefunction = find_handler(&handlers, "invokefunction");
+    let invokescript = find_handler(&handlers, "invokescript");
 
     let settings = Arc::new(ProtocolSettings::default());
     let key_pair = KeyPair::generate().expect("key pair");
     let contract = signature_contract_for_keypair(&key_pair);
     let account_hash = contract.script_hash();
-    let account = StandardWalletAccount::new_watch_only(account_hash, Some(contract), settings);
+    // A locked NEP-2 account has key material in principle but cannot produce a
+    // witness right now; this used to surface as a pending signature context.
+    let nep2 = key_pair
+        .to_nep2("pw", settings.address_version)
+        .expect("nep2 payload");
+    let account =
+        StandardWalletAccount::new_from_encrypted(account_hash, nep2, Some(contract), settings);
+    assert!(account.is_locked(), "precondition: account is locked");
     fund_gas(&server.system(), account_hash, 100_000_000);
+    let lookups = Arc::new(AtomicUsize::new(0));
     server.set_wallet(Some(Arc::new(TestWallet {
         name: "test".to_string(),
         account: Arc::new(account),
+        account_lookups: Arc::clone(&lookups),
     })));
 
     let signers = json!([{
@@ -1156,69 +1187,37 @@ async fn invokefunction_with_watch_only_wallet_returns_pending_signature() {
         }
     }]);
     let params = [
-        Value::String(NeoToken::new().hash().to_string()),
-        Value::String("totalSupply".to_string()),
-        Value::Array(Vec::new()),
+        Value::String(BASE64_STANDARD.encode([OpCode::PUSH1.byte()])),
         signers,
     ];
-    let result = (invokefunction.callback())(&server, &params).expect("invoke result");
-    let pending = result
-        .get("pendingsignature")
-        .and_then(Value::as_object)
-        .expect("pending signature");
-    let items = pending
-        .get("items")
-        .and_then(Value::as_object)
-        .expect("items");
-    assert!(items.contains_key(&account_hash.to_string()));
-    assert!(result.get("tx").is_none());
+    let result = (invokescript.callback())(&server, &params).expect("invoke result");
+
+    assert_eq!(result.get("state").and_then(Value::as_str), Some("HALT"));
+    assert!(result.get("tx").is_none(), "invocation must never sign");
+    assert!(
+        result.get("pendingsignature").is_none(),
+        "a signer that cannot sign must not produce a signing context"
+    );
+    assert_eq!(
+        lookups.load(Ordering::SeqCst),
+        0,
+        "invocation must not consult the node wallet"
+    );
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn invokefunction_with_missing_wallet_account_sets_exception() {
-    let server = make_server(RpcServerConfig::default());
+#[test]
+fn invocation_handlers_do_not_require_auth_because_they_never_sign() {
+    // Task 20: `invokefunction`/`invokescript` are read-only simulation, so
+    // they stay public. If signing is ever added back to this module, the
+    // handler must move behind `rpc_handlers![protected; ...]` instead.
     let handlers = RpcServerSmartContract::register_handlers();
-    let invokefunction = find_handler(&handlers, "invokefunction");
-
-    let settings = Arc::new(ProtocolSettings::default());
-    let key_pair = KeyPair::generate().expect("key pair");
-    let contract = signature_contract_for_keypair(&key_pair);
-    let account = StandardWalletAccount::new_with_key(key_pair, Some(contract), settings, None);
-    server.set_wallet(Some(Arc::new(TestWallet {
-        name: "test".to_string(),
-        account: Arc::new(account),
-    })));
-
-    let missing_account = UInt160::from_bytes(&[0x42; 20]).expect("missing account hash");
-    let missing_address =
-        WalletHelper::to_address(&missing_account, server.system().settings().address_version);
-
-    let signers = json!([{
-        "signer": {
-            "account": missing_account.to_string(),
-            "scopes": "CalledByEntry"
-        }
-    }]);
-    let params = [
-        Value::String(NeoToken::new().hash().to_string()),
-        Value::String("totalSupply".to_string()),
-        Value::Array(Vec::new()),
-        signers,
-    ];
-    let result = (invokefunction.callback())(&server, &params).expect("invoke result");
-
-    let exception = result
-        .get("exception")
-        .and_then(Value::as_str)
-        .expect("exception");
-    let expected = format!(
-        "The smart contract or address {} ({}) is not found. If this is your wallet address and you want to sign a transaction with it, make sure you have opened this wallet.",
-        missing_account.to_hex_string(),
-        missing_address
-    );
-    assert_eq!(exception, expected);
-    assert!(result.get("tx").is_none());
-    assert!(result.get("pendingsignature").is_none());
+    for name in ["invokefunction", "invokescript"] {
+        let handler = find_handler(&handlers, name);
+        assert!(
+            !handler.descriptor().requires_auth(),
+            "{name} is read-only simulation and must not advertise signing"
+        );
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

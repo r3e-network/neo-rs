@@ -1,5 +1,6 @@
 use super::*;
 use crate::protocol_projection::{signer_to_stack_value, transaction_to_stack_value};
+use neo_vm::stack_item::vm_integer::vm_integer_from_bigint;
 struct ExternalVmExecution {
     script: Vec<u8>,
     initial_stack: Vec<VmStackValue>,
@@ -252,9 +253,8 @@ impl ExternalVmHost<'_> {
                 let message_bytes = pop_vm_bytes(stack, "System.Runtime.Log")?;
                 if message_bytes.len() > MAX_NOTIFICATION_SIZE {
                     return Err(format!(
-                        "Notification size {} exceeds maximum allowed size of {} bytes",
-                        message_bytes.len(),
-                        MAX_NOTIFICATION_SIZE
+                        "Notification size {} exceeds maximum allowed size of {MAX_NOTIFICATION_SIZE} bytes",
+                        message_bytes.len()
                     ));
                 }
                 let message = String::from_utf8(message_bytes).map_err(|_| {
@@ -387,10 +387,10 @@ impl ExternalVmHost<'_> {
         {
             return Err(neo_vm::NESTING_DEPTH_ERROR.to_string());
         }
-        let mut exported = Vec::with_capacity(items.len());
-        for item in items {
-            exported.push(self.canonical_to_external(item)?);
-        }
+        let exported = items
+            .into_iter()
+            .map(|item| self.canonical_to_external(item))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         *stack = exported;
         Ok(())
     }
@@ -410,55 +410,53 @@ impl ExternalVmHost<'_> {
         let mut built: Vec<StackItem> = Vec::new();
         while let Some(step) = steps.pop() {
             match step {
-                Step::Enter(value) => match value {
-                    VmStackValue::Null => built.push(StackItem::Null),
-                    VmStackValue::Boolean(value) => built.push(StackItem::from_bool(value)),
-                    VmStackValue::Integer(value) => built.push(StackItem::from_i64(value)),
-                    VmStackValue::BigInteger(bytes) => built.push(StackItem::from_int(
-                        num_bigint::BigInt::from_signed_bytes_le(&bytes),
-                    )),
-                    VmStackValue::ByteString(bytes) => {
-                        built.push(StackItem::from_byte_string(bytes));
-                    }
-                    VmStackValue::Buffer(bytes) => built.push(StackItem::from_buffer(bytes)),
-                    VmStackValue::Array(items) => {
-                        steps.push(Step::Array(items.len()));
-                        steps.extend(items.into_iter().rev().map(Step::Enter));
-                    }
-                    VmStackValue::Struct(items) => {
-                        steps.push(Step::Struct(items.len()));
-                        steps.extend(items.into_iter().rev().map(Step::Enter));
-                    }
-                    VmStackValue::Map(entries) => {
-                        steps.push(Step::Map(entries.len()));
-                        let mut flat = Vec::with_capacity(entries.len().saturating_mul(2));
-                        for (key, value) in entries {
-                            flat.push(key);
-                            flat.push(value);
+                Step::Enter(value) => {
+                    match value {
+                        VmStackValue::Null => built.push(StackItem::Null),
+                        VmStackValue::Boolean(value) => built.push(StackItem::from_bool(value)),
+                        VmStackValue::Integer(value) => built.push(StackItem::from_i64(value)),
+                        VmStackValue::BigInteger(bytes) => built.push(StackItem::from_int(
+                            num_bigint::BigInt::from_signed_bytes_le(&bytes),
+                        )),
+                        VmStackValue::ByteString(bytes) => {
+                            built.push(StackItem::from_byte_string(bytes));
                         }
-                        steps.extend(flat.into_iter().rev().map(Step::Enter));
-                    }
-                    VmStackValue::Pointer(position) => {
-                        let position = usize::try_from(position)
-                            .map_err(|_| format!("negative external VM pointer: {position}"))?;
-                        let script = self
-                            .engine
-                            .vm_engine
-                            .engine()
-                            .current_context()
-                            .ok_or_else(|| "No script for external VM pointer".to_string())?
-                            .script_arc();
-                        built.push(StackItem::from_pointer(script, position));
-                    }
-                    VmStackValue::Interop(handle) | VmStackValue::Iterator(handle) => built.push(
-                        self.runtime_items
-                            .get(&handle)
-                            .cloned()
-                            .ok_or_else(|| {
+                        VmStackValue::Buffer(bytes) => built.push(StackItem::from_buffer(bytes)),
+                        VmStackValue::Array(items) => {
+                            steps.push(Step::Array(items.len()));
+                            steps.extend(items.into_iter().rev().map(Step::Enter));
+                        }
+                        VmStackValue::Struct(items) => {
+                            steps.push(Step::Struct(items.len()));
+                            steps.extend(items.into_iter().rev().map(Step::Enter));
+                        }
+                        VmStackValue::Map(entries) => {
+                            steps.push(Step::Map(entries.len()));
+                            let mut flat = Vec::with_capacity(entries.len().saturating_mul(2));
+                            for (key, value) in entries {
+                                flat.push(key);
+                                flat.push(value);
+                            }
+                            steps.extend(flat.into_iter().rev().map(Step::Enter));
+                        }
+                        VmStackValue::Pointer(position) => {
+                            let position = usize::try_from(position)
+                                .map_err(|_| format!("negative external VM pointer: {position}"))?;
+                            let script = self
+                                .engine
+                                .vm_engine
+                                .engine()
+                                .current_context()
+                                .ok_or_else(|| "No script for external VM pointer".to_string())?
+                                .script_arc();
+                            built.push(StackItem::from_pointer(script, position));
+                        }
+                        VmStackValue::Interop(handle) | VmStackValue::Iterator(handle) => built
+                            .push(self.runtime_items.get(&handle).cloned().ok_or_else(|| {
                                 format!("unknown external VM host handle: {handle}")
-                            })?,
-                    ),
-                },
+                            })?),
+                    }
+                }
                 Step::Array(len) => {
                     let items = take_tail(&mut built, len);
                     built.push(StackItem::from_array(items));
@@ -866,12 +864,6 @@ fn vm_integer_from_u64(value: u64) -> VmStackValue {
         VmStackValue::BigInteger(num_bigint::BigInt::from(value).to_signed_bytes_le())
     }
 }
-fn vm_integer_from_bigint(value: num_bigint::BigInt) -> VmStackValue {
-    match value.to_i64() {
-        Some(value) => VmStackValue::Integer(value),
-        None => VmStackValue::BigInteger(value.to_signed_bytes_le()),
-    }
-}
 fn vm_hash_from_option(hash: Option<UInt160>) -> VmStackValue {
     match hash {
         Some(hash) => VmStackValue::ByteString(hash.to_bytes()),
@@ -1107,7 +1099,11 @@ mod tests {
         fn current_index(&self, _snapshot: &DataCache) -> crate::error::CoreResult<u32> {
             Ok(0)
         }
-        fn is_blocked(&self, _snapshot: &DataCache, _hash: &UInt160) -> crate::error::CoreResult<bool> {
+        fn is_blocked(
+            &self,
+            _snapshot: &DataCache,
+            _hash: &UInt160,
+        ) -> crate::error::CoreResult<bool> {
             Ok(false)
         }
         fn whitelisted_fee(
@@ -1265,8 +1261,8 @@ mod tests {
         on_a_node_sized_thread(|| {
             fn descend(remaining: usize) {
                 if remaining == 0 {
-                    let value = VmStackValue::try_from(nested_arrays(BOUND))
-                        .expect("initial stack value");
+                    let value =
+                        VmStackValue::try_from(nested_arrays(BOUND)).expect("initial stack value");
                     let (replaced, exported) = round_trip(value.clone());
                     assert_eq!(replaced.len(), 1);
                     assert_eq!(external_depth(&exported[0]), BOUND);

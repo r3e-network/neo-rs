@@ -222,8 +222,7 @@ impl InteropHost for ApplicationEngine {
         let token_idx = token_id as usize;
         if token_idx >= contract.nef.tokens.len() {
             return Err(VmError::invalid_operation_msg(format!(
-                "Token index {} out of range (max: {})",
-                token_idx,
+                "Token index {token_idx} out of range (max: {})",
                 contract.nef.tokens.len()
             )));
         }
@@ -232,8 +231,8 @@ impl InteropHost for ApplicationEngine {
         let stack_count = context.evaluation_stack().len();
         if (token.parameters_count as usize) > stack_count {
             return Err(VmError::invalid_operation_msg(format!(
-                "CALLT token requires {} parameters but stack has {}",
-                token.parameters_count, stack_count
+                "CALLT token requires {} parameters but stack has {stack_count}",
+                token.parameters_count
             )));
         }
         // 5. Pop arguments from the stack (in reverse order)
@@ -243,10 +242,7 @@ impl InteropHost for ApplicationEngine {
         }
         // 6. Look up the target contract
         let target_contract = self.fetch_contract(&token.hash).map_err(|e| {
-            VmError::invalid_operation_msg(format!(
-                "Failed to fetch contract {}: {}",
-                token.hash, e
-            ))
+            VmError::invalid_operation_msg(format!("Failed to fetch contract {}: {e}", token.hash))
         })?;
         // 7. Find the method descriptor in the target contract's ABI
         let method = target_contract

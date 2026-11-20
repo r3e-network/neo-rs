@@ -74,7 +74,7 @@ pub fn expect_string_param(
         .get(index)
         .and_then(|v| v.as_str())
         .map(ToString::to_string)
-        .ok_or_else(|| invalid_params(format!("{} expects string parameter {}", method, index + 1)))
+        .ok_or_else(|| invalid_params(format!("{method} expects string parameter {}", index + 1)))
 }
 
 /// Extracts and decodes a trimmed base64 parameter using the standard RPC byte error.
@@ -85,7 +85,7 @@ pub fn expect_base64_param(
     method: &str,
 ) -> Result<Vec<u8>, RpcException> {
     let text = params.get(index).and_then(Value::as_str).ok_or_else(|| {
-        invalid_params(format!("{} expects base64 parameter {}", method, index + 1))
+        invalid_params(format!("{method} expects base64 parameter {}", index + 1))
     })?;
     decode_trimmed_base64_text(text, "Invalid Base64-encoded bytes")
 }
@@ -142,41 +142,23 @@ pub fn decode_trimmed_base64_text(
 #[inline]
 pub fn expect_u32_param(params: &[Value], index: usize, method: &str) -> Result<u32, RpcException> {
     let value = params.get(index).ok_or_else(|| {
-        invalid_params(format!(
-            "{} expects integer parameter {}",
-            method,
-            index + 1
-        ))
+        invalid_params(format!("{method} expects integer parameter {}", index + 1))
     })?;
     value
         .as_u64()
         .and_then(|n| u32::try_from(n).ok())
-        .ok_or_else(|| {
-            invalid_params(format!(
-                "{} expects integer parameter {}",
-                method,
-                index + 1
-            ))
-        })
+        .ok_or_else(|| invalid_params(format!("{method} expects integer parameter {}", index + 1)))
 }
 
 /// Extracts a u64 parameter from JSON-RPC params.
 #[inline]
 pub fn expect_u64_param(params: &[Value], index: usize, method: &str) -> Result<u64, RpcException> {
     let value = params.get(index).ok_or_else(|| {
-        invalid_params(format!(
-            "{} expects integer parameter {}",
-            method,
-            index + 1
-        ))
+        invalid_params(format!("{method} expects integer parameter {}", index + 1))
     })?;
-    value.as_u64().ok_or_else(|| {
-        invalid_params(format!(
-            "{} expects integer parameter {}",
-            method,
-            index + 1
-        ))
-    })
+    value
+        .as_u64()
+        .ok_or_else(|| invalid_params(format!("{method} expects integer parameter {}", index + 1)))
 }
 
 /// Parses a UInt160 from JSON-RPC params.
@@ -223,8 +205,7 @@ pub fn expect_hash_param(
         })
         .map_err(|_| {
             invalid_params(format!(
-                "{} expects valid hash at parameter {}",
-                method,
+                "{method} expects valid hash at parameter {}",
                 index + 1
             ))
         })

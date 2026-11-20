@@ -92,14 +92,14 @@ pub async fn ws_handler(
                             Ok(req) => {
                                 let response = handle_request(&req, &subscription_mgr, &mut subscription);
                                 if let Err(e) = tx.send(Message::text(response.to_json())).await {
-                                    warn!("Failed to send WebSocket response: {}", e);
+                                    warn!("Failed to send WebSocket response: {e}");
                                     break;
                                 }
                             }
                             Err(e) => {
                                 let response = WsResponse::error(None, -32700, &format!("Parse error: {e}"));
                                 if let Err(e) = tx.send(Message::text(response.to_json())).await {
-                                    warn!("Failed to send WebSocket error: {}", e);
+                                    warn!("Failed to send WebSocket error: {e}");
                                     break;
                                 }
                             }
@@ -111,12 +111,12 @@ pub async fn ws_handler(
                     }
                     Some(Ok(msg)) if msg.is_ping() => {
                         if let Err(e) = tx.send(Message::pong(msg.into_bytes())).await {
-                            warn!("Failed to send pong: {}", e);
+                            warn!("Failed to send pong: {e}");
                             break;
                         }
                     }
                     Some(Err(e)) => {
-                        warn!("WebSocket error: {}", e);
+                        warn!("WebSocket error: {e}");
                         break;
                     }
                     None => {
@@ -135,13 +135,13 @@ pub async fn ws_handler(
                             && subscription.is_subscribed(ws_event.event_type()) {
                                 let notification = WsNotification::from_event(&ws_event);
                                 if let Err(e) = tx.send(Message::text(notification.to_json())).await {
-                                    warn!("Failed to send event notification: {}", e);
+                                    warn!("Failed to send event notification: {e}");
                                     break;
                                 }
                             }
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
-                        warn!("WebSocket client lagged by {} events", n);
+                        warn!("WebSocket client lagged by {n} events");
                         // Continue anyway, just log the lag
                     }
                     Err(broadcast::error::RecvError::Closed) => {

@@ -1,6 +1,6 @@
 use super::{SessionEntry, TaskManager};
 use crate::p2p::payloads::VersionPayload;
-use crate::p2p::task_session::TaskSession;
+use crate::p2p::sessions::task_session::TaskSession;
 use neo_actors::{ActorContext, ActorRef};
 use tracing::trace;
 

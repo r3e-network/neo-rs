@@ -5,8 +5,13 @@
 use super::*;
 use crate::NeoSystem;
 use crate::network::p2p::payloads::{block::Block as PayloadBlock, transaction::Transaction};
+use neo_ledger::{
+    BlockCacheBudget, BlockCacheReservation, MAX_UNVERIFIED_CACHE_BYTES, MAX_UNVERIFIED_CACHE_SIZE,
+    MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT, RetainedBlock, execution_block_cache_cost,
+};
 use neo_protocol::witness::Witness;
 use neo_vm::OpCode;
+use std::collections::{BTreeMap, HashSet};
 
 /// Script length that makes a [`sized_block`] several times the cost of an
 /// empty [`chain`] block.
@@ -98,26 +103,22 @@ fn actor_retained_bytes(blockchain: &Blockchain) -> usize {
     let mut seen = HashSet::new();
     let mut total = 0usize;
     let mut count = |entry: &RetainedBlock| {
-        if seen.insert(Arc::as_ptr(&entry._reservation)) {
-            assert_eq!(entry._reservation.bytes(), entry.cost);
+        if seen.insert(entry.reservation_id()) {
+            assert_eq!(entry.reserved_bytes(), entry.cost);
             total += entry.cost;
         }
     };
-    for entry in blockchain._block_cache.iter() {
-        count(entry.value());
+    for entry in blockchain.cache.verified_blocks() {
+        count(&entry);
     }
-    for entry in blockchain._block_cache_unverified.iter() {
-        entry.value().iter().for_each(&mut count);
+    for (_, candidates) in blockchain.cache.unverified_entries() {
+        candidates.iter().for_each(&mut count);
     }
     total
 }
 
 fn unverified_heights(blockchain: &Blockchain) -> Vec<u32> {
-    let mut heights: Vec<u32> = blockchain
-        ._block_cache_unverified
-        .iter()
-        .map(|entry| *entry.key())
-        .collect();
+    let mut heights = blockchain.cache.unverified_heights();
     heights.sort_unstable();
     heights
 }
@@ -125,7 +126,7 @@ fn unverified_heights(blockchain: &Blockchain) -> Vec<u32> {
 /// Checks that the budget is within its limit and that every retained byte
 /// is accounted for by a cache. `foreign` is what the test itself holds.
 fn audit(blockchain: &Blockchain, foreign: usize) {
-    let budget = &blockchain._block_cache_budget;
+    let budget = blockchain.cache.budget();
     let retained = budget.retained();
     assert!(
         retained <= budget.limit(),
@@ -138,24 +139,17 @@ fn audit(blockchain: &Blockchain, foreign: usize) {
         "every retained byte belongs to a cached block"
     );
 
-    let (bytes, blocks) = blockchain._block_cache_unverified.iter().fold(
+    let (bytes, blocks) = blockchain.cache.unverified_entries().into_iter().fold(
         (0usize, 0usize),
-        |(bytes, blocks), entry| {
-            let list = entry.value();
+        |(bytes, blocks), (_, list)| {
             (
                 bytes + list.iter().map(|block| block.cost).sum::<usize>(),
                 blocks + list.len(),
             )
         },
     );
-    assert_eq!(
-        blockchain._unverified_cache_bytes.load(Ordering::Relaxed),
-        bytes
-    );
-    assert_eq!(
-        blockchain._unverified_cache_blocks.load(Ordering::Relaxed),
-        blocks
-    );
+    assert_eq!(blockchain.cache.unverified_bytes(), bytes);
+    assert_eq!(blockchain.cache.unverified_block_count(), blocks);
 }
 
 /// One cached block: its hash, its cost, and which reservation it is charged
@@ -177,33 +171,33 @@ struct CacheContents {
 
 fn cache_contents(blockchain: &Blockchain) -> CacheContents {
     let describe = |entry: &RetainedBlock| -> CachedEntry {
-        (
-            entry.hash.to_string(),
-            entry.cost,
-            Arc::as_ptr(&entry._reservation).addr(),
-        )
+        (entry.hash.to_string(), entry.cost, entry.reservation_id())
     };
     let mut verified: BTreeMap<u32, Vec<CachedEntry>> = BTreeMap::new();
-    for entry in blockchain._block_cache.iter() {
-        assert_eq!(*entry.key(), entry.value().hash);
+    for entry in blockchain.cache.verified_blocks() {
+        assert!(
+            blockchain.cache.contains_verified(&entry.hash),
+            "a verified entry must be keyed by its own hash"
+        );
         verified
-            .entry(entry.value().block.index())
+            .entry(entry.block.index())
             .or_default()
-            .push(describe(entry.value()));
+            .push(describe(&entry));
     }
     verified.values_mut().for_each(|entries| entries.sort());
     CacheContents {
         verified,
         unverified: blockchain
-            ._block_cache_unverified
-            .iter()
-            .map(|entry| (*entry.key(), entry.value().iter().map(describe).collect()))
+            .cache
+            .unverified_entries()
+            .into_iter()
+            .map(|(index, list)| (index, list.iter().map(describe).collect()))
             .collect(),
-        unverified_bytes: blockchain._unverified_cache_bytes.load(Ordering::Relaxed),
-        unverified_blocks: blockchain._unverified_cache_blocks.load(Ordering::Relaxed),
+        unverified_bytes: blockchain.cache.unverified_bytes(),
+        unverified_blocks: blockchain.cache.unverified_block_count(),
         body_count: blockchain.ledger.cached_block_count(),
         body_bytes: blockchain.ledger.cached_block_bytes(),
-        retained: blockchain._block_cache_budget.retained(),
+        retained: blockchain.cache.budget().retained(),
     }
 }
 
@@ -211,17 +205,18 @@ fn cache_contents(blockchain: &Blockchain) -> CacheContents {
 fn cache_verified(blockchain: &Blockchain, block: Arc<Block>) {
     let hash = block.hash();
     let entry = blockchain
-        .retain_block(block, hash)
+        .cache
+        .retain(block, hash, blockchain.ledger.as_ref())
         .expect("verified block fits");
-    blockchain._block_cache.insert(hash, entry);
+    blockchain.cache.insert_verified(entry);
 }
 
 /// Empties every block cache through the paths that normally remove entries.
 fn clear_block_caches(blockchain: &Blockchain) {
     for height in unverified_heights(blockchain) {
-        blockchain.remove_unverified_index(height);
+        blockchain.cache.remove_unverified_index(height);
     }
-    blockchain._block_cache.clear();
+    blockchain.cache.clear_verified();
     blockchain.ledger.evict_block_bodies(usize::MAX);
 }
 
@@ -260,7 +255,7 @@ async fn block_caches_stay_within_the_shared_budget_through_a_sync() {
         audit(&blockchain, ballast.bytes());
     }
     for block in &chain[1..] {
-        assert!(blockchain._block_cache.contains_key(&block.hash()));
+        assert!(blockchain.cache.contains_verified(&block.hash()));
     }
 
     assert_eq!(
@@ -311,7 +306,7 @@ async fn block_the_chain_needs_sooner_displaces_far_future_blocks() {
         blockchain.on_new_block(Arc::clone(&block_two), true).await,
         VerifyResult::Succeed
     );
-    assert!(blockchain._block_cache.contains_key(&block_two.hash()));
+    assert!(blockchain.cache.contains_verified(&block_two.hash()));
     assert_eq!(unverified_heights(&blockchain), [2, 100, 101, 102]);
     // Held by both actor caches, charged once.
     assert_eq!(
@@ -359,7 +354,7 @@ async fn next_block_is_persisted_when_the_budget_has_no_room_for_it() {
 
     // Persisted without being retained anywhere, and without anything having
     // been given up for it.
-    assert!(!blockchain._block_cache.contains_key(&next.hash()));
+    assert!(!blockchain.cache.contains_verified(&next.hash()));
     assert_eq!(ledger.cached_block_bytes(), 0);
     assert_eq!(unverified_heights(&blockchain), [100, 101]);
     assert_eq!(budget.retained(), retained_before);
@@ -391,8 +386,8 @@ async fn verified_block_without_room_is_out_of_memory_until_there_is_room() {
             blockchain.on_new_block(Arc::clone(&block_two), true).await,
             VerifyResult::OutOfMemory
         );
-        assert!(blockchain._block_cache.is_empty());
-        assert!(blockchain._block_cache_unverified.is_empty());
+        assert!(blockchain.cache.verified_is_empty());
+        assert_eq!(blockchain.cache.unverified_block_count(), 0);
         assert_eq!(budget.retained(), retained_before);
     }
 
@@ -427,7 +422,7 @@ async fn sync_three_blocks_out_of_order(
     for index in [2usize, 1, 0, 2] {
         if headroom.is_some() && index == 0 {
             // Block 2 took the only room there is, so block 3 was given up.
-            assert!(!blockchain._block_cache.contains_key(&chain[2].hash()));
+            assert!(!blockchain.cache.contains_verified(&chain[2].hash()));
             assert_eq!(unverified_heights(&blockchain), [2]);
         }
         verdicts.push(
@@ -517,8 +512,8 @@ async fn evicted_unverified_block_gets_the_same_verdict_when_it_comes_back() {
     assert_eq!(unverified_heights(&blockchain), [50, 60, 70]);
     assert!(
         blockchain
-            ._block_cache_unverified
-            .get(&70)
+            .cache
+            .unverified_candidates(70)
             .expect("height cached")
             .iter()
             .any(|candidate| candidate.hash == evicted.hash())
@@ -553,8 +548,8 @@ async fn higher_blocks_never_displace_lower_ones() {
     assert_eq!(unverified_heights(&blockchain), [5, 10, 15]);
     assert_eq!(
         blockchain
-            ._block_cache_unverified
-            .get(&15)
+            .cache
+            .unverified_candidates(15)
             .expect("height cached")
             .len(),
         1
@@ -579,7 +574,7 @@ async fn full_unverified_cache_gives_up_higher_blocks_only() {
         blockchain.add_unverified_block(empty_block(index)).await;
     }
     assert_eq!(
-        blockchain._unverified_cache_blocks.load(Ordering::Relaxed),
+        blockchain.cache.unverified_block_count(),
         MAX_UNVERIFIED_CACHE_SIZE
     );
 
@@ -587,30 +582,18 @@ async fn full_unverified_cache_gives_up_higher_blocks_only() {
     blockchain
         .add_unverified_block(empty_block(highest + 1))
         .await;
-    assert!(
-        !blockchain
-            ._block_cache_unverified
-            .contains_key(&(highest + 1))
-    );
-    assert!(blockchain._block_cache_unverified.contains_key(&highest));
+    assert!(!blockchain.cache.contains_unverified_height(highest + 1));
+    assert!(blockchain.cache.contains_unverified_height(highest));
 
     // Below a cached block: the highest one gives way.
     blockchain
         .add_unverified_block(empty_block(lowest - 1))
         .await;
-    assert!(
-        blockchain
-            ._block_cache_unverified
-            .contains_key(&(lowest - 1))
-    );
-    assert!(!blockchain._block_cache_unverified.contains_key(&highest));
-    assert!(
-        blockchain
-            ._block_cache_unverified
-            .contains_key(&(highest - 1))
-    );
+    assert!(blockchain.cache.contains_unverified_height(lowest - 1));
+    assert!(!blockchain.cache.contains_unverified_height(highest));
+    assert!(blockchain.cache.contains_unverified_height(highest - 1));
     assert_eq!(
-        blockchain._unverified_cache_blocks.load(Ordering::Relaxed),
+        blockchain.cache.unverified_block_count(),
         MAX_UNVERIFIED_CACHE_SIZE
     );
     audit(&blockchain, 0);
@@ -633,7 +616,7 @@ async fn stale_blocks_and_ledger_bodies_give_way_before_pending_blocks() {
         blockchain.add_unverified_block(far_block(height)).await;
     }
     audit(&blockchain, 0);
-    assert_eq!(blockchain._block_cache_budget.available(), block_cost / 2);
+    assert_eq!(blockchain.cache.budget().available(), block_cost / 2);
 
     // A block parked at a height that has been persisted since is of no use
     // and goes first, before any body.
@@ -671,7 +654,7 @@ async fn block_larger_than_the_budget_is_never_retained_and_evicts_nothing() {
     for height in [10, 20] {
         blockchain.add_unverified_block(far_block(height)).await;
     }
-    let retained_before = blockchain._block_cache_budget.retained();
+    let retained_before = blockchain.cache.budget().retained();
 
     // Lower than everything pending, so it would outrank all of it, but no
     // amount of eviction can make it fit.
@@ -684,18 +667,24 @@ async fn block_larger_than_the_budget_is_never_retained_and_evicts_nothing() {
     // The admission step of a verified block refuses it the same way.
     assert!(
         blockchain
-            .retain_block(Arc::clone(&oversize), oversize.hash())
+            .cache
+            .retain(
+                Arc::clone(&oversize),
+                oversize.hash(),
+                blockchain.ledger.as_ref(),
+            )
             .is_none()
     );
     assert!(
         blockchain
-            .try_retain_block(Arc::clone(&oversize), oversize.hash())
+            .cache
+            .try_retain(Arc::clone(&oversize), oversize.hash())
             .is_none()
     );
 
     assert_eq!(unverified_heights(&blockchain), [10, 20]);
     assert!(ledger.get_block(&body).is_some());
-    assert_eq!(blockchain._block_cache_budget.retained(), retained_before);
+    assert_eq!(blockchain.cache.budget().retained(), retained_before);
     audit(&blockchain, 0);
 }
 
@@ -719,7 +708,7 @@ async fn every_way_out_of_the_actor_caches_returns_the_bytes() {
         audit(&blockchain, 0);
     }
     assert_eq!(
-        blockchain._unverified_cache_blocks.load(Ordering::Relaxed),
+        blockchain.cache.unverified_block_count(),
         MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT
     );
     assert_eq!(
@@ -735,7 +724,7 @@ async fn every_way_out_of_the_actor_caches_returns_the_bytes() {
         .add_unverified_block(Arc::clone(&candidates[3]))
         .await;
     assert_eq!(
-        blockchain._unverified_cache_blocks.load(Ordering::Relaxed),
+        blockchain.cache.unverified_block_count(),
         MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT
     );
     assert_eq!(
@@ -749,22 +738,28 @@ async fn every_way_out_of_the_actor_caches_returns_the_bytes() {
 
     // Removal of a whole height.
     blockchain.add_unverified_block(far_block(20)).await;
-    assert!(blockchain.remove_unverified_index(10).is_some());
+    assert!(blockchain.cache.remove_unverified_index(10).is_some());
     audit(&blockchain, 0);
     assert_eq!(budget.retained(), block_cost);
 
     // A verified cache entry handed over to its taker, then dropped.
     let verified = far_block(30);
     let entry = blockchain
-        .retain_block(Arc::clone(&verified), verified.hash())
+        .cache
+        .retain(
+            Arc::clone(&verified),
+            verified.hash(),
+            blockchain.ledger.as_ref(),
+        )
         .expect("verified block fits");
-    blockchain._block_cache.insert(entry.hash, entry);
+    blockchain.cache.insert_verified(entry);
     audit(&blockchain, 0);
-    assert!(blockchain.find_block_in_cache_by_index(31).is_none());
+    assert!(blockchain.cache.take_verified_at_index(31).is_none());
     let taken = blockchain
-        .find_block_in_cache_by_index(30)
+        .cache
+        .take_verified_at_index(30)
         .expect("block cached at height 30");
-    assert!(blockchain._block_cache.is_empty());
+    assert!(blockchain.cache.verified_is_empty());
     assert_eq!(budget.retained(), 2 * block_cost);
     drop(taken);
     assert_eq!(budget.retained(), block_cost);
@@ -798,7 +793,7 @@ async fn actor_with_every_tier_occupied() -> (Blockchain, usize) {
     cache_verified(&blockchain, far_block(30));
     blockchain.ledger.record_tip(5);
 
-    assert_eq!(blockchain._block_cache_budget.available(), block_cost / 2);
+    assert_eq!(blockchain.cache.budget().available(), block_cost / 2);
     audit(&blockchain, 0);
     (blockchain, block_cost)
 }
@@ -806,7 +801,7 @@ async fn actor_with_every_tier_occupied() -> (Blockchain, usize) {
 #[tokio::test]
 async fn refused_block_leaves_every_cache_as_it_was() {
     let (blockchain, block_cost) = actor_with_every_tier_occupied().await;
-    let budget = Arc::clone(&blockchain._block_cache_budget);
+    let budget = Arc::clone(blockchain.cache.budget());
     let before = cache_contents(&blockchain);
 
     // A block at height 25 may displace the stale block, the body and the
@@ -821,7 +816,12 @@ async fn refused_block_leaves_every_cache_as_it_was() {
     // The admission step of a verified block refuses it the same way.
     assert!(
         blockchain
-            .retain_block(Arc::clone(&newcomer), newcomer.hash())
+            .cache
+            .retain(
+                Arc::clone(&newcomer),
+                newcomer.hash(),
+                blockchain.ledger.as_ref(),
+            )
             .is_none()
     );
     assert_eq!(cache_contents(&blockchain), before);
@@ -834,22 +834,22 @@ async fn block_that_fits_only_by_combining_tiers_is_admitted() {
     // blocks at heights 20 and 30. This one fits exactly when the first two
     // and the highest block go, so the block at height 20 stays.
     let (blockchain, block_cost) = actor_with_every_tier_occupied().await;
-    let budget = Arc::clone(&blockchain._block_cache_budget);
+    let budget = Arc::clone(blockchain.cache.budget());
     let newcomer = block_costing(15, budget.available() + 3 * block_cost);
     blockchain.add_unverified_block(Arc::clone(&newcomer)).await;
     assert_eq!(unverified_heights(&blockchain), [10, 15, 20]);
-    assert!(blockchain._block_cache.is_empty());
+    assert!(blockchain.cache.verified_is_empty());
     assert_eq!(blockchain.ledger.cached_block_count(), 0);
     assert_eq!(budget.available(), 0);
     audit(&blockchain, 0);
 
     // This one fits exactly when everything it may displace goes.
     let (blockchain, block_cost) = actor_with_every_tier_occupied().await;
-    let budget = Arc::clone(&blockchain._block_cache_budget);
+    let budget = Arc::clone(blockchain.cache.budget());
     let newcomer = block_costing(15, budget.available() + 4 * block_cost);
     blockchain.add_unverified_block(Arc::clone(&newcomer)).await;
     assert_eq!(unverified_heights(&blockchain), [10, 15]);
-    assert!(blockchain._block_cache.is_empty());
+    assert!(blockchain.cache.verified_is_empty());
     assert_eq!(blockchain.ledger.cached_block_count(), 0);
     assert_eq!(budget.available(), 0);
     audit(&blockchain, 0);
@@ -895,7 +895,7 @@ async fn verified_block_is_refused_before_anything_is_given_up_for_it() {
         blockchain.on_new_block(Arc::clone(&third), true).await,
         VerifyResult::Succeed
     );
-    assert!(blockchain._block_cache.contains_key(&third.hash()));
+    assert!(blockchain.cache.contains_verified(&third.hash()));
     assert_eq!(unverified_heights(&blockchain), [3]);
 
     // With one byte of that room taken, giving up block 3 would not be
@@ -914,8 +914,8 @@ async fn verified_block_is_refused_before_anything_is_given_up_for_it() {
         blockchain.on_new_block(Arc::clone(&second), true).await,
         VerifyResult::Succeed
     );
-    assert!(blockchain._block_cache.contains_key(&second.hash()));
-    assert!(!blockchain._block_cache.contains_key(&third.hash()));
+    assert!(blockchain.cache.contains_verified(&second.hash()));
+    assert!(!blockchain.cache.contains_verified(&third.hash()));
     assert_eq!(unverified_heights(&blockchain), [2]);
     assert_eq!(budget.available(), 0);
     audit(&blockchain, ballast.bytes());
@@ -929,7 +929,7 @@ async fn refused_block_does_not_displace_a_candidate_at_its_own_height() {
         .collect();
     let candidates_cost: usize = candidates.iter().map(|block| cost(block)).sum();
     let blockchain = actor_with_budget(2 * block_cost + candidates_cost + block_cost / 2);
-    let budget = Arc::clone(&blockchain._block_cache_budget);
+    let budget = Arc::clone(blockchain.cache.budget());
 
     // Height 10 holds as many candidates as a height may, beside a lower and
     // a higher block.
@@ -955,8 +955,8 @@ async fn refused_block_does_not_displace_a_candidate_at_its_own_height() {
     blockchain.add_unverified_block(Arc::clone(&newcomer)).await;
     assert_eq!(unverified_heights(&blockchain), [5, 10]);
     let cached: Vec<UInt256> = blockchain
-        ._block_cache_unverified
-        .get(&10)
+        .cache
+        .unverified_candidates(10)
         .expect("height cached")
         .iter()
         .map(|candidate| candidate.hash)
@@ -973,27 +973,12 @@ async fn refused_block_does_not_displace_a_candidate_at_its_own_height() {
 /// charged and counted as `cost` bytes, so that the byte cap of the unverified
 /// cache can be reached without allocating that much.
 fn park_stand_in(blockchain: &Blockchain, index: u32, cost: usize) {
-    let block = far_block(index);
-    let reservation = blockchain
-        ._block_cache_budget
-        .try_reserve(cost)
-        .expect("stand-in fits the budget");
-    blockchain
-        ._block_cache_unverified
-        .entry(index)
-        .or_default()
-        .push(RetainedBlock {
-            hash: block.hash(),
-            block,
-            cost,
-            _reservation: Arc::new(reservation),
-        });
-    blockchain
-        ._unverified_cache_bytes
-        .fetch_add(cost, Ordering::Relaxed);
-    blockchain
-        ._unverified_cache_blocks
-        .fetch_add(1, Ordering::Relaxed);
+    assert!(
+        blockchain
+            .cache
+            .park_unverified_costing(index, far_block(index), cost),
+        "stand-in fits the budget"
+    );
 }
 
 #[tokio::test]
@@ -1020,7 +1005,7 @@ async fn block_the_unverified_byte_cap_cannot_take_evicts_nothing() {
     blockchain.add_unverified_block(far_block(20)).await;
     assert_eq!(unverified_heights(&blockchain), [10, 20]);
     assert_eq!(
-        blockchain._unverified_cache_bytes.load(Ordering::Relaxed),
+        blockchain.cache.unverified_bytes(),
         MAX_UNVERIFIED_CACHE_BYTES
     );
     audit(&blockchain, 0);
@@ -1042,7 +1027,7 @@ async fn unverified_byte_cap_is_measured_without_the_candidate_a_block_replaces(
     );
     blockchain.add_unverified_block(Arc::clone(&newest)).await;
     assert_eq!(
-        blockchain._unverified_cache_bytes.load(Ordering::Relaxed),
+        blockchain.cache.unverified_bytes(),
         MAX_UNVERIFIED_CACHE_BYTES
     );
     let before = cache_contents(&blockchain);
@@ -1063,8 +1048,8 @@ async fn unverified_byte_cap_is_measured_without_the_candidate_a_block_replaces(
     let newcomer = sized_block(10, FAR_SCRIPT_LEN - 1);
     blockchain.add_unverified_block(Arc::clone(&newcomer)).await;
     let cached: Vec<UInt256> = blockchain
-        ._block_cache_unverified
-        .get(&10)
+        .cache
+        .unverified_candidates(10)
         .expect("height cached")
         .iter()
         .map(|candidate| candidate.hash)
@@ -1073,7 +1058,7 @@ async fn unverified_byte_cap_is_measured_without_the_candidate_a_block_replaces(
     assert!(!cached.contains(&oldest.hash()));
     assert_eq!(cached.last(), Some(&newcomer.hash()));
     assert_eq!(
-        blockchain._unverified_cache_bytes.load(Ordering::Relaxed),
+        blockchain.cache.unverified_bytes(),
         MAX_UNVERIFIED_CACHE_BYTES - cost(&oldest) + cost(&newcomer)
     );
     audit(&blockchain, 0);
@@ -1102,8 +1087,8 @@ async fn stream_of_large_blocks_at_one_height_displaces_no_more_than_it_brings()
 
         let (candidates, large_bytes, newest) = {
             let cached = blockchain
-                ._block_cache_unverified
-                .get(&10)
+                .cache
+                .unverified_candidates(10)
                 .expect("height cached");
             (
                 cached.len(),

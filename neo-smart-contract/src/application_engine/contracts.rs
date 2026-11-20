@@ -1,76 +1,10 @@
+use super::contract_metadata_cache::{
+    contract_metadata_cache, contract_metadata_cache_enabled, initialized_contract_metadata_cache,
+};
+use super::contract_script_cache::cached_contract_script;
 use super::*;
 use neo_primitives::ContractBasicMethod;
-use std::collections::VecDeque;
-use std::sync::OnceLock;
-
-const CONTRACT_SCRIPT_CACHE_CAPACITY: usize = 256;
-const CONTRACT_SCRIPT_CACHE_MAX_BYTES: usize = 64 * 1024 * 1024;
-
-/// Immutable parsed scripts shared by all engines in this process.
-///
-/// Keys are the exact NEF script bytes, not contract hashes or update counters:
-/// an upgrade can retain the contract hash while replacing its byte code. Both
-/// entry count and retained byte code are bounded because callers can deploy
-/// arbitrary contracts. Instruction-table memory is additionally bounded by the
-/// NEF script-size limit enforced at deployment.
-#[derive(Default)]
-struct ParsedContractScriptCache {
-    scripts: HashMap<Arc<[u8]>, Script>,
-    insertion_order: VecDeque<Arc<[u8]>>,
-    cached_bytes: usize,
-}
-
-impl ParsedContractScriptCache {
-    fn get_or_parse(&mut self, script_bytes: &[u8]) -> Result<Script> {
-        self.get_or_parse_with_byte_budget(script_bytes, CONTRACT_SCRIPT_CACHE_MAX_BYTES)
-    }
-
-    fn get_or_parse_with_byte_budget(
-        &mut self,
-        script_bytes: &[u8],
-        max_bytes: usize,
-    ) -> Result<Script> {
-        if let Some(script) = self.scripts.get(script_bytes) {
-            return Ok(script.clone());
-        }
-
-        let key: Arc<[u8]> = Arc::from(script_bytes);
-        let script = Script::from_shared(Arc::clone(&key))
-            .map_err(|error| Error::invalid_operation(format!("Invalid script: {error}")))?;
-
-        // An individually oversized script still executes normally. Bypass the
-        // cache before eviction so it cannot flush every useful hot contract.
-        if script_bytes.len() > max_bytes {
-            return Ok(script);
-        }
-
-        while !self.scripts.is_empty()
-            && (self.scripts.len() >= CONTRACT_SCRIPT_CACHE_CAPACITY
-                || self.cached_bytes.saturating_add(script_bytes.len()) > max_bytes)
-        {
-            let oldest = self
-                .insertion_order
-                .pop_front()
-                .expect("a non-empty script cache has an insertion-order entry");
-            if self.scripts.remove(&oldest).is_some() {
-                self.cached_bytes = self.cached_bytes.saturating_sub(oldest.len());
-            }
-        }
-
-        self.cached_bytes = self.cached_bytes.saturating_add(key.len());
-        self.insertion_order.push_back(Arc::clone(&key));
-        self.scripts.insert(key, script.clone());
-        Ok(script)
-    }
-}
-
-fn cached_contract_script(script_bytes: &[u8]) -> Result<Script> {
-    static CACHE: OnceLock<Mutex<ParsedContractScriptCache>> = OnceLock::new();
-    CACHE
-        .get_or_init(|| Mutex::new(ParsedContractScriptCache::default()))
-        .lock()
-        .get_or_parse(script_bytes)
-}
+use std::sync::{Arc, OnceLock};
 
 // NOTE: The two integration tests that originally lived here
 // (`call_contract_uses_execution_state_script_hash_for_caller` and
@@ -119,6 +53,16 @@ impl ApplicationEngine {
             self.contracts.insert(*hash, Arc::clone(&contract));
             return Ok(contract);
         }
+        // The metadata cache retains the fully deserialized record, keyed by the
+        // update counter that produced it. Reading the counter is a two-byte
+        // peek into the stored record, so a hit skips NEF checksum verification
+        // and manifest deserialization entirely. The peek itself is served from
+        // the snapshot's own read path, so it costs no additional storage trip
+        // when the record was already touched.
+        if let Some(contract) = self.cached_contract_metadata(hash) {
+            self.contracts.insert(*hash, Arc::clone(&contract));
+            return Ok(contract);
+        }
         let block_idx = self
             .persisting_block()
             .map_or(0, neo_protocol::payloads::Block::index);
@@ -163,16 +107,56 @@ impl ApplicationEngine {
         }
         Err(Error::not_found(format!("Contract not found: {hash:?}")))
     }
+    /// Returns a deployed contract record from the process-wide metadata cache.
+    ///
+    /// The cache is addressed by `(hash, update_counter)`, so an upgrade reads a
+    /// different key while a destroyed-and-redeployed contract is removed by
+    /// explicit invalidation from the mutation hooks. Engines that already
+    /// mutated contract or policy state may hold uncommitted records and never
+    /// consult or fill the shared cache.
+    pub(super) fn cached_contract_metadata(&self, hash: &UInt160) -> Option<Arc<ContractState>> {
+        if !contract_metadata_cache_enabled() || self.native_fee_cache_dirty {
+            return None;
+        }
+        let update_counter = self
+            .native_state_reader
+            .contract_update_counter(self.snapshot_cache.as_ref(), hash)
+            .ok()
+            .flatten()?;
+        contract_metadata_cache().get(hash, update_counter)
+    }
+
     fn is_contract_blocked(&mut self, contract_hash: &UInt160) -> Result<bool> {
         self.native_state_reader
             .is_blocked(self.snapshot_cache.as_ref(), contract_hash)
     }
     fn cache_committed_contract(&mut self, hash: UInt160, contract: Arc<ContractState>) {
         self.contracts.insert(hash, Arc::clone(&contract));
-        if contract_state_cache_enabled() && !self.native_fee_cache_dirty {
+        if self.native_fee_cache_dirty {
+            // The engine has already mutated contract state, so the record it
+            // just read may include uncommitted work. Only the per-engine map
+            // may observe it.
+            return;
+        }
+        if contract_state_cache_enabled() {
             self.native_contract_cache
                 .lock()
-                .cache_contract_state(hash, contract);
+                .cache_contract_state(hash, Arc::clone(&contract));
+        }
+        if contract_metadata_cache_enabled() {
+            contract_metadata_cache().insert(contract);
+        }
+    }
+
+    /// Drops process-wide metadata for `hash` after a deploy, update or destroy.
+    ///
+    /// The key already separates update counters, so an upgrade can never read
+    /// the previous record. Invalidation additionally covers a
+    /// destroy-then-redeploy at the same hash, which would otherwise resurrect
+    /// the destroyed incarnation's NEF and manifest.
+    fn invalidate_contract_metadata_cache(&self, hash: &UInt160) {
+        if let Some(cache) = initialized_contract_metadata_cache() {
+            cache.invalidate(hash);
         }
     }
 
@@ -182,6 +166,7 @@ impl ApplicationEngine {
     /// NEF/manifest, producing different `_initialize` static fields than C#.
     pub fn put_contract_cache(&mut self, hash: UInt160, contract: ContractState) {
         self.contracts.insert(hash, Arc::new(contract));
+        self.invalidate_contract_metadata_cache(&hash);
         self.invalidate_contract_query_results();
     }
 
@@ -189,6 +174,7 @@ impl ApplicationEngine {
     /// hooks can run, and prevents later transactions from using stale metadata.
     pub fn remove_contract_cache(&mut self, hash: &UInt160) {
         self.contracts.remove(hash);
+        self.invalidate_contract_metadata_cache(hash);
         self.invalidate_contract_query_results();
     }
 
@@ -284,9 +270,7 @@ impl ApplicationEngine {
             && contract.hash.to_string() == "0xcc638d55d99fc81295daccbaf722b84f179fb9c4"
         {
             eprintln!(
-                "TRACE dump contract method={} offset={} script_len={}",
-                method_name,
-                offset,
+                "TRACE dump contract method={method_name} offset={offset} script_len={}",
                 contract.nef.script.len()
             );
             std::fs::write("data/contract-2655903-actual.script", &contract.nef.script)
@@ -389,8 +373,8 @@ impl ApplicationEngine {
                 )
             {
                 return Err(Error::invalid_operation(format!(
-                    "Cannot call method {} of contract {} from contract {}.",
-                    method.name, contract.hash, previous_hash
+                    "Cannot call method {} of contract {} from contract {previous_hash}.",
+                    method.name, contract.hash
                 )));
             }
         }
@@ -647,89 +631,5 @@ impl ApplicationEngine {
             )?;
         }
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod parsed_script_cache_tests {
-    use super::*;
-
-    #[test]
-    fn content_cache_shares_immutable_bytes_and_instructions() {
-        let mut cache = ParsedContractScriptCache::default();
-        let bytes = [OpCode::PUSH1.byte(), OpCode::RET.byte()];
-
-        let first = cache.get_or_parse(&bytes).unwrap();
-        let second = cache.get_or_parse(&bytes).unwrap();
-
-        assert_eq!(first.as_bytes().as_ptr(), second.as_bytes().as_ptr());
-        assert!(Arc::ptr_eq(
-            &first.get_instruction(0).unwrap(),
-            &second.get_instruction(0).unwrap()
-        ));
-    }
-
-    #[test]
-    fn content_cache_distinguishes_equal_length_scripts() {
-        let mut cache = ParsedContractScriptCache::default();
-        let first = cache
-            .get_or_parse(&[OpCode::PUSH1.byte(), OpCode::RET.byte()])
-            .unwrap();
-        let second = cache
-            .get_or_parse(&[OpCode::PUSH2.byte(), OpCode::RET.byte()])
-            .unwrap();
-
-        assert_ne!(first.as_bytes().as_ptr(), second.as_bytes().as_ptr());
-        assert_eq!(first.get_instruction(0).unwrap().opcode(), OpCode::PUSH1);
-        assert_eq!(second.get_instruction(0).unwrap().opcode(), OpCode::PUSH2);
-    }
-
-    #[test]
-    fn content_cache_evicts_oldest_script_at_capacity() {
-        let mut cache = ParsedContractScriptCache::default();
-        let script = |value: usize| {
-            let value = value as u16;
-            [
-                OpCode::PUSHINT16.byte(),
-                value.to_le_bytes()[0],
-                value.to_le_bytes()[1],
-                OpCode::RET.byte(),
-            ]
-        };
-        let oldest = script(0);
-
-        for value in 0..=CONTRACT_SCRIPT_CACHE_CAPACITY {
-            cache.get_or_parse(&script(value)).unwrap();
-        }
-
-        assert_eq!(cache.scripts.len(), CONTRACT_SCRIPT_CACHE_CAPACITY);
-        assert_eq!(cache.insertion_order.len(), CONTRACT_SCRIPT_CACHE_CAPACITY);
-        assert!(!cache.scripts.contains_key(oldest.as_slice()));
-        assert!(
-            cache
-                .scripts
-                .contains_key(script(CONTRACT_SCRIPT_CACHE_CAPACITY).as_slice())
-        );
-    }
-
-    #[test]
-    fn oversized_script_bypasses_cache_without_evicting_hot_entries() {
-        let mut cache = ParsedContractScriptCache::default();
-        let hot_bytes = [OpCode::PUSH1.byte(), OpCode::RET.byte()];
-        let hot = cache.get_or_parse(&hot_bytes).unwrap();
-        let cached_bytes = cache.cached_bytes;
-
-        let oversized = cache
-            .get_or_parse_with_byte_budget(&[OpCode::PUSH2.byte(), OpCode::RET.byte()], 1)
-            .unwrap();
-
-        assert_eq!(
-            oversized.get_instruction(0).unwrap().opcode(),
-            OpCode::PUSH2
-        );
-        assert_eq!(cache.scripts.len(), 1);
-        assert_eq!(cache.cached_bytes, cached_bytes);
-        let hot_again = cache.get_or_parse(&hot_bytes).unwrap();
-        assert_eq!(hot.as_bytes().as_ptr(), hot_again.as_bytes().as_ptr());
     }
 }

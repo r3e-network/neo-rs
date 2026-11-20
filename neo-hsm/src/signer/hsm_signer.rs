@@ -4,6 +4,7 @@ use crate::device::HsmDeviceInfo;
 use crate::error::{HsmError, HsmResult};
 use async_trait::async_trait;
 use neo_crypto::{Base58, Crypto};
+use neo_smart_contract::helper::Helper as ContractHelper;
 use serde::{Deserialize, Serialize};
 
 /// Information about a key stored in the HSM
@@ -119,13 +120,8 @@ pub fn signature_redeem_script(public_key: &[u8]) -> HsmResult<Vec<u8>> {
         ));
     }
 
-    let mut script = Vec::with_capacity(40);
-    script.push(0x0C); // PUSHDATA1
-    script.push(compressed.len() as u8);
-    script.extend_from_slice(&compressed);
-    script.push(0x41); // SYSCALL
-    script.extend_from_slice(&check_sig_hash());
-    Ok(script)
+    // Layout is owned by `neo-smart-contract`; the HSM only normalizes the key.
+    Ok(ContractHelper::signature_redeem_script(&compressed))
 }
 
 pub fn normalize_public_key(public_key: &[u8]) -> HsmResult<Vec<u8>> {
@@ -154,11 +150,6 @@ fn compress_uncompressed_key(uncompressed_xy: &[u8]) -> HsmResult<Vec<u8>> {
     compressed.push(prefix);
     compressed.extend_from_slice(x);
     Ok(compressed)
-}
-
-fn check_sig_hash() -> [u8; 4] {
-    let digest = Crypto::sha256(b"System.Crypto.CheckSig");
-    [digest[0], digest[1], digest[2], digest[3]]
 }
 
 #[cfg(test)]

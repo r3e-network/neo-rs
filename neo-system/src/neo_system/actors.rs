@@ -41,18 +41,6 @@ impl TransactionRouter {
         }
     }
 
-    fn convert(
-        completed: crate::mempool::PreverifyCompleted,
-    ) -> crate::blockchain::PreverifyCompleted {
-        let hash = completed.transaction.hash();
-        crate::blockchain::PreverifyCompleted {
-            hash,
-            transaction: completed.transaction,
-            result: completed.result,
-            relay: completed.relay,
-        }
-    }
-
     fn preverify_batch(
         &self,
         envelopes: Vec<TransactionRouterEnvelope>,
@@ -65,7 +53,6 @@ impl TransactionRouter {
         self.inner
             .preverify_batch(transactions)
             .into_iter()
-            .map(Self::convert)
             .zip(senders)
             .map(|(completed, sender)| (sender, completed))
             .collect()

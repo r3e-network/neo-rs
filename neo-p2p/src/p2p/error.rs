@@ -125,6 +125,39 @@ impl From<std::io::Error> for P2PError {
     }
 }
 
+/// Failure to compute a consensus payload hash.
+///
+/// The payload hash helpers report `IoError`, which neither clones nor compares
+/// and belongs to the serialization layer. P2P block outcomes need both, so the
+/// failure is captured here as its rendered message and `neo-p2p` keeps no
+/// dependency on the host runtime error vocabulary.
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[error("payload hash computation failed: {message}")]
+pub struct HashComputationError {
+    message: String,
+}
+
+impl HashComputationError {
+    /// Creates the error from a rendered message.
+    pub fn new<S: Into<String>>(message: S) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+
+    /// Returns the rendered failure message.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl From<neo_io_crate::IoError> for HashComputationError {
+    fn from(error: neo_io_crate::IoError) -> Self {
+        Self::new(error.to_string())
+    }
+}
+
 impl From<neo_io_crate::IoError> for P2PError {
     fn from(error: neo_io_crate::IoError) -> Self {
         Self::io(error.to_string())

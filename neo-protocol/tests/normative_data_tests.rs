@@ -315,7 +315,7 @@ fn transaction_hash_and_size_caches_keep_mutation_contract() {
     tx.set_nonce(tx.nonce() + 1);
     assert_ne!(tx.hash(), hash);
     let cached_size = tx.size();
-    WitnessData::witnesses_mut(&mut tx)[0].invocation_script = vec![2; 200];
+    WitnessData::witnesses_mut(&mut tx)[0].set_invocation_script(vec![2; 200]);
     assert_eq!(tx.size(), cached_size); // Do not strengthen historical trait mutation.
     let clone = tx.clone();
     assert_eq!(clone.size(), clone.to_bytes().len());
@@ -370,12 +370,12 @@ fn block_witness_access_is_header_only_but_payload_count_is_aggregate() {
     assert_eq!(SerializablePayload::witness_count(&block), 3);
     assert_eq!(
         SerializablePayload::invocation_script(&block, 0),
-        block.header.witness.invocation_script
+        block.header.witness.invocation_script()
     );
     assert!(SerializablePayload::invocation_script(&block, 3).is_empty());
     assert!(SerializablePayload::verification_script(&block, 3).is_empty());
-    WitnessData::witnesses_mut(&mut block)[0].invocation_script = vec![5];
-    assert_eq!(block.header.witness.invocation_script, vec![5]);
+    WitnessData::witnesses_mut(&mut block)[0].set_invocation_script(vec![5]);
+    assert_eq!(block.header.witness.invocation_script(), [5]);
 }
 #[test]
 fn block_codec_checks_duplicates_and_merkle_root_without_state() {
@@ -544,19 +544,23 @@ fn witness_hash160_json_and_deserialize_limits_keep_the_original_contract() {
     let mut witness = Witness::new_with_scripts(vec![1; 1024], vec![2; 1024]);
     assert_eq!(
         witness.script_hash(),
-        UInt160::from(Crypto::hash160(&witness.verification_script))
+        UInt160::from(Crypto::hash160(witness.verification_script()))
     );
     let decoded: Witness = decode(&encode(&witness)).unwrap();
-    assert_eq!(decoded.invocation_script, witness.invocation_script);
-    assert_eq!(decoded.verification_script, witness.verification_script);
+    assert_eq!(decoded.invocation_script(), witness.invocation_script());
+    assert_eq!(decoded.verification_script(), witness.verification_script());
     assert_eq!(
         Witness::new_with_scripts(vec![0x11], vec![0x12]).to_json(),
         serde_json::json!({"invocation": "EQ==", "verification": "Eg=="})
     );
-    witness.invocation_script.push(1);
+    let mut overlong_invocation = witness.invocation_script().to_vec();
+    overlong_invocation.push(1);
+    witness.set_invocation_script(overlong_invocation);
     assert!(decode::<Witness>(&encode(&witness)).is_err());
-    witness.invocation_script.clear();
-    witness.verification_script.push(2);
+    witness.set_invocation_script(Vec::new());
+    let mut overlong_verification = witness.verification_script().to_vec();
+    overlong_verification.push(2);
+    witness.set_verification_script(overlong_verification);
     assert!(decode::<Witness>(&encode(&witness)).is_err());
 }
 #[test]

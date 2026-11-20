@@ -11,212 +11,99 @@
 
 use crate::{Nep17Api, RpcClient, RpcError, TransactionManagerFactory};
 use neo_crypto::ECPoint;
-use neo_ledger::VerifiableExt;
 use neo_native_contracts::native::{GasToken, NativeContract};
 use neo_primitives::UInt160;
 use neo_protocol::payloads::{Signer, Transaction, TransactionAttribute};
-use neo_protocol::signing_data::get_sign_data_vec;
-use neo_protocol::witness::Witness;
 use neo_smart_contract::contract::Contract;
-use neo_storage::persistence::DataCache;
-use neo_vm::ScriptBuilder;
-use neo_wallets::KeyPair;
 use neo_wallets::helper::Helper as WalletHelper;
+use neo_wallets::{
+    AccountSignature, AuthorizationLimits, KeyPair, SignerRequest, TransactionAuthorizationError,
+    TransactionAuthorizer, TransactionChainQuery, TransactionSigner,
+};
 use num_bigint::BigInt;
-use std::collections::HashMap;
 use std::sync::Arc;
 
-/// Represents the context item for a single script hash during transaction signing.
+/// Remote chain queries consulted while authorizing a transaction.
 ///
-/// Manages signature collection and witness construction for one signer/contract.
-/// Based on C# `Neo.SmartContract.ContractParametersContext.ContextItem`.
-#[derive(Clone, Debug)]
-struct ContextItem {
-    /// The contract script (verification script)
-    script: Vec<u8>,
-    /// Expected parameter count (signatures needed)
-    parameter_count: usize,
-    /// Collected signatures, indexed by public key
-    signatures: HashMap<ECPoint, Vec<u8>>,
+/// This is the only chain-facing piece of the client: fee estimation and the
+/// sender's GAS balance. Signer resolution, witness ordering, completion and
+/// funding rules live in [`TransactionAuthorizer`], which `neo-rpc-server`
+/// drives the same way from its local ledger.
+struct RpcChainQuery {
+    /// Connection used for `calculatenetworkfee` and `invokescript`.
+    client: Arc<RpcClient>,
 }
 
-impl ContextItem {
-    /// Creates a new context item for a contract.
-    fn new(script: Vec<u8>, parameter_count: usize) -> Self {
-        Self {
-            script,
-            parameter_count,
-            signatures: HashMap::new(),
-        }
+#[async_trait::async_trait]
+impl TransactionChainQuery for RpcChainQuery {
+    type Error = RpcError;
+
+    async fn block_height(&self) -> Result<u32, Self::Error> {
+        // `getblockcount` reports height + 1.
+        Ok(self.client.get_block_count().await?.saturating_sub(1))
     }
 
-    /// Adds a signature for a given public key.
-    /// Returns `true` if the signature was newly added, `false` if it already existed.
-    fn add_signature(&mut self, public_key: ECPoint, signature: Vec<u8>) -> bool {
-        if let std::collections::hash_map::Entry::Vacant(e) = self.signatures.entry(public_key) {
-            e.insert(signature);
-            true
-        } else {
-            false
-        }
+    async fn gas_balance(&self, account: &UInt160) -> Result<BigInt, Self::Error> {
+        Nep17Api::new(Arc::clone(&self.client))
+            .balance_of(&GasToken::new().hash(), account)
+            .await
     }
 
-    /// Checks if this context item has collected all required signatures.
-    fn is_completed(&self) -> bool {
-        self.signatures.len() >= self.parameter_count
-    }
-
-    /// Builds the witness from collected signatures.
-    ///
-    /// For single-sig contracts: invocation script contains one signature.
-    /// For multi-sig contracts: invocation script contains M signatures in order.
-    fn build_witness(&self, public_keys: &[ECPoint]) -> Witness {
-        let invocation_script = self.build_invocation_script(public_keys);
-        Witness::new_with_scripts(invocation_script, self.script.clone())
-    }
-
-    /// Builds the invocation script from collected signatures.
-    ///
-    /// Format: PUSHDATA1 <sig1> [PUSHDATA1 <sig2> ...]
-    /// Signatures are ordered by the public key order in the verification script.
-    fn build_invocation_script(&self, public_keys: &[ECPoint]) -> Vec<u8> {
-        let mut builder = ScriptBuilder::new();
-
-        // For single signature contracts
-        if self.parameter_count == 1 {
-            if let Some(sig) = self.signatures.values().next() {
-                builder.emit_push(sig);
-            }
-            return builder.to_array();
-        }
-
-        // For multi-signature contracts: emit signatures in public key order
-        let mut ordered_sigs = Vec::new();
-        for pubkey in public_keys {
-            if let Some(sig) = self.signatures.get(pubkey) {
-                ordered_sigs.push(sig);
-                if ordered_sigs.len() >= self.parameter_count {
-                    break;
-                }
-            }
-        }
-
-        for sig in ordered_sigs {
-            builder.emit_push(sig);
-        }
-
-        builder.to_array()
+    async fn network_fee(&self, transaction: &Transaction) -> Result<i64, Self::Error> {
+        Ok(self.client.calculate_network_fee(transaction).await?)
     }
 }
 
-/// Contract parameters context for managing transaction witness construction.
+/// Maps an authorization failure onto the client error type.
 ///
-/// Tracks signature collection across multiple signers and builds complete witnesses
-/// when all required signatures are gathered.
-///
-/// Based on C# `Neo.SmartContract.ContractParametersContext`.
-#[derive(Clone)]
-struct ContractParametersContext {
-    /// The transaction being signed
-    tx: Transaction,
-    /// Context items per script hash
-    items: HashMap<UInt160, ContextItem>,
+/// The two historical client messages are preserved so callers keep the same
+/// diagnostics they had before authorization moved into `neo-wallets`.
+fn authorization_error(error: TransactionAuthorizationError) -> RpcError {
+    match error {
+        TransactionAuthorizationError::Incomplete { .. } => {
+            "Please add signature or witness first!".into()
+        }
+        TransactionAuthorizationError::UnknownSigner(account) => {
+            format!("Add SignItem error: Mismatch ScriptHash ({account})").into()
+        }
+        other => other.to_string().into(),
+    }
 }
 
-impl ContractParametersContext {
-    /// Creates a new contract parameters context for a transaction.
-    ///
-    /// # Arguments
-    /// * `snapshot` - Blockchain snapshot (currently unused, matches C# signature)
-    /// * `tx` - The transaction to sign
-    /// * `network` - Network magic number for signature domain separation
-    fn new(_snapshot: Arc<DataCache>, tx: Transaction, _network: u32) -> Self {
-        Self {
-            tx,
-            items: HashMap::new(),
+/// Signs on behalf of the manager with the keys registered in its store.
+///
+/// The contract's verification script decides each signature's slot, so an
+/// account the manager holds no key for simply declines to sign and leaves its
+/// witness to the caller.
+struct KeyStoreSigner<'a> {
+    /// Contracts and keys registered through `add_signature`/`add_multi_sig`.
+    sign_store: &'a [SignItem],
+}
+
+#[async_trait::async_trait]
+impl TransactionSigner for KeyStoreSigner<'_> {
+    async fn sign(
+        &self,
+        request: &SignerRequest<'_>,
+    ) -> Result<Vec<AccountSignature>, TransactionAuthorizationError> {
+        let Some(item) = self
+            .sign_store
+            .iter()
+            .find(|item| item.contract.script_hash() == *request.account)
+        else {
+            return Ok(Vec::new());
+        };
+        let mut signatures = Vec::with_capacity(item.key_pairs.len());
+        for key in &item.key_pairs {
+            let signature = key.sign(&request.sign_data).map_err(|err| {
+                TransactionAuthorizationError::SigningFailed(format!("AddSignature failed: {err}"))
+            })?;
+            signatures.push(AccountSignature::new(
+                key.compressed_public_key(),
+                signature,
+            ));
         }
-    }
-
-    /// Adds a signature for a specific contract and public key.
-    ///
-    /// # Returns
-    /// * `Ok(true)` - Signature added successfully
-    /// * `Ok(false)` - Signature already exists or cannot be added (duplicate signature after completion)
-    /// * `Err` - Contract not found or other error
-    fn add_signature(
-        &mut self,
-        contract: &Contract,
-        public_key: &ECPoint,
-        signature: Vec<u8>,
-    ) -> Result<bool, String> {
-        let hash = contract.script_hash();
-
-        let item = self
-            .items
-            .get_mut(&hash)
-            .ok_or_else(|| format!("Contract not found: {hash}"))?;
-
-        // Reject duplicate signatures after context is complete
-        if item.is_completed() && item.signatures.contains_key(public_key) {
-            return Ok(false);
-        }
-
-        Ok(item.add_signature(public_key.clone(), signature))
-    }
-
-    /// Adds a contract to the context, preparing it to receive signatures.
-    ///
-    /// This registers the contract's verification script and parameter requirements.
-    fn add_contract(&mut self, contract: Contract) {
-        let hash = contract.script_hash();
-        let parameter_count = contract.parameter_list.len();
-
-        if let std::collections::hash_map::Entry::Vacant(e) = self.items.entry(hash) {
-            let item = ContextItem::new(contract.script.clone(), parameter_count);
-            e.insert(item);
-        }
-    }
-
-    /// Checks if all required signatures have been collected for all signers.
-    fn completed(&self) -> bool {
-        if self.items.is_empty() {
-            return false;
-        }
-
-        let script_hashes = self.tx.script_hashes_for_verifying(&DataCache::new(true));
-
-        // Check that all required script hashes have complete signatures
-        for hash in &script_hashes {
-            match self.items.get(hash) {
-                Some(item) if item.is_completed() => continue,
-                _ => return false,
-            }
-        }
-
-        true
-    }
-
-    /// Builds and returns the witnesses for the transaction.
-    ///
-    /// Witnesses are returned in the same order as the transaction's script hashes.
-    /// Each witness contains the collected signatures (invocation script) and
-    /// the verification script.
-    fn witnesses(&self) -> Vec<Witness> {
-        let script_hashes = self.tx.script_hashes_for_verifying(&DataCache::new(true));
-        let mut witnesses = Vec::with_capacity(script_hashes.len());
-
-        for hash in &script_hashes {
-            if let Some(item) = self.items.get(hash) {
-                // Extract public keys from the context for proper ordering
-                let public_keys: Vec<ECPoint> = item.signatures.keys().cloned().collect();
-                witnesses.push(item.build_witness(&public_keys));
-            } else {
-                // If no item exists, create an empty witness
-                witnesses.push(Witness::new());
-            }
-        }
-
-        witnesses
+        Ok(signatures)
     }
 }
 
@@ -227,39 +114,27 @@ struct SignItem {
     contract: Contract,
     /// The key pairs for signing
     key_pairs: Vec<KeyPair>,
-    /// Cached public keys for signature ordering
-    public_keys: Vec<ECPoint>,
 }
 
 impl SignItem {
-    /// Creates a new sign item with public keys extracted from key pairs.
-    fn new(contract: Contract, key_pairs: Vec<KeyPair>) -> Result<Self, RpcError> {
-        let public_keys = key_pairs
-            .iter()
-            .map(neo_wallets::KeyPair::get_public_key_point)
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(Self {
+    /// Creates a new sign item.
+    fn new(contract: Contract, key_pairs: Vec<KeyPair>) -> Self {
+        Self {
             contract,
             key_pairs,
-            public_keys,
-        })
+        }
     }
 
     /// Adds a key pair to this sign item if it's not already present.
-    fn add_key(&mut self, key: KeyPair) -> Result<(), RpcError> {
+    fn add_key(&mut self, key: KeyPair) {
         let exists = self
             .key_pairs
             .iter()
             .any(|candidate| candidate.private_key() == key.private_key());
 
         if !exists {
-            let public_key = key.get_public_key_point()?;
             self.key_pairs.push(key);
-            self.public_keys.push(public_key);
         }
-
-        Ok(())
     }
 }
 
@@ -274,16 +149,13 @@ impl SignItem {
 /// Matches C# `Neo.SmartContract.TransactionManager`.
 pub struct TransactionManager {
     /// The RPC client instance
-    _rpc_client: Arc<RpcClient>,
+    rpc_client: Arc<RpcClient>,
 
-    /// The transaction context to manage the witnesses
-    context: ContractParametersContext,
+    /// Transaction authorization shared with `neo-rpc-server`
+    authorizer: TransactionAuthorizer,
 
     /// Container for keys that will sign the transaction
     sign_store: Vec<SignItem>,
-
-    /// The transaction managed by this instance
-    tx: Transaction,
 }
 
 impl TransactionManager {
@@ -295,24 +167,19 @@ impl TransactionManager {
     ///
     /// Matches C# `TransactionManager` constructor.
     pub fn new(tx: Transaction, rpc_client: Arc<RpcClient>) -> Self {
-        let snapshot = std::sync::Arc::new(neo_storage::persistence::DataCache::new(true));
-        let context = ContractParametersContext::new(
-            snapshot,
-            tx.clone(),
-            rpc_client.protocol_settings.network,
-        );
-
+        let network = rpc_client.protocol_settings.network;
+        let limits =
+            AuthorizationLimits::new(rpc_client.protocol_settings.max_valid_until_block_increment);
         Self {
-            _rpc_client: rpc_client,
-            context,
+            authorizer: TransactionAuthorizer::new(tx, network, limits),
+            rpc_client,
             sign_store: Vec::new(),
-            tx,
         }
     }
 
     /// Gets the managed transaction.
     pub const fn tx(&self) -> &Transaction {
-        &self.tx
+        self.authorizer.tx()
     }
 
     /// Helper function for one-off transaction creation.
@@ -351,10 +218,10 @@ impl TransactionManager {
         let mut manager = factory
             .make_transaction(script, &signers.unwrap_or_default())
             .await?;
-        manager.tx.set_system_fee(system_fee);
+        manager.authorizer.set_system_fee(system_fee);
 
         if let Some(attrs) = attributes {
-            manager.tx.set_attributes(attrs);
+            manager.authorizer.set_attributes(attrs);
         }
 
         Ok(manager)
@@ -419,7 +286,9 @@ impl TransactionManager {
     ///
     /// Matches C# `TransactionManager.AddWitness` with `Contract`.
     pub fn add_witness(&mut self, contract: Contract) -> Result<&mut Self, RpcError> {
-        self.context.add_contract(contract);
+        self.authorizer
+            .register_contract(&contract)
+            .map_err(authorization_error)?;
         Ok(self)
     }
 
@@ -456,10 +325,15 @@ impl TransactionManager {
     /// Signs the transaction and calculates fees.
     ///
     /// This method:
-    /// 1. Calculates the network fee by simulating witness verification
-    /// 2. Verifies the sender has sufficient GAS balance
-    /// 3. Signs the transaction with all registered keys
-    /// 4. Assembles the final witnesses
+    /// 1. Validates the transaction shape and fee fields
+    /// 2. Calculates the network fee by simulating witness verification
+    /// 3. Verifies the sender has sufficient GAS balance
+    /// 4. Signs the transaction with all registered keys
+    /// 5. Assembles the final witnesses in transaction signer order
+    ///
+    /// Signer resolution, witness ordering, completion and funding rules are
+    /// owned by [`TransactionAuthorizer`]; this method only supplies the RPC
+    /// chain port and the key material registered on the manager.
     ///
     /// # Returns
     /// The signed transaction with all witnesses attached.
@@ -471,110 +345,76 @@ impl TransactionManager {
     ///
     /// Matches C# `TransactionManager.SignAsync`.
     pub async fn sign(&mut self) -> Result<Transaction, RpcError> {
-        // Calculate network fee by simulating with empty invocation scripts
-        let script_hashes = self.tx.script_hashes_for_verifying(&DataCache::new(true));
-        let mut witnesses = Vec::with_capacity(script_hashes.len());
-        for hash in &script_hashes {
-            let verification_script = self.get_verification_script(hash);
-            witnesses.push(Witness::new_with_scripts(Vec::new(), verification_script));
-        }
-        self.tx.set_witnesses(witnesses);
+        self.authorizer
+            .validate_fees()
+            .map_err(authorization_error)?;
 
-        let network_fee = self._rpc_client.calculate_network_fee(&self.tx).await?;
-        self.tx.set_network_fee(network_fee);
+        let chain = RpcChainQuery {
+            client: Arc::clone(&self.rpc_client),
+        };
 
-        // Clear temporary witnesses before signing
-        self.tx.set_witnesses(Vec::new());
+        // The node prices verification from the verification script, so the
+        // estimate runs against placeholder witnesses that the authorizer
+        // installs and removes again.
+        self.authorizer
+            .estimate_network_fee(&chain)
+            .await
+            .map_err(authorization_error)?;
 
-        // Verify sufficient GAS balance
-        let sender = self
-            .tx
-            .sender()
-            .ok_or_else(|| "Sender not specified in transaction".to_string())?;
-        let gas_balance = Nep17Api::new(self._rpc_client.clone())
-            .balance_of(&GasToken::new().hash(), &sender)
-            .await?;
-        let required_fee = BigInt::from(self.tx.system_fee() + self.tx.network_fee());
-        if gas_balance < required_fee {
-            let address = WalletHelper::to_address(
-                &sender,
-                self._rpc_client.protocol_settings.address_version,
-            );
-            return Err(format!("Insufficient GAS in address: {address}").into());
-        }
-
-        // Sign with all registered keys
-        let sign_data = get_sign_data_vec(&self.tx, self._rpc_client.protocol_settings.network)?;
-        for item in &self.sign_store {
-            for (key, public_key) in item.key_pairs.iter().zip(&item.public_keys) {
-                let signature = key.sign(&sign_data)?;
-                let added = self
-                    .context
-                    .add_signature(&item.contract, public_key, signature)
-                    .map_err(|err| format!("AddSignature failed: {err}"))?;
-                if !added {
-                    return Err("AddSignature failed!".into());
-                }
+        if let Err(error) = self.authorizer.ensure_sufficient_funds(&chain).await {
+            if matches!(
+                error,
+                TransactionAuthorizationError::InsufficientFunds { .. }
+            ) {
+                let address = self
+                    .authorizer
+                    .tx()
+                    .sender()
+                    .map(|sender| {
+                        WalletHelper::to_address(
+                            &sender,
+                            self.rpc_client.protocol_settings.address_version,
+                        )
+                    })
+                    .unwrap_or_default();
+                return Err(format!("Insufficient GAS in address: {address}").into());
             }
+            return Err(authorization_error(error));
         }
 
-        // Verify all signatures collected
-        if !self.context.completed() {
-            return Err("Please add signature or witness first!".into());
-        }
+        let signer = KeyStoreSigner {
+            sign_store: &self.sign_store,
+        };
+        self.authorizer
+            .collect_signatures(&signer)
+            .await
+            .map_err(authorization_error)?;
 
-        // Build final witnesses from collected signatures
-        let final_witnesses = self.context.witnesses();
-        if final_witnesses.is_empty() {
-            return Err("No witnesses available; context incomplete"
-                .to_string()
-                .into());
-        }
-        self.tx.set_witnesses(final_witnesses);
-
-        Ok(self.tx.clone())
+        self.authorizer.finalize().map_err(authorization_error)
     }
 
     // ==================== Private Helper Methods ====================
 
     /// Adds a signing item to the internal store.
     ///
-    /// Verifies the contract's script hash matches one of the transaction's signers,
-    /// then registers the key for signing. If the contract is already registered,
-    /// adds the key to the existing item.
+    /// Registers the contract with the shared authorizer, which rejects a
+    /// contract whose script hash is not one of the transaction signers, then
+    /// records the key so `sign` can use it.
     fn add_sign_item(&mut self, contract: Contract, key: KeyPair) -> Result<(), RpcError> {
-        let hash = contract.script_hash();
-        let script_hashes = self.tx.script_hashes_for_verifying(&DataCache::new(true));
-        if !script_hashes.contains(&hash) {
-            return Err(format!("Add SignItem error: Mismatch ScriptHash ({hash})").into());
-        }
+        self.authorizer
+            .register_contract(&contract)
+            .map_err(authorization_error)?;
 
         if let Some(item) = self
             .sign_store
             .iter_mut()
-            .find(|i| i.contract.script_hash() == hash)
+            .find(|item| item.contract.script_hash() == contract.script_hash())
         {
-            item.add_key(key)?;
+            item.add_key(key);
         } else {
-            self.sign_store
-                .push(SignItem::new(contract.clone(), vec![key])?);
+            self.sign_store.push(SignItem::new(contract, vec![key]));
         }
-
-        self.context.add_contract(contract);
         Ok(())
-    }
-
-    /// Retrieves the verification script for a given script hash.
-    ///
-    /// Searches the sign store for a contract matching the script hash and
-    /// returns its verification script. Returns empty vec if not found.
-    fn get_verification_script(&self, hash: &UInt160) -> Vec<u8> {
-        for item in &self.sign_store {
-            if item.contract.script_hash() == *hash {
-                return item.contract.script.clone();
-            }
-        }
-        Vec::new()
     }
 
     /// Fetches a contract from the blockchain via RPC.
@@ -584,7 +424,7 @@ impl TransactionManager {
     /// deployed contracts.
     async fn get_contract_async(&self, script_hash: &UInt160) -> Result<Contract, RpcError> {
         let state = self
-            ._rpc_client
+            .rpc_client
             .get_contract_state(&script_hash.to_string())
             .await?;
 
@@ -609,6 +449,9 @@ mod tests {
     use neo_json::{JArray, JObject, JToken};
     use neo_primitives::WitnessScope;
     use neo_protocol::ProtocolSettings;
+    use neo_protocol::signing_data::get_sign_data_vec;
+    use neo_smart_contract::helper::Helper as ContractHelper;
+    use neo_smart_contract::witness_verification::verify_witness_multi_signature;
     use reqwest::Url;
     use std::net::TcpListener;
 
@@ -910,6 +753,75 @@ mod tests {
 
         let err = manager.sign().await.expect_err("insufficient gas");
         assert!(err.to_string().contains("Insufficient GAS"));
+    }
+
+    #[tokio::test]
+    async fn sign_multi_sig_witness_follows_verification_script_order() {
+        if !localhost_binding_permitted() {
+            return;
+        }
+        let mut server = Server::new_async().await;
+        mock_block_count(&mut server, 100);
+        mock_calculate_network_fee(&mut server, 100_000_000);
+        let invoke_result = invoke_result_payload(100, "10000000000000000");
+        let response_body = rpc_response(JToken::Object(invoke_result));
+        mock_invokescript(&mut server, &response_body);
+
+        let url = Url::parse(&server.url()).unwrap();
+        let client = Arc::new(RpcClient::builder(url).build().unwrap());
+        let keys: Vec<KeyPair> = [5u8, 6u8, 7u8]
+            .into_iter()
+            .map(|seed| KeyPair::from_private_key(&[seed; 32]).expect("key"))
+            .collect();
+        let points: Vec<ECPoint> = keys
+            .iter()
+            .map(|key| key.get_public_key_point().expect("point"))
+            .collect();
+        // 2-of-3 contract: only two of the three script keys sign.
+        let contract = Contract::create_multi_sig_contract(2, &points);
+        let signers = vec![Signer::new(contract.script_hash(), WitnessScope::GLOBAL)];
+
+        let mut manager =
+            TransactionManager::make_transaction(Arc::clone(&client), &[0x01], Some(signers), None)
+                .await
+                .expect("manager");
+        // Register the signers in an order unrelated to the verification script.
+        manager
+            .add_multi_sig(&keys[2], 2, points.clone())
+            .expect("add multisig signer c");
+        manager
+            .add_multi_sig(&keys[0], 2, points)
+            .expect("add multisig signer a");
+        let tx = manager.sign().await.expect("sign");
+
+        let witness = &tx.witnesses()[0];
+        assert_eq!(witness.verification_script(), contract.script.as_slice());
+        let signatures: Vec<Vec<u8>> = witness
+            .invocation_script()
+            .chunks(66)
+            .map(|chunk| chunk[2..].to_vec())
+            .collect();
+        assert_eq!(
+            signatures.len(),
+            2,
+            "a 2-of-3 witness pushes exactly two signatures"
+        );
+
+        let sign_data =
+            get_sign_data_vec(&tx, client.protocol_settings.network).expect("sign data");
+        let (_, script_keys) =
+            ContractHelper::parse_multi_sig_contract(&contract.script).expect("canonical script");
+        assert!(
+            verify_witness_multi_signature(
+                &sign_data,
+                &contract.script_hash(),
+                2,
+                &script_keys,
+                &signatures
+            )
+            .expect("verifier must not fault"),
+            "signatures must line up with the verification-script key order"
+        );
     }
 
     #[tokio::test]

@@ -1,8 +1,7 @@
 // Copyright (C) 2015-2025 The Neo Project.
 // Licensed under the MIT License. See LICENSE file for details.
-use super::validate_length;
 use neo_io::serializable::helper::get_var_size_bytes;
-use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable, ValidateLength};
 use neo_primitives::OracleResponseCode;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
@@ -106,7 +105,7 @@ impl Serializable for OracleResponse {
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
         writer.write_u64(self.id)?;
         writer.write_u8(self.code as u8)?;
-        validate_length(self.result.len(), MAX_RESULT_SIZE, "Result")?;
+        self.result.validate_max_length(MAX_RESULT_SIZE, "Result")?;
         writer.write_var_bytes(&self.result)?;
         Ok(())
     }

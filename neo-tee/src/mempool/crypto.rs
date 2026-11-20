@@ -367,10 +367,10 @@ impl KeyEncapsulation {
 
                 if sealed.counter > floor {
                     return Err(TeeError::RollbackProtection(format!(
-                        "sealed KEM blob counter {} is ahead of the rollback floor {}; the floor \
+                        "sealed KEM blob counter {} is ahead of the rollback floor {floor}; the floor \
                          witness was rolled back or the blob is foreign; refusing to decapsulate \
                          (fail-closed)",
-                        sealed.counter, floor
+                        sealed.counter
                     )));
                 }
 

@@ -3,7 +3,7 @@
 use super::tasks::BackgroundTasks;
 use crate::cli::NodeCli;
 use crate::config::NodeConfig;
-// use neo_system::state_service::metrics::state_root_ingest_stats; // Removed with neo-telemetry
+use crate::metrics::AccelerationSnapshot;
 use neo_system::NeoSystem;
 use std::sync::Arc;
 use sysinfo::{DiskExt, System, SystemExt};
@@ -141,10 +141,15 @@ pub(crate) fn spawn_metrics_pump(
                 }
             }
 
-            // State-service metrics (root indexes, ingest stats) were removed
-            // together with neo-telemetry; there is no collection pipeline for
-            // them in this build, so nothing is reported rather than
-            // fabricating values.
+            // Acceleration telemetry: fast-path counters, the store's read
+            // cache and write buffer, the state-root node cache, and the
+            // opt-in MPT timings. Every value below is read from a counter the
+            // execution or persistence layer already maintains; a component
+            // that is not running reports zero with its `*_enabled` gauge at
+            // zero instead of a fabricated number.
+            crate::metrics::update_acceleration_metrics(collect_acceleration_snapshot(
+                &metrics_system,
+            ));
 
             // Honest metrics: every reported value is backed by a real data
             // source. No verified-height tracker exists in this build, so the
@@ -159,8 +164,6 @@ pub(crate) fn spawn_metrics_pump(
                 mempool_verified,
                 mempool_unverified,
                 peer_count as usize,
-                None, // timeout stats ingested via update_timeout_metrics above
-                None, // state-service metrics not collected (removed with neo-telemetry)
             );
 
             {
@@ -173,6 +176,41 @@ pub(crate) fn spawn_metrics_pump(
             }
         }
     });
+}
+
+/// Maps the running system's acceleration statistics into the metrics shape.
+///
+/// Every field comes from a counter that the execution or persistence layer
+/// already maintains:
+///
+/// - fast-path outcome counters from [`NeoSystem::execution_stats`]
+/// - the selected [`NeoSystem::execution_mode`]
+/// - read cache and write buffer snapshots from the store's
+///   `Store::acceleration_stats` port
+/// - state-root node cache and warm-root retention from the state service
+/// - block-level native `OnPersist`/`PostPersist` and MPT stage timings from
+///   the same persistence profile
+///
+/// Nothing here is derived by inference: a component that is not registered
+/// answers `None`, which the exposition reports as zero. Reading the snapshots
+/// takes only atomics and short locks, so this can never influence execution
+/// or consensus.
+fn collect_acceleration_snapshot(system: &NeoSystem) -> AccelerationSnapshot {
+    let stats = system.execution_stats();
+    let profile = stats.profile_snapshot();
+    let acceleration = system.store().acceleration_stats();
+    let state_root_node_cache = system
+        .state_commit_handlers()
+        .map(|handlers| handlers.node_cache_stats());
+
+    AccelerationSnapshot::capture(
+        stats.fast_path_snapshot(),
+        stats.parallel_snapshot(),
+        system.execution_mode(),
+        &profile,
+        acceleration.as_ref(),
+        state_root_node_cache,
+    )
 }
 
 #[cfg(test)]
@@ -190,6 +228,59 @@ mod tests {
         spawn_metrics_pump(&tasks, system.clone(), None, health_state);
 
         assert!(tasks.shutdown(Duration::from_secs(1)).await);
+        system.shutdown().await.expect("system shutdown");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn acceleration_snapshot_reads_the_live_system() {
+        let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("neo system");
+
+        let snapshot = collect_acceleration_snapshot(&system);
+
+        // The in-memory provider runs neither a read cache nor a write buffer,
+        // and no state service is registered, so every optional source is
+        // absent instead of silently reporting zeros as measurements.
+        assert!(snapshot.read_cache.is_none());
+        assert!(snapshot.write_buffer.is_none());
+        assert!(snapshot.state_root_node_cache.is_none());
+        assert!(!snapshot.profiling_enabled);
+        assert_eq!(
+            snapshot.fast_path,
+            neo_system::FastPathStatsSnapshot::default()
+        );
+        assert_eq!(
+            snapshot.execution_mode,
+            neo_system::ExecutionMode::default()
+        );
+
+        let text = snapshot.export_prometheus();
+        assert!(text.contains("neo_storage_acceleration_enabled{component=\"read_cache\"} 0"));
+        assert!(text.contains("neo_storage_acceleration_enabled{component=\"write_buffer\"} 0"));
+        assert!(text.contains("neo_execution_profiling_enabled 0"));
+        assert!(text.contains("neo_native_hook_seconds_total{phase=\"on_persist\"} 0"));
+
+        system.shutdown().await.expect("system shutdown");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn collecting_acceleration_metrics_is_observation_only() {
+        let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("neo system");
+        let stats = system.execution_stats();
+        let before = stats.fast_path_snapshot();
+
+        let first = collect_acceleration_snapshot(&system);
+        let second = collect_acceleration_snapshot(&system);
+
+        // Two consecutive reads observe exactly the same values, so collection
+        // neither advances a counter nor consumes a one-shot snapshot.
+        assert_eq!(first.fast_path, second.fast_path);
+        assert_eq!(first.execution_mode, second.execution_mode);
+        assert_eq!(first.mpt_seconds, second.mpt_seconds);
+        assert_eq!(first.native_hook_seconds, second.native_hook_seconds);
+        assert_eq!(stats.fast_path_snapshot(), before);
+        assert_eq!(first.fast_path, before);
+        assert_eq!(system.execution_mode(), first.execution_mode);
+
         system.shutdown().await.expect("system shutdown");
     }
 }

@@ -10,8 +10,6 @@ pub mod codec_error;
 pub mod compression;
 /// Extension traits for readers and writers.
 pub mod extensions;
-/// VM method-token payload type.
-pub mod method_token;
 /// Conditional witness-rule evaluation (matches C# `WitnessCondition`/`WitnessRule`).
 pub mod witness_rule;
 
@@ -44,9 +42,6 @@ pub use compression::{
     COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD, DEFAULT_MAX_DECOMPRESSED_SIZE, compress_lz4,
     decompress_lz4,
 };
-
-// Re-export method token
-pub use method_token::MethodToken;
 
 // Re-export witness rule types
 pub use witness_rule::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};

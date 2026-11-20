@@ -1,7 +1,7 @@
-//! Production-ready signature verification for Neo N3 blockchain
+//! Signature verification helper for Neo N3 blockchain
 //!
-//! Efficiently verifies multiple ECDSA signatures with optimized algorithms.
-//! Designed for high-throughput blockchain operations requiring fast, reliable validation.
+//! Collects ECDSA verification requests and checks them one at a time, caching
+//! the aggregate result so repeated queries do not re-verify.
 
 use crate::error::CryptoResult;
 use crate::signature::Secp256r1Crypto;
@@ -19,7 +19,14 @@ pub struct SignatureComponents {
     pub public_key: [u8; 33],
 }
 
-/// Batch verifier that accumulates multiple signature checks
+/// Sequential signature verifier with result caching.
+///
+/// Verifies signatures individually — does not perform cryptographic
+/// batch/aggregate verification. Despite the name, there is no multi-scalar
+/// multiplication or random-linear-combination trick here: each added entry is
+/// checked with its own `Secp256r1Crypto::verify_prehash` call and the loop
+/// stops at the first failure. The only saving is the cached verdict, so a
+/// repeated `verify_all` on an unchanged batch does not redo the work.
 pub struct BatchVerifier {
     /// All collected (signature, message, public_key) tuples
     batch: Vec<SignatureComponents>,
@@ -65,13 +72,12 @@ impl BatchVerifier {
 
     /// Verify all accumulated signatures
     ///
+    /// Each entry is verified independently and sequentially; the scan aborts
+    /// on the first failure. The verdict is cached until the batch changes.
+    ///
     /// # Returns
     /// * `true` if ALL signatures are valid
     /// * `false` if ANY signature is invalid
-    ///
-    /// # Performance
-    /// Verifies up to ~2000 transactions per block in optimal time.
-    /// For production deployment with millions of TPS, consider hardware acceleration.
     pub fn verify_all(&mut self) -> CryptoResult<bool> {
         if self.batch.is_empty() {
             return Ok(true);

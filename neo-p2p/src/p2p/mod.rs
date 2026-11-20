@@ -15,7 +15,6 @@ pub mod local_node;
 pub mod peer;
 pub mod remote_node;
 pub mod task_manager;
-pub mod task_session;
 
 // Wire protocol modules
 pub mod connection;
@@ -47,21 +46,8 @@ pub mod peer_policy;
 // Hexagonal ports
 pub mod ports;
 
-// Session state
-pub mod session_state;
+// Session bookkeeping
 pub mod sessions;
-
-// Supporting functionality
-pub mod alerts;
-pub mod block_validation;
-pub mod bloom_filter;
-pub mod completion_flow;
-pub mod handshake;
-pub mod inventory;
-pub mod outbound_queue;
-pub mod peer_messages;
-pub mod pending_known_hashes;
-pub mod scheduling;
 
 // ============================================================================
 // Re-exports from neo-primitives
@@ -80,13 +66,13 @@ pub use neo_primitives::{
 pub use channels_config::ChannelsConfig;
 pub use contains_transaction_type::ContainsTransactionType;
 pub use context::P2PContext;
-pub use error::{P2PError, P2PResult};
+pub use error::{HashComputationError, P2PError, P2PResult};
 pub use events::{MessageReceivedHandler, NetworkMessageRef};
 pub use framed::{FrameConfig, WriteBuffer};
 pub use framed_codec::NeoMessageCodec;
 pub use inventory_type::InventoryType;
 pub use message::{Message, PAYLOAD_MAX_SIZE};
-pub use message_command::MessageCommand;
+pub use message_command::{MessageCommand, OutboundClass};
 pub use message_flags::MessageFlags;
 pub use node_capability_type::NodeCapabilityType;
 pub use protocol_message::{MessageHeader, NetworkMessage, ProtocolMessage};
@@ -118,11 +104,11 @@ pub use local_node::{
 };
 pub use peer::{ConnectedPeer, MAX_COUNT_FROM_SEED_LIST, PeerCommand, PeerState, PeerTimer};
 pub use remote_node::{
-    MessageHandlerSubscription, RemoteNode, RemoteNodeCommand, register_message_received_handler,
-    unregister_message_received_handler,
+    MessageHandlerSubscription, OutboundBatchStats, RemoteNode, RemoteNodeCommand,
+    register_message_received_handler, unregister_message_received_handler,
 };
+pub use sessions::task_session::TaskSession;
 pub use task_manager::{TaskManager, TaskManagerActor, TaskManagerCommand, TaskManagerHandle};
-pub use task_session::TaskSession;
 
 // Re-export capabilities for compatibility
 pub use payloads::node_capability as capabilities;

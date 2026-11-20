@@ -602,8 +602,7 @@ impl LocalNode {
 
         let mut pending = self.pending_inbound.write();
 
-        if config.max_connections > 0
-            && established_total + pending.len() >= config.max_connections
+        if config.max_connections > 0 && established_total + pending.len() >= config.max_connections
         {
             return Err("connection limit reached");
         }

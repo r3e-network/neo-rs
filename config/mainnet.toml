@@ -101,7 +101,10 @@ enabled = true
 full_state = true
 path = "../mainnet/StateRoot"
 
-# Wave 4-5: Predictive Storage Prefetch + Tiered MPT Cache [PERFORMANCE]
+# PLANNED — not yet implemented in current release.
+# These tables describe the intended predictive-prefetch design; no runtime code
+# reads them today and they are kept only as the configuration contract for
+# future work. Enabling the flags below changes nothing at runtime.
 [performance.predictive_prefetch]
 enabled = true
 prediction_window_blocks = 10
@@ -109,6 +112,10 @@ hot_keys_per_block = 800  # Higher for mainnet workload
 prefetch_batch_size = 200
 prefetch_worker_threads = 4  # More threads for production
 
+# PLANNED — not yet implemented in current release.
+# Intended tiered cache layout; no tier is wired to the store today. The
+# `tier0_capacity` "root branch buffer" it refers to was never connected (and
+# the defective buffer implementation has been removed).
 [performance.tiered_cache]
 tier0_capacity = 512              # Larger root branch buffer for mainnet
 tier1_capacity = 100000           # Hot native leaves (NEO/GAS/Policy)

@@ -221,7 +221,12 @@ impl NodeRpc for HttpNode {
     }
 }
 
-fn parse_execution(value: &Value) -> Result<ExecutionReceipt> {
+pub fn parse_execution(value: &Value) -> Result<ExecutionReceipt> {
+    let has_exception = match value.get("exception") {
+        None | Some(Value::Null) => false,
+        Some(Value::String(message)) => !message.is_empty(),
+        Some(_) => bail!("execution exception is not a string or null"),
+    };
     Ok(ExecutionReceipt {
         trigger: value
             .get("trigger")
@@ -237,14 +242,11 @@ fn parse_execution(value: &Value) -> Result<ExecutionReceipt> {
             value.get("gasconsumed").context("execution gas missing")?,
             "gas consumed",
         )?,
-        has_exception: value
-            .get("exception")
-            .and_then(Value::as_str)
-            .is_some_and(|message| !message.is_empty()),
+        has_exception,
     })
 }
 
-fn parse_hash(value: Option<&str>, field: &str) -> Result<UInt256> {
+pub fn parse_hash(value: Option<&str>, field: &str) -> Result<UInt256> {
     let value = value.with_context(|| format!("{field} is not a string"))?;
     UInt256::parse(value).map_err(|error| anyhow::anyhow!("invalid {field}: {error}"))
 }
@@ -256,7 +258,7 @@ pub fn strict_u32(value: &Value, field: &str) -> Result<u32> {
     u32::try_from(number).with_context(|| format!("{field} exceeds u32"))
 }
 
-fn strict_i64(value: &Value, field: &str) -> Result<i64> {
+pub fn strict_i64(value: &Value, field: &str) -> Result<i64> {
     if let Some(number) = value.as_i64() {
         return Ok(number);
     }
@@ -451,6 +453,39 @@ mod tests {
         let milliseconds = protocol.remove("msperblock").unwrap();
         protocol.insert("millisecondsperblock".to_owned(), milliseconds);
         validate_protocol_identity(&legacy_time, &settings).unwrap();
+    }
+
+    #[test]
+    fn execution_exception_requires_a_string_null_or_missing_value() {
+        let receipt = |exception: Option<Value>| {
+            let mut execution = json!({
+                "trigger": "Application",
+                "vmstate": "HALT",
+                "gasconsumed": "0",
+            });
+            if let Some(exception) = exception {
+                execution["exception"] = exception;
+            }
+            parse_execution(&execution)
+        };
+
+        assert!(!receipt(None).unwrap().has_exception);
+        assert!(!receipt(Some(Value::Null)).unwrap().has_exception);
+        assert!(!receipt(Some(json!(""))).unwrap().has_exception);
+        assert!(receipt(Some(json!("boom"))).unwrap().has_exception);
+        for rejected in [
+            json!(7),
+            json!(true),
+            json!(["boom"]),
+            json!({"message": "boom"}),
+        ] {
+            assert!(
+                receipt(Some(rejected))
+                    .unwrap_err()
+                    .to_string()
+                    .contains("exception is not a string or null")
+            );
+        }
     }
 
     #[test]

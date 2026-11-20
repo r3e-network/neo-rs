@@ -1,12 +1,11 @@
 use super::*;
 use crate::i_event_handlers::{CommittingHandler, WalletChangedHandler};
-use crate::neo_system::NeoSystemContext;
-use crate::neo_system::converters::{convert_ledger_block, convert_ledger_header};
 use crate::network::p2p::ChannelsConfig;
 use neo_native_contracts::ledger_contract::LedgerContract;
 use neo_primitives::{UInt160, UInt256};
 use neo_protocol::execution::Block as LedgerBlock;
 use neo_protocol::execution::BlockHeader as LedgerBlockHeader;
+use neo_protocol::execution::conversions::{convert_ledger_block, convert_ledger_header};
 use neo_protocol::witness::Witness as PayloadWitness;
 use neo_protocol::witness::Witness;
 use neo_smart_contract::contract::Contract;
@@ -121,8 +120,7 @@ fn hydrate_ledger_from_empty_store_is_noop() {
     let ledger = Arc::new(LedgerContext::default());
     let header_cache = Arc::new(HeaderCache::new());
 
-    NeoSystemContext::hydrate_ledger_from_store(&store_cache, &ledger, &header_cache)
-        .expect("empty store is valid");
+    neo_ledger::hydrate_ledger(&store_cache, &ledger, &header_cache).expect("empty store is valid");
 
     assert_eq!(ledger.current_height(), 0);
     assert_eq!(header_cache.count(), 0);
@@ -147,7 +145,7 @@ fn hydrate_ledger_restores_height_and_headers() {
 
     let ledger = Arc::new(LedgerContext::default());
     let header_cache = Arc::new(HeaderCache::new());
-    NeoSystemContext::hydrate_ledger_from_store(&store_cache, &ledger, &header_cache)
+    neo_ledger::hydrate_ledger(&store_cache, &ledger, &header_cache)
         .expect("hydrate complete chain");
 
     assert_eq!(ledger.current_height(), 1);
@@ -195,12 +193,12 @@ fn convert_ledger_header_preserves_fields() {
 
     let expected_witness = PayloadWitness::new_with_scripts(vec![1, 2, 3], vec![4, 5, 6]);
     assert_eq!(
-        converted.witness.invocation_script,
-        expected_witness.invocation_script
+        converted.witness.invocation_script(),
+        expected_witness.invocation_script()
     );
     assert_eq!(
-        converted.witness.verification_script,
-        expected_witness.verification_script
+        converted.witness.verification_script(),
+        expected_witness.verification_script()
     );
 
     assert_eq!(header.witnesses.len(), 1);

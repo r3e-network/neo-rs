@@ -74,7 +74,9 @@ pub use error::{CryptoError, CryptoResult};
 pub use hash::{Crypto, HashAlgorithm, Sha256Hasher, ct_hash_eq, ct_hash_slice_eq};
 pub use merkle_tree::MerkleTree;
 pub use mpt_trie::{
-    Cache, MptCache, MptError, MptResult, MptStoreSnapshot, Node, NodeType, Trie, TrieEntry,
+    Cache, CommittedRoot, MptCache, MptError, MptResult, MptStoreSnapshot, Node, NodeType,
+    ProofBundle, ProofCache, ProofCacheConfig, ProofCacheKey, ProofCacheNamespace, ProofCacheStats,
+    Trie, TrieEntry,
 };
 pub use murmur::{murmur32, murmur128};
 pub use named_curve_hash::NamedCurveHash;

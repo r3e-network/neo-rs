@@ -205,12 +205,20 @@ pub struct ReverifyItem {
     pub payload: InventoryPayload,
 }
 
-/// Preverify completed event.
+/// Event emitted when state-independent transaction verification completes.
+///
+/// Canonical definition: `neo-mempool`'s router produces this event and the
+/// blockchain actor consumes it. Both sides share this type, so there is no
+/// mirrored struct and no field-by-field conversion at the crate boundary.
 #[derive(Debug, Clone)]
 pub struct PreverifyCompleted {
+    /// Hash of the verified transaction.
     pub hash: UInt256,
+    /// Outcome of the state-independent verification.
     pub result: VerifyResult,
+    /// The transaction that was verified.
     pub transaction: neo_protocol::payloads::Transaction,
+    /// Whether the transaction should be relayed after verification.
     pub relay: bool,
 }
 

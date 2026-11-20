@@ -24,7 +24,8 @@
 //! path, dropping the cache) returns its bytes.
 //!
 //! The budget never evicts anything itself. Which entry gives way under
-//! pressure is decided by the caches; see `neo-system/src/blockchain`.
+//! pressure is decided by the caches; see
+//! [`blockchain::cache_policy`](crate::blockchain::cache_policy).
 
 use neo_io::Serializable;
 use std::sync::Arc;

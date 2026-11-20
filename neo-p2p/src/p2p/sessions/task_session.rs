@@ -251,12 +251,9 @@ impl TaskSession {
     /// This prevents flooding peers with the exact same `GetHeaders` range while
     /// the blockchain actor is still processing previously received headers.
     pub fn should_request_headers(&self, start_index: u32, retry_after: Duration) -> bool {
-        match self.last_header_request {
-            None => true,
-            Some(state) => {
-                state.start_index != start_index || state.requested_at.elapsed() >= retry_after
-            }
-        }
+        self.last_header_request.as_ref().is_none_or(|state| {
+            state.start_index != start_index || state.requested_at.elapsed() >= retry_after
+        })
     }
 
     /// Records the most recent header request.

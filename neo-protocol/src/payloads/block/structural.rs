@@ -16,10 +16,7 @@ impl Block {
                 return false;
             }
         };
-        match MerkleTree::compute_root(&hashes) {
-            Some(root) => root == *self.header.merkle_root(),
-            None => false,
-        }
+        MerkleTree::compute_root(&hashes).is_some_and(|root| root == *self.header.merkle_root())
     }
     /// Checks for duplicate transaction hashes, failing closed on wire errors.
     pub fn verify_no_duplicate_transactions(&self) -> bool {

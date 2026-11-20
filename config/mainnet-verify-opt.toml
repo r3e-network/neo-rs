@@ -1,0 +1,88 @@
+# Task 50: parallel optimisation-verification replay of the official MainNet ACC.
+#
+# Purpose:
+#   * Replay `data/bootstrap/chain.0.acc` through `[execution] mode = "verify"`
+#     while the canonical replay keeps running from its own data directory.
+#   * Verify mode dual-executes every strict NEP-17 transfer candidate: the
+#     direct native dispatch and an isolated canonical VM run are both executed
+#     and their `ExecutionFingerprint` (vm state, fee, fault text, result stack,
+#     notifications, logs, touched storage) must match exactly. A divergence is
+#     fail-closed: `verify_execution()` returns the divergence text and block
+#     persistence aborts, so the process exits non-zero instead of committing.
+#   * Everything else stays identical to `mainnet-replay-local.toml` so the two
+#     runs differ only in the execution strategy (same network, same storage
+#     backend, same state service settings, same disabled plugins).
+#
+# Isolation rules (canonical replay PID 48516 must not be disturbed):
+#   * separate storage path        data/mainnet-verify-opt
+#   * separate state root store    data/mainnet-verify-opt/StateRoot
+#   * separate application logs    data/mainnet-verify-opt/ApplicationLogs
+#   * separate log file            logs/mainnet-verify-opt.log
+#   * separate P2P port            10353
+#   * RPC disabled: this run is `--import-only`, and disabling RPC also keeps the
+#     shared `config/RpcServer/RpcServer.json` untouched while the canonical
+#     replay owns it.
+#
+# Schema note: `NodeConfig` is `#[serde(default, deny_unknown_fields)]`, so only
+# keys defined in `neo-node/src/config/sections.rs` may appear here.
+
+[network]
+network_type = "MainNet"
+network_magic = 860833102
+
+[storage]
+backend = "rocksdb"
+path = "D:/Git/neo-rs/data/mainnet-verify-opt"
+read_only = false
+
+# Dual execution (canonical + direct dispatch, fingerprint equality enforced).
+# Profiling stays on to match the canonical replay's telemetry configuration.
+[execution]
+mode = "verify"
+profiling = true
+parallel_enabled = false
+
+[p2p]
+# Distinct from 10343 (canonical replay), 10333 (full validation) and 10353-free
+# neighbours so both replays can listen at the same time.
+listen_port = 10355
+seed_nodes = [
+    "seed1.neo.org:10333",
+    "seed2.neo.org:10333",
+    "seed3.neo.org:10333",
+    "seed4.neo.org:10333",
+    "seed5.neo.org:10333"
+]
+
+# RPC stays off for an `--import-only` run: no listener is needed and the shared
+# `config/RpcServer/RpcServer.json` written by the canonical replay is left alone.
+[rpc]
+enabled = false
+
+# State service owns its own database under this run's data directory so the two
+# replays never share a RocksDB path.
+[state_service]
+enabled = true
+full_state = true
+auto_verify = false
+path = "D:/Git/neo-rs/data/mainnet-verify-opt/StateRoot"
+
+[logging]
+level = "info"
+format = "json"
+console_output = true
+file_enabled = true
+file_path = "D:/Git/neo-rs/logs/mainnet-verify-opt.log"
+
+[application_logs]
+enabled = true
+path = "D:/Git/neo-rs/data/mainnet-verify-opt/ApplicationLogs"
+
+[tokens_tracker]
+enabled = false
+
+[oracle_service]
+enabled = false
+
+[dbft]
+enabled = false

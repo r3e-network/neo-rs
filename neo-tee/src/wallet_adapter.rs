@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use neo_wallets::signing::signature_invocation;
+use neo_wallets::signing::witness_from_signature;
 
 pub struct TeeWalletAdapter {
     name: String,
@@ -350,8 +350,7 @@ impl TeeWalletAccount {
 
         if contract.script_hash() != script_hash {
             return Err(WalletError::Other(format!(
-                "Script hash mismatch for TEE key {}",
-                script_hash
+                "Script hash mismatch for TEE key {script_hash}"
             )));
         }
 
@@ -389,11 +388,7 @@ impl TeeWalletAccount {
         let sign_data = get_sign_data_vec(transaction, self.protocol_settings.network)
             .map_err(|err| WalletError::SigningFailed(err.to_string()))?;
         let signature = self.sign_data(&sign_data)?;
-        let invocation = signature_invocation(&signature)?;
-        Ok(Witness::new_with_scripts(
-            invocation,
-            self.contract.script.clone(),
-        ))
+        witness_from_signature(&signature, &self.contract.script)
     }
 }
 
@@ -477,11 +472,7 @@ impl WalletAccount for TeeWalletAccount {
 
     fn create_witness(&self, sign_data: &[u8]) -> WalletResult<Witness> {
         let signature = self.sign_data(sign_data)?;
-        let invocation = signature_invocation(&signature)?;
-        Ok(Witness::new_with_scripts(
-            invocation,
-            self.contract.script.clone(),
-        ))
+        witness_from_signature(&signature, &self.contract.script)
     }
 }
 
@@ -585,9 +576,9 @@ mod tests {
         let trait_witness = default_account
             .create_witness(payload)
             .expect("WalletAccount::create_witness signs the supplied preimage");
-        assert_eq!(trait_witness.invocation_script.len(), 66);
+        assert_eq!(trait_witness.invocation_script().len(), 66);
         assert_eq!(
-            &trait_witness.invocation_script[2..],
+            &trait_witness.invocation_script()[2..],
             signature.as_slice(),
             "the same deterministic key must sign the exact preimage"
         );
@@ -616,12 +607,12 @@ mod tests {
         assert_eq!(tx.witnesses().len(), 1);
         let witness = &tx.witnesses()[0];
         let expected_verification = ContractHelper::signature_redeem_script(&key.public_key);
-        assert_eq!(witness.verification_script, expected_verification);
+        assert_eq!(witness.verification_script(), expected_verification);
 
-        assert_eq!(witness.invocation_script[0], OpCode::PUSHDATA1.byte());
-        let sig_len = witness.invocation_script[1] as usize;
+        assert_eq!(witness.invocation_script()[0], OpCode::PUSHDATA1.byte());
+        let sig_len = witness.invocation_script()[1] as usize;
         assert_eq!(sig_len, 64);
-        let sig_slice = &witness.invocation_script[2..2 + sig_len];
+        let sig_slice = &witness.invocation_script()[2..2 + sig_len];
         let sig_bytes: [u8; 64] = sig_slice.try_into().expect("sig slice");
         let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
         assert!(

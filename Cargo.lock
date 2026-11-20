@@ -2497,6 +2497,7 @@ version = "0.20.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "hex",
  "parking_lot",
  "reqwest",
  "serde",
@@ -2655,6 +2656,7 @@ name = "neo-ledger"
 version = "0.20.0"
 dependencies = [
  "base64 0.22.1",
+ "dashmap",
  "lru",
  "neo-actors",
  "neo-crypto",
@@ -2763,7 +2765,6 @@ dependencies = [
  "prometheus",
  "rand 0.8.8",
  "reqwest",
- "rocksdb",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -2834,11 +2835,8 @@ dependencies = [
  "neo-crypto",
  "neo-io",
  "neo-ledger",
- "neo-native-contracts",
  "neo-primitives",
  "neo-protocol",
- "neo-smart-contract",
- "neo-storage",
  "neo-vm",
  "parking_lot",
  "quick-xml",
@@ -2879,6 +2877,7 @@ name = "neo-probe"
 version = "0.20.0"
 dependencies = [
  "async-trait",
+ "hex",
  "neo-ai-agent",
  "neo-native-contracts",
  "neo-primitives",
@@ -2928,6 +2927,7 @@ dependencies = [
 name = "neo-rpc-client"
 version = "0.20.0"
 dependencies = [
+ "async-trait",
  "base64 0.22.1",
  "hex",
  "hyper 0.14.32",
@@ -2940,7 +2940,6 @@ dependencies = [
  "neo-primitives",
  "neo-protocol",
  "neo-smart-contract",
- "neo-storage",
  "neo-vm",
  "neo-wallets",
  "num-bigint",
@@ -3044,6 +3043,7 @@ name = "neo-smart-contract"
 version = "0.20.0"
 dependencies = [
  "base64 0.22.1",
+ "dashmap",
  "hex",
  "indexmap 2.8.0",
  "neo-crypto",
@@ -3135,6 +3135,7 @@ dependencies = [
  "num-bigint",
  "parking_lot",
  "rand 0.8.8",
+ "rayon",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
@@ -3244,7 +3245,6 @@ version = "0.20.0"
 dependencies = [
  "base64 0.22.1",
  "bitflags 2.13.2",
- "criterion",
  "hex",
  "neo-crypto",
  "neo-io",
@@ -4931,6 +4931,7 @@ dependencies = [
  "neo-primitives",
  "neo-protocol",
  "neo-rpc-client",
+ "neo-smart-contract",
  "neo-state-service",
  "neo-storage",
  "neo-system",

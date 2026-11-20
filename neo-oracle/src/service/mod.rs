@@ -61,6 +61,7 @@ pub const MAX_PENDING_QUEUE_SIZE: usize = 10000;
 pub const MAX_TASK_PENDING_TIME: Duration = Duration::from_secs(12 * 60 * 60);
 
 /// Lifecycle state of the oracle service.
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OracleStatus {
     /// Created but never started.
@@ -73,11 +74,7 @@ pub enum OracleStatus {
 
 impl OracleStatus {
     pub(crate) fn as_u8(self) -> u8 {
-        match self {
-            OracleStatus::Unstarted => 0,
-            OracleStatus::Running => 1,
-            OracleStatus::Stopped => 2,
-        }
+        self as u8
     }
 
     pub(crate) fn from_u8(value: u8) -> Self {

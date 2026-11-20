@@ -37,6 +37,7 @@ use super::{StateRoot, ValidatedRootPersisted};
 use crate::store::PREFIX_LOCAL_ROOT_INDEX;
 use neo_crypto::mpt_trie::{
     GlobalNodeCache, MptError, MptProfile, MptProfileSnapshot, MptResult, MptStoreSnapshot, Trie,
+    node_key,
 };
 use neo_primitives::UInt256;
 use neo_storage::persistence::{DataCache, SeekDirection, StoreCache};
@@ -94,11 +95,6 @@ pub(crate) const PREFIX_STATE_ROOT: u8 = 0xf0;
 /// node key (which already carries the MPT node prefix byte).
 pub(crate) const PREFIX_TRIE_NODE: u8 = 0xf1;
 
-/// Prefix `neo_crypto::mpt_trie::Trie` prepends to a node hash when addressing
-/// the MPT node store (its private `CACHE_PREFIX`). Recovery uses it to look up
-/// the root node of a persisted root.
-const TRIE_NODE_CACHE_PREFIX: u8 = 0xf0;
-
 /// Builds the storage key under which the state-root record for `index` is
 /// persisted.
 pub(crate) fn state_root_record_key(index: u32) -> StorageKey {
@@ -116,12 +112,12 @@ pub(crate) fn serialize_state_root_record(state_root: &StateRoot) -> Vec<u8> {
     value.push(state_root.version);
     if let Some(ref witness) = state_root.witness {
         value.push(1);
-        let inv_len = witness.invocation_script.len() as u32;
+        let inv_len = witness.invocation_script().len() as u32;
         value.extend_from_slice(&inv_len.to_le_bytes());
-        value.extend_from_slice(&witness.invocation_script);
-        let ver_len = witness.verification_script.len() as u32;
+        value.extend_from_slice(witness.invocation_script());
+        let ver_len = witness.verification_script().len() as u32;
         value.extend_from_slice(&ver_len.to_le_bytes());
-        value.extend_from_slice(&witness.verification_script);
+        value.extend_from_slice(witness.verification_script());
     } else {
         value.push(0);
     }
@@ -223,7 +219,7 @@ pub(crate) struct TrieNodeStore {
 
 impl TrieNodeStore {
     /// Maps an MPT-internal node key onto its namespaced storage key.
-    fn node_key(mpt_key: &[u8]) -> StorageKey {
+    fn namespaced_key(mpt_key: &[u8]) -> StorageKey {
         let mut key = Vec::with_capacity(1 + mpt_key.len());
         key.push(PREFIX_TRIE_NODE);
         key.extend_from_slice(mpt_key);
@@ -235,12 +231,12 @@ impl MptStoreSnapshot for TrieNodeStore {
     fn try_get(&self, key: &[u8]) -> MptResult<Option<Vec<u8>>> {
         Ok(self
             .store_cache
-            .get(&Self::node_key(key))
+            .get(&Self::namespaced_key(key))
             .map(|item| item.value().to_vec()))
     }
 
     fn put(&self, key: Vec<u8>, value: Vec<u8>) -> MptResult<()> {
-        let storage_key = Self::node_key(&key);
+        let storage_key = Self::namespaced_key(&key);
         let item = StorageItem::from_bytes(value);
         let result = if self.store_cache.get(&storage_key).is_some() {
             self.store_cache.data_cache().try_update(storage_key, item)
@@ -251,7 +247,7 @@ impl MptStoreSnapshot for TrieNodeStore {
     }
 
     fn delete(&self, key: Vec<u8>) -> MptResult<()> {
-        let storage_key = Self::node_key(&key);
+        let storage_key = Self::namespaced_key(&key);
         if self.store_cache.get(&storage_key).is_some() {
             self.store_cache
                 .data_cache()
@@ -284,14 +280,14 @@ impl BlockTrieNodeStore {
 
 impl MptStoreSnapshot for BlockTrieNodeStore {
     fn try_get(&self, key: &[u8]) -> MptResult<Option<Vec<u8>>> {
-        let storage_key = TrieNodeStore::node_key(key);
+        let storage_key = TrieNodeStore::namespaced_key(key);
         Ok(self
             .get_item(&storage_key)
             .map(|item| item.value().to_vec()))
     }
 
     fn put(&self, key: Vec<u8>, value: Vec<u8>) -> MptResult<()> {
-        let storage_key = TrieNodeStore::node_key(&key);
+        let storage_key = TrieNodeStore::namespaced_key(&key);
         let item = StorageItem::from_bytes(value);
         let result = if self.get_item(&storage_key).is_some() {
             self.snapshot.try_update(storage_key, item)
@@ -316,7 +312,7 @@ impl MptStoreSnapshot for BlockTrieNodeStore {
         // unexpected Added/Changed/None entry instead of silently upserting it.
         self.snapshot
             .try_add(
-                TrieNodeStore::node_key(&key),
+                TrieNodeStore::namespaced_key(&key),
                 StorageItem::from_bytes(value),
             )
             .map_err(|e| MptError::storage(format!("failed to stage new MPT node: {e}")))
@@ -328,14 +324,14 @@ impl MptStoreSnapshot for BlockTrieNodeStore {
         // reference count from RocksDB merely to increment an unused field.
         self.snapshot
             .try_update(
-                TrieNodeStore::node_key(&key),
+                TrieNodeStore::namespaced_key(&key),
                 StorageItem::from_bytes(value),
             )
             .map_err(|e| MptError::storage(format!("failed to stage full-state MPT node: {e}")))
     }
 
     fn delete(&self, key: Vec<u8>) -> MptResult<()> {
-        let storage_key = TrieNodeStore::node_key(&key);
+        let storage_key = TrieNodeStore::namespaced_key(&key);
         if self.get_item(&storage_key).is_some() {
             self.snapshot
                 .try_delete(&storage_key)
@@ -365,7 +361,10 @@ impl MptStoreSnapshot for BlockTrieNodeStore {
 const STATE_ROOT_NODE_CACHE_CAPACITY: usize = 65_536;
 
 /// Observation-only snapshot of a state-service store's compact-node cache.
-#[derive(Clone, Copy, Debug, PartialEq)]
+///
+/// `Default` is the zero snapshot a caller uses when the state service is not
+/// registered; `enabled` distinguishes that from a registered but idle cache.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct StateRootNodeCacheStats {
     pub enabled: bool,
     pub capacity: usize,
@@ -493,6 +492,15 @@ impl StateServiceCommitHandlers {
     /// Attaches or removes the observation-only state-root timing sink.
     pub fn set_profile_sink(&self, sink: Option<StateRootProfileSink>) {
         *self.profile_sink.lock().unwrap() = sink;
+    }
+
+    /// Returns whether a state-root timing sink is currently attached.
+    ///
+    /// This is observation-only introspection used to prove the embedding
+    /// wired profiling; it never enables profiling by itself.
+    #[must_use]
+    pub fn profile_sink_registered(&self) -> bool {
+        self.profile_sink.lock().unwrap().is_some()
     }
 
     /// Attaches an observer invoked whenever a validated state root is
@@ -810,15 +818,11 @@ impl StateServiceCommitHandlers {
         root_hash: &UInt256,
         index: u32,
     ) -> Result<(), StateServiceError> {
-        let mut mpt_key = Vec::with_capacity(1 + std::mem::size_of::<UInt256>());
-        // Mirrors the prefix `neo_crypto::mpt_trie::Trie` prepends to node
-        // hashes when addressing the node store.
-        mpt_key.push(TRIE_NODE_CACHE_PREFIX);
-        mpt_key.extend_from_slice(root_hash.as_ref());
-
+        // The node-key layout belongs to `neo-crypto`'s trie module; the state
+        // service only namespaces whatever key the trie uses.
         let node = self
             .node_store
-            .try_get(&mpt_key)
+            .try_get(&node_key(root_hash))
             .map_err(|e| {
                 StateServiceError::new(format!(
                     "cannot recover state root: failed to read trie node {root_hash} for height {index}: {e}"
@@ -1145,6 +1149,7 @@ impl StateServiceCommitHandlers {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_crypto::mpt_trie::{ProofCache, ProofCacheNamespace};
     use neo_protocol::execution::{ApplicationExecuted, Block, BlockHeader};
     use neo_storage::persistence::providers::memory_store::MemoryStore;
     use neo_storage::persistence::store::Store;
@@ -1226,7 +1231,7 @@ mod tests {
     #[test]
     fn backed_block_snapshot_is_authoritative_for_mpt_absence() {
         let mpt_key = b"cold-node";
-        let storage_key = TrieNodeStore::node_key(mpt_key);
+        let storage_key = TrieNodeStore::namespaced_key(mpt_key);
         let stored_value = vec![1, 2, 3];
         let mut persisted_cache = StoreCache::new(Arc::new(MemoryStore::new()));
         persisted_cache
@@ -1692,13 +1697,68 @@ mod tests {
     }
 
     #[test]
+    fn test_committed_root_proof_cache_survives_head_advance() {
+        let store = Arc::new(MemoryStore::new());
+        let cache = Arc::new(StoreCache::new(store));
+        let handlers = StateServiceCommitHandlers::new(cache, true).unwrap();
+
+        let storage_key = StorageKey::new(7, b"cached-proof-key".to_vec());
+        let first_snapshot =
+            snapshot_with_changes(&[(7, b"cached-proof-key".to_vec(), b"value-1".to_vec())]);
+        assert!(handlers.commit_block(11, &first_snapshot).is_ok());
+        let first_root = pending_root(&handlers);
+        finish_commit(&handlers, 11, &first_snapshot);
+
+        // A second block advances the head; the first root stays provable.
+        let second_snapshot =
+            snapshot_with_changes(&[(7, b"cached-proof-key".to_vec(), b"value-2".to_vec())]);
+        assert!(handlers.commit_block(12, &second_snapshot).is_ok());
+        let second_root = pending_root(&handlers);
+        finish_commit(&handlers, 12, &second_snapshot);
+        assert_ne!(first_root, second_root);
+        assert_eq!(handlers.current_root_hash(), Some(second_root));
+
+        // Proofs are cached per committed root, so history keeps working while
+        // the current root moves on.
+        let proof_cache = ProofCache::with_defaults();
+        let namespace = ProofCacheNamespace::new(u64::from(STATE_ROOT_STORAGE_ID.unsigned_abs()));
+        let mut trie =
+            Trie::new_with_node_cache(handlers.node_store.clone(), Some(first_root), true, None);
+        let committed = trie
+            .committed_root()
+            .expect("resolved root node is immutable");
+        assert_eq!(committed.hash(), first_root);
+
+        let key_bytes = storage_key.to_array();
+        let first = trie
+            .get_proof_cached(&proof_cache, committed, namespace, &key_bytes)
+            .expect("cached proof")
+            .expect("key present");
+        let replay = trie
+            .get_proof_cached(&proof_cache, committed, namespace, &key_bytes)
+            .expect("cached proof replay")
+            .expect("key present");
+        assert!(Arc::ptr_eq(&first, &replay));
+        assert_eq!(proof_cache.stats().hits, 1);
+        assert_eq!(proof_cache.stats().constructions, 1);
+        assert_eq!(
+            Trie::<TrieNodeStore>::verify_proof(first_root, &key_bytes, &first.to_hash_set())
+                .expect("verify cached proof"),
+            b"value-1".to_vec()
+        );
+
+        // The cache is keyed by the committed root and does not follow the
+        // head, so the entry stays valid after the head advanced.
+        assert_eq!(handlers.current_root_hash(), Some(second_root));
+        assert_eq!(proof_cache.len(), 1);
+    }
+
+    #[test]
     fn test_recover_from_storage_seeds_baseline() {
         let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
-        let handlers = StateServiceCommitHandlers::new(
-            Arc::new(StoreCache::new(store.clone())),
-            true,
-        )
-        .unwrap();
+        let handlers =
+            StateServiceCommitHandlers::new(Arc::new(StoreCache::new(store.clone())), true)
+                .unwrap();
 
         // Commit two real blocks: root records, trie nodes and the local cursor
         // are all persisted by the commit path.
@@ -1725,19 +1785,21 @@ mod tests {
         // The recovered baseline extends the hydrated trie, so the next block
         // derives the same root as the original handler would.
         let changes = [(1, b"account".to_vec(), b"six".to_vec())];
-        handlers.commit_block(6, &snapshot_with_changes(&changes)).unwrap();
-        recovered.commit_block(6, &snapshot_with_changes(&changes)).unwrap();
+        handlers
+            .commit_block(6, &snapshot_with_changes(&changes))
+            .unwrap();
+        recovered
+            .commit_block(6, &snapshot_with_changes(&changes))
+            .unwrap();
         assert_eq!(pending_root(&handlers), pending_root(&recovered));
     }
 
     #[test]
     fn recovery_never_adopts_a_network_root_above_the_local_cursor() {
         let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
-        let handlers = StateServiceCommitHandlers::new(
-            Arc::new(StoreCache::new(store.clone())),
-            true,
-        )
-        .unwrap();
+        let handlers =
+            StateServiceCommitHandlers::new(Arc::new(StoreCache::new(store.clone())), true)
+                .unwrap();
 
         let snapshot = snapshot_with_changes(&[(1, b"account".to_vec(), b"local".to_vec())]);
         handlers.commit_block(7, &snapshot).unwrap();
@@ -1843,7 +1905,7 @@ mod tests {
         assert!(STATE_ROOT_STORAGE_ID < -100);
 
         // Root-record and trie-node keys share the id but differ in prefix.
-        let node_key = TrieNodeStore::node_key(&[0u8; 33]);
+        let node_key = TrieNodeStore::namespaced_key(&[0u8; 33]);
         assert_eq!(node_key.id, STATE_ROOT_STORAGE_ID);
         assert_eq!(node_key.key()[0], PREFIX_TRIE_NODE);
         assert_ne!(node_key.key()[0], PREFIX_STATE_ROOT);
@@ -1874,8 +1936,8 @@ mod tests {
         let bytes = serialize_state_root_record(&signed);
         let decoded = deserialize_state_root_record(13, &bytes).unwrap();
         let witness = decoded.witness.expect("witness round trip");
-        assert_eq!(witness.invocation_script, invocation);
-        assert_eq!(witness.verification_script, verification);
+        assert_eq!(witness.invocation_script(), invocation);
+        assert_eq!(witness.verification_script(), verification);
 
         // Malformed inputs are rejected (fail-closed).
         assert!(deserialize_state_root_record(1, &[]).is_none());

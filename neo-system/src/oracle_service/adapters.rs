@@ -12,61 +12,44 @@
 //! - [`CoreOracleWallet`]: replicates the reference `select_oracle_accounts`.
 //! - [`CoreOracleSigner`]: replicates the reference frozen-sign-intent flow
 //!   against the unified signing service.
-//! - [`CoreResponseTxBuilder`]: ports the reference `create_response_tx` fee,
-//!   witness and verification logic.
+//! - [`CoreResponseTxBuilder`]: host side of the reference `create_response_tx`;
+//!   the quorum/witness/fee/verification domain rules live in
+//!   `neo_oracle::create_response_tx` and this adapter only supplies the
+//!   snapshot, native contract and engine ports. Verification runs on the
+//!   canonical production native composition
+//!   (`neo_native_contracts::native::composition::default_native_services`),
+//!   so real state reads and witness hashes are available during the run.
 //! - [`CoreTxRelay`]: relays through the transaction router.
 //! - [`CoreSignatureVerifier`]: delegates to `ECPoint::verify_signature`.
 
 use crate::neo_system::NeoSystem;
 use async_trait::async_trait;
 use neo_crypto::ECPoint;
-use neo_io_crate::serializable::helper::{
-    get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
-};
 use neo_native_contracts::native_contract::NativeContract;
 use neo_native_contracts::{
     ContractManagement, LedgerContract, OracleContract, PolicyContract, Role, RoleManagement,
 };
 use neo_oracle::ports::{
-    OracleSigner, OracleSnapshot, OracleWallet, ResponseTxBuilder, SignatureVerifier,
-    SnapshotFactory, TxRelay,
+    OracleSigner, OracleSnapshot, OracleWallet, ResponseTxBuilder, ResponseTxHost,
+    SignatureVerifier, SnapshotFactory, TxRelay, VerificationOutcome,
 };
 use neo_oracle::{OracleRequest, OracleServiceError};
-use neo_primitives::{CallFlags, ContractBasicMethod};
-use neo_primitives::{OracleResponseCode, TriggerType};
-use neo_primitives::{UInt160, UInt256, WitnessScope};
+use neo_primitives::{CallFlags, OracleResponseCode, TriggerType};
+use neo_primitives::{UInt160, UInt256};
+use neo_protocol::payloads::OracleResponse;
 use neo_protocol::payloads::Transaction;
-use neo_protocol::payloads::{
-    OracleResponse, Signer, TransactionAttribute, Witness, get_fixed_script,
-    oracle_response::MAX_RESULT_SIZE,
-};
 use neo_protocol::protocol_settings::ProtocolSettings;
-use neo_smart_contract::{application_engine::ApplicationEngine, contract::Contract};
+use neo_smart_contract::application_engine::ApplicationEngine;
+use neo_smart_contract::helper::Helper;
+use neo_smart_contract::{Contract, ContractMethodDescriptor, ContractState};
 use neo_storage::persistence::{DataCache, StoreCache};
 use neo_wallets::Wallet;
 use neo_wallets::signing::{
     FrozenSignIntent, ProtocolContext, SIGNING_SCHEMA_VERSION, SignPayload, SignPurpose,
     TrustedSignerClient,
 };
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-
-/// HEADER_SIZE constant from neo-protocol
-const HEADER_SIZE: usize = 25;
-
-/// Converts an on-chain [`neo_native_contracts::oracle::OracleRequest`] into
-/// the engine-side [`OracleRequest`] representation (structurally identical).
-fn to_engine_request(request: &neo_native_contracts::oracle::OracleRequest) -> OracleRequest {
-    OracleRequest {
-        original_tx_id: request.original_tx_id,
-        gas_for_response: request.gas_for_response,
-        url: request.url.clone(),
-        filter: request.filter.clone(),
-        callback_contract: request.callback_contract,
-        callback_method: request.callback_method.clone(),
-        user_data: request.user_data.clone(),
-    }
-}
 
 /// Ledger snapshot adapter wrapping a [`DataCache`] plus protocol settings.
 pub(crate) struct CoreSnapshot {
@@ -105,32 +88,24 @@ impl OracleSnapshot for CoreSnapshot {
     }
 
     fn get_request(&self, request_id: u64) -> Result<Option<OracleRequest>, OracleServiceError> {
-        Ok(OracleContract::new()
+        OracleContract::new()
             .get_request(&self.data_cache, request_id)
-            .map_err(|err| OracleServiceError::Processing(err.to_string()))?
-            .as_ref()
-            .map(to_engine_request))
+            .map_err(|err| OracleServiceError::Processing(err.to_string()))
     }
 
     fn get_requests(&self) -> Result<Vec<(u64, OracleRequest)>, OracleServiceError> {
-        Ok(OracleContract::new()
+        OracleContract::new()
             .get_requests(&self.data_cache)
-            .map_err(|err| OracleServiceError::Processing(err.to_string()))?
-            .into_iter()
-            .map(|(id, request)| (id, to_engine_request(&request)))
-            .collect())
+            .map_err(|err| OracleServiceError::Processing(err.to_string()))
     }
 
     fn get_requests_by_url(
         &self,
         url: &str,
     ) -> Result<Vec<(u64, OracleRequest)>, OracleServiceError> {
-        Ok(OracleContract::new()
+        OracleContract::new()
             .get_requests_by_url(&self.data_cache, url)
-            .map_err(|err| OracleServiceError::Processing(err.to_string()))?
-            .into_iter()
-            .map(|(id, request)| (id, to_engine_request(&request)))
-            .collect())
+            .map_err(|err| OracleServiceError::Processing(err.to_string()))
     }
 
     fn transaction_block_index(
@@ -301,8 +276,10 @@ fn core_snapshot(snapshot: &dyn OracleSnapshot) -> Result<&CoreSnapshot, OracleS
     })
 }
 
-/// Response transaction builder adapter: full port of the reference
-/// `create_response_tx` fee math, witness ordering and verification.
+/// Response transaction builder adapter: the host side of the reference
+/// `create_response_tx`. Quorum, witness ordering, fee math and budget
+/// downgrades are implemented once in `neo_oracle::create_response_tx`; this
+/// adapter only supplies the snapshot, native-contract and engine ports.
 pub(crate) struct CoreResponseTxBuilder {
     system: Arc<NeoSystem>,
 }
@@ -312,180 +289,63 @@ impl CoreResponseTxBuilder {
         Self { system }
     }
 
-    /// Builds the raw response transaction, downgrading `response` in place
-    /// when the result is too large or the request budget is insufficient.
-    fn create_response_tx(
+    /// Downcasts the opaque [`OracleSnapshot`] to this host's snapshot adapter.
+    fn host_snapshot(snapshot: &dyn OracleSnapshot) -> Result<&CoreSnapshot, OracleServiceError> {
+        core_snapshot(snapshot)
+    }
+}
+
+impl ResponseTxHost for CoreResponseTxBuilder {
+    fn oracle_contract_hash(&self) -> UInt160 {
+        OracleContract::new().hash()
+    }
+
+    fn contract_state(
         &self,
-        snapshot: &DataCache,
-        request: &OracleRequest,
-        response: &mut OracleResponse,
-        oracle_nodes: &[ECPoint],
-        settings: &ProtocolSettings,
-        use_current_height: bool,
-    ) -> Result<Transaction, OracleServiceError> {
-        let ledger = LedgerContract::new();
-        let state = ledger
-            .get_transaction_state(snapshot, &request.original_tx_id)
-            .map_err(|err| OracleServiceError::Processing(err.to_string()))?
-            .ok_or(OracleServiceError::RequestTransactionNotFound)?;
+        snapshot: &dyn OracleSnapshot,
+        hash: &UInt160,
+    ) -> Result<Option<ContractState>, OracleServiceError> {
+        let snapshot = Self::host_snapshot(snapshot)?;
+        ContractManagement::get_contract_from_snapshot(snapshot.data_cache(), hash)
+            .map_err(|err| OracleServiceError::Processing(err.to_string()))
+    }
 
-        let n = oracle_nodes.len();
-        if n == 0 {
-            return Err(OracleServiceError::Processing(
-                "oracle nodes not designated".to_string(),
-            ));
-        }
-        let m = n - (n - 1) / 3;
-        let oracle_sign_contract = Contract::create_multi_sig_contract(m, oracle_nodes);
-
-        let height = ledger.current_index(snapshot).unwrap_or(0);
-        let max_vub = PolicyContract::new()
-            .get_max_valid_until_block_increment_snapshot(snapshot, settings)
-            .unwrap_or(settings.max_valid_until_block_increment);
-        let mut valid_until_block = state.block_index().saturating_add(max_vub);
-        while use_current_height && valid_until_block <= height {
-            valid_until_block = valid_until_block.saturating_add(max_vub);
-        }
-
-        let mut tx = Transaction::new();
-        tx.set_version(0);
-        tx.set_nonce(response.id as u32);
-        tx.set_valid_until_block(valid_until_block);
-        tx.set_signers(vec![
-            Signer::new(OracleContract::new().hash(), WitnessScope::NONE),
-            Signer::new(oracle_sign_contract.script_hash(), WitnessScope::NONE),
-        ]);
-        tx.set_attributes(vec![TransactionAttribute::OracleResponse(response.clone())]);
-        tx.set_script(get_fixed_script());
-        tx.set_witnesses(vec![Witness::empty(), Witness::new()]);
-
-        let witness_map: HashMap<UInt160, Witness> = vec![
-            (
-                oracle_sign_contract.script_hash(),
-                Witness::new_with_scripts(Vec::new(), oracle_sign_contract.script.clone()),
-            ),
-            (OracleContract::new().hash(), Witness::empty()),
-        ]
-        .into_iter()
-        .collect();
-
-        // Build witness list in the order required by script_hashes_for_verifying
-        //
-        // Neo transaction verification requires witnesses to be ordered exactly
-        // as returned by GetScriptHashesForVerifying, which includes:
-        // 1. Transaction sender (first signer)
-        // 2. Additional signers in order
-        // 3. Contract hashes that need to verify the transaction
-        //
-        // For oracle response transactions:
-        // - Oracle multisig contract witness (contains signatures)
-        // - Oracle native contract witness (empty, verification happens in contract)
-
-        let hashes = tx.signer_accounts();
-        let mut witnesses = Vec::with_capacity(hashes.len());
-
-        for hash in &hashes {
-            let witness = witness_map
-                .get(hash)
-                .cloned()
-                .unwrap_or_else(Witness::empty);
-            witnesses.push(witness);
-        }
-
-        tx.set_witnesses(witnesses);
-
-        let oracle_contract =
-            ContractManagement::get_contract_from_snapshot(snapshot, &OracleContract::new().hash())
-                .map_err(|err| OracleServiceError::Processing(err.to_string()))?
-                .ok_or_else(|| {
-                    OracleServiceError::BuildFailed("oracle contract missing".to_string())
-                })?;
-
+    fn execute_verification(
+        &self,
+        snapshot: &dyn OracleSnapshot,
+        tx: &Transaction,
+        contract: &ContractState,
+        method: &ContractMethodDescriptor,
+        call_flags: CallFlags,
+    ) -> Result<VerificationOutcome, OracleServiceError> {
+        let host_snapshot = Self::host_snapshot(snapshot)?;
         let mut engine = ApplicationEngine::new(
             TriggerType::Verification,
             Some(Arc::new(tx.clone())),
-            Arc::new(snapshot.clone()),
+            Arc::new(host_snapshot.data_cache().clone()),
             None,
-            settings.clone(),
-            neo_smart_contract::helper::Helper::MAX_VERIFICATION_GAS,
+            self.system.settings().clone(),
+            Helper::MAX_VERIFICATION_GAS,
             None,
-            neo_native_contracts::engine_native_services_from_registry(
-                neo_native_contracts::default_native_services(),
-            ),
+            // Production oracle verification must observe real chain state and
+            // resolve the transaction's verifying hashes, so it uses the
+            // canonical composition (StandardNativeStateReader +
+            // StandardWitnessHashResolver), never the no-op test builder.
+            neo_native_contracts::native::composition::default_native_services(),
         )
         .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
 
-        let mut abi = oracle_contract.manifest.abi.clone();
-        let method = abi
-            .get_method(
-                ContractBasicMethod::VERIFY,
-                ContractBasicMethod::VERIFY_P_COUNT,
-            )
-            .ok_or_else(|| {
-                OracleServiceError::BuildFailed("oracle verify method missing".to_string())
-            })?
-            .clone();
-
         engine
-            .load_contract_method(oracle_contract.clone(), method, CallFlags::NONE)
+            .load_contract_method(contract.clone(), method.clone(), call_flags)
             .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
         engine
             .execute()
             .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
-        if engine.state() != neo_vm::VmState::HALT {
-            return Err(OracleServiceError::BuildFailed(
-                "oracle verify failed".to_string(),
-            ));
-        }
 
-        let comp1 = engine.fee_consumed();
-        tx.set_network_fee(comp1);
-
-        let exec_fee_factor = PolicyContract::new()
-            .get_exec_fee_factor_snapshot(snapshot, settings, height)
-            .unwrap_or(PolicyContract::DEFAULT_EXEC_FEE_FACTOR)
-            as i64;
-        let multi_sig_cost =
-            neo_smart_contract::helper::Helper::multi_signature_contract_cost(m as i32, n as i32);
-        let comp2 = exec_fee_factor * multi_sig_cost;
-        tx.set_network_fee(tx.network_fee().saturating_add(comp2));
-
-        let size_inv = 66 * m;
-        let oracle_witness_size = Witness::empty().size();
-        let mut size = HEADER_SIZE
-            + get_var_size_serializable_slice(tx.signers())
-            + get_var_size_bytes(tx.script())
-            + get_var_size(hashes.len() as u64)
-            + oracle_witness_size
-            + get_var_size(size_inv as u64)
-            + size_inv
-            + get_var_size(oracle_sign_contract.script.len() as u64)
-            + oracle_sign_contract.script.len();
-
-        let fee_per_byte = PolicyContract::new()
-            .get_fee_per_byte_snapshot(snapshot)
-            .unwrap_or(PolicyContract::DEFAULT_FEE_PER_BYTE as i64);
-
-        if response.result.len() > MAX_RESULT_SIZE {
-            response.code = OracleResponseCode::ResponseTooLarge;
-            response.result = Vec::new();
-            tx.set_attributes(vec![TransactionAttribute::OracleResponse(response.clone())]);
-        } else if tx.network_fee()
-            + ((size + get_var_size_serializable_slice(tx.attributes())) as i64 * fee_per_byte)
-            > request.gas_for_response
-        {
-            response.code = OracleResponseCode::InsufficientFunds;
-            response.result = Vec::new();
-            tx.set_attributes(vec![TransactionAttribute::OracleResponse(response.clone())]);
-        }
-
-        size += get_var_size_serializable_slice(tx.attributes());
-        let comp3 = size as i64 * fee_per_byte;
-        let final_network_fee = tx.network_fee().saturating_add(comp3);
-        tx.set_network_fee(final_network_fee);
-        tx.set_system_fee(request.gas_for_response - final_network_fee);
-
-        Ok(tx)
+        Ok(VerificationOutcome {
+            state: engine.state(),
+            fee_consumed: engine.fee_consumed(),
+        })
     }
 }
 
@@ -501,15 +361,13 @@ impl ResponseTxBuilder for CoreResponseTxBuilder {
         _network: u32,
         use_current_height: bool,
     ) -> Result<(Transaction, OracleResponseCode), OracleServiceError> {
-        let core_snapshot = core_snapshot(snapshot)?;
-        let settings = self.system.settings();
         let mut response = OracleResponse::new(response_id, response_code, response_result);
-        let tx = self.create_response_tx(
-            core_snapshot.data_cache(),
+        let tx = neo_oracle::create_response_tx(
+            self,
+            snapshot,
             request,
             &mut response,
             oracle_nodes,
-            settings,
             use_current_height,
         )?;
         Ok((tx, response.code))

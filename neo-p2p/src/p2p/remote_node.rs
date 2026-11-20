@@ -28,10 +28,9 @@ use crate::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::p2p::payloads::inv_payload::InvPayload;
 use async_trait::async_trait;
 use neo_actors::{Actor, ActorContext, ActorResult, Props, ScheduleHandle};
-use neo_io_crate::HashSetCache;
+use neo_io_crate::{HashSetCache, IoResult};
 use neo_primitives::UInt256;
 use neo_protocol::protocol_settings::ProtocolSettings;
-use neo_smart_contract::error::CoreResult;
 use std::net::SocketAddr;
 use std::sync::{
     Arc,
@@ -48,6 +47,7 @@ pub use message_handlers::{
     MessageHandlerSubscription, register_message_received_handler,
     unregister_message_received_handler,
 };
+pub use outbound_queue::OutboundBatchStats;
 use outbound_queue::{CommandBitSet, OutboundQueues};
 use pending_known_hashes::PendingKnownHashes;
 
@@ -84,6 +84,13 @@ pub struct RemoteNode {
     verack_received: bool,
     ack_ready: bool,
     last_sent: Instant,
+    /// One-shot timer that closes the pending batch delay window.
+    batch_timer: Option<ScheduleHandle>,
+    /// Identifies the currently armed batch timer so a stale `FlushBatch`
+    /// message can never cancel or replace a newer batch deadline.
+    batch_generation: u64,
+    /// Bounded outbound batching telemetry for this peer.
+    batch_stats: OutboundBatchStats,
     /// Indicates if the remote peer advertised FullNode capability.
     is_full_node: bool,
 }
@@ -95,17 +102,11 @@ impl RemoteNode {
             || self.sent_hashes.contains(hash)
     }
 
-    fn try_relay_inventory_hash(inventory: &mut super::RelayInventory) -> CoreResult<UInt256> {
+    fn try_relay_inventory_hash(inventory: &mut super::RelayInventory) -> IoResult<UInt256> {
         match inventory {
-            super::RelayInventory::Block(block) => block
-                .try_hash()
-                .map_err(neo_smart_contract::error::CoreError::from),
-            super::RelayInventory::Transaction(tx) => tx
-                .try_hash()
-                .map_err(neo_smart_contract::error::CoreError::from),
-            super::RelayInventory::Extensible(ext) => ext
-                .try_hash()
-                .map_err(neo_smart_contract::error::CoreError::from),
+            super::RelayInventory::Block(block) => block.try_hash(),
+            super::RelayInventory::Transaction(tx) => tx.try_hash(),
+            super::RelayInventory::Extensible(ext) => ext.try_hash(),
         }
     }
 
@@ -181,6 +182,9 @@ impl RemoteNode {
             verack_received: false,
             ack_ready: true,
             last_sent: Instant::now(),
+            batch_timer: None,
+            batch_generation: 0,
+            batch_stats: OutboundBatchStats::default(),
             is_full_node: false,
         }
     }
@@ -465,7 +469,7 @@ impl Actor for RemoteNode {
         message: Box<dyn std::any::Any + Send>,
         ctx: &mut ActorContext,
     ) -> ActorResult {
-        match message.downcast::<RemoteNodeCommand>() {
+        let outcome = match message.downcast::<RemoteNodeCommand>() {
             Ok(command) => match *command {
                 RemoteNodeCommand::StartProtocol => self.start_protocol(ctx).await,
                 RemoteNodeCommand::Send(message) => self.enqueue_message(message).await,
@@ -482,6 +486,17 @@ impl Actor for RemoteNode {
                     self.fail(ctx, error).await
                 }
                 RemoteNodeCommand::TimerTick => self.on_timer(ctx).await,
+                RemoteNodeCommand::FlushBatch { generation } => {
+                    if generation == self.batch_generation {
+                        // The armed deadline elapsed: release the timer slot so
+                        // the next sparse batch can arm its own.
+                        self.batch_timer = None;
+                        self.flush_queue().await
+                    } else {
+                        // A newer batch already owns the timer slot.
+                        Ok(())
+                    }
+                }
                 RemoteNodeCommand::Disconnect { reason } => {
                     debug!(target: "neo", endpoint = %self.endpoint, reason, "disconnecting remote node");
                     ctx.stop_self()?;
@@ -536,10 +551,19 @@ impl Actor for RemoteNode {
                 );
                 Ok(())
             }
-        }
+        };
+
+        // Keep the batch deadline in sync with the queue after every command:
+        // arms the one-shot timer for a new sparse batch and cancels it once the
+        // batch is written or the acknowledgement gate closes.
+        self.sync_batch_timer(ctx);
+        outcome
     }
 
     async fn post_stop(&mut self, ctx: &mut ActorContext) -> ActorResult {
+        // Drain the pending batch while the stream is still open so coalesced
+        // inventory/relay traffic is not silently discarded at teardown.
+        self.drain_pending_batch().await;
         self.stop_reader().await;
         {
             let mut connection = self.connection.lock().await;
@@ -586,6 +610,11 @@ pub enum RemoteNodeCommand {
     HandshakeTimeout,
     /// Periodic timer tick driving timeouts and queue drains.
     TimerTick,
+    /// The bounded batch delay window elapsed.
+    FlushBatch {
+        /// Identifies the timer slot that fired.
+        generation: u64,
+    },
     /// Relays an inventory to the peer per relay policy.
     RelayInventory(super::RelayInventory),
     /// Sends an inventory to the peer unconditionally.

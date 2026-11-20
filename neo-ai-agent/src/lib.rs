@@ -17,6 +17,7 @@ mod probe;
 mod provider;
 mod runtime;
 mod stall;
+mod store_files;
 
 pub use action_store::{
     ActionBinding, ActionRecord, ActionState, ActionStoreError, ActionStoreOptions, AdmitOutcome,
@@ -75,9 +76,10 @@ pub use runtime::{
 pub use runtime::{
     EvidenceRegistry, NodeModelProvider, RuntimeConfig, RuntimeInner, WorkerEvent, WorkerInput,
     WorkerState, action_request, advance_last_progress, build_model_provider, receive_worker_event,
-    unix_time_ms,
 };
 pub use stall::{
     ConsensusObservation, DetectionResult, StallDetector, StallLevel, StallPolicy,
     StallPolicyError, UnknownReason,
 };
+#[doc(hidden)]
+pub use store_files::{unix_time_ms, valid_hash};

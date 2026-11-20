@@ -202,15 +202,13 @@ impl PolicyContract {
     const MILLISECONDS_PER_BLOCK_CHANGED_EVENT_NAME: &'static str = "MillisecondsPerBlockChanged";
 
     /// Creates a new Policy contract.
+    ///
+    /// Hash: `0xcc5e4edd9f5f8dba8bb65734541df7a1c081c67b`.
     pub fn new() -> Self {
-        // Policy contract hash: 0xcc5e4edd9f5f8dba8bb65734541df7a1c081c67b
-        let hash = super::static_contract_hash!("0xcc5e4edd9f5f8dba8bb65734541df7a1c081c67b");
-
-        Self {
-            id: Self::ID,
-            hash,
-            methods: super::static_native_methods!(PolicyContract::native_methods()),
-        }
+        super::stateless_native_contract!(
+            PolicyContract,
+            "0xcc5e4edd9f5f8dba8bb65734541df7a1c081c67b"
+        )
     }
 }
 

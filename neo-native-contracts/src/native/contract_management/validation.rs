@@ -43,9 +43,8 @@ impl ContractManagement {
 
         if nef.script.len() > max_item_size {
             return Err(Error::invalid_data(format!(
-                "Script size {} exceeds MaxItemSize {}",
-                nef.script.len(),
-                max_item_size
+                "Script size {} exceeds MaxItemSize {max_item_size}",
+                nef.script.len()
             )));
         }
 
@@ -237,8 +236,7 @@ impl ContractManagement {
                 Some(mapped) if mapped == hash => {}
                 Some(mapped) => {
                     return Err(Error::invalid_data(format!(
-                        "corrupted ContractManagement state: contract id {} maps to {} but contract payload hash is {}",
-                        id,
+                        "corrupted ContractManagement state: contract id {id} maps to {} but contract payload hash is {}",
                         mapped.to_hex_string(),
                         hash.to_hex_string()
                     )));
@@ -257,8 +255,7 @@ impl ContractManagement {
             }
             if !ids.contains_key(id) {
                 return Err(Error::invalid_data(format!(
-                    "corrupted ContractManagement state: contract id {} maps to {}, but no contract payload exists",
-                    id,
+                    "corrupted ContractManagement state: contract id {id} maps to {}, but no contract payload exists",
                     mapped_hash.to_hex_string()
                 )));
             }

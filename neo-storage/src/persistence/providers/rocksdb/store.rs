@@ -6,7 +6,7 @@ use crate::{
         read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
         seek_direction::SeekDirection,
         storage::StorageConfig,
-        store::{OnNewSnapshotDelegate, Store},
+        store::{OnNewSnapshotDelegate, Store, StoreAccelerationStats},
         store_snapshot::StoreSnapshot,
         write_batch_buffer::{WriteBatchConfig, WriteBatchStatsSnapshot},
         write_store::WriteStore,
@@ -262,7 +262,7 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
             }));
         }
 
-        let start = key_prefix.map(|k| k.as_slice()).unwrap_or(&[]);
+        let start = key_prefix.map(Vec::as_slice).unwrap_or(&[]);
         let iterator = self.iterator_from(start, direction);
         let prefix = key_prefix.cloned();
         let iterator = iterator.take_while(move |res| match res {
@@ -309,7 +309,7 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
         key_prefix: Option<&StorageKey>,
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
-        let prefix_bytes = key_prefix.map(|k| k.to_array());
+        let prefix_bytes = key_prefix.map(StorageKey::to_array);
 
         // Capture the generation before iterating so a scan that raced a commit
         // cannot publish pre-commit rows into the shared cache.
@@ -387,7 +387,101 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
     }
 }
 
-impl ReadOnlyStore for RocksDbStore {}
+impl ReadOnlyStore for RocksDbStore {
+    /// Bounded prefix scan used by speculative readers.
+    ///
+    /// Unlike [`ReadOnlyStoreGeneric::find`] this never builds an unbounded
+    /// result set: iteration stops at `limit` rows and at the namespace
+    /// boundary, so a prefetch over a large prefix costs one iterator seek plus
+    /// at most `limit` row reads.
+    fn seek_limited(
+        &self,
+        key_prefix: Option<&StorageKey>,
+        start: Option<&StorageKey>,
+        direction: SeekDirection,
+        limit: usize,
+    ) -> Vec<(StorageKey, StorageItem)> {
+        if limit == 0 {
+            return Vec::new();
+        }
+
+        let prefix_bytes = key_prefix.map(StorageKey::to_array);
+        // The cursor only narrows the scan while it lies inside the namespace.
+        let cursor = start
+            .filter(|cursor| {
+                prefix_bytes
+                    .as_ref()
+                    .is_none_or(|prefix| cursor.as_bytes().starts_with(prefix))
+            })
+            .cloned();
+        let cursor_bytes = cursor.as_ref().map(StorageKey::to_array);
+
+        let mut entries = Vec::with_capacity(limit.min(64));
+        let push = |key_vec: Vec<u8>, value: Vec<u8>, entries: &mut Vec<_>| {
+            if let Some(prefix) = prefix_bytes.as_deref()
+                && !key_vec.starts_with(prefix)
+            {
+                return false;
+            }
+            let storage_key = StorageKey::from_bytes(&key_vec);
+            if let Some(cursor) = cursor.as_ref() {
+                let outside = match direction {
+                    SeekDirection::Forward => storage_key <= *cursor,
+                    SeekDirection::Backward => storage_key >= *cursor,
+                };
+                if outside {
+                    return true;
+                }
+            }
+            entries.push((storage_key, StorageItem::from_bytes(value)));
+            true
+        };
+
+        match direction {
+            SeekDirection::Forward => {
+                let seek = cursor_bytes
+                    .as_deref()
+                    .or(prefix_bytes.as_deref())
+                    .unwrap_or(&[]);
+                for res in self.iterator_from(seek, SeekDirection::Forward) {
+                    let (key, value) = match res {
+                        Ok(entry) => entry,
+                        Err(err) => fail_fast_read("iterator", &err),
+                    };
+                    if !push(key.to_vec(), value.to_vec(), &mut entries) {
+                        break;
+                    }
+                    if entries.len() == limit {
+                        break;
+                    }
+                }
+            }
+            SeekDirection::Backward => {
+                let iter = provider::reverse_prefix_iterator_from(
+                    self.db.as_ref(),
+                    None,
+                    prefix_bytes.as_deref().unwrap_or(&[]),
+                    cursor_bytes.as_deref(),
+                    &self.read_ahead_config,
+                );
+                for res in iter {
+                    let (key, value) = match res {
+                        Ok(entry) => entry,
+                        Err(err) => fail_fast_read("iterator", &err),
+                    };
+                    if !push(key.to_vec(), value.to_vec(), &mut entries) {
+                        break;
+                    }
+                    if entries.len() == limit {
+                        break;
+                    }
+                }
+            }
+        }
+
+        entries
+    }
+}
 
 impl RocksDbStore {
     /// Executes the existing direct delete through a shared backend handle.
@@ -395,7 +489,7 @@ impl RocksDbStore {
         self.db.delete(&key).map_err(|err| {
             error!(target: "neo", error = %err, "rocksdb delete failed");
             StorageError::Io {
-                message: format!("RocksDB delete failed: {}", err),
+                message: format!("RocksDB delete failed: {err}"),
             }
         })?;
         self.invalidate_read_cache(std::iter::once(StorageKey::from_bytes(&key)));
@@ -407,7 +501,7 @@ impl RocksDbStore {
         self.db.put(&key, &value).map_err(|err| {
             error!(target: "neo", error = %err, "rocksdb put failed");
             StorageError::Io {
-                message: format!("RocksDB put failed: {}", err),
+                message: format!("RocksDB put failed: {err}"),
             }
         })?;
         self.invalidate_read_cache(std::iter::once(StorageKey::from_bytes(&key)));
@@ -421,7 +515,7 @@ impl RocksDbStore {
         self.db.put_opt(&key, &value, &options).map_err(|err| {
             error!(target: "neo", error = %err, "rocksdb put_sync failed");
             StorageError::Io {
-                message: format!("RocksDB put_sync failed: {}", err),
+                message: format!("RocksDB put_sync failed: {err}"),
             }
         })?;
         self.invalidate_read_cache(std::iter::once(StorageKey::from_bytes(&key)));
@@ -460,6 +554,16 @@ impl Store for RocksDbStore {
         RocksDbStore::disable_fast_sync_mode(self);
     }
 
+    fn compact_all(&self) {
+        if let Err(err) = RocksDbStore::compact_all(self) {
+            warn!(target: "neo", error = %err, "manual full-range compaction failed");
+        }
+    }
+
+    fn level_file_counts(&self) -> Vec<(u32, u64)> {
+        RocksDbStore::level_file_counts(self)
+    }
+
     fn flush(&self) {
         if let Err(err) = self.flush_batch_writes() {
             warn!(target: "neo", error = %err, "failed to flush pending RocksDB batch writes");
@@ -481,6 +585,20 @@ impl Store for RocksDbStore {
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    fn acceleration_stats(&self) -> Option<StoreAccelerationStats> {
+        // The buffer object always exists, but it only produces telemetry once a
+        // write path stages operations into it. The current snapshot commit path
+        // calls `db.write_opt` directly, so an idle buffer is reported as absent
+        // instead of as a component that is assumed to be working.
+        let write_buffer = self.batch_committer.buffer.stats_snapshot();
+        let write_buffer_active =
+            write_buffer.batches_flushed > 0 || write_buffer.pending_operations > 0;
+        Some(StoreAccelerationStats {
+            read_cache: self.read_cache.as_ref().map(|cache| cache.stats()),
+            write_buffer: write_buffer_active.then_some(write_buffer),
+        })
     }
 }
 
@@ -725,8 +843,7 @@ impl RocksDbSnapshot {
         if let Err(err) = write_result {
             error!(target: "neo", error = %err, durable = force_durable, "rocksdb snapshot commit failed");
             return Err(StorageError::CommitFailed(format!(
-                "RocksDB write failed: {}",
-                err
+                "RocksDB write failed: {err}"
             )));
         }
         if wal_disabled {
@@ -792,7 +909,7 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
         key_prefix: Option<&Vec<u8>>,
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
-        if let Some(items) = self.merged_entries(key_prefix.map(|k| k.as_slice()), direction) {
+        if let Some(items) = self.merged_entries(key_prefix.map(Vec::as_slice), direction) {
             return Box::new(items.into_iter());
         }
 
@@ -811,7 +928,7 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
             }));
         }
 
-        let start = key_prefix.map(|k| k.as_slice()).unwrap_or(&[]);
+        let start = key_prefix.map(Vec::as_slice).unwrap_or(&[]);
         let iterator = self.iterator_from(start, direction);
         let prefix = key_prefix.cloned();
         let iterator = iterator.take_while(move |res| match res {
@@ -850,7 +967,7 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
         key_prefix: Option<&StorageKey>,
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
-        let prefix_bytes = key_prefix.map(|k| k.to_array());
+        let prefix_bytes = key_prefix.map(StorageKey::to_array);
 
         if let Some(items) = self.merged_entries(prefix_bytes.as_deref(), direction) {
             // R10: snapshot views must not populate the shared latest-state
@@ -951,28 +1068,67 @@ impl StoreSnapshot for RocksDbSnapshot {
 #[allow(dead_code)]
 impl RocksDbStore {
     /// Enables fast sync mode optimizations (disable WAL, reduce fsync).
+    ///
+    /// Auto compaction is deliberately **not** disabled here. A long import
+    /// runs for hours, and with compaction off RocksDB accumulated hundreds of
+    /// level-0 files that never merged downwards; every point read then had to
+    /// probe the whole L0 backlog, so read throughput decayed monotonically as
+    /// the import progressed (and writes eventually stalled at the L0 stop
+    /// trigger). The speed win of skipping compaction is paid back many times
+    /// over by that read amplification, so the WAL is the only fast-sync knob
+    /// that gets switched off.
     pub fn enable_fast_sync_mode(&self) {
         // Switch to high-throughput batch config (disable WAL, no fsync)
         *self.batch_config.write() = WriteBatchConfig::high_throughput();
 
-        if let Err(err) = self.db.set_options(&[("disable_auto_compactions", "true")]) {
-            warn!(target: "neo", error = %err, "failed to disable auto compactions");
-        }
-        debug!(target: "neo", "enabled fast sync mode optimizations (WAL disabled, auto compaction disabled)");
+        debug!(target: "neo", "enabled fast sync mode optimizations (WAL disabled, auto compaction kept enabled)");
     }
 
     /// Disables fast sync mode optimizations.
     pub fn disable_fast_sync_mode(&self) {
         // Restore balanced batch config (WAL enabled)
         *self.batch_config.write() = WriteBatchConfig::durable();
-
-        if let Err(err) = self
-            .db
-            .set_options(&[("disable_auto_compactions", "false")])
-        {
-            warn!(target: "neo", error = %err, "failed to enable auto compactions");
-        }
         debug!(target: "neo", "disabled fast sync mode optimizations (WAL restored)");
+    }
+
+    /// Runs a blocking, full-range manual compaction over the whole keyspace.
+    ///
+    /// The store opens a single default column family, so one `compact_range`
+    /// covers every key. Pending buffered writes and memtables are flushed
+    /// first: values still in memory are invisible to compaction and would
+    /// otherwise be written back into level 0 right after it finishes.
+    ///
+    /// Returns once RocksDB reports the compaction complete, so callers can log
+    /// the elapsed time as a one-time maintenance step.
+    pub fn compact_all(&self) -> StorageResult<()> {
+        self.flush_batch_writes()?;
+
+        let mut flush_options = rocksdb::FlushOptions::default();
+        flush_options.set_wait(true);
+        self.db.flush_opt(&flush_options).map_err(|err| {
+            StorageError::CommitFailed(format!("RocksDB pre-compaction flush failed: {err}"))
+        })?;
+
+        self.db.compact_range::<&[u8], &[u8]>(None, None);
+        Ok(())
+    }
+
+    /// Returns the per-level SST file counts, lowest level first.
+    ///
+    /// Level 0 accumulates one file per memtable flush, so its count is the
+    /// cheapest signal that background compaction is (not) keeping up: a
+    /// monotonically growing L0 count means reads are paying an ever larger
+    /// file fan-out per lookup.
+    pub fn level_file_counts(&self) -> Vec<(u32, u64)> {
+        (0..=6u32)
+            .filter_map(|level| {
+                self.db
+                    .property_int_value(&format!("rocksdb.num-files-at-level{level}"))
+                    .ok()
+                    .flatten()
+                    .map(|count| (level, count))
+            })
+            .collect()
     }
 
     /// Flushes buffered writes and makes them durable.

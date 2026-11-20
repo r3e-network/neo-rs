@@ -190,14 +190,10 @@ impl ApplicationEngine {
             states: HashMap::new(),
             event_observer: None,
             profiler: None,
+            rw_set_tracker: Mutex::new(None),
+            rw_set_tracking: AtomicBool::new(false),
         };
         app.select_hardfork_vm_semantics();
-
-        // Initialize static syscall registry (once per application lifetime)
-        // NOTE: This is now handled by VM layer - commented out to avoid duplication
-        // SYSCALL_REGISTRY_INIT.call_once(|| {
-        //     init_syscall_registry();
-        // });
 
         // No `attach_host` here: the engine is returned by value, so a pointer
         // taken now would dangle the moment the caller receives it. The host
@@ -314,16 +310,12 @@ impl ApplicationEngine {
             states: HashMap::new(),
             event_observer: None,
             profiler: None,
+            rw_set_tracker: Mutex::new(None),
+            rw_set_tracking: AtomicBool::new(false),
         };
         // A05/R06: persist path must apply hardfork-dependent VM semantics
         // (e.g. Gorgon zero-shift typing), matching `new` / `new_with_shared_block`.
         app.select_hardfork_vm_semantics();
-
-        // Initialize static syscall registry (once per application lifetime)
-        // NOTE: This is now handled by VM layer - commented out to avoid duplication
-        // SYSCALL_REGISTRY_INIT.call_once(|| {
-        //     init_syscall_registry();
-        // });
 
         // See the note in `new_with_shared_block`: attaching here would leave a
         // dangling pointer behind, because the engine moves when it is returned.
@@ -608,6 +600,23 @@ impl ApplicationEngine {
     pub fn execution_limits(&self) -> &ExecutionEngineLimits {
         self.vm_engine.engine().limits()
     }
+    /// Replaces the VM execution limits for this engine.
+    ///
+    /// Intended for service-level budgets (RPC admission, probes) that must cap
+    /// [`ExecutionEngineLimits::max_instructions`], and for tests that observe
+    /// resource accounting. Derive the new value from [`Self::execution_limits`]
+    /// so the hardfork-selected semantics selected at construction survive, and
+    /// never call this mid-execution.
+    pub fn set_execution_limits(&mut self, limits: ExecutionEngineLimits) {
+        self.vm_engine.engine_mut().set_limits(limits);
+    }
+    /// Returns how many instructions this engine has executed so far.
+    ///
+    /// Both the canonical interpreter loop and direct native dispatch charge
+    /// this counter, so it is the cross-strategy resource-accounting witness.
+    pub fn instructions_executed(&self) -> u64 {
+        self.vm_engine.engine().instructions_executed
+    }
     /// Returns the manifest name of the contract with the given hash,
     /// falling back to the native contract's name.
     pub fn contract_display_name(&self, hash: &UInt160) -> Option<String> {
@@ -635,6 +644,7 @@ impl ApplicationEngine {
         if let Some(context) = self.event_observer.as_ref() {
             context.notify_application_log(self, &event);
         }
+        self.record_rw_log(&event.script_hash, &event.message);
         self.logs.push(event);
     }
     /// Records a notification event and notifies the attached runtime context.
@@ -642,6 +652,7 @@ impl ApplicationEngine {
         if let Some(context) = self.event_observer.as_ref() {
             context.notify_application_notify(self, &event);
         }
+        self.record_rw_notification(&event.script_hash, &event.event_name);
         self.notifications.push(event);
     }
     /// Returns all notification events emitted during execution.
@@ -792,5 +803,139 @@ mod default_interop_tests {
             assert!(faun.service.get_method(name).is_some());
         }
         assert_eq!(pre_faun.service.len() + 4, faun.service.len());
+    }
+
+    /// The application engine is the single owner of Neo host-service metadata.
+    /// These tests pin that ownership: names, base prices and required call
+    /// flags are asserted on the registered descriptors themselves, so a second
+    /// copy elsewhere (the VM used to ship one) cannot silently disagree again.
+    fn descriptor<'a>(
+        service: &'a neo_vm::InteropService,
+        name: &str,
+        faun: bool,
+    ) -> &'a neo_vm::interop_service::VmInteropDescriptor {
+        service
+            .get_method(name.as_bytes())
+            .unwrap_or_else(|| panic!("{name} must be registered (faun={faun})"))
+    }
+
+    /// Storage permission bits are per operation, not per namespace.
+    ///
+    /// Reads (`Get`, `Find`, and the context helpers) require exactly
+    /// `READ_STATES`; writes (`Put`, `Delete`) require exactly `WRITE_STATES`.
+    /// Requiring both everywhere (the removed VM fast table did exactly that)
+    /// rejects legitimate read-only calls that hold only `READ_STATES`.
+    #[test]
+    fn storage_syscalls_require_per_operation_flags() {
+        const STORAGE_FLAGS: &[(&str, CallFlags)] = &[
+            ("System.Storage.GetContext", CallFlags::READ_STATES),
+            ("System.Storage.GetReadOnlyContext", CallFlags::READ_STATES),
+            ("System.Storage.AsReadOnly", CallFlags::READ_STATES),
+            ("System.Storage.Get", CallFlags::READ_STATES),
+            ("System.Storage.Find", CallFlags::READ_STATES),
+            ("System.Storage.Put", CallFlags::WRITE_STATES),
+            ("System.Storage.Delete", CallFlags::WRITE_STATES),
+        ];
+
+        const STORAGE_LOCAL_FLAGS: &[(&str, CallFlags)] = &[
+            ("System.Storage.Local.Get", CallFlags::READ_STATES),
+            ("System.Storage.Local.Find", CallFlags::READ_STATES),
+            ("System.Storage.Local.Put", CallFlags::WRITE_STATES),
+            ("System.Storage.Local.Delete", CallFlags::WRITE_STATES),
+        ];
+
+        for faun in [false, true] {
+            let registry = default_interops(faun).expect("default registry");
+            let service = &registry.service;
+
+            for (name, expected) in STORAGE_FLAGS {
+                let descriptor = descriptor(service, name, faun);
+                assert_eq!(
+                    descriptor.required_call_flags, *expected,
+                    "{name} must require exactly {expected:?} (faun={faun})"
+                );
+            }
+
+            // Faun-only `System.Storage.Local.*` mirrors the same split.
+            for (name, expected) in STORAGE_LOCAL_FLAGS {
+                if !faun {
+                    assert!(service.get_method(name.as_bytes()).is_none());
+                    continue;
+                }
+                let descriptor = descriptor(service, name, true);
+                assert_eq!(
+                    descriptor.required_call_flags, *expected,
+                    "{name} must require exactly {expected:?}"
+                );
+            }
+        }
+    }
+
+    /// Differential tie to the Coq refinement model
+    /// (`formal/coqlib/gas_price_refinement.v`): the base price registered for
+    /// every host service must equal the model's tier value.
+    #[test]
+    fn registered_gas_prices_match_coq_refinement_model() {
+        const PRICES: &[(&str, i64)] = &[
+            // System.Contract
+            ("System.Contract.Call", 1 << 15),
+            ("System.Contract.GetCallFlags", 1 << 10),
+            ("System.Contract.CreateStandardAccount", 0),
+            ("System.Contract.CreateMultisigAccount", 0),
+            ("System.Contract.CallNative", 0),
+            ("System.Contract.NativeOnPersist", 0),
+            ("System.Contract.NativePostPersist", 0),
+            // System.Runtime
+            ("System.Runtime.Platform", 1 << 3),
+            ("System.Runtime.GetTrigger", 1 << 3),
+            ("System.Runtime.GetNetwork", 1 << 3),
+            ("System.Runtime.GetAddressVersion", 1 << 3),
+            ("System.Runtime.GetTime", 1 << 3),
+            ("System.Runtime.GetScriptContainer", 1 << 3),
+            ("System.Runtime.LoadScript", 1 << 15),
+            ("System.Runtime.GetExecutingScriptHash", 1 << 4),
+            ("System.Runtime.GetCallingScriptHash", 1 << 4),
+            ("System.Runtime.GetEntryScriptHash", 1 << 4),
+            ("System.Runtime.CheckWitness", 1 << 10),
+            ("System.Runtime.GetInvocationCounter", 1 << 4),
+            ("System.Runtime.GetRandom", 0),
+            ("System.Runtime.GasLeft", 1 << 4),
+            ("System.Runtime.Log", 1 << 15),
+            ("System.Runtime.Notify", 1 << 15),
+            ("System.Runtime.GetNotifications", 1 << 12),
+            ("System.Runtime.BurnGas", 1 << 4),
+            ("System.Runtime.CurrentSigners", 1 << 4),
+            // System.Storage
+            ("System.Storage.GetContext", 1 << 4),
+            ("System.Storage.GetReadOnlyContext", 1 << 4),
+            ("System.Storage.AsReadOnly", 1 << 4),
+            ("System.Storage.Get", 1 << 15),
+            ("System.Storage.Put", 1 << 15),
+            ("System.Storage.Delete", 1 << 15),
+            ("System.Storage.Find", 1 << 15),
+            ("System.Storage.Local.Get", 1 << 15),
+            ("System.Storage.Local.Put", 1 << 15),
+            ("System.Storage.Local.Delete", 1 << 15),
+            ("System.Storage.Local.Find", 1 << 15),
+            // System.Crypto
+            ("System.Crypto.CheckSig", 1 << 15),
+            ("System.Crypto.CheckMultisig", 0),
+            // System.Iterator
+            ("System.Iterator.Next", 1 << 15),
+            ("System.Iterator.Value", 1 << 4),
+        ];
+
+        let registry = default_interops(true).expect("Faun registry");
+        let service = &registry.service;
+
+        for (name, expected) in PRICES {
+            let descriptor = descriptor(service, name, true);
+            assert_eq!(descriptor.price, *expected, "gas price for {name}");
+        }
+        assert_eq!(
+            service.len(),
+            PRICES.len(),
+            "the registered syscall surface must match the authoritative table"
+        );
     }
 }

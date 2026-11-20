@@ -728,30 +728,34 @@ mod parse_limits_tests {
     fn string_length_budget_rejects_long_values_and_keys() {
         let err = JToken::parse_with_limits("\"abcdef\"", 4, limits(1024, 3, 64, 64))
             .expect_err("string over budget");
-        assert!(err.to_string().contains("String length 6 exceeds maximum of 3"));
+        assert!(
+            err.to_string()
+                .contains("String length 6 exceeds maximum of 3")
+        );
 
-        let err = JToken::parse_with_limits(
-            r#"{"abcdef":1}"#,
-            4,
-            limits(1024, 3, 64, 64),
-        )
-        .expect_err("key over budget");
-        assert!(err.to_string().contains("String length 6 exceeds maximum of 3"));
+        let err = JToken::parse_with_limits(r#"{"abcdef":1}"#, 4, limits(1024, 3, 64, 64))
+            .expect_err("key over budget");
+        assert!(
+            err.to_string()
+                .contains("String length 6 exceeds maximum of 3")
+        );
     }
 
     #[test]
     fn member_budget_rejects_wide_containers() {
         let err = JToken::parse_with_limits("[1,2,3,4]", 4, limits(1024, 64, 3, 64))
             .expect_err("array too wide");
-        assert!(err.to_string().contains("member count 4 exceeds maximum of 3"));
+        assert!(
+            err.to_string()
+                .contains("member count 4 exceeds maximum of 3")
+        );
 
-        let err = JToken::parse_with_limits(
-            r#"{"a":1,"b":2,"c":3}"#,
-            4,
-            limits(1024, 64, 2, 64),
-        )
-        .expect_err("object too wide");
-        assert!(err.to_string().contains("member count 3 exceeds maximum of 2"));
+        let err = JToken::parse_with_limits(r#"{"a":1,"b":2,"c":3}"#, 4, limits(1024, 64, 2, 64))
+            .expect_err("object too wide");
+        assert!(
+            err.to_string()
+                .contains("member count 3 exceeds maximum of 2")
+        );
     }
 
     #[test]

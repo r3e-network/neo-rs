@@ -60,6 +60,7 @@ pub mod https;
 pub mod neofs;
 pub mod ports;
 pub mod request;
+pub mod response_tx;
 pub mod security;
 pub mod service;
 pub mod settings;
@@ -74,9 +75,10 @@ pub use https::OracleHttpsProtocol;
 pub use neofs::OracleNeoFsProtocol;
 pub use ports::{
     OracleInfrastructure, OracleSigner, OracleSnapshot, OracleWallet, ResponseTxBuilder,
-    SignatureVerifier, SnapshotFactory, TxRelay,
+    ResponseTxHost, SignatureVerifier, SnapshotFactory, TxRelay, VerificationOutcome,
 };
 pub use request::OracleRequest;
+pub use response_tx::{HEADER_SIZE, create_response_tx};
 pub use security::{
     is_internal_ip, is_localhost_name, validate_url_for_ssrf, validated_external_addresses,
 };

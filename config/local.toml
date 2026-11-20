@@ -53,7 +53,9 @@ max_transactions_per_block = 100
 [mempool]
 max_transactions = 1000
 
-# Wave 4-5: Predictive Storage Prefetch + Tiered MPT Cache [PERFORMANCE]
+# PLANNED — not yet implemented in current release.
+# Intended predictive-prefetch design; no runtime code reads these keys today.
+# They are kept as the configuration contract for future work only.
 [performance.predictive_prefetch]
 enabled = true
 prediction_window_blocks = 10
@@ -61,6 +63,8 @@ hot_keys_per_block = 500
 prefetch_batch_size = 100
 prefetch_worker_threads = 2
 
+# PLANNED — not yet implemented in current release.
+# Intended tiered cache layout; no tier is wired to the store today.
 [performance.tiered_cache]
 tier0_capacity = 256              # Root branch buffer size
 tier1_capacity = 50000            # Hot native leaves

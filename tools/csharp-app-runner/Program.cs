@@ -2,7 +2,7 @@
 //
 // Mirrors neo-core/examples/vm_syscall_runner.rs: runs syscall scripts on a
 // HOSTED Neo.SmartContract.ApplicationEngine and emits the same result schema
-// as neo-vm/examples/vm_diff_runner.rs, so scripts/vm-diff.py can compare.
+// as neo-rpc-client/examples/vm_diff_runner.rs, so scripts/vm-diff.py can compare.
 //
 // Usage:
 //   dotnet run --project tools/csharp-app-runner -- <in.json> <out.json>

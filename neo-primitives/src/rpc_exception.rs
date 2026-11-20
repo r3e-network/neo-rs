@@ -42,7 +42,7 @@ impl RpcException {
     }
 
     /// Error code (matches JSON-RPC `code` field).
-    pub fn code(&self) -> i32 {
+    pub const fn code(&self) -> i32 {
         self.code
     }
 

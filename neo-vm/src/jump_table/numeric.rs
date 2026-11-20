@@ -1,38 +1,15 @@
 //! Numeric operations for the Neo Virtual Machine.
 
 use crate::error::{VmError, VmResult};
-use crate::execution_context::ExecutionContext;
 use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{JumpTable, register_jump_handlers};
+use crate::jump_table::{
+    JumpTable, binary_op, push_stack_value, register_jump_handlers, require_context,
+    semantics_error, value_from_stack_item,
+};
 use crate::semantics::{arithmetic, comparison};
 use crate::stack_item::StackItem;
 use crate::{Instruction, OpCode, StackValue};
 use num_traits::ToPrimitive;
-
-#[inline]
-fn require_context(engine: &mut ExecutionEngine) -> VmResult<&mut ExecutionContext> {
-    engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))
-}
-
-#[inline]
-fn semantics_error(error: String) -> VmError {
-    VmError::invalid_operation_msg(error)
-}
-
-#[inline]
-fn value_from_stack_item(item: StackItem) -> VmResult<StackValue> {
-    match item {
-        StackItem::Buffer(buffer) => Ok(StackValue::ByteString(buffer.data())),
-        item => StackValue::try_from(item),
-    }
-}
-
-#[inline]
-fn push_stack_value(ctx: &mut ExecutionContext, value: StackValue) -> VmResult<()> {
-    ctx.push(StackItem::try_from(value)?)
-}
 
 fn unary_numeric(
     engine: &mut ExecutionEngine,
@@ -41,17 +18,6 @@ fn unary_numeric(
     let ctx = require_context(engine)?;
     let value = value_from_stack_item(ctx.pop()?)?;
     let result = op(value).map_err(semantics_error)?;
-    push_stack_value(ctx, result)
-}
-
-fn binary_numeric(
-    engine: &mut ExecutionEngine,
-    op: fn(StackValue, StackValue) -> Result<StackValue, String>,
-) -> VmResult<()> {
-    let ctx = require_context(engine)?;
-    let right = value_from_stack_item(ctx.pop()?)?;
-    let left = value_from_stack_item(ctx.pop()?)?;
-    let result = op(left, right).map_err(semantics_error)?;
     push_stack_value(ctx, result)
 }
 
@@ -145,25 +111,25 @@ fn nz(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 
 #[inline]
 fn add(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    binary_numeric(engine, arithmetic::add_values)
+    binary_op(engine, arithmetic::add_values)
 }
 
 #[inline]
 fn sub(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    binary_numeric(engine, arithmetic::sub_values)
+    binary_op(engine, arithmetic::sub_values)
 }
 
 #[inline]
 fn mul(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    binary_numeric(engine, arithmetic::mul_values)
+    binary_op(engine, arithmetic::mul_values)
 }
 
 fn div(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    binary_numeric(engine, arithmetic::div_values)
+    binary_op(engine, arithmetic::div_values)
 }
 
 fn modulo(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    binary_numeric(engine, arithmetic::modulo_values)
+    binary_op(engine, arithmetic::modulo_values)
 }
 
 fn pow(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
@@ -222,11 +188,11 @@ fn shift(
 }
 
 fn min(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    binary_numeric(engine, arithmetic::min_values)
+    binary_op(engine, arithmetic::min_values)
 }
 
 fn max(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    binary_numeric(engine, arithmetic::max_values)
+    binary_op(engine, arithmetic::max_values)
 }
 
 fn within(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {

@@ -97,6 +97,48 @@ pub struct StorageSection {
     pub max_open_files: Option<u32>,
     #[serde(alias = "ReadOnly")]
     pub read_only: Option<bool>,
+    /// Speculative storage prefetching (`[storage.prefetch]`), off by default.
+    #[serde(alias = "Prefetch")]
+    pub prefetch: PrefetchSection,
+}
+
+/// Opt-in speculative prefetching, configured under `[storage.prefetch]`.
+///
+/// Every field is optional so an operator only states what they mean; an absent
+/// section leaves prefetching disabled, which is the production default.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct PrefetchSection {
+    /// Master switch. `false` (the default) makes prefetching inert.
+    #[serde(alias = "Enabled")]
+    pub enabled: Option<bool>,
+    /// Keys a single scan aims to prefetch.
+    #[serde(alias = "Count")]
+    pub count: Option<usize>,
+    /// Minimum access-pattern confidence (0-100) before a scan may start.
+    #[serde(alias = "ConfidenceThreshold")]
+    pub confidence_threshold: Option<u8>,
+    /// Minimum number of consecutive sequential observations before a scan.
+    #[serde(alias = "MinObservations")]
+    pub min_observations: Option<u32>,
+    /// Per-scan count and byte ceilings.
+    #[serde(alias = "Limits")]
+    pub limits: PrefetchLimitsSection,
+}
+
+/// Per-scan ceilings for speculative prefetching (`[storage.prefetch.limits]`).
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct PrefetchLimitsSection {
+    /// Rows a single scan may read from the backing store.
+    #[serde(alias = "MaxScanKeys")]
+    pub max_scan_keys: Option<usize>,
+    /// Keys a single scan may admit into the read cache.
+    #[serde(alias = "MaxAdmitKeys")]
+    pub max_admit_keys: Option<usize>,
+    /// Value bytes a single scan may admit into the read cache.
+    #[serde(alias = "MaxAdmitBytes")]
+    pub max_admit_bytes: Option<usize>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -116,12 +158,31 @@ pub struct ExecutionSection {
     /// `canonical`, `auto`, or `verify`; invalid values are rejected at startup.
     #[serde(alias = "Mode")]
     pub mode: String,
+    /// Enables observation-only persistence profiling.
+    ///
+    /// Profiling feeds the MPT stage and native hook telemetry families through
+    /// `neo_mpt_stage_seconds_total` and `neo_native_hook_seconds_total`. It
+    /// reads clocks around work the pipeline performs anyway and never changes
+    /// execution results.
+    #[serde(alias = "Profiling")]
+    pub profiling: bool,
+    /// Enables speculative parallel transaction execution.
+    ///
+    /// The scheduler executes a block's transactions on the Rayon pool against
+    /// isolated overlays and then commits them in block order, re-executing any
+    /// transaction whose read set a predecessor invalidated. Results, receipts,
+    /// notifications and faults are identical to the serial loop by
+    /// construction; only the wall-clock work moves. Disabled by default.
+    #[serde(alias = "ParallelEnabled")]
+    pub parallel_enabled: bool,
 }
 
 impl Default for ExecutionSection {
     fn default() -> Self {
         Self {
             mode: "canonical".to_string(),
+            profiling: false,
+            parallel_enabled: false,
         }
     }
 }

@@ -107,7 +107,7 @@ impl RpcNefFile {
 mod tests {
     use super::super::test_fixtures::rpc_case_result;
     use super::*;
-    use neo_io::MethodToken;
+    use neo_smart_contract::MethodToken;
 
     fn sample_nef() -> NefFile {
         NefFile {

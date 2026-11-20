@@ -216,8 +216,8 @@ impl UPnP {
             Some(pos) => {
                 let rest = &location[pos + 3..];
                 match rest.find('/') {
-                    Some(slash) => format!("{}{}", &location[..pos + 3 + slash], control),
-                    None => format!("{}/{}", location, control.trim_start_matches('/')),
+                    Some(slash) => format!("{}{control}", &location[..pos + 3 + slash]),
+                    None => format!("{location}/{}", control.trim_start_matches('/')),
                 }
             }
             None => format!(
@@ -248,8 +248,7 @@ impl UPnP {
         headers.insert(
             "SOAPACTION",
             HeaderValue::from_str(&format!(
-                "\"urn:schemas-upnp-org:service:WANIPConnection:1#{}\"",
-                command
+                "\"urn:schemas-upnp-org:service:WANIPConnection:1#{command}\""
             ))
             .map_err(|e| e.to_string())?,
         );
@@ -274,7 +273,7 @@ impl UPnP {
         let status = resp.status();
         let text = resp.text().map_err(|e| e.to_string())?;
         if !status.is_success() {
-            return Err(format!("UPnP SOAP error: HTTP {}: {}", status, text));
+            return Err(format!("UPnP SOAP error: HTTP {status}: {text}"));
         }
         Ok(text)
     }
@@ -299,14 +298,13 @@ impl UPnP {
 
         let args = format!(
             "<NewRemoteHost></NewRemoteHost>\
-            <NewExternalPort>{}</NewExternalPort>\
-            <NewProtocol>{}</NewProtocol>\
-            <NewInternalPort>{}</NewInternalPort>\
-            <NewInternalClient>{}</NewInternalClient>\
+            <NewExternalPort>{port}</NewExternalPort>\
+            <NewProtocol>{protocol}</NewProtocol>\
+            <NewInternalPort>{port}</NewInternalPort>\
+            <NewInternalClient>{internal_ip}</NewInternalClient>\
             <NewEnabled>1</NewEnabled>\
-            <NewPortMappingDescription>{}</NewPortMappingDescription>\
-            <NewLeaseDuration>0</NewLeaseDuration>",
-            port, protocol, port, internal_ip, description
+            <NewPortMappingDescription>{description}</NewPortMappingDescription>\
+            <NewLeaseDuration>0</NewLeaseDuration>"
         );
 
         Self::run_command(&service_url, "AddPortMapping", &args).is_ok()
@@ -328,9 +326,8 @@ impl UPnP {
 
         let args = format!(
             "<NewRemoteHost></NewRemoteHost>\
-            <NewExternalPort>{}</NewExternalPort>\
-            <NewProtocol>{}</NewProtocol>",
-            port, protocol
+            <NewExternalPort>{port}</NewExternalPort>\
+            <NewProtocol>{protocol}</NewProtocol>"
         );
 
         Self::run_command(&service_url, "DeletePortMapping", &args).is_ok()

@@ -2,9 +2,10 @@
 mod rocksdb_integration_tests {
     use neo_storage::persistence::providers::rocksdb::provider::RocksDBStoreProvider;
     use neo_storage::persistence::storage::StorageConfig;
-    use neo_storage::persistence::write_batch_buffer::WriteBatchConfig;
+    use neo_storage::persistence::write_batch_buffer::{WriteBatchBuffer, WriteBatchConfig};
     use neo_storage::persistence::{ReadOnlyStoreGeneric, StoreCache, StoreProvider};
     use neo_storage::{StorageItem, StorageKey};
+    use std::sync::Arc;
     use tempfile::TempDir;
 
     #[test]
@@ -329,6 +330,227 @@ mod rocksdb_integration_tests {
         // Verify deleted
         let reader = StoreCache::new_from_store(store, false);
         assert!(reader.try_get(&key).is_none());
+    }
+
+    /// Returns the newest `OPTIONS-*` snapshot RocksDB writes on open, which
+    /// records the option set the database actually runs with.
+    fn latest_options_snapshot(db_path: &std::path::Path) -> String {
+        let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(db_path)
+            .expect("db directory")
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with("OPTIONS-"))
+            })
+            .collect();
+        files.sort();
+        let newest = files.pop().expect("rocksdb writes an OPTIONS file on open");
+        std::fs::read_to_string(newest).expect("options snapshot is text")
+    }
+
+    fn option_value<'a>(snapshot: &'a str, key: &str) -> &'a str {
+        let prefix = format!("{key}=");
+        snapshot
+            .lines()
+            .find_map(|line| line.trim().strip_prefix(prefix.as_str()))
+            .unwrap_or_else(|| panic!("`{key}` missing from the rocksdb options snapshot"))
+    }
+
+    fn option_flag_is_set(snapshot: &str, key: &str) -> bool {
+        let value = option_value(snapshot, key).trim();
+        value == "1" || value.eq_ignore_ascii_case("true")
+    }
+
+    fn option_f64(snapshot: &str, key: &str) -> f64 {
+        option_value(snapshot, key)
+            .trim()
+            .parse()
+            .unwrap_or_else(|_| panic!("`{key}` is not a number in the rocksdb options snapshot"))
+    }
+
+    /// The point-lookup preset that used to be requested through
+    /// `Options::optimize_for_point_lookup` is now expressed directly. This
+    /// guards that the explicit `BlockBasedOptions` keeps every setting that
+    /// preset covered and that point reads over SST files stay correct.
+    #[test]
+    fn rocksdb_point_lookup_options_are_explicit_and_reads_stay_correct() {
+        let tmp = TempDir::new().expect("tempdir");
+        let db_path = tmp.path().join("point_lookup_options");
+
+        let provider = RocksDBStoreProvider::new(StorageConfig {
+            path: db_path.clone(),
+            cache_size: Some(32 * 1024 * 1024),
+            ..Default::default()
+        });
+        let store = provider.get_store("").expect("rocksdb store");
+
+        let mut cache = StoreCache::new_from_store(store.clone(), false);
+        for i in 0..128u16 {
+            cache.add(
+                StorageKey::new(11, i.to_be_bytes().to_vec()),
+                StorageItem::from_bytes(i.to_be_bytes().to_vec()),
+            );
+        }
+        cache.commit();
+        // Drains the memtables into SST files so the reads below are served by
+        // the block-based table configured in `build_db_options`.
+        store.flush();
+
+        let reader = StoreCache::new_from_store(store, false);
+        for i in 0..128u16 {
+            let key = StorageKey::new(11, i.to_be_bytes().to_vec());
+            let item = reader.get(&key).expect("point lookup after flush");
+            assert_eq!(item.value_bytes().as_ref(), i.to_be_bytes());
+        }
+        for i in 128..256u16 {
+            let key = StorageKey::new(11, i.to_be_bytes().to_vec());
+            assert!(
+                reader.try_get(&key).is_none(),
+                "absent key {i} must not be reported as present"
+            );
+        }
+
+        let snapshot = latest_options_snapshot(&db_path);
+        assert!(
+            snapshot.contains("[TableOptions/BlockBasedTable \"default\"]"),
+            "the snapshot must describe the block-based table the node runs"
+        );
+        let data_block_index = option_value(&snapshot, "data_block_index_type");
+        assert!(
+            data_block_index.contains("AndHash") || data_block_index == "1",
+            "data-block index must keep the point-lookup hash probe, got `{data_block_index}`"
+        );
+        assert!(
+            option_flag_is_set(&snapshot, "cache_index_and_filter_blocks"),
+            "index and filter blocks must stay cached in the block cache"
+        );
+        assert!(
+            option_flag_is_set(&snapshot, "pin_l0_filter_and_index_blocks_in_cache"),
+            "L0 filter and index blocks must stay pinned"
+        );
+        assert!(
+            option_value(&snapshot, "filter_policy")
+                .to_ascii_lowercase()
+                .contains("bloom"),
+            "the bloom filter must stay configured"
+        );
+        assert!(
+            (option_f64(&snapshot, "data_block_hash_table_util_ratio") - 0.75).abs() < f64::EPSILON,
+            "the data-block hash ratio must stay at the point-lookup preset's 0.75"
+        );
+        assert!(
+            option_value(&snapshot, "no_block_cache").trim() == "false",
+            "the block cache must stay attached to the table reader"
+        );
+        assert!(
+            option_flag_is_set(&snapshot, "whole_key_filtering"),
+            "SST bloom filters must stay whole-key"
+        );
+        assert!(
+            option_flag_is_set(&snapshot, "memtable_whole_key_filtering"),
+            "memtable point lookups must keep whole-key filtering"
+        );
+        assert!(
+            (option_f64(&snapshot, "memtable_prefix_bloom_size_ratio") - 0.1).abs() < f64::EPSILON,
+            "removing the point-lookup preset must not shrink the memtable bloom ratio back to 0.02"
+        );
+    }
+
+    #[test]
+    fn write_buffer_pending_bytes_mirror_the_staged_queue() {
+        let tmp = TempDir::new().expect("tempdir");
+        let db = Arc::new(
+            rocksdb::DB::open_default(tmp.path().join("pending_bytes")).expect("open rocksdb"),
+        );
+        let buffer = WriteBatchBuffer::new(
+            db,
+            WriteBatchConfig {
+                // Keep the thresholds out of reach so the staged operation stays
+                // buffered until the explicit flush below.
+                max_batch_size: 1_000,
+                max_delay_ms: 60_000,
+                min_operations: 20,
+                max_batch_bytes: 4 * 1024 * 1024,
+                ..WriteBatchConfig::balanced()
+            },
+        );
+
+        buffer.put(b"key", b"value").expect("stage put");
+
+        let staged = buffer.stats_snapshot();
+        assert_eq!(staged.pending_operations, 1);
+        assert_eq!(staged.pending_bytes, b"key".len() + b"value".len());
+        assert_eq!(staged.pending_bytes, buffer.pending_bytes());
+
+        buffer.flush().expect("flush");
+
+        let flushed = buffer.stats_snapshot();
+        assert_eq!(flushed.pending_operations, 0);
+        assert_eq!(flushed.pending_bytes, 0);
+        assert_eq!(flushed.batches_flushed, 1);
+        assert_eq!(flushed.operations_written, 1);
+        assert_eq!(
+            flushed.bytes_written as usize,
+            b"key".len() + b"value".len()
+        );
+    }
+
+    #[test]
+    fn store_reports_acceleration_stats_from_the_active_components() {
+        let tmp = TempDir::new().expect("tempdir");
+        let provider = RocksDBStoreProvider::new(StorageConfig {
+            path: tmp.path().join("acceleration"),
+            ..Default::default()
+        })
+        .with_batch_config(WriteBatchConfig::balanced());
+        let store = provider.get_store("").expect("rocksdb store");
+
+        // The provider enables the read cache, so the port must report its
+        // counters instead of `None`.
+        let idle = store
+            .acceleration_stats()
+            .expect("rocksdb reports acceleration stats");
+        assert!(
+            idle.read_cache.is_some(),
+            "read cache is enabled by default"
+        );
+        // The snapshot commit path calls `db.write_opt` directly, so the batch
+        // buffer never stages an operation and must be reported as absent rather
+        // than as an active component with fabricated zeroes.
+        assert!(
+            idle.write_buffer.is_none(),
+            "an unfed write buffer must not be reported as active"
+        );
+
+        let mut writer = StoreCache::new_from_store(Arc::clone(&store), false);
+        writer.add(
+            StorageKey::new(1, vec![7u8]),
+            StorageItem::from_bytes(vec![9u8; 16]),
+        );
+        writer.commit();
+
+        let after = store
+            .acceleration_stats()
+            .expect("rocksdb reports acceleration stats");
+        assert!(
+            after.write_buffer.is_none(),
+            "a direct commit must not invent buffered writes"
+        );
+
+        // A read through the committed generation exercises the read cache.
+        let reader = StoreCache::new_from_store(Arc::clone(&store), false);
+        assert!(reader.get(&StorageKey::new(1, vec![7u8])).is_some());
+        let read = store
+            .acceleration_stats()
+            .and_then(|stats| stats.read_cache)
+            .expect("read cache snapshot");
+        assert!(read.hits + read.misses > 0, "reads are counted");
+        assert!(
+            read.current_entries
+                <= neo_storage::persistence::ReadCacheConfig::default().max_entries,
+            "resident entries stay inside the configured budget"
+        );
     }
 }
 

@@ -41,10 +41,8 @@ pub trait NativeContract: Any + Send + Sync {
 
     /// Determines whether the native contract is active under the given settings.
     fn is_active(&self, settings: &ProtocolSettings, block_height: u32) -> bool {
-        match self.active_in() {
-            Some(hardfork) => settings.is_hardfork_enabled(hardfork, block_height),
-            None => true,
-        }
+        self.active_in()
+            .is_none_or(|hardfork| settings.is_hardfork_enabled(hardfork, block_height))
     }
 
     /// Returns hardforks that should trigger a contract manifest refresh.
@@ -324,14 +322,12 @@ pub fn is_active_for<T: HardforkActivable>(
 ) -> bool {
     // Interval semantics matching C# [ContractMethod(activeSince, deprecatedSince)]:
     // active from `active_in` (inclusive) until `deprecated_in` (exclusive).
-    let activated = match item.active_in() {
-        Some(hardfork) => hf_checker(hardfork, block_height),
-        None => true,
-    };
-    let retired = match item.deprecated_in() {
-        Some(hardfork) => hf_checker(hardfork, block_height),
-        None => false,
-    };
+    let activated = item
+        .active_in()
+        .is_none_or(|hardfork| hf_checker(hardfork, block_height));
+    let retired = item
+        .deprecated_in()
+        .is_some_and(|hardfork| hf_checker(hardfork, block_height));
     activated && !retired
 }
 

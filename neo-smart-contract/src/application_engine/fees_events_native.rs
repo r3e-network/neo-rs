@@ -320,9 +320,8 @@ impl ApplicationEngine {
         let block_height = self.current_block_index();
         if !native.is_active(&self.protocol_settings, block_height) {
             return Err(Error::invalid_operation(format!(
-                "Native contract {} is not active at height {}",
-                native.name(),
-                block_height
+                "Native contract {} is not active at height {block_height}",
+                native.name()
             )));
         }
         let cache_arc = self.native_contract_cache();
@@ -337,25 +336,22 @@ impl ApplicationEngine {
         }
         .ok_or_else(|| {
             Error::invalid_operation(format!(
-                "Method '{}({})' not found in native contract {} at height {}",
-                method,
+                "Method '{method}({})' not found in native contract {} at height {block_height}",
                 args.len(),
-                native.name(),
-                block_height
+                native.name()
             ))
         })?;
         let required_flags =
             CallFlags::from_bits(method_meta.required_call_flags).ok_or_else(|| {
                 Error::invalid_operation(format!(
-                    "Method '{}' in native contract {} specifies invalid call flags",
-                    method,
+                    "Method '{method}' in native contract {} specifies invalid call flags",
                     native.name()
                 ))
             })?;
         if !self.call_flags.contains(required_flags) {
             return Err(Error::invalid_operation(format!(
-                "Call flags {:?} do not satisfy required permissions {:?} for {}",
-                self.call_flags, required_flags, method
+                "Call flags {:?} do not satisfy required permissions {required_flags:?} for {method}",
+                self.call_flags
             )));
         }
         let is_whitelisted = self
@@ -368,16 +364,12 @@ impl ApplicationEngine {
             && self.fee_amount.saturating_sub(self.fee_consumed) < 1_000_000 * FEE_FACTOR
         {
             eprintln!(
-                "TRACE native block={} contract={} hash={} method={} cpu_fee={} storage_fee={} consumed_pico={} remaining_pico={} whitelisted={}",
-                block_height,
+                "TRACE native block={block_height} contract={} hash={contract_hash} method={method} cpu_fee={} storage_fee={} consumed_pico={} remaining_pico={} whitelisted={is_whitelisted}",
                 native.name(),
-                contract_hash,
-                method,
                 method_meta.cpu_fee,
                 method_meta.storage_fee,
                 self.fee_consumed,
                 self.fee_amount.saturating_sub(self.fee_consumed),
-                is_whitelisted,
             );
         }
         if !is_whitelisted {
@@ -400,11 +392,8 @@ impl ApplicationEngine {
         }
         let result = native.invoke(self, method, args).map_err(|err| {
             Error::native_contract(format!(
-                "{}({}) method `{}` failed: {}",
-                native.name(),
-                contract_hash,
-                method,
-                err
+                "{}({contract_hash}) method `{method}` failed: {err}",
+                native.name()
             ))
         });
         if changes_fee_whitelist {

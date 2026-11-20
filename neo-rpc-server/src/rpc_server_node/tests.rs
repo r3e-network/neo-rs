@@ -599,10 +599,12 @@ async fn send_raw_transaction_reports_invalid_signature() {
     store.commit();
 
     let mut tx = build_signed_transaction(&settings, &keypair, 4, 0);
-    if let Some(witness) = tx.witnesses_mut().get_mut(0)
-        && let Some(last) = witness.invocation_script.last_mut()
-    {
-        *last ^= 0x01;
+    if let Some(witness) = tx.witnesses_mut().get_mut(0) {
+        let mut invocation_script = witness.invocation_script().to_vec();
+        if let Some(last) = invocation_script.last_mut() {
+            *last ^= 0x01;
+        }
+        witness.set_invocation_script(invocation_script);
     }
 
     let payload = BASE64_STANDARD.encode(tx.to_bytes());

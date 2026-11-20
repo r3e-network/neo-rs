@@ -17,6 +17,21 @@ fn message_hash(index: u32) -> UInt256 {
 }
 
 #[test]
+fn quorum_helpers_follow_the_dbft_threshold() {
+    // C# `ConsensusContext`: f = (n - 1) / 3, M = n - f.
+    assert_eq!((fault_tolerance(0), required_signatures(0)), (0, 0));
+    assert_eq!((fault_tolerance(1), required_signatures(1)), (0, 1));
+    assert_eq!((fault_tolerance(4), required_signatures(4)), (1, 3));
+    assert_eq!((fault_tolerance(7), required_signatures(7)), (2, 5));
+    assert_eq!((fault_tolerance(10), required_signatures(10)), (3, 7));
+    assert_eq!((fault_tolerance(21), required_signatures(21)), (6, 15));
+
+    let ctx = ConsensusContext::new(100, create_test_validators(7), Some(0), None);
+    assert_eq!(ctx.f(), fault_tolerance(7));
+    assert_eq!(ctx.m(), required_signatures(7));
+}
+
+#[test]
 fn test_consensus_context_new() {
     let validators = create_test_validators(7);
     let ctx = ConsensusContext::new(100, validators, Some(0), None);

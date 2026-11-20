@@ -4,7 +4,6 @@ use crate::messages::CommitMessage;
 use crate::{ConsensusError, ConsensusMessageType, ConsensusResult, ConsensusSignContext};
 use neo_crypto::Crypto;
 use neo_primitives::{UInt160, UInt256};
-use neo_vm::OpCode;
 use neo_vm::ScriptBuilder;
 use tracing::{debug, info, warn};
 
@@ -18,17 +17,10 @@ pub(in crate::service) fn invocation_script_from_signature(signature: &[u8]) -> 
 ///
 /// Returns `Option<&[u8]>` to avoid unnecessary allocation.
 /// The signature slice is a reference into the input invocation script,
-/// valid for the lifetime of the input.
+/// valid for the lifetime of the input. The `PUSHDATA1`/length layout is owned
+/// by `neo-vm` and shared with ledger witness validation.
 pub(in crate::service) fn signature_from_invocation_script(invocation: &[u8]) -> Option<&[u8]> {
-    if invocation.len() != 66 {
-        return None;
-    }
-    if invocation[0] != OpCode::PUSHDATA1.byte() || invocation[1] != 0x40 {
-        return None;
-    }
-    // Return a slice instead of allocating a new Vec.
-    // The caller can call .to_vec() if they need an owned copy.
-    Some(&invocation[2..66])
+    neo_vm::script::parse_single_signature_invocation(invocation)
 }
 
 impl ConsensusService {

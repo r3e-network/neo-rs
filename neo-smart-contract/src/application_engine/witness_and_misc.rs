@@ -152,6 +152,7 @@ impl ApplicationEngine {
             .map(|(key, _)| key)
             .collect();
         for key in keys {
+            self.record_rw_storage_write_key(&key);
             self.snapshot_cache.delete(&key);
         }
         Ok(())
@@ -300,19 +301,23 @@ impl ApplicationEngine {
     /// Sets a storage item directly (for testing and internal use).
     pub fn set_storage(&mut self, key: StorageKey, item: StorageItem) -> Result<()> {
         if self.snapshot_cache.get(&key).is_some() {
-            self.snapshot_cache.update(key, item);
+            self.snapshot_cache.update(key.clone(), item);
         } else {
-            self.snapshot_cache.add(key, item);
+            self.snapshot_cache.add(key.clone(), item);
         }
+        self.record_rw_storage_write_key(&key);
         Ok(())
     }
     /// Gets a storage item directly (for testing and internal use).
     pub fn get_storage(&self, key: &StorageKey) -> Option<StorageItem> {
-        self.snapshot_cache.get(key)
+        let item = self.snapshot_cache.get(key);
+        self.record_rw_storage_read(key.id(), key.suffix(), item.is_some());
+        item
     }
     /// Deletes a storage item directly (for testing and internal use).
     pub fn delete_storage(&mut self, key: &StorageKey) -> Result<()> {
         self.snapshot_cache.delete(key);
+        self.record_rw_storage_write_key(key);
         Ok(())
     }
     /// Gets the storage context for a native contract.

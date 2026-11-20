@@ -35,10 +35,15 @@ use neo_ledger::persistence::{
     ApplicationEnginePort, CommitParticipant, EngineFactory, EvidenceSink, ExecutionReceipt,
     FaultCategory, FaultObservation, LedgerError, NativeCacheHandle, NativeEnginePort,
     PersistOptions, PersistenceProfiler, PersistenceStage, RuntimeCacheSink, SeededNativeContracts,
-    SnapshotStore, StoreTransactionPort,
+    SnapshotStore, SpeculativeExecution, StoreTransactionPort, TransactionLoopStrategy,
 };
 use neo_primitives::{CallFlags, TriggerType, UInt160, UInt256, Verifiable};
 use neo_protocol::execution::{ApplicationExecuted, Block};
+use neo_smart_contract::application_engine::execution_strategy::{
+    CanonicalVerificationSource, ExecutionMode, ExecutionReport, ExecutionRequest,
+    ExecutionStrategy, ExecutionStrategyObserver, TransferParams, execute_application_script,
+    parse_fast_path_candidate,
+};
 use neo_smart_contract::application_engine::{
     ApplicationEngine, EngineNativeServices, LedgerTransactionStates, TEST_MODE_GAS,
 };
@@ -48,31 +53,7 @@ use neo_storage::persistence::{
     DataCache, StoreCommitProfiler, StoreCommitStage, StoreTransaction, store::Store,
 };
 use neo_vm::VmState;
-use neo_vm::fast_path::{Nep17Parser, TransferParams};
 use parking_lot::Mutex;
-
-/// Selects the transaction execution engine used by block persistence.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ExecutionMode {
-    /// Always execute through the canonical VM interpreter.
-    #[default]
-    Canonical,
-    /// Use direct native dispatch only after strict script and state eligibility checks.
-    Auto,
-    /// Dual-execute eligible transfers on isolated snapshots and reject any divergence.
-    Verify,
-}
-
-impl ExecutionMode {
-    /// Returns the stable configuration value for this mode.
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Canonical => "canonical",
-            Self::Auto => "auto",
-            Self::Verify => "verify",
-        }
-    }
-}
 
 const PROFILE_SNAPSHOT_OPEN: usize = 0;
 const PROFILE_TRANSACTION_HASH: usize = 1;
@@ -203,10 +184,65 @@ pub struct ContractCallProfile {
     pub elapsed: Duration,
 }
 
+/// Observation-only projection of the fast-path counters.
+///
+/// Every field counts events the execution strategy already decided; reading it
+/// never changes an execution result.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FastPathStatsSnapshot {
+    /// Direct native dispatches that actually ran.
+    pub direct_attempts: u64,
+    /// Direct native dispatches that ended in `HALT`.
+    pub direct_halts: u64,
+    /// Direct native dispatches that ended in a canonical `FAULT`.
+    pub direct_faults: u64,
+    /// Parsed transfers rejected by the engine-side eligibility checks.
+    pub eligibility_declines: u64,
+    /// Verify-mode executions that fell back to the canonical interpreter.
+    pub canonical_fallbacks: u64,
+    /// Dual executions whose fingerprints diverged.
+    pub verification_mismatches: u64,
+}
+
+/// Observation-only projection of the speculative scheduler counters.
+///
+/// Every field counts something the scheduler already decided. Reading the
+/// snapshot never changes an execution result, and none of these values reach
+/// consensus state.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ParallelExecutionSnapshot {
+    /// Blocks whose transactions were executed speculatively before validation.
+    pub speculative_blocks: u64,
+    /// Transactions executed speculatively (including later discarded runs).
+    pub speculative_transactions: u64,
+    /// Speculative runs rejected by the ordered validation.
+    pub conflicts: u64,
+    /// Transactions re-executed serially against the committed state.
+    pub reexecutions: u64,
+    /// Blocks that were routed to the serial loop (empty, single, or fallback).
+    pub serial_fallbacks: u64,
+    /// Wall-clock nanoseconds spent inside the speculative scheduler.
+    pub parallel_nanos: u64,
+    /// Wall-clock nanoseconds spent inside the serial loop while parallel was enabled.
+    pub serial_nanos: u64,
+}
+
 /// Process-local execution counters. These are observability data, never consensus state.
 #[derive(Debug)]
 pub struct ExecutionStats {
     direct_transfers: AtomicU64,
+    fast_path_declines: AtomicU64,
+    direct_halts: AtomicU64,
+    direct_faults: AtomicU64,
+    canonical_fallbacks: AtomicU64,
+    verification_mismatches: AtomicU64,
+    speculative_blocks: AtomicU64,
+    speculative_transactions: AtomicU64,
+    speculative_conflicts: AtomicU64,
+    speculative_reexecutions: AtomicU64,
+    speculative_serial_fallbacks: AtomicU64,
+    speculative_parallel_nanos: AtomicU64,
+    speculative_serial_nanos: AtomicU64,
     profiling_enabled: AtomicBool,
     profile_nanos: [AtomicU64; PROFILE_STAGE_COUNT],
     empty_profile_nanos: [AtomicU64; PROFILE_STAGE_COUNT],
@@ -223,6 +259,18 @@ impl Default for ExecutionStats {
     fn default() -> Self {
         Self {
             direct_transfers: AtomicU64::default(),
+            fast_path_declines: AtomicU64::default(),
+            direct_halts: AtomicU64::default(),
+            direct_faults: AtomicU64::default(),
+            canonical_fallbacks: AtomicU64::default(),
+            verification_mismatches: AtomicU64::default(),
+            speculative_blocks: AtomicU64::default(),
+            speculative_transactions: AtomicU64::default(),
+            speculative_conflicts: AtomicU64::default(),
+            speculative_reexecutions: AtomicU64::default(),
+            speculative_serial_fallbacks: AtomicU64::default(),
+            speculative_parallel_nanos: AtomicU64::default(),
+            speculative_serial_nanos: AtomicU64::default(),
             profiling_enabled: AtomicBool::default(),
             profile_nanos: std::array::from_fn(|_| AtomicU64::default()),
             empty_profile_nanos: std::array::from_fn(|_| AtomicU64::default()),
@@ -238,9 +286,113 @@ impl Default for ExecutionStats {
 }
 
 impl ExecutionStats {
-    /// Number of transactions actually executed by direct native NEP-17 dispatch.
+    /// Number of transactions dispatched by direct native NEP-17 dispatch.
+    ///
+    /// Attempts that faulted are included: they still ran the fast path and
+    /// produced a receipt. Transfers declined by eligibility checks are not.
     pub fn direct_transfer_count(&self) -> u64 {
         self.direct_transfers.load(Ordering::Relaxed)
+    }
+
+    /// Returns a consistent-enough snapshot of the fast-path counters.
+    ///
+    /// This is observability data only; nothing in the consensus path reads it.
+    pub fn fast_path_snapshot(&self) -> FastPathStatsSnapshot {
+        FastPathStatsSnapshot {
+            direct_attempts: self.direct_transfers.load(Ordering::Relaxed),
+            direct_halts: self.direct_halts.load(Ordering::Relaxed),
+            direct_faults: self.direct_faults.load(Ordering::Relaxed),
+            eligibility_declines: self.fast_path_declines.load(Ordering::Relaxed),
+            canonical_fallbacks: self.canonical_fallbacks.load(Ordering::Relaxed),
+            verification_mismatches: self.verification_mismatches.load(Ordering::Relaxed),
+        }
+    }
+
+    /// Returns a consistent-enough snapshot of the speculative scheduler counters.
+    ///
+    /// This is observability data only; nothing in the consensus path reads it.
+    pub fn parallel_snapshot(&self) -> ParallelExecutionSnapshot {
+        ParallelExecutionSnapshot {
+            speculative_blocks: self.speculative_blocks.load(Ordering::Relaxed),
+            speculative_transactions: self.speculative_transactions.load(Ordering::Relaxed),
+            conflicts: self.speculative_conflicts.load(Ordering::Relaxed),
+            reexecutions: self.speculative_reexecutions.load(Ordering::Relaxed),
+            serial_fallbacks: self.speculative_serial_fallbacks.load(Ordering::Relaxed),
+            parallel_nanos: self.speculative_parallel_nanos.load(Ordering::Relaxed),
+            serial_nanos: self.speculative_serial_nanos.load(Ordering::Relaxed),
+        }
+    }
+
+    pub(crate) fn record_speculative_block(&self) {
+        self.speculative_blocks.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(crate) fn record_speculative_transactions(&self, count: u64) {
+        self.speculative_transactions
+            .fetch_add(count, Ordering::Relaxed);
+    }
+
+    pub(crate) fn record_speculative_conflict(&self) {
+        self.speculative_conflicts.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(crate) fn record_speculative_reexecution(&self) {
+        self.speculative_reexecutions
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(crate) fn record_serial_fallback(&self) {
+        self.speculative_serial_fallbacks
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(crate) fn record_parallel_elapsed(&self, elapsed: Duration) {
+        let nanos = u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX);
+        self.speculative_parallel_nanos
+            .fetch_add(nanos, Ordering::Relaxed);
+    }
+
+    pub(crate) fn record_serial_elapsed(&self, elapsed: Duration) {
+        let nanos = u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX);
+        self.speculative_serial_nanos
+            .fetch_add(nanos, Ordering::Relaxed);
+    }
+
+    /// Classifies one finished application execution into the fast-path counters.
+    ///
+    /// `strategy` names the interpreter that actually ran and `verification_error`
+    /// carries the reason recorded by the strategy layer, so every bucket here is
+    /// derived from a fact the execution already produced.
+    fn record_strategy_outcome(
+        &self,
+        strategy: ExecutionStrategy,
+        state: VmState,
+        verification_error: Option<&str>,
+    ) {
+        match strategy {
+            ExecutionStrategy::DirectTransfer => {
+                match state {
+                    VmState::HALT => {
+                        self.direct_halts.fetch_add(1, Ordering::Relaxed);
+                    }
+                    VmState::FAULT => {
+                        self.direct_faults.fetch_add(1, Ordering::Relaxed);
+                    }
+                    _ => {}
+                }
+                if verification_error.is_some() {
+                    self.verification_mismatches.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            ExecutionStrategy::Canonical => {
+                // A canonical run that recorded a reason is the verify-mode
+                // fallback: the direct path was skipped because the isolated
+                // comparison context was unavailable.
+                if verification_error.is_some() {
+                    self.canonical_fallbacks.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        }
     }
 
     /// Enables or disables detailed persistence timing. Enabling starts a new sample.
@@ -401,8 +553,18 @@ impl ExecutionStats {
         }
     }
 
-    fn record_direct_transfer(&self) {
+    fn bump_direct_transfer_attempt(&self) {
         self.direct_transfers.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+impl ExecutionStrategyObserver for ExecutionStats {
+    fn record_direct_transfer_attempt(&self) {
+        self.bump_direct_transfer_attempt();
+    }
+
+    fn record_fast_path_decline(&self) {
+        self.fast_path_declines.fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -496,21 +658,6 @@ impl neo_smart_contract::application_engine::ApplicationEngineProfiler for Execu
     }
 }
 
-impl std::str::FromStr for ExecutionMode {
-    type Err = String;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "canonical" => Ok(Self::Canonical),
-            "auto" => Ok(Self::Auto),
-            "verify" => Ok(Self::Verify),
-            other => Err(format!(
-                "unsupported execution mode '{other}'; expected canonical, auto, or verify"
-            )),
-        }
-    }
-}
-
 use super::context::{
     NeoSystemContext, TRANSACTION_EXECUTION_OBSERVATION_RULE_VERSION,
     TRANSACTION_EXECUTION_OBSERVATION_SCHEMA_VERSION, TransactionExecutionExceptionCategory,
@@ -581,7 +728,6 @@ impl SnapshotStore for SystemSnapshotStore {
         let config = DataCacheConfig {
             track_reads_in_write_cache: true,
             enable_read_cache: false,
-            enable_prefetching: false,
             ..Default::default()
         };
         let mut transaction =
@@ -619,7 +765,6 @@ impl EmptyBlockWriteBack {
         let config = DataCacheConfig {
             track_reads_in_write_cache: true,
             enable_read_cache: false,
-            enable_prefetching: false,
             ..Default::default()
         };
         let mut transaction = StoreTransaction::from_snapshot_with_config(store.snapshot(), config);
@@ -797,28 +942,48 @@ impl ExecutionRecorder {
         }
     }
 
-    fn capture(&self, engine: &mut ApplicationEngine) -> ExecutionReceipt {
+    /// Projects the receipt the canonical serial loop would report for `engine`.
+    ///
+    /// This performs no bookkeeping: it neither marks the transaction state nor
+    /// publishes an observation, so a speculative run can ask for the receipt
+    /// before its commit order is known.
+    fn receipt(engine: &mut ApplicationEngine) -> ExecutionReceipt {
+        let transaction_hash = engine
+            .script_container()
+            .and_then(|container| {
+                container
+                    .as_any()
+                    .downcast_ref::<neo_protocol::payloads::Transaction>()
+                    .cloned()
+            })
+            .as_ref()
+            .map(neo_protocol::payloads::Transaction::hash);
+        ExecutionReceipt {
+            trigger: engine.trigger(),
+            transaction_hash,
+            vm_state: engine.state(),
+            gas_consumed: engine.fee_consumed(),
+            exception: engine.fault_exception().map(str::to_owned),
+        }
+    }
+
+    /// Builds the observation record for `engine` and marks the transaction state.
+    ///
+    /// The returned record is *not* published; callers either [`Self::publish`] it
+    /// immediately (serial path) or hold it until the ordered validation releases it
+    /// (speculative path), which is what keeps observation order equal to block order.
+    fn project(&self, engine: &mut ApplicationEngine) -> (ApplicationExecuted, ExecutionReceipt) {
+        let receipt = Self::receipt(engine);
+        if let Some(hash) = receipt.transaction_hash {
+            let state = engine.state();
+            engine.record_transaction_vm_state(&hash, state);
+        }
         let transaction = engine.script_container().and_then(|container| {
             container
                 .as_any()
                 .downcast_ref::<neo_protocol::payloads::Transaction>()
                 .cloned()
         });
-        let transaction_hash = transaction
-            .as_ref()
-            .map(neo_protocol::payloads::Transaction::hash);
-        if let Some(hash) = transaction_hash {
-            let state = engine.state();
-            engine.record_transaction_vm_state(&hash, state);
-        }
-
-        let receipt = ExecutionReceipt {
-            trigger: engine.trigger(),
-            transaction_hash,
-            vm_state: engine.state(),
-            gas_consumed: engine.fee_consumed(),
-            exception: engine.fault_exception().map(str::to_owned),
-        };
         let executed = ApplicationExecuted::new(
             transaction,
             receipt.trigger,
@@ -829,10 +994,20 @@ impl ExecutionRecorder {
             engine.notifications().to_vec(),
             engine.logs().to_vec(),
         );
+        (executed, receipt)
+    }
+
+    /// Releases one observation record to the event stream and the block snapshot.
+    fn publish(&self, executed: ApplicationExecuted) {
         if let Some(event_stream) = self.event_stream.lock().as_ref() {
             event_stream.publish(executed.clone());
         }
         self.executions.lock().push(executed);
+    }
+
+    fn capture(&self, engine: &mut ApplicationEngine) -> ExecutionReceipt {
+        let (executed, receipt) = self.project(engine);
+        self.publish(executed);
         receipt
     }
 
@@ -875,6 +1050,7 @@ impl SystemEngineFactory {
             transfer: None,
             verification: None,
             verification_error: None,
+            pending_capture: None,
         }
     }
 }
@@ -910,17 +1086,20 @@ impl EngineFactory for SystemEngineFactory {
         cache: &NativeCacheHandle,
     ) -> Result<Box<dyn ApplicationEnginePort>, LedgerError> {
         let payload_block = self.payload_block(&block);
+        // Only `verify` dual-executes, so only it pays for an isolated source.
         let verification =
-            (self.execution_mode == ExecutionMode::Verify).then(|| VerificationContext {
-                container: Arc::clone(&container),
-                snapshot: Arc::clone(&snapshot),
-                payload_block: Arc::clone(&payload_block),
-                system_fee,
-                seeded: seeded.clone(),
-                cache: Arc::clone(cache),
-                settings: self.settings.clone(),
-                native_services: self.native_services.clone(),
-            });
+            self.execution_mode
+                .requires_isolated_source()
+                .then(|| VerificationContext {
+                    container: Arc::clone(&container),
+                    snapshot: Arc::clone(&snapshot),
+                    payload_block: Arc::clone(&payload_block),
+                    system_fee,
+                    seeded: seeded.clone(),
+                    cache: Arc::clone(cache),
+                    settings: self.settings.clone(),
+                    native_services: self.native_services.clone(),
+                });
         let engine = ApplicationEngine::new_with_preloaded_native_shared(
             TriggerType::Application,
             Some(container),
@@ -975,8 +1154,8 @@ struct VerificationContext {
     native_services: EngineNativeServices,
 }
 
-impl VerificationContext {
-    fn execute_canonical(&self, script: Vec<u8>) -> Result<ApplicationEngine, String> {
+impl CanonicalVerificationSource for VerificationContext {
+    fn execute_canonical(&self, script: &[u8]) -> Result<ApplicationEngine, String> {
         let isolated = Arc::new(self.snapshot.fork_isolated());
         let mut engine = ApplicationEngine::new_with_preloaded_native_shared(
             TriggerType::Application,
@@ -992,56 +1171,10 @@ impl VerificationContext {
         )
         .map_err(|error| error.to_string())?;
         engine
-            .load_script(script, CallFlags::ALL, None)
+            .load_script(script.to_vec(), CallFlags::ALL, None)
             .map_err(|error| error.to_string())?;
         engine.execute_allow_fault();
         Ok(engine)
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct ExecutionFingerprint {
-    state: VmState,
-    fee_consumed: i64,
-    exception: Option<String>,
-    result_stack: Vec<neo_vm::StackItem>,
-    notifications: Vec<(UInt160, String, Vec<neo_vm::StackItem>)>,
-    logs: Vec<(UInt160, String)>,
-    storage: Vec<(Vec<u8>, u8, Vec<u8>)>,
-}
-
-impl ExecutionFingerprint {
-    fn capture(engine: &ApplicationEngine) -> Self {
-        let mut storage: Vec<_> = engine
-            .original_snapshot_cache()
-            .tracked_items()
-            .into_iter()
-            .map(|(key, entry)| (key.to_array(), entry.state as u8, entry.item.to_value()))
-            .collect();
-        storage.sort_by(|left, right| left.0.cmp(&right.0));
-        Self {
-            state: engine.state(),
-            fee_consumed: engine.fee_consumed(),
-            exception: engine.fault_exception().map(str::to_owned),
-            result_stack: engine.result_stack().to_vec(),
-            notifications: engine
-                .notifications()
-                .iter()
-                .map(|event| {
-                    (
-                        event.script_hash,
-                        event.event_name.clone(),
-                        event.state.clone(),
-                    )
-                })
-                .collect(),
-            logs: engine
-                .logs()
-                .iter()
-                .map(|event| (event.script_hash, event.message.clone()))
-                .collect(),
-            storage,
-        }
     }
 }
 
@@ -1054,6 +1187,9 @@ struct SystemEnginePort {
     transfer: Option<TransferParams>,
     verification: Option<VerificationContext>,
     verification_error: Option<String>,
+    /// Observation record produced by a speculative run and held back until the
+    /// ordered validation decides the transaction's position in commit order.
+    pending_capture: Option<ApplicationExecuted>,
 }
 
 impl SystemEnginePort {
@@ -1063,56 +1199,30 @@ impl SystemEnginePort {
             .unwrap_or_else(|| LedgerTransactionStates::new(Vec::new()))
     }
 
-    fn eligible_transfer(&mut self) -> Option<TransferParams> {
-        let params = self.transfer.clone()?;
-        self.engine
-            .can_execute_direct_nep17_transfer(&params)
-            .then_some(params)
-    }
-
-    fn execute_auto(&mut self) -> VmState {
-        match self.eligible_transfer() {
-            Some(params) => {
-                self.stats.record_direct_transfer();
-                self.engine.execute_direct_nep17_transfer(&params)
-            }
-            None => self.engine.execute_allow_fault(),
-        }
-    }
-
-    fn execute_verified(&mut self) -> VmState {
-        if self.eligible_transfer().is_none() {
-            return self.engine.execute_allow_fault();
-        }
-        let Some(verification) = self.verification.clone() else {
-            self.verification_error = Some("missing isolated verification context".to_string());
-            return self.engine.execute_allow_fault();
+    /// Delegates the execution-strategy decision to the smart-contract layer
+    /// and retains only the failure surfaced by dual execution.
+    fn execute_application(&mut self) -> VmState {
+        let request = ExecutionRequest {
+            mode: self.execution_mode,
+            transfer: self.transfer.as_ref(),
+            script: self.script.as_deref(),
+            canonical_source: self
+                .verification
+                .as_ref()
+                .map(|source| source as &dyn CanonicalVerificationSource),
+            observer: Some(self.stats.as_ref() as &dyn ExecutionStrategyObserver),
         };
-        let Some(script) = self.script.clone() else {
-            self.verification_error = Some("missing script for isolated verification".to_string());
-            return self.engine.execute_allow_fault();
-        };
-        let canonical = match verification.execute_canonical(script) {
-            Ok(engine) => engine,
-            Err(error) => {
-                self.verification_error = Some(format!(
-                    "failed to construct isolated canonical verification: {error}"
-                ));
-                return self.engine.execute_allow_fault();
-            }
-        };
-        let direct_state = self.execute_auto();
-        let expected = ExecutionFingerprint::capture(&canonical);
-        let actual = ExecutionFingerprint::capture(&self.engine);
-        if expected != actual {
-            self.verification_error = Some(format!(
-                "direct/canonical execution divergence: expected {expected:?}, got {actual:?}"
-            ));
+        let ExecutionReport {
+            state,
+            strategy,
+            verification_error,
+        } = execute_application_script(&mut self.engine, &request);
+        self.stats
+            .record_strategy_outcome(strategy, state, verification_error.as_deref());
+        if let Some(message) = verification_error {
+            self.verification_error = Some(message);
         }
-        // Keep the canonical engine alive through fingerprint capture; its
-        // isolated snapshot is never committed into the ledger overlay.
-        drop(canonical);
-        direct_state
+        state
     }
 }
 
@@ -1160,7 +1270,7 @@ impl NativeEnginePort for SystemEnginePort {
 
 impl ApplicationEnginePort for SystemEnginePort {
     fn load_script(&mut self, script: Vec<u8>) -> Result<(), LedgerError> {
-        self.transfer = Nep17Parser::parse_transfer_script(&script).ok();
+        self.transfer = parse_fast_path_candidate(&script);
         self.script = Some(script.clone());
         self.verification_error = None;
         self.engine
@@ -1169,11 +1279,7 @@ impl ApplicationEnginePort for SystemEnginePort {
     }
 
     fn execute_allow_fault(&mut self) -> VmState {
-        match self.execution_mode {
-            ExecutionMode::Canonical => self.engine.execute_allow_fault(),
-            ExecutionMode::Auto => self.execute_auto(),
-            ExecutionMode::Verify => self.execute_verified(),
-        }
+        self.execute_application()
     }
 
     fn verify_execution(&self) -> Result<(), LedgerError> {
@@ -1208,6 +1314,28 @@ impl ApplicationEnginePort for SystemEnginePort {
 
     fn execution_receipt(&mut self) -> ExecutionReceipt {
         self.recorder.capture(&mut self.engine)
+    }
+
+    fn enable_rw_set_tracking_at_generation(&mut self, generation: u64) {
+        self.engine.enable_rw_set_tracking_at_generation(generation);
+    }
+
+    fn capture_speculative(&mut self, detailed: bool) -> Option<SpeculativeExecution> {
+        let rw_set = self.engine.take_rw_set()?;
+        let receipt = if detailed {
+            let (executed, receipt) = self.recorder.project(&mut self.engine);
+            self.pending_capture = Some(executed);
+            receipt
+        } else {
+            ExecutionRecorder::receipt(&mut self.engine)
+        };
+        Some(SpeculativeExecution { receipt, rw_set })
+    }
+
+    fn publish_capture(&mut self) {
+        if let Some(executed) = self.pending_capture.take() {
+            self.recorder.publish(executed);
+        }
     }
 }
 
@@ -1273,10 +1401,17 @@ impl NeoSystem {
     /// requires discarding this `NeoSystem`: committed callbacks from earlier logical
     /// blocks may already have advanced process-local state even though the batch's
     /// physical transaction was not committed.
+    ///
+    /// This method enforces that requirement itself instead of leaving it to callers.
+    /// Once a batch has started, the first failure poisons this instance: the
+    /// process-local tip, state root and callback state may be ahead of durable
+    /// storage, so every later persistence call (including this one) is rejected with
+    /// a poison error until the instance is dropped and storage is reopened.
     pub fn persist_consecutive_empty_blocks_without_runtime_cache(
         &self,
         mut blocks: Vec<neo_protocol::payloads::Block>,
     ) -> Result<Vec<Vec<ApplicationExecuted>>, String> {
+        self.ensure_persistence_live()?;
         if !(2..=Self::MAX_EMPTY_BLOCK_WRITE_BACK_BLOCKS).contains(&blocks.len()) {
             return Err(format!(
                 "empty-block write-back requires 2..={} blocks",
@@ -1304,17 +1439,25 @@ impl NeoSystem {
         let store =
             SystemSnapshotStore::for_empty_block_batch(self.store(), commit_profiler, blocks.len());
         let execution_mode = self.execution_mode();
-        let mut executions = Vec::with_capacity(blocks.len());
-        for block in blocks {
-            executions.push(self.persist_block_with_store(
-                Block::from(&block),
-                false,
-                execution_mode,
-                &store,
-            )?);
+        // Every step below may advance process-local state before the batch's
+        // physical commit, so any failure must poison this instance.
+        let result = (|| {
+            let mut executions = Vec::with_capacity(blocks.len());
+            for block in blocks {
+                executions.push(self.persist_block_with_store(
+                    Block::from(&block),
+                    false,
+                    execution_mode,
+                    &store,
+                )?);
+            }
+            store.finish_empty_block_batch()?;
+            Ok(executions)
+        })();
+        if result.is_err() {
+            self.poison_persistence();
         }
-        store.finish_empty_block_batch()?;
-        Ok(executions)
+        result
     }
 
     fn persist_block_internal(
@@ -1323,6 +1466,7 @@ impl NeoSystem {
         update_runtime_cache: bool,
         execution_mode: ExecutionMode,
     ) -> Result<Vec<ApplicationExecuted>, String> {
+        self.ensure_persistence_live()?;
         let commit_profiler = self
             .execution_stats
             .profiling_enabled
@@ -1369,7 +1513,10 @@ impl NeoSystem {
             .then_some(self.execution_stats.as_ref() as &dyn PersistenceProfiler);
         let _empty_block_profile =
             profiler.map(|_| EmptyBlockProfileGuard::new(block.transactions.is_empty()));
-        neo_ledger::persist_block_profiled(
+        let parallel_loop = self
+            .is_parallel_execution_enabled()
+            .then(|| super::ParallelTransactionLoop::new(Arc::clone(&self.execution_stats)));
+        neo_ledger::persist_block_with_loop_strategy(
             block,
             store,
             &engines,
@@ -1378,6 +1525,9 @@ impl NeoSystem {
             &participants,
             &options,
             profiler,
+            parallel_loop
+                .as_ref()
+                .map(|scheduler| scheduler as &dyn TransactionLoopStrategy),
         )
         .map_err(|error| error.to_string())?;
         Ok(recorder.snapshot())
@@ -1450,6 +1600,29 @@ impl NeoSystem {
     }
 }
 
+/// Attaches or detaches the state-root timing sink that feeds MPT stage timings
+/// into [`ExecutionStats`].
+///
+/// Observation only: the sink copies durations the commit pipeline already
+/// measured and the statistics only record them while profiling is enabled.
+/// Installing or removing it cannot change an execution result, consensus
+/// decision, or commit ordering.
+pub(crate) fn install_state_root_profile_sink(
+    handlers: &crate::state_service::StateServiceCommitHandlers,
+    stats: &Arc<ExecutionStats>,
+    enabled: bool,
+) {
+    if !enabled {
+        handlers.set_profile_sink(None);
+        return;
+    }
+    let stats = Arc::clone(stats);
+    let sink: crate::state_service::StateRootProfileSink = Arc::new(move |profile| {
+        stats.record_state_root_profile(profile.change_extraction, profile.mpt, profile.mpt_detail);
+    });
+    handlers.set_profile_sink(Some(sink));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1463,8 +1636,16 @@ mod tests {
     use neo_protocol::payloads::{Header, Signer, Transaction};
     use neo_protocol::witness::Witness;
     use neo_smart_contract::application_engine::NativeContract;
+    use neo_storage::error::{StorageError, StorageResult};
+    use neo_storage::persistence::providers::memory_store::MemoryStore;
+    use neo_storage::persistence::{
+        ReadOnlyStore, ReadOnlyStoreGeneric, SeekDirection, StoreSnapshot, WriteStore,
+        store::OnNewSnapshotDelegate, store_provider::StoreProvider,
+    };
+    use neo_storage::{StorageItem, StorageKey};
     use neo_vm::{OpCode, ScriptBuilder};
     use num_bigint::BigInt;
+    use std::any::Any;
 
     fn transfer_block(
         system: &NeoSystem,
@@ -1509,6 +1690,129 @@ mod tests {
         };
         block.rebuild_merkle_root();
         block
+    }
+
+    /// A memory store whose snapshots can fail the physical commit on demand.
+    ///
+    /// Clones share the underlying map and the failure switch, so every transaction
+    /// opened through this store observes the same commit behaviour.
+    #[derive(Clone)]
+    struct FlakyStore {
+        inner: MemoryStore,
+        fail_commits: Arc<AtomicBool>,
+    }
+
+    struct FlakyStoreProvider {
+        store: FlakyStore,
+    }
+
+    impl StoreProvider for FlakyStoreProvider {
+        fn name(&self) -> &str {
+            "Flaky"
+        }
+
+        fn get_store(&self, _path: &str) -> StorageResult<Arc<dyn Store>> {
+            Ok(Arc::new(self.store.clone()))
+        }
+    }
+
+    impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for FlakyStore {
+        fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
+            self.inner.try_get(key)
+        }
+
+        fn find(
+            &self,
+            key_prefix: Option<&StorageKey>,
+            direction: SeekDirection,
+        ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+            self.inner.find(key_prefix, direction)
+        }
+    }
+
+    impl ReadOnlyStore for FlakyStore {}
+
+    impl WriteStore<Vec<u8>, Vec<u8>> for FlakyStore {
+        fn delete(&mut self, key: Vec<u8>) -> StorageResult<()> {
+            self.inner.delete(key)
+        }
+
+        fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> StorageResult<()> {
+            self.inner.put(key, value)
+        }
+    }
+
+    impl Store for FlakyStore {
+        fn snapshot(&self) -> Arc<dyn StoreSnapshot> {
+            Arc::new(FlakySnapshot {
+                inner: self.inner.snapshot(),
+                store: self.clone(),
+            })
+        }
+
+        fn on_new_snapshot(&self, _handler: OnNewSnapshotDelegate) {}
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+    }
+
+    struct FlakySnapshot {
+        inner: Arc<dyn StoreSnapshot>,
+        store: FlakyStore,
+    }
+
+    impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FlakySnapshot {
+        fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
+            self.inner.try_get(key)
+        }
+
+        fn find(
+            &self,
+            key_prefix: Option<&Vec<u8>>,
+            direction: SeekDirection,
+        ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
+            self.inner.find(key_prefix, direction)
+        }
+    }
+
+    impl WriteStore<Vec<u8>, Vec<u8>> for FlakySnapshot {
+        fn delete(&mut self, key: Vec<u8>) -> StorageResult<()> {
+            Arc::get_mut(&mut self.inner)
+                .ok_or_else(shared_snapshot_error)?
+                .delete(key)
+        }
+
+        fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> StorageResult<()> {
+            Arc::get_mut(&mut self.inner)
+                .ok_or_else(shared_snapshot_error)?
+                .put(key, value)
+        }
+    }
+
+    /// Each test snapshot is created and consumed by a single writer; a shared
+    /// handle means the fixture was misused, so fail loudly instead.
+    fn shared_snapshot_error() -> StorageError {
+        StorageError::InvalidOperation {
+            message: "flaky test snapshot is shared".to_string(),
+        }
+    }
+
+    impl StoreSnapshot for FlakySnapshot {
+        fn store(&self) -> Arc<dyn Store> {
+            Arc::new(self.store.clone())
+        }
+
+        fn try_commit(&mut self) -> Result<(), StorageError> {
+            if self.store.fail_commits.load(Ordering::SeqCst) {
+                return Err(StorageError::InvalidOperation {
+                    message: "injected physical commit failure".to_string(),
+                });
+            }
+            Arc::get_mut(&mut self.inner)
+                .ok_or_else(shared_snapshot_error)?
+                .try_commit()
+        }
     }
 
     fn execution_observation(executions: &[ApplicationExecuted]) -> Vec<String> {
@@ -1563,6 +1867,20 @@ mod tests {
                 assert_eq!(expected, &success, "success differs in {}", mode.as_str());
             } else {
                 expected_success = Some(success);
+            }
+            // The direct-dispatch counter now crosses the strategy port, so a
+            // miswired observer would silently stop reporting here.
+            match mode {
+                ExecutionMode::Canonical => assert_eq!(
+                    system.execution_stats().direct_transfer_count(),
+                    0,
+                    "canonical mode must not report a direct dispatch"
+                ),
+                ExecutionMode::Auto | ExecutionMode::Verify => assert!(
+                    system.execution_stats().direct_transfer_count() > 0,
+                    "{} must report a direct dispatch",
+                    mode.as_str()
+                ),
             }
 
             let sender_after_success =
@@ -1645,10 +1963,307 @@ mod tests {
         system.shutdown().await.expect("shutdown");
     }
 
+    /// Builds an empty single-witness block on top of `prev_hash`.
+    fn empty_block_at(
+        index: u32,
+        prev_hash: neo_primitives::UInt256,
+    ) -> neo_protocol::payloads::Block {
+        let mut header = Header::new();
+        header.set_index(index);
+        header.set_prev_hash(prev_hash);
+        header.set_next_consensus(UInt160::zero());
+        header.set_timestamp(u64::from(index));
+        header.witness = Witness::new();
+        neo_protocol::payloads::Block {
+            header,
+            transactions: Vec::new(),
+        }
+    }
+
+    /// State-service settings that persist a state root for every height.
+    fn state_service_settings(
+        settings: &ProtocolSettings,
+    ) -> crate::state_service::StateServiceSettings {
+        crate::state_service::StateServiceSettings {
+            full_state: false,
+            path: String::new(),
+            network: settings.network,
+            auto_verify: false,
+            max_find_result_items: 100,
+            exception_policy: crate::state_service::UnhandledExceptionPolicy::Ignore,
+        }
+    }
+
+    /// Empty-block differential across execution engines: for one identical empty
+    /// block, every mode must produce the same receipts, ledger pointer and state
+    /// root. This pins the canonical empty-block outcome the hook fast paths must
+    /// keep reproducing.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn empty_block_receipts_roots_and_pointers_match_across_execution_modes() {
+        let settings = ProtocolSettings::testnet();
+        let mut expected: Option<(
+            Vec<String>,
+            neo_primitives::UInt256,
+            neo_primitives::UInt256,
+        )> = None;
+
+        for mode in [
+            ExecutionMode::Canonical,
+            ExecutionMode::Auto,
+            ExecutionMode::Verify,
+        ] {
+            let system = NeoSystem::new_with_state_service(
+                settings.clone(),
+                None,
+                None,
+                Some(state_service_settings(&settings)),
+            )
+            .expect("system");
+            let block = empty_block_at(1, system.genesis_block().hash());
+            let block_hash = block.hash().expect("empty block hash");
+
+            let executions = system
+                .persist_block_with_receipts_and_execution_mode(Block::from(&block), mode)
+                .expect("empty block");
+
+            assert_eq!(
+                executions.len(),
+                2,
+                "OnPersist/PostPersist must both run in {}",
+                mode.as_str()
+            );
+            assert!(
+                executions
+                    .iter()
+                    .all(|execution| execution.vm_state == VmState::HALT),
+                "empty block faulted in {}",
+                mode.as_str()
+            );
+            assert!(
+                executions[0].notifications.is_empty(),
+                "an empty OnPersist must not notify in {}",
+                mode.as_str()
+            );
+
+            let ledger = LedgerContract::new();
+            let store_cache = system.store_cache();
+            assert_eq!(ledger.current_index(&store_cache).expect("ledger index"), 1);
+            assert_eq!(
+                ledger.current_hash(&store_cache).expect("ledger hash"),
+                block_hash
+            );
+
+            let handlers = system.state_commit_handlers().expect("state handlers");
+            let root = handlers
+                .get_state_root(1)
+                .expect("a state root record per height");
+            assert_eq!(root.index, 1);
+            assert_eq!(
+                handlers.current_root_hash(),
+                Some(root.root_hash),
+                "process-local root must match the persisted root in {}",
+                mode.as_str()
+            );
+
+            let observation = (
+                execution_observation(&executions),
+                block_hash,
+                root.root_hash,
+            );
+            match &expected {
+                Some(expected) => assert_eq!(
+                    expected,
+                    &observation,
+                    "empty block differs in {}",
+                    mode.as_str()
+                ),
+                None => expected = Some(observation),
+            }
+
+            system.shutdown().await.expect("shutdown");
+        }
+    }
+
+    /// Consecutive-empty-block regression: the optimized hooks must not remove any
+    /// per-height transition. Every empty block still runs both persist triggers,
+    /// advances the ledger pointer, persists a state-root record, and NEO still
+    /// refreshes the committee at the committee-size boundary.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn consecutive_empty_blocks_keep_height_dependent_transitions() {
+        let settings = ProtocolSettings::testnet();
+        let committee = u32::try_from(settings.committee_members_count()).expect("committee size");
+        let block_count = 2 * committee + 1;
+        let system = NeoSystem::new_with_state_service(
+            settings.clone(),
+            None,
+            None,
+            Some(state_service_settings(&settings)),
+        )
+        .expect("system");
+        let handlers = system.state_commit_handlers().expect("state handlers");
+        let neo = neo_native_contracts::NeoToken::new();
+        let mut previous_hash = system.genesis_block().hash();
+        let mut refreshed_committee: Option<Vec<Vec<u8>>> = None;
+        let mut refresh_heights = Vec::new();
+
+        for index in 1..=block_count {
+            let payload = empty_block_at(index, previous_hash);
+            previous_hash = payload.hash().expect("empty block hash");
+            let executions = system
+                .persist_block_with_receipts_and_execution_mode(
+                    Block::from(&payload),
+                    ExecutionMode::Auto,
+                )
+                .expect("empty block");
+
+            assert_eq!(
+                executions.len(),
+                2,
+                "OnPersist/PostPersist must both run at height {index}"
+            );
+            assert!(
+                executions
+                    .iter()
+                    .all(|execution| execution.vm_state == VmState::HALT),
+                "empty block faulted at height {index}"
+            );
+            // No fee burn, no notary or oracle reward, no token transfer: an
+            // empty block's OnPersist emits no notification.
+            assert!(
+                executions[0].notifications.is_empty(),
+                "empty OnPersist emitted a notification at height {index}"
+            );
+
+            // Ledger pointer transition for every height.
+            assert_eq!(system.current_block_index(), index);
+            let ledger = LedgerContract::new();
+            let store_cache = system.store_cache();
+            assert_eq!(
+                ledger.current_index(&store_cache).expect("ledger index"),
+                index,
+                "ledger index must follow the tip at height {index}"
+            );
+            assert_eq!(
+                ledger.current_hash(&store_cache).expect("ledger hash"),
+                previous_hash,
+                "ledger hash must follow the tip at height {index}"
+            );
+
+            // A state-root record is persisted for every height, even when the
+            // root value is unchanged because the block had no transactions.
+            let root = handlers
+                .get_state_root(index)
+                .unwrap_or_else(|| panic!("no state root record at height {index}"));
+            assert_eq!(root.index, index);
+            assert_eq!(handlers.current_root_hash(), Some(root.root_hash));
+
+            // NEO committee state across the committee-size boundary. Genesis
+            // initialises it and every refresh height rewrites it, so on an empty
+            // chain it must stay present, non-empty and drift-free.
+            let committee_now = neo
+                .committee_from_snapshot(&store_cache)
+                .map(|keys| {
+                    keys.iter()
+                        .map(|key| key.as_bytes().to_vec())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_else(|| panic!("committee missing at height {index}"));
+            assert!(
+                !committee_now.is_empty(),
+                "committee empty at height {index}"
+            );
+            match &refreshed_committee {
+                Some(expected) => assert_eq!(
+                    expected, &committee_now,
+                    "committee drifted at height {index}"
+                ),
+                None => refreshed_committee = Some(committee_now),
+            }
+            if index % committee == 0 {
+                refresh_heights.push(index);
+            }
+        }
+
+        assert_eq!(
+            refresh_heights,
+            vec![committee, 2 * committee],
+            "committee refresh heights must stay on the committee-size boundary"
+        );
+        assert_eq!(system.current_block_index(), block_count);
+        system.shutdown().await.expect("shutdown");
+    }
+
     #[test]
     fn execution_recorder_is_empty_before_capture() {
         let recorder = ExecutionRecorder::default();
         assert!(recorder.snapshot().is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn empty_block_batch_physical_commit_failure_poisons_system() {
+        let settings = ProtocolSettings::default();
+        let fail_commits = Arc::new(AtomicBool::new(false));
+        let provider: Arc<dyn StoreProvider> = Arc::new(FlakyStoreProvider {
+            store: FlakyStore {
+                inner: MemoryStore::new(),
+                fail_commits: Arc::clone(&fail_commits),
+            },
+        });
+        // Genesis is persisted while the store is healthy, so only the batch's
+        // single physical commit fails.
+        let system = NeoSystem::new(settings, Some(provider), None).expect("system");
+        assert!(!system.is_persistence_poisoned());
+
+        let mut blocks = Vec::new();
+        let mut previous_hash = system.genesis_block().hash();
+        for index in 1..=2u32 {
+            let mut header = Header::new();
+            header.set_index(index);
+            header.set_prev_hash(previous_hash);
+            header.set_next_consensus(UInt160::zero());
+            header.set_timestamp(u64::from(index));
+            header.witness = Witness::new();
+            let payload = neo_protocol::payloads::Block {
+                header,
+                transactions: Vec::new(),
+            };
+            previous_hash = payload.hash().expect("empty block hash");
+            blocks.push(payload);
+        }
+
+        fail_commits.store(true, Ordering::SeqCst);
+        let error = expect_err(
+            system.persist_consecutive_empty_blocks_without_runtime_cache(blocks.clone()),
+        );
+        assert!(
+            error.contains("injected physical commit failure"),
+            "unexpected error: {error}"
+        );
+        assert!(
+            system.is_persistence_poisoned(),
+            "a failed batch commit must poison the system"
+        );
+
+        let error = expect_err(system.persist_block(Block::from(&blocks[0])));
+        assert!(
+            error.to_lowercase().contains("poisoned"),
+            "unexpected error: {error}"
+        );
+        let error =
+            expect_err(system.persist_consecutive_empty_blocks_without_runtime_cache(blocks));
+        assert!(
+            error.to_lowercase().contains("poisoned"),
+            "unexpected error: {error}"
+        );
+        system.shutdown().await.expect("shutdown");
+    }
+
+    /// Unwraps a persistence error without requiring `Debug` on the success value.
+    fn expect_err<T>(result: Result<T, String>) -> String {
+        match result {
+            Ok(_) => panic!("expected a persistence error"),
+            Err(error) => error,
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1695,12 +2310,127 @@ mod tests {
         let store_cache = system.store_cache();
         let ledger = Arc::new(LedgerContext::default());
         let header_cache = Arc::new(HeaderCache::new());
-        crate::neo_system::storage::hydrate_ledger(&store_cache, &ledger, &header_cache)
+        neo_ledger::hydrate_ledger(&store_cache, &ledger, &header_cache)
             .expect("rehydrate persisted chain");
         assert_eq!(ledger.current_height(), 1);
         assert_eq!(ledger.block_hash_at(0), Some(genesis_hash));
         assert_eq!(ledger.block_hash_at(1), Some(block_hash));
         assert_eq!(header_cache.count(), 2);
+        system.shutdown().await.expect("shutdown");
+    }
+
+    #[test]
+    fn fast_path_counters_classify_each_outcome_once() {
+        let stats = ExecutionStats::default();
+
+        stats.record_strategy_outcome(ExecutionStrategy::DirectTransfer, VmState::HALT, None);
+        stats.record_strategy_outcome(ExecutionStrategy::DirectTransfer, VmState::FAULT, None);
+        stats.record_strategy_outcome(
+            ExecutionStrategy::DirectTransfer,
+            VmState::HALT,
+            Some("direct fingerprint diverged"),
+        );
+        stats.record_strategy_outcome(
+            ExecutionStrategy::Canonical,
+            VmState::HALT,
+            Some("missing isolated verification context"),
+        );
+        // A canonical run without a recorded reason is the configured canonical
+        // mode, not a fallback.
+        stats.record_strategy_outcome(ExecutionStrategy::Canonical, VmState::HALT, None);
+
+        let snapshot = stats.fast_path_snapshot();
+        assert_eq!(snapshot.direct_halts, 2);
+        assert_eq!(snapshot.direct_faults, 1);
+        assert_eq!(snapshot.canonical_fallbacks, 1);
+        assert_eq!(snapshot.verification_mismatches, 1);
+        // Outcome classification never invents direct attempts; the strategy
+        // layer reports those before the result is known.
+        assert_eq!(snapshot.direct_attempts, 0);
+    }
+
+    #[test]
+    fn fast_path_declines_are_counted_from_the_observer_port() {
+        let stats = ExecutionStats::default();
+
+        stats.record_fast_path_decline();
+        stats.record_fast_path_decline();
+        stats.record_direct_transfer_attempt();
+
+        let snapshot = stats.fast_path_snapshot();
+        assert_eq!(snapshot.eligibility_declines, 2);
+        assert_eq!(snapshot.direct_attempts, 1);
+        assert_eq!(stats.direct_transfer_count(), 1);
+    }
+
+    #[test]
+    fn profiling_disabled_keeps_mpt_timings_at_zero() {
+        let stats = ExecutionStats::default();
+        stats.record_state_root_profile(
+            Duration::from_millis(10),
+            Duration::from_millis(20),
+            MptProfileSnapshot {
+                update: Duration::from_millis(5),
+                hash: Duration::from_millis(2),
+                ..MptProfileSnapshot::default()
+            },
+        );
+
+        let profile = stats.profile_snapshot();
+        assert!(!profile.enabled);
+        assert_eq!(profile.mpt, Duration::ZERO);
+        assert_eq!(profile.mpt_update, Duration::ZERO);
+
+        stats.set_profiling(true);
+        stats.record_state_root_profile(
+            Duration::from_millis(10),
+            Duration::from_millis(20),
+            MptProfileSnapshot {
+                update: Duration::from_millis(5),
+                hash: Duration::from_millis(2),
+                ..MptProfileSnapshot::default()
+            },
+        );
+
+        let profile = stats.profile_snapshot();
+        assert!(profile.enabled);
+        assert_eq!(profile.mpt, Duration::from_millis(20));
+        assert_eq!(profile.mpt_update, Duration::from_millis(5));
+        assert_eq!(profile.mpt_hash, Duration::from_millis(2));
+    }
+
+    #[test]
+    fn state_root_profile_sink_follows_the_profiling_switch() {
+        let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+        let cache = Arc::new(neo_storage::persistence::StoreCache::new(store));
+        let handlers = crate::state_service::StateServiceCommitHandlers::new(cache, false)
+            .expect("state handlers");
+        let stats = Arc::new(ExecutionStats::default());
+
+        assert!(!handlers.profile_sink_registered());
+
+        install_state_root_profile_sink(&handlers, &stats, true);
+        assert!(handlers.profile_sink_registered());
+
+        install_state_root_profile_sink(&handlers, &stats, false);
+        assert!(!handlers.profile_sink_registered());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn execution_profiling_switch_is_observation_only() {
+        let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system");
+        // This instance runs without a state service, so the switch only flips
+        // the profiling gate and must never touch an execution result.
+        assert!(system.state_commit_handlers().is_none());
+        assert!(!system.execution_stats().profile_snapshot().enabled);
+
+        system.set_execution_profiling(true);
+        assert!(system.execution_stats().profile_snapshot().enabled);
+        assert!(system.state_commit_handlers().is_none());
+
+        system.set_execution_profiling(false);
+        assert!(!system.execution_stats().profile_snapshot().enabled);
+
         system.shutdown().await.expect("shutdown");
     }
 }

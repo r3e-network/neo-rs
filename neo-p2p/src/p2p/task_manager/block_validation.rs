@@ -1,6 +1,6 @@
+use crate::p2p::error::HashComputationError;
 use crate::p2p::payloads::block::Block;
 use neo_primitives::UInt256;
-use neo_smart_contract::error::CoreError;
 
 // `Store` carries the whole block while the other variants are cheap
 // outcomes; the enum is constructed once per incoming block, so boxing the
@@ -17,7 +17,7 @@ pub(super) enum IncomingBlockOutcome {
     Disconnect {
         index: u32,
         reason: IncomingBlockDisconnect,
-        hash_error: Option<CoreError>,
+        hash_error: Option<HashComputationError>,
         remove_cached: bool,
     },
 }
@@ -43,7 +43,7 @@ impl IncomingBlockDisconnect {
 pub(super) enum PersistedBlockMatch {
     Matches,
     Mismatch,
-    Unhashable(CoreError),
+    Unhashable(HashComputationError),
 }
 
 #[cfg(test)]
@@ -51,7 +51,7 @@ pub(super) enum PersistedBlockMatch {
 pub(super) enum BlockHashMatch {
     Matches,
     DoesNotMatch,
-    Unhashable(CoreError),
+    Unhashable(HashComputationError),
 }
 
 pub(super) fn validate_incoming_block(
@@ -97,12 +97,12 @@ pub(super) fn validate_incoming_block(
     }
 }
 
-pub(super) fn persisted_block_hash(block: &Block) -> Result<UInt256, CoreError> {
+pub(super) fn persisted_block_hash(block: &Block) -> Result<UInt256, HashComputationError> {
     // Clone required: `try_hash` requires `&mut self` but callers hold `&Block`.
     // Changing to `&mut Block` would require all call sites to hold a mutable
     // reference, which is not always convenient at the call site.
     let mut block = block.clone();
-    block.try_hash().map_err(CoreError::from)
+    block.try_hash().map_err(HashComputationError::from)
 }
 
 pub(super) fn match_persisted_block(

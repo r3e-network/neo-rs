@@ -101,14 +101,15 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("neo-p2p", "neo-primitives"),
     ("neo-p2p", "neo-protocol"),
     // Phase 1 S1: neo-p2p extracted from neo-system::network. Reviewed
-    // downward edges: generic actor runtime + L1 ledger/contract/storage
-    // vocabulary (BlockchainCommand/handles, LedgerContract, StoreCache,
-    // CoreError) consumed by the moved actors.
+    // downward edges: generic actor runtime + L1 ledger vocabulary
+    // (BlockchainCommand/handles, Block) consumed by the moved actors.
+    // Chain-state reads go through the narrow `P2PContext` capabilities
+    // implemented by the system adapter, so the storage and native-contract
+    // edges are gone. Task 26 phase 7 also dropped the host-runtime edge:
+    // payload hash failures are reported with the P2P-owned
+    // `HashComputationError` instead of the host `CoreError`.
     ("neo-p2p", "neo-actors"),
     ("neo-p2p", "neo-ledger"),
-    ("neo-p2p", "neo-native-contracts"),
-    ("neo-p2p", "neo-storage"),
-    ("neo-p2p", "neo-smart-contract"),
     // Test-only edge (kind dev): remote_node/bloom_filter unit tests use OpCode.
     ("neo-p2p", "neo-vm"),
     ("neo-consensus", "neo-crypto"),
@@ -123,17 +124,18 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     // Phase 2 S5: neo-rpc-client extracted from neo-rpc::client. Reviewed
     // downward edges: the client is a transaction-building client (same
     // rationale as neo-mempool) and binds the L1 execution vocabulary
-    // (ledger Block/VerifiableExt, storage DataCache, VM ScriptBuilder,
-    // native contracts, wallet KeyPair) directly. The plan's light-dependency
-    // goal is adjusted accordingly; port inversion was rejected to preserve
-    // single-definition TypeId identity during the move.
+    // (ledger Block/VerifiableExt, VM ScriptBuilder, native contracts, wallet
+    // KeyPair) directly. The plan's light-dependency goal is adjusted
+    // accordingly; port inversion was rejected to preserve single-definition
+    // TypeId identity during the move. Task 21 removed the storage edge: the
+    // client no longer builds a DataCache for ledger extension calls, it reads
+    // chain state through the `neo-wallets` chain-query port.
     ("neo-rpc-client", "neo-primitives"),
     ("neo-rpc-client", "neo-crypto"),
     ("neo-rpc-client", "neo-io"),
     ("neo-rpc-client", "neo-json"),
     ("neo-rpc-client", "neo-ledger"),
     ("neo-rpc-client", "neo-protocol"),
-    ("neo-rpc-client", "neo-storage"),
     ("neo-rpc-client", "neo-vm"),
     ("neo-rpc-client", "neo-smart-contract"),
     ("neo-rpc-client", "neo-native-contracts"),
@@ -746,6 +748,61 @@ fn test_rocksdb_features_are_opt_in_at_the_storage_owner() {
     assert!(
         compact.contains("#[cfg(feature=\"rocksdb\")]pubuserocksdb::RocksDBStoreProvider;"),
         "{relative}: provider export must be opt-in"
+    );
+}
+
+// Phase 9 (F14/F17): optional transports and non-protocol extensions stay behind
+// explicit features. Default-on for the transports keeps existing consumers
+// working; the native-contract extension stays opt-in so nothing can depend on
+// it implicitly.
+#[test]
+fn test_optional_transports_and_extensions_are_feature_gated() {
+    assert_eq!(
+        manifest_assignment("neo-wallets/Cargo.toml", "[features]", "default"),
+        "[\"remote\"]"
+    );
+    assert_eq!(
+        manifest_assignment("neo-wallets/Cargo.toml", "[features]", "remote"),
+        "[\"dep:reqwest\"]"
+    );
+    assert_eq!(
+        manifest_assignment("neo-wallets/Cargo.toml", "[dependencies]", "reqwest"),
+        "{ workspace = true, features = [\"rustls-tls\"], optional = true }"
+    );
+    assert_eq!(
+        manifest_assignment("neo-tee/Cargo.toml", "[features]", "default"),
+        "[\"integration\"]"
+    );
+    assert_eq!(
+        manifest_assignment("neo-tee/Cargo.toml", "[features]", "integration"),
+        "[\"dep:neo-wallets\", \"dep:neo-protocol\", \"dep:neo-smart-contract\"]"
+    );
+    for dependency in ["neo-wallets", "neo-protocol", "neo-smart-contract"] {
+        assert_eq!(
+            manifest_assignment("neo-tee/Cargo.toml", "[dependencies]", dependency),
+            "{ workspace = true, optional = true }",
+            "neo-tee must not require {dependency} outside the integration feature"
+        );
+    }
+    assert_eq!(
+        manifest_assignment("neo-native-contracts/Cargo.toml", "[features]", "default"),
+        "[]"
+    );
+    assert_eq!(
+        manifest_assignment(
+            "neo-native-contracts/Cargo.toml",
+            "[features]",
+            "experimental"
+        ),
+        "[]"
+    );
+    // F14 neo-node: the RocksDB backend is owned by neo-storage, so the assembly
+    // must not resurrect a direct edge on the crate itself.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let node = std::fs::read_to_string(root.join("neo-node/Cargo.toml")).unwrap();
+    assert!(
+        !node.contains("rocksdb ="),
+        "neo-node/Cargo.toml: RocksDB is reached through neo-storage/rocksdb, not a direct dependency"
     );
 }
 

@@ -86,17 +86,16 @@ impl ExecutionEngine {
     /// syscalls. Removing the service for the outer call made the inner
     /// `System.Storage.GetContext` fail with "not supported" and aborted the
     /// MainNet Proxy deploy at block 10550.
+    ///
+    /// The engine holds no Neo syscall table of its own: names, prices and
+    /// required call flags all come from the descriptors the host registered
+    /// on the interop service, so `ApplicationEngine` stays the single owner of
+    /// host-service metadata.
     pub fn on_syscall(&mut self, descriptor: u32) -> VmResult<()> {
         if self.interop_service.is_none() {
             return Err(VmError::invalid_operation_msg(format!(
                 "Syscall {descriptor} not supported"
             )));
-        }
-
-        if crate::syscalls::get_syscall_entry_by_u32(descriptor).is_some()
-            && let Some(result) = self.invoke_host_syscall(descriptor)
-        {
-            return result;
         }
 
         let prepared = self
@@ -108,6 +107,27 @@ impl ExecutionEngine {
                 "Syscall 0x{descriptor:08x} not registered"
             )));
         };
+
+        // Host-owned services carry no VM callback: the host registered this
+        // descriptor together with its price and call flags, and the host
+        // enforces both. Re-checking them here would recreate the duplicated
+        // policy this design removes.
+        if prepared.host_owned {
+            return match self.invoke_host_syscall(descriptor) {
+                Some(result) => result,
+                None => {
+                    let name = self
+                        .interop_service
+                        .as_ref()
+                        .and_then(|service| service.syscall_name(descriptor))
+                        .unwrap_or("<unregistered>");
+                    Err(VmError::invalid_operation_msg(format!(
+                        "Syscall {name} requires an interop host"
+                    )))
+                }
+            };
+        }
+
         if !self.has_call_flags(prepared.required_call_flags) {
             return Err(VmError::invalid_operation_msg(format!(
                 "Missing required call flags: {:?}",
@@ -117,13 +137,8 @@ impl ExecutionEngine {
         if let Some(callback) = prepared.handler {
             return callback(self);
         }
-        if let Some(result) = self.invoke_host_syscall(descriptor) {
-            result
-        } else {
-            Err(VmError::invalid_operation_msg(format!(
-                "Syscall {} requires an interop host",
-                prepared.name
-            )))
-        }
+        Err(VmError::invalid_operation_msg(format!(
+            "Syscall 0x{descriptor:08x} has no handler"
+        )))
     }
 }

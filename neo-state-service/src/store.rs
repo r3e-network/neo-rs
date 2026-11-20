@@ -576,15 +576,12 @@ mod tests {
 
         state_store.set_reference_root_fetcher(Arc::new(move |_| Some(hash)));
         let mut invalid = signed_root(&fixture, HEIGHT, hash);
-        if let Some(byte) = invalid
-            .witness
-            .as_mut()
-            .unwrap()
-            .invocation_script
-            .last_mut()
-        {
+        let witness = invalid.witness.as_mut().unwrap();
+        let mut invocation_script = witness.invocation_script().to_vec();
+        if let Some(byte) = invocation_script.last_mut() {
             *byte ^= 1;
         }
+        witness.set_invocation_script(invocation_script);
         assert!(!state_store.on_new_state_root(invalid));
         assert_eq!(state_store.validated_root_index(), 0);
         assert!(

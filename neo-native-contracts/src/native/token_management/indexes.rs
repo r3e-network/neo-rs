@@ -8,7 +8,8 @@
 //! - `crate::smart_contract::StorageKey` -> `neo_storage::StorageKey`
 //! - `crate::smart_contract::application_engine::ApplicationEngine`
 //!   -> `neo_smart_contract::application_engine::ApplicationEngine`
-//! - `crate::smart_contract::storage_context::StorageContext` -> `neo_vm::StorageContext`
+//! - `crate::smart_contract::storage_context::StorageContext`
+//!   -> `neo_smart_contract::storage_context::StorageContext`
 
 use super::{
     ID, NFT_INDEX_KEY_SIZE, PREFIX_NFT_ASSET_ID_UNIQUE_ID_INDEX, PREFIX_NFT_OWNER_UNIQUE_ID_INDEX,
@@ -17,8 +18,8 @@ use super::{
 use neo_primitives::UInt160;
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::error::CoreResult;
+use neo_smart_contract::storage_context::StorageContext;
 use neo_storage::StorageKey;
-use neo_vm::StorageContext;
 
 impl TokenManagement {
     fn update_nft_index(

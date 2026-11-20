@@ -8,6 +8,7 @@ use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use neo_primitives::UInt160;
 use neo_primitives::UInt256;
 use neo_protocol::ProtocolSettings;
+use neo_protocol::execution::Block as ExecutionBlock;
 use neo_protocol::payloads::block::Block;
 use neo_storage::persistence::providers::RocksDBStoreProvider;
 use neo_storage::persistence::storage::StorageConfig;
@@ -41,7 +42,7 @@ fn bench_rocksdb_persist_empty_block(c: &mut Criterion) {
         .expect("neo system with rocksdb");
 
     let mut height = system.context().ledger().current_height();
-    let mut genesis = system.genesis_block().as_ref().clone();
+    let genesis = system.genesis_block().as_ref().clone();
     let mut prev_hash = genesis.hash();
     let mut timestamp = 1_700_000_000_000u64;
 
@@ -51,7 +52,11 @@ fn bench_rocksdb_persist_empty_block(c: &mut Criterion) {
             timestamp = timestamp.saturating_add(15_000);
             let mut block = empty_block(height, prev_hash, timestamp);
             prev_hash = block.hash();
-            black_box(system.persist_block(block).expect("persist block"));
+            // `NeoSystem::persist_block` consumes the execution representation.
+            system
+                .persist_block(ExecutionBlock::from(&block))
+                .expect("persist block");
+            black_box(());
         });
     });
 }

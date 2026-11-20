@@ -14,7 +14,6 @@
 //! - `registry` - `ServiceRegistry` for typed service discovery
 //! - `actors` - Internal actor implementations
 //! - `helpers` - Utility functions and internal types
-//! - `converters` - Type conversion functions
 //! - `relay` - Relay cache types
 //! - `system` - Readiness status and constants
 //! - `builder` - Fluent builder for NeoSystem construction
@@ -30,10 +29,10 @@ mod core;
 // Extracted submodules with clean implementations
 pub(crate) mod actors;
 pub mod builder;
-pub mod converters;
 pub(crate) mod helpers;
 pub(crate) mod mempool;
 pub(crate) mod network;
+pub(crate) mod parallel_execution;
 pub(crate) mod persistence;
 pub mod registry;
 pub(crate) mod relay;
@@ -53,7 +52,14 @@ pub use core::*;
 // Re-export from extracted modules (these override legacy exports)
 pub use actors::TransactionRouterHandle;
 pub use builder::NeoSystemBuilder;
-pub use persistence::{ExecutionMode, ExecutionProfileSnapshot, ExecutionStats};
+// Execution strategy (`ExecutionMode`, fast-path eligibility, dual-execution
+// verification) is execution semantics and lives in `neo-smart-contract`; this
+// re-export keeps the historical `neo_system::ExecutionMode` path resolving.
+pub use neo_smart_contract::application_engine::execution_strategy::ExecutionMode;
+pub use parallel_execution::{ParallelTransactionLoop, parallel_execute_block};
+pub use persistence::{
+    ExecutionProfileSnapshot, ExecutionStats, FastPathStatsSnapshot, ParallelExecutionSnapshot,
+};
 pub use registry::ServiceRegistry;
 pub use system::{ReadinessStatus, STATE_STORE_SERVICE};
 

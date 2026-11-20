@@ -149,11 +149,36 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
     // Genesis must be persisted after ApplicationLogs and TokensTracker are
     // registered. Construction used to persist it immediately, and the .acc
     // import then skipped height 0, so those plugins never saw the genesis block.
-    let system = NeoSystem::new_with_state_service_deferring_genesis(
+    //
+    // Speculative prefetch is forwarded here and is inert unless
+    // `[storage.prefetch] enabled = true`; with the default configuration this
+    // call performs exactly the reads the node performed before the feature.
+    let storage_prefetch = node_config.storage_prefetch();
+    let prefetch_effective = node_config.storage_prefetch_is_effective();
+    if storage_prefetch.enabled && !prefetch_effective {
+        warn!(
+            target: "neo",
+            "[storage.prefetch] enabled but a count/limit is zero; prefetching stays inert"
+        );
+    }
+    if prefetch_effective {
+        info!(
+            target: "neo",
+            count = storage_prefetch.count,
+            confidence_threshold = storage_prefetch.confidence_threshold,
+            min_observations = storage_prefetch.min_observations,
+            max_scan_keys = storage_prefetch.limits.max_scan_keys,
+            max_admit_keys = storage_prefetch.limits.max_admit_keys,
+            max_admit_bytes = storage_prefetch.limits.max_admit_bytes,
+            "speculative storage prefetch enabled"
+        );
+    }
+    let system = NeoSystem::new_with_state_service_deferring_genesis_and_storage_prefetch(
         protocol_settings.clone(),
         store_provider.map(Arc::from),
         storage_path.clone(),
         state_service_settings.clone(),
+        storage_prefetch,
     )
     .map_err(|e| anyhow::anyhow!(e.to_string()))
     .context("failed to initialise NeoSystem")?;
@@ -163,9 +188,17 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
         .parse()
         .map_err(anyhow::Error::msg)?;
     system.set_execution_mode(execution_mode);
+    // Observation-only profiling: it feeds the MPT and native hook telemetry
+    // families and never changes an execution or consensus result.
+    system.set_execution_profiling(node_config.execution.profiling);
+    // Speculative parallel execution only reorders the work; the commit order and
+    // every result stay identical to the serial loop. Off unless configured.
+    system.set_parallel_execution(node_config.execution.parallel_enabled);
     info!(
         target: "neo",
         execution_mode = execution_mode.as_str(),
+        execution_profiling = node_config.execution.profiling,
+        execution_parallel = node_config.execution.parallel_enabled,
         "transaction execution engine selected"
     );
     configure_live_reference_roots(&system)

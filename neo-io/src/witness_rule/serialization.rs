@@ -47,85 +47,86 @@ impl Serializable for WitnessCondition {
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        WitnessCondition::deserialize_with_depth(reader, WitnessCondition::MAX_NESTING_DEPTH)
+        deserialize_with_depth(reader, WitnessCondition::MAX_NESTING_DEPTH)
     }
 }
 
-impl WitnessCondition {
-    /// Helper to deserialize a list of conditions (used by And/Or).
-    fn deserialize_condition_list(
-        reader: &mut MemoryReader,
-        max_depth: usize,
-        error_msg: &'static str,
-    ) -> IoResult<Vec<WitnessCondition>> {
-        let conditions = deserialize_array_with(reader, Self::MAX_SUBITEMS, |reader| {
-            Self::deserialize_with_depth(reader, max_depth - 1)
-        })?;
-        if conditions.is_empty() {
-            return Err(IoError::invalid_data(error_msg));
-        }
-        Ok(conditions)
+/// Helper to deserialize a list of conditions (used by And/Or).
+fn deserialize_condition_list(
+    reader: &mut MemoryReader,
+    max_depth: usize,
+    error_msg: &'static str,
+) -> IoResult<Vec<WitnessCondition>> {
+    let conditions = deserialize_array_with(reader, WitnessCondition::MAX_SUBITEMS, |reader| {
+        deserialize_with_depth(reader, max_depth - 1)
+    })?;
+    if conditions.is_empty() {
+        return Err(IoError::invalid_data(error_msg));
+    }
+    Ok(conditions)
+}
+
+/// Helper to deserialize and validate group bytes.
+fn deserialize_group_bytes(reader: &mut MemoryReader) -> IoResult<Vec<u8>> {
+    let bytes = read_group_bytes(reader)?;
+    if bytes.len() != ECPOINT_COMPRESSED_SIZE {
+        return Err(IoError::invalid_data("Invalid ECPoint length"));
+    }
+    Ok(bytes)
+}
+
+/// Deserializes a witness condition, enforcing a maximum nesting depth.
+pub fn deserialize_with_depth(
+    reader: &mut MemoryReader,
+    max_depth: usize,
+) -> IoResult<WitnessCondition> {
+    if max_depth == 0 {
+        return Err(IoError::invalid_data("Max nesting depth exceeded"));
     }
 
-    /// Helper to deserialize and validate group bytes.
-    fn deserialize_group_bytes(reader: &mut MemoryReader) -> IoResult<Vec<u8>> {
-        let bytes = read_group_bytes(reader)?;
-        if bytes.len() != ECPOINT_COMPRESSED_SIZE {
-            return Err(IoError::invalid_data("Invalid ECPoint length"));
-        }
-        Ok(bytes)
-    }
+    let type_byte = reader.read_u8()?;
+    let condition_type = WitnessConditionType::from_byte(type_byte)
+        .ok_or_else(|| IoError::invalid_data("Invalid witness condition type"))?;
 
-    /// Deserializes a witness condition, enforcing a maximum nesting depth.
-    pub fn deserialize_with_depth(reader: &mut MemoryReader, max_depth: usize) -> IoResult<Self> {
-        if max_depth == 0 {
-            return Err(IoError::invalid_data("Max nesting depth exceeded"));
+    match condition_type {
+        WitnessConditionType::Boolean => Ok(WitnessCondition::Boolean {
+            value: reader.read_bool()?,
+        }),
+        WitnessConditionType::Not => {
+            let inner = deserialize_with_depth(reader, max_depth - 1)?;
+            Ok(WitnessCondition::Not {
+                condition: Box::new(inner),
+            })
         }
-
-        let type_byte = reader.read_u8()?;
-        let condition_type = WitnessConditionType::from_byte(type_byte)
-            .ok_or_else(|| IoError::invalid_data("Invalid witness condition type"))?;
-
-        match condition_type {
-            WitnessConditionType::Boolean => Ok(WitnessCondition::Boolean {
-                value: reader.read_bool()?,
-            }),
-            WitnessConditionType::Not => {
-                let inner = Self::deserialize_with_depth(reader, max_depth - 1)?;
-                Ok(WitnessCondition::Not {
-                    condition: Box::new(inner),
-                })
-            }
-            WitnessConditionType::And => {
-                let conditions = Self::deserialize_condition_list(
-                    reader,
-                    max_depth,
-                    "Invalid AND witness condition length",
-                )?;
-                Ok(WitnessCondition::And { conditions })
-            }
-            WitnessConditionType::Or => {
-                let conditions = Self::deserialize_condition_list(
-                    reader,
-                    max_depth,
-                    "Invalid OR witness condition length",
-                )?;
-                Ok(WitnessCondition::Or { conditions })
-            }
-            WitnessConditionType::ScriptHash => Ok(WitnessCondition::ScriptHash {
-                hash: <UInt160 as Serializable>::deserialize(reader)?,
-            }),
-            WitnessConditionType::Group => Ok(WitnessCondition::Group {
-                group: Self::deserialize_group_bytes(reader)?,
-            }),
-            WitnessConditionType::CalledByEntry => Ok(WitnessCondition::CalledByEntry),
-            WitnessConditionType::CalledByContract => Ok(WitnessCondition::CalledByContract {
-                hash: <UInt160 as Serializable>::deserialize(reader)?,
-            }),
-            WitnessConditionType::CalledByGroup => Ok(WitnessCondition::CalledByGroup {
-                group: Self::deserialize_group_bytes(reader)?,
-            }),
+        WitnessConditionType::And => {
+            let conditions = deserialize_condition_list(
+                reader,
+                max_depth,
+                "Invalid AND witness condition length",
+            )?;
+            Ok(WitnessCondition::And { conditions })
         }
+        WitnessConditionType::Or => {
+            let conditions = deserialize_condition_list(
+                reader,
+                max_depth,
+                "Invalid OR witness condition length",
+            )?;
+            Ok(WitnessCondition::Or { conditions })
+        }
+        WitnessConditionType::ScriptHash => Ok(WitnessCondition::ScriptHash {
+            hash: <UInt160 as Serializable>::deserialize(reader)?,
+        }),
+        WitnessConditionType::Group => Ok(WitnessCondition::Group {
+            group: deserialize_group_bytes(reader)?,
+        }),
+        WitnessConditionType::CalledByEntry => Ok(WitnessCondition::CalledByEntry),
+        WitnessConditionType::CalledByContract => Ok(WitnessCondition::CalledByContract {
+            hash: <UInt160 as Serializable>::deserialize(reader)?,
+        }),
+        WitnessConditionType::CalledByGroup => Ok(WitnessCondition::CalledByGroup {
+            group: deserialize_group_bytes(reader)?,
+        }),
     }
 }
 

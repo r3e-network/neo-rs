@@ -22,6 +22,34 @@ pub(crate) fn json_u64_string(value: u64) -> String {
     json_string(&value.to_string())
 }
 
+/// Renders one NeoFS token lifetime as a JSON object.
+///
+/// `exp`, `nbf` and `iat` all mean "no limit" when zero, so an unset bound is
+/// omitted instead of being reported as an epoch-zero instant. The v1 and v2
+/// protocol messages carry the same three fields as different generated types,
+/// so callers pass the values rather than the message.
+pub(crate) fn token_lifetime_json(exp: u64, nbf: u64, iat: u64) -> String {
+    let mut out = String::from("{ ");
+    let mut first = true;
+
+    if exp != 0 {
+        push_json_field(&mut out, &mut first, "exp", &json_u64_string(exp));
+    }
+    if nbf != 0 {
+        push_json_field(&mut out, &mut first, "nbf", &json_u64_string(nbf));
+    }
+    if iat != 0 {
+        push_json_field(&mut out, &mut first, "iat", &json_u64_string(iat));
+    }
+
+    if first {
+        out.push('}');
+    } else {
+        out.push_str(" }");
+    }
+    out
+}
+
 pub(crate) fn base64_from_base58(value: &str, expected_len: Option<usize>) -> Option<String> {
     let decoded = decode_raw_base58(value, expected_len)?;
     if decoded.is_empty() {

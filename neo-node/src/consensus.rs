@@ -3,8 +3,13 @@
 use crate::config::DbftSettings;
 use neo_actors::{Actor, ActorContext, ActorRef, ActorResult, Props, ScheduleHandle};
 use neo_consensus::{
-    BlockData, ChangeViewReason, CommitPersistencePermit, ConsensusContext, ConsensusEvent,
-    ConsensusMessageType, ConsensusPayload, ConsensusService, ConsensusSigner, ValidatorInfo,
+    BlockData, BlockLimitVerdict, ChangeViewReason, CommitEgressGuard, CommitPersistencePermit,
+    CommitPersistencePort, ConsensusContext, ConsensusEvent, ConsensusPayload, ConsensusService,
+    ConsensusSigner, PrepareRequestPrecheck, ProposalCandidateSource, ProposalLimits,
+    ProposalPolicy, ProposalTransactionCheck, ProposalTransactionVerdict, RecoveryLoadOutcome,
+    RecoveryResumeAction, RejectionCause, TransactionSummary, TransactionSummarySource,
+    ValidatorInfo, VerificationOutcome, evaluate_recovery_context, precheck_prepare_request,
+    recovery_resume_action, should_request_recovery_on_start,
 };
 use neo_crypto::MerkleTree;
 use neo_io::{MemoryReader, Serializable};
@@ -39,95 +44,6 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, warn};
 
 const CONSENSUS_STATE_KEY: [u8; 1] = [0xf4];
-
-fn authorize_commit_egress(
-    permit: Option<&CommitPersistencePermit>,
-    block_index: u32,
-    view_number: u8,
-    validator_index: u8,
-    signature: &[u8],
-    persist: impl FnOnce(&CommitPersistencePermit) -> bool,
-) -> bool {
-    let Some(permit) = permit else {
-        return false;
-    };
-    permit.covers_commit(block_index, view_number, validator_index, signature) && persist(permit)
-}
-
-fn authorize_consensus_payload_egress(
-    payload: &ConsensusPayload,
-    my_index: Option<u8>,
-    persist: impl FnOnce(&CommitPersistencePermit) -> bool,
-) -> bool {
-    match payload.message_type {
-        ConsensusMessageType::Commit if my_index == Some(payload.validator_index) => {
-            authorize_commit_egress(
-                payload.commit_persistence.as_ref(),
-                payload.block_index,
-                payload.view_number,
-                payload.validator_index,
-                &payload.data,
-                persist,
-            )
-        }
-        ConsensusMessageType::RecoveryMessage => {
-            let Ok(recovery) = neo_consensus::messages::RecoveryMessage::deserialize(
-                &payload.data,
-                payload.block_index,
-                payload.view_number,
-                payload.validator_index,
-            ) else {
-                return false;
-            };
-            let Some(local_commit) = my_index.and_then(|local_index| {
-                recovery
-                    .commit_messages
-                    .iter()
-                    .find(|commit| commit.validator_index == local_index)
-            }) else {
-                return true;
-            };
-            authorize_commit_egress(
-                payload.commit_persistence.as_ref(),
-                payload.block_index,
-                local_commit.view_number,
-                local_commit.validator_index,
-                &local_commit.signature,
-                persist,
-            )
-        }
-        _ => true,
-    }
-}
-
-fn authorize_block_commit_egress(
-    block_data: &BlockData,
-    my_index: Option<u8>,
-    persist: impl FnOnce(&CommitPersistencePermit) -> bool,
-) -> bool {
-    let Some(local_index) = my_index else {
-        return true;
-    };
-    let Some((_, signature)) = block_data
-        .signatures
-        .iter()
-        .find(|(validator_index, _)| *validator_index == local_index)
-    else {
-        return true;
-    };
-    let view_number = block_data
-        .commit_persistence
-        .as_ref()
-        .map_or(0, |permit| permit.view_number);
-    authorize_commit_egress(
-        block_data.commit_persistence.as_ref(),
-        block_data.block_index,
-        view_number,
-        local_index,
-        signature,
-        persist,
-    )
-}
 
 fn load_validators(system: &neo_system::NeoSystem, next_index: u32) -> Vec<neo_crypto::ECPoint> {
     let store_cache = system.store_cache();
@@ -356,6 +272,136 @@ enum ConsensusActorMessage {
     ManualStart,
 }
 
+/// Node adapter for [`ProposalCandidateSource`].
+///
+/// Owns the concrete mempool/TEE ordering (the consensus crate only sees
+/// transaction summaries) and remembers the transactions it handed out so the
+/// actor can rebuild the selected block by hash.
+struct MempoolCandidateSource {
+    system: Arc<neo_system::NeoSystem>,
+    by_hash: HashMap<UInt256, Arc<Transaction>>,
+}
+
+impl MempoolCandidateSource {
+    fn new(system: Arc<neo_system::NeoSystem>) -> Self {
+        Self {
+            system,
+            by_hash: HashMap::new(),
+        }
+    }
+
+    fn transaction(&self, hash: &UInt256) -> Option<Arc<Transaction>> {
+        self.by_hash.get(hash).cloned()
+    }
+
+    fn ordered_transactions(&mut self, limit: usize) -> Vec<Arc<Transaction>> {
+        if limit == 0 {
+            return Vec::new();
+        }
+
+        let pool = self.system.mempool();
+
+        // Privacy mode (strictly opt-in): the active TEE runtime has content
+        // encryption enabled. Resolve pending ciphertexts through the TEE
+        // decrypt state machine first — only Encrypted→Resolved entries enter
+        // the candidate ordering; Rejected entries fail closed and are logged
+        // and counted instead. The TEE ordered hash table is then intersected
+        // with the local isolation view before any candidate can be proposed.
+        #[cfg(feature = "tee")]
+        if let Some(runtime) = crate::tee_integration::active_runtime()
+            && runtime.privacy_enabled()
+        {
+            let summary = runtime.mempool.resolve_pending();
+            if summary.rejected > 0 {
+                warn!(
+                    target: "neo::consensus",
+                    rejected = summary.rejected,
+                    "privacy mode: rejected encrypted mempool entries are excluded from proposal candidates"
+                );
+            }
+            return Self::tee_ordered_candidates(&runtime, &pool, limit);
+        }
+
+        pool.lock().get_sorted_verified_transactions(limit)
+    }
+
+    /// TEE ordered hash table intersected with the bounded local-only
+    /// isolation view. Network receive and external proposal paths never call
+    /// this API.
+    #[cfg(feature = "tee")]
+    fn tee_ordered_candidates(
+        runtime: &crate::tee_integration::TeeRuntime,
+        pool: &std::sync::Arc<Mutex<neo_mempool::MemoryPool>>,
+        limit: usize,
+    ) -> Vec<Arc<Transaction>> {
+        let tee_hashes = runtime
+            .mempool
+            .get_ordered_hashes(limit.saturating_mul(4).max(limit));
+        let mut pool_guard = pool.lock();
+        let locally_allowed = pool_guard.local_proposal_transactions(
+            limit.saturating_mul(4).max(limit),
+            ConsensusActor::current_time_ms(),
+        );
+
+        let mut verified_by_hash = HashMap::new();
+        for tx in &locally_allowed {
+            verified_by_hash.insert(tx.hash(), Arc::clone(tx));
+        }
+
+        let mut candidates = Vec::with_capacity(limit);
+        let mut seen = HashSet::with_capacity(limit.saturating_mul(2));
+
+        for hash_bytes in tee_hashes {
+            if candidates.len() >= limit {
+                break;
+            }
+
+            let Ok(hash) = UInt256::from_bytes(&hash_bytes) else {
+                continue;
+            };
+            let Some(tx) = verified_by_hash.get(&hash) else {
+                continue;
+            };
+
+            let tx_hash = tx.hash();
+            if seen.insert(tx_hash) {
+                candidates.push(Arc::clone(tx));
+            }
+        }
+
+        if candidates.len() < limit {
+            for tx in locally_allowed {
+                let tx_hash = tx.hash();
+                if seen.insert(tx_hash) {
+                    candidates.push(tx);
+                }
+                if candidates.len() >= limit {
+                    break;
+                }
+            }
+        }
+
+        candidates
+    }
+}
+
+impl TransactionSummarySource for MempoolCandidateSource {
+    fn transaction_summary(&self, hash: &UInt256) -> Option<TransactionSummary> {
+        self.by_hash
+            .get(hash)
+            .map(|tx| TransactionSummary::new(tx.hash(), tx.size(), tx.system_fee()))
+    }
+}
+
+impl ProposalCandidateSource for MempoolCandidateSource {
+    fn proposal_candidate_hashes(&mut self, limit: usize) -> Vec<UInt256> {
+        let transactions = self.ordered_transactions(limit);
+        let hashes: Vec<UInt256> = transactions.iter().map(|tx| tx.hash()).collect();
+        self.by_hash = transactions.into_iter().map(|tx| (tx.hash(), tx)).collect();
+        hashes
+    }
+}
+
 struct ConsensusActor {
     system: Arc<neo_system::NeoSystem>,
     settings: DbftSettings,
@@ -555,15 +601,10 @@ impl ConsensusActor {
         let mut use_recovery = None;
         if !self.settings.ignore_recovery_logs {
             if self.recovery_store.is_some() {
-                if let Some(context) =
-                    self.load_recovery_from_store(validator_infos.clone(), Some(my_index))
-                {
-                    if context.block_index == block_index {
-                        use_recovery = Some(context);
-                    } else {
-                        warn!(target: "neo", "recovery log does not match current height; ignoring");
-                    }
-                }
+                use_recovery = accept_recovery_context(
+                    self.load_recovery_from_store(validator_infos.clone(), Some(my_index)),
+                    block_index,
+                );
             } else {
                 let fallback_path = if self.recovery_path.is_dir() {
                     self.recovery_path.join("consensus.context")
@@ -571,30 +612,24 @@ impl ConsensusActor {
                     self.recovery_path.clone()
                 };
                 if fallback_path.is_file() {
-                    match ConsensusContext::load(
+                    let loaded = match ConsensusContext::load(
                         &fallback_path,
                         validator_infos.clone(),
                         Some(my_index),
                     ) {
-                        Ok(context) if context.block_index == block_index => {
-                            use_recovery = Some(context);
-                        }
-                        Ok(_) => {
-                            warn!(
-                                target: "neo",
-                                "recovery log does not match current height; ignoring"
-                            );
-                        }
+                        Ok(context) => Some(context),
                         Err(err) => {
                             warn!(target: "neo", %err, "failed to load consensus recovery log");
+                            None
                         }
-                    }
+                    };
+                    use_recovery = accept_recovery_context(loaded, block_index);
                 }
             }
         }
 
         if let Some(context) = use_recovery {
-            let recovered_transactions_empty = context.proposed_tx_hashes.is_empty();
+            let resume_action = recovery_resume_action(&context);
             let (event_tx, event_rx) = mpsc::channel(256);
             let mut service =
                 ConsensusService::with_context(network, context, Vec::new(), event_tx);
@@ -606,12 +641,13 @@ impl ConsensusActor {
                 warn!(target: "neo", %err, "failed to resume consensus from recovery log");
             }
             self.install_service(service, event_rx, ctx);
-            if recovered_transactions_empty {
-                if let Some(service) = self.service.as_mut() {
-                    let _ = service.on_transactions_received(Vec::new());
+            match resume_action {
+                RecoveryResumeAction::AnnounceEmptyProposal => {
+                    if let Some(service) = self.service.as_mut() {
+                        let _ = service.on_transactions_received(Vec::new());
+                    }
                 }
-            } else {
-                self.try_prepare_response(now);
+                RecoveryResumeAction::RebuildPrepareResponse => self.try_prepare_response(now),
             }
             return;
         }
@@ -666,20 +702,15 @@ impl ConsensusActor {
             return;
         };
 
-        let commit_sent = service
-            .context()
-            .my_index
-            .and_then(|idx| service.context().commits.get(&idx))
-            .is_some();
-        if commit_sent {
-            self.recovery_requested = true;
-            return;
-        }
-
-        if let Err(err) = service.request_recovery() {
+        let outcome = if should_request_recovery_on_start(service.context()) {
+            Some(service.request_recovery())
+        } else {
+            None
+        };
+        self.recovery_requested = true;
+        if let Some(Err(err)) = outcome {
             warn!(target: "neo", %err, "failed to request consensus recovery");
         }
-        self.recovery_requested = true;
     }
 
     fn on_persist_completed(&mut self, mut block: Block, ctx: &ActorContext) {
@@ -763,9 +794,7 @@ impl ConsensusActor {
     }
 
     fn authorize_consensus_payload(&self, payload: &ConsensusPayload) -> bool {
-        let authorized = authorize_consensus_payload_egress(payload, self.my_index, |permit| {
-            self.persist_commit_permit(permit)
-        });
+        let authorized = CommitEgressGuard::authorize_payload(payload, self.my_index, self);
         if !authorized {
             error!(target: "neo", validator = payload.validator_index, "local Commit persistence authorization failed; withholding broadcast");
         }
@@ -773,9 +802,7 @@ impl ConsensusActor {
     }
 
     fn authorize_block_commit(&self, block_data: &BlockData) -> bool {
-        let authorized = authorize_block_commit_egress(block_data, self.my_index, |permit| {
-            self.persist_commit_permit(permit)
-        });
+        let authorized = CommitEgressGuard::authorize_block(block_data, self.my_index, self);
         if !authorized {
             error!(target: "neo", validator = ?self.my_index, "final block local Commit persistence authorization failed; withholding block");
         }
@@ -810,18 +837,7 @@ impl ConsensusActor {
             return;
         }
 
-        let settings = self.system.settings();
-        let max_tx = settings.max_transactions_per_block as usize;
-        let limit = std::cmp::min(max_count, max_tx);
-
-        let mut selected = Vec::new();
-        let mut total_size = 0usize;
-        let mut total_system_fee = 0i64;
-
-        let required_signatures = consensus_m_threshold(self.validators.len());
-        let header_size = estimate_header_size(&self.validators, required_signatures);
-
-        let candidates = self.proposal_candidates(limit);
+        let policy = build_proposal_policy(&self.system, &self.settings, &self.validators);
         let rejected: HashSet<UInt256> = self
             .service
             .as_ref()
@@ -833,131 +849,33 @@ impl ConsensusActor {
                     .collect()
             })
             .unwrap_or_default();
-        for tx in candidates {
-            // Skip transactions already rejected by >F validators; re-proposing
-            // them only burns views (C# InvalidTransactions).
-            if rejected.contains(&tx.hash()) {
-                continue;
-            }
-            let candidate_count = selected.len() + 1;
-            let size_with_count =
-                header_size + var_size(candidate_count as u64) + total_size + tx.size();
-            if size_with_count > self.settings.max_block_size as usize {
-                break;
-            }
 
-            let fee_with_tx = total_system_fee.saturating_add(tx.system_fee());
-            if fee_with_tx > self.settings.max_block_system_fee {
-                break;
-            }
-
-            total_size += tx.size();
-            total_system_fee = fee_with_tx;
-            selected.push(tx);
+        let mut source = MempoolCandidateSource::new(self.system.clone());
+        // Skip transactions already rejected by >F validators; re-proposing
+        // them only burns views (C# InvalidTransactions).
+        let selection = policy.select_from(&mut source, max_count, &rejected);
+        if selection.skipped_rejected > 0 {
+            debug!(
+                target: "neo::consensus",
+                skipped_rejected = selection.skipped_rejected,
+                "proposal selection skipped validator-rejected transactions"
+            );
         }
 
-        // Convert Arc<Transaction> to Transaction for proposal
-        self.proposal_transactions = selected
-            .iter()
-            .map(|arc_tx| (arc_tx.hash(), (**arc_tx).clone()))
+        // Convert Arc<Transaction> to Transaction for proposal; the policy kept
+        // only summaries, so the concrete transactions are looked up by hash.
+        self.proposal_transactions = selection
+            .hashes()
+            .into_iter()
+            .filter_map(|hash| source.transaction(&hash).map(|tx| (hash, (*tx).clone())))
             .collect();
 
-        let hashes = selected.into_iter().map(|tx| tx.hash()).collect();
+        let hashes = selection.hashes();
         if let Some(service) = self.service.as_mut()
             && let Err(err) = service.on_transactions_received(hashes)
         {
             warn!(target: "neo", %err, "failed to submit proposal transactions");
         }
-    }
-
-    fn proposal_candidates(&mut self, limit: usize) -> Vec<Arc<Transaction>> {
-        if limit == 0 {
-            return Vec::new();
-        }
-
-        let pool = self.system.mempool();
-
-        // Privacy mode (strictly opt-in): the active TEE runtime has content
-        // encryption enabled. Resolve pending ciphertexts through the TEE
-        // decrypt state machine first — only Encrypted→Resolved entries enter
-        // the candidate ordering; Rejected entries fail closed and are logged
-        // and counted instead. The TEE ordered hash table is then intersected
-        // with the local isolation view before any candidate can be proposed.
-        #[cfg(feature = "tee")]
-        if let Some(runtime) = crate::tee_integration::active_runtime()
-            && runtime.privacy_enabled()
-        {
-            let summary = runtime.mempool.resolve_pending();
-            if summary.rejected > 0 {
-                warn!(
-                    target: "neo::consensus",
-                    rejected = summary.rejected,
-                    "privacy mode: rejected encrypted mempool entries are excluded from proposal candidates"
-                );
-            }
-            return Self::tee_ordered_candidates(&runtime, &pool, limit);
-        }
-
-        pool.lock().get_sorted_verified_transactions(limit)
-    }
-
-    /// TEE ordered hash table intersected with the bounded local-only
-    /// isolation view. Network receive and external proposal paths never call
-    /// this API.
-    #[cfg(feature = "tee")]
-    fn tee_ordered_candidates(
-        runtime: &crate::tee_integration::TeeRuntime,
-        pool: &std::sync::Arc<Mutex<neo_mempool::MemoryPool>>,
-        limit: usize,
-    ) -> Vec<Arc<Transaction>> {
-        let tee_hashes = runtime
-            .mempool
-            .get_ordered_hashes(limit.saturating_mul(4).max(limit));
-        let mut pool_guard = pool.lock();
-        let locally_allowed = pool_guard.local_proposal_transactions(
-            limit.saturating_mul(4).max(limit),
-            Self::current_time_ms(),
-        );
-
-        let mut verified_by_hash = HashMap::new();
-        for tx in &locally_allowed {
-            verified_by_hash.insert(tx.hash(), Arc::clone(tx));
-        }
-
-        let mut candidates = Vec::with_capacity(limit);
-        let mut seen = HashSet::with_capacity(limit.saturating_mul(2));
-
-        for hash_bytes in tee_hashes {
-            if candidates.len() >= limit {
-                break;
-            }
-
-            let Ok(hash) = UInt256::from_bytes(&hash_bytes) else {
-                continue;
-            };
-            let Some(tx) = verified_by_hash.get(&hash) else {
-                continue;
-            };
-
-            let tx_hash = tx.hash();
-            if seen.insert(tx_hash) {
-                candidates.push(Arc::clone(tx));
-            }
-        }
-
-        if candidates.len() < limit {
-            for tx in locally_allowed {
-                let tx_hash = tx.hash();
-                if seen.insert(tx_hash) {
-                    candidates.push(tx);
-                }
-                if candidates.len() >= limit {
-                    break;
-                }
-            }
-        }
-
-        candidates
     }
 
     fn try_prepare_response(&mut self, now: u64) {
@@ -988,6 +906,7 @@ impl ConsensusActor {
         }
 
         let settings = self.system.settings();
+        let policy = build_proposal_policy(&self.system, &self.settings, &self.validators);
         let store_cache = self.system.store_cache();
         let snapshot = store_cache.data_cache();
         let pool = self.system.mempool();
@@ -1009,89 +928,45 @@ impl ConsensusActor {
         let mut missing = HashSet::new();
 
         for hash in &proposed_hashes {
-            if self.system.context().contains_transaction(hash)
-                == ContainsTransactionType::ExistsInLedger
-            {
-                warn!(
-                    target: "neo",
-                    tx_hash = %hash,
-                    "prepare request includes on-chain transaction"
-                );
-                service.record_rejected_transaction(*hash);
-                let _ = service.request_change_view(ChangeViewReason::TxInvalid, now);
+            let already_on_chain = self.system.context().contains_transaction(hash)
+                == ContainsTransactionType::ExistsInLedger;
+
+            let Some(tx) = verified_map.get(hash).or_else(|| unverified_map.get(hash)) else {
+                if already_on_chain {
+                    apply_proposal_verdict(
+                        service,
+                        hash,
+                        ProposalTransactionVerdict::Reject {
+                            reason: ChangeViewReason::TxInvalid,
+                            cause: RejectionCause::AlreadyOnChain,
+                        },
+                        now,
+                    );
+                    return;
+                }
+                missing.insert(*hash);
+                continue;
+            };
+            let already_verified = verified_map.contains_key(hash);
+
+            let mut check = ProposalTransactionCheck {
+                already_on_chain,
+                conflicts_with_ledger: self
+                    .system
+                    .context()
+                    .contains_conflict_hash(hash, &signer_accounts(tx)),
+                conflicts_with_proposal: conflicts_with_context(tx, &transactions),
+                system_fee: tx.system_fee(),
+                verification: VerificationOutcome::Succeeded,
+            };
+
+            // Ledger/proposal/fee checks run before deterministic verification,
+            // matching the reference ordering.
+            if apply_proposal_verdict(service, hash, policy.evaluate_transaction(&check), now) {
                 return;
             }
 
-            if let Some(tx) = verified_map.get(hash) {
-                let signer_accounts = signer_accounts(tx);
-                if self
-                    .system
-                    .context()
-                    .contains_conflict_hash(hash, &signer_accounts)
-                {
-                    warn!(
-                        target: "neo",
-                        tx_hash = %hash,
-                        "prepare request contains conflicting transaction"
-                    );
-                    service.record_rejected_transaction(*hash);
-                    let _ = service.request_change_view(ChangeViewReason::TxInvalid, now);
-                    return;
-                }
-                if tx.system_fee() > self.settings.max_block_system_fee {
-                    warn!(
-                        target: "neo",
-                        tx_hash = %hash,
-                        "transaction system fee exceeds max_block_system_fee"
-                    );
-                    service.record_rejected_transaction(*hash);
-                    let _ = service.request_change_view(ChangeViewReason::TxInvalid, now);
-                    return;
-                }
-                if conflicts_with_context(tx, &transactions) {
-                    service.record_rejected_transaction(*hash);
-                    let _ = service.request_change_view(ChangeViewReason::TxInvalid, now);
-                    return;
-                }
-                transactions.insert(*hash, tx.clone());
-                verification_context.add_transaction(tx);
-                continue;
-            }
-
-            if let Some(tx) = unverified_map.get(hash) {
-                let signer_accounts = signer_accounts(tx);
-                if self
-                    .system
-                    .context()
-                    .contains_conflict_hash(hash, &signer_accounts)
-                {
-                    warn!(
-                        target: "neo",
-                        tx_hash = %hash,
-                        "prepare request contains conflicting transaction"
-                    );
-                    service.record_rejected_transaction(*hash);
-                    let _ = service.request_change_view(ChangeViewReason::TxInvalid, now);
-                    return;
-                }
-
-                if tx.system_fee() > self.settings.max_block_system_fee {
-                    warn!(
-                        target: "neo",
-                        tx_hash = %hash,
-                        "transaction system fee exceeds max_block_system_fee"
-                    );
-                    service.record_rejected_transaction(*hash);
-                    let _ = service.request_change_view(ChangeViewReason::TxInvalid, now);
-                    return;
-                }
-
-                if conflicts_with_context(tx, &transactions) {
-                    service.record_rejected_transaction(*hash);
-                    let _ = service.request_change_view(ChangeViewReason::TxInvalid, now);
-                    return;
-                }
-
+            if !already_verified {
                 let result =
                     verify_transaction(tx, settings, snapshot, Some(&verification_context), &[]);
                 if result != VerifyResult::Succeed {
@@ -1103,29 +978,28 @@ impl ConsensusActor {
                         path = "prepare_response",
                         "deterministic transaction validation rejected proposal"
                     );
-                    let reason = if result == VerifyResult::PolicyFail {
-                        ChangeViewReason::TxRejectedByPolicy
-                    } else {
-                        ChangeViewReason::TxInvalid
-                    };
-                    service.record_rejected_transaction(*hash);
-                    let _ = service.request_change_view(reason, now);
+                }
+                check.verification = if result == VerifyResult::Succeed {
+                    VerificationOutcome::Succeeded
+                } else if result == VerifyResult::PolicyFail {
+                    VerificationOutcome::RejectedByPolicy
+                } else {
+                    VerificationOutcome::Invalid
+                };
+                if apply_proposal_verdict(service, hash, policy.evaluate_transaction(&check), now) {
                     return;
                 }
-
-                transactions.insert(*hash, tx.clone());
-                verification_context.add_transaction(tx);
-                continue;
             }
 
-            missing.insert(*hash);
+            transactions.insert(*hash, tx.clone());
+            verification_context.add_transaction(tx);
         }
 
         if !missing.is_empty() {
-            let should_request = match self.missing_transactions.as_ref() {
-                Some(prev) => prev != &missing,
-                None => true,
-            };
+            let should_request = self
+                .missing_transactions
+                .as_ref()
+                .is_none_or(|prev| prev != &missing);
             if should_request {
                 let hashes: Vec<UInt256> = missing.iter().copied().collect();
                 let inv = InvPayload::create(InventoryType::Transaction, &hashes);
@@ -1144,20 +1018,14 @@ impl ConsensusActor {
         let total_system_fee = transactions
             .values()
             .fold(0i64, |acc, tx| acc.saturating_add(tx.system_fee()));
-        if total_system_fee > self.settings.max_block_system_fee {
-            let _ = service.request_change_view(ChangeViewReason::BlockRejectedByPolicy, now);
-            return;
-        }
-
-        let required_signatures = consensus_m_threshold(self.validators.len());
-        let header_size = estimate_header_size(&self.validators, required_signatures);
         let total_tx_size = transactions
             .values()
             .map(neo_io::Serializable::size)
             .sum::<usize>();
-        let block_size = header_size + var_size(transactions.len() as u64) + total_tx_size;
-        if block_size > self.settings.max_block_size as usize {
-            let _ = service.request_change_view(ChangeViewReason::BlockRejectedByPolicy, now);
+        if let BlockLimitVerdict::Reject { reason } =
+            policy.evaluate_block(transactions.len(), total_tx_size, total_system_fee)
+        {
+            let _ = service.request_change_view(reason, now);
             return;
         }
 
@@ -1376,51 +1244,22 @@ impl ConsensusActor {
     }
 
     fn precheck_prepare_request(&self, payload: &ConsensusPayload) -> bool {
-        if payload.message_type != ConsensusMessageType::PrepareRequest {
-            return true;
-        }
-
-        let Some(current_index) = self.current_block_index else {
-            return false;
+        let check = PrepareRequestPrecheck {
+            payload,
+            expected_block_index: self.current_block_index,
+            expected_prev_hash: self.current_prev_hash,
+            prev_timestamp: self.prev_timestamp.unwrap_or(0),
+            now_ms: Self::current_time_ms(),
+            time_per_block_ms: self.system.time_per_block().as_millis() as u64,
+            max_transactions_per_block: self.system.settings().max_transactions_per_block as usize,
         };
-
-        if payload.block_index != current_index {
-            return false;
+        match precheck_prepare_request(&check) {
+            Ok(()) => true,
+            Err(rejection) => {
+                debug!(target: "neo", ?rejection, "prepare request screened out");
+                false
+            }
         }
-
-        let Ok(message) = neo_consensus::messages::PrepareRequestMessage::deserialize_body(
-            &payload.data,
-            payload.block_index,
-            payload.view_number,
-            payload.validator_index,
-        ) else {
-            return false;
-        };
-
-        if message.transaction_hashes.len()
-            > self.system.settings().max_transactions_per_block as usize
-        {
-            return false;
-        }
-
-        if let Some(prev_hash) = self.current_prev_hash
-            && message.prev_hash != prev_hash
-        {
-            return false;
-        }
-
-        let prev_timestamp = self.prev_timestamp.unwrap_or(0);
-        if message.timestamp <= prev_timestamp {
-            return false;
-        }
-
-        let now = Self::current_time_ms();
-        let max_future = self.system.time_per_block().as_millis() as u64 * 8;
-        if message.timestamp > now.saturating_add(max_future) {
-            return false;
-        }
-
-        true
     }
 
     fn load_recovery_from_store(
@@ -1441,7 +1280,7 @@ impl ConsensusActor {
         }
     }
 
-    fn persist_commit_permit(&self, permit: &CommitPersistencePermit) -> bool {
+    fn persist_commit_recovery_state(&self, permit: &CommitPersistencePermit) -> bool {
         if permit.validate().is_err() {
             return false;
         }
@@ -1477,6 +1316,83 @@ impl ConsensusActor {
                 false
             }
         }
+    }
+}
+
+/// Node adapter for [`CommitPersistencePort`]: durable recovery store first,
+/// durable-file fallback otherwise.
+impl CommitPersistencePort for ConsensusActor {
+    fn persist_commit_permit(&self, permit: &CommitPersistencePermit) -> bool {
+        self.persist_commit_recovery_state(permit)
+    }
+}
+
+/// Accepts a loaded recovery context only when it belongs to `block_index`.
+fn accept_recovery_context(
+    loaded: Option<ConsensusContext>,
+    block_index: u32,
+) -> Option<ConsensusContext> {
+    let context = loaded?;
+    match evaluate_recovery_context(&context, block_index) {
+        RecoveryLoadOutcome::Resume => Some(context),
+        RecoveryLoadOutcome::HeightMismatch {
+            recovered,
+            expected,
+        } => {
+            warn!(
+                target: "neo",
+                recovered,
+                expected,
+                "recovery log does not match current height; ignoring"
+            );
+            None
+        }
+    }
+}
+
+/// Applies a proposal verdict: logs, records the rejection and requests the
+/// view change mandated by the policy. Returns `true` when the transaction was
+/// rejected (the caller must stop processing the proposal).
+fn apply_proposal_verdict(
+    service: &mut ConsensusService,
+    hash: &UInt256,
+    verdict: ProposalTransactionVerdict,
+    now: u64,
+) -> bool {
+    let ProposalTransactionVerdict::Reject { reason, cause } = verdict else {
+        return false;
+    };
+    log_proposal_rejection(hash, cause);
+    service.record_rejected_transaction(*hash);
+    let _ = service.request_change_view(reason, now);
+    true
+}
+
+fn log_proposal_rejection(hash: &UInt256, cause: RejectionCause) {
+    match cause {
+        RejectionCause::AlreadyOnChain => warn!(
+            target: "neo",
+            tx_hash = %hash,
+            "prepare request includes on-chain transaction"
+        ),
+        RejectionCause::LedgerConflict => warn!(
+            target: "neo",
+            tx_hash = %hash,
+            "prepare request contains conflicting transaction"
+        ),
+        RejectionCause::SystemFeeExceeded => warn!(
+            target: "neo",
+            tx_hash = %hash,
+            "transaction system fee exceeds max_block_system_fee"
+        ),
+        RejectionCause::ProposalConflict => warn!(
+            target: "neo",
+            tx_hash = %hash,
+            "transaction conflicts with existing set"
+        ),
+        // Verification failures are logged with their validation result where
+        // the deterministic check ran.
+        RejectionCause::VerificationPolicy | RejectionCause::VerificationInvalid => {}
     }
 }
 
@@ -1579,7 +1495,7 @@ fn fetch_block_timestamp(system: &neo_system::NeoSystem, index: u32) -> Option<u
 }
 
 fn extract_signature(witness: &Witness) -> Option<Vec<u8>> {
-    let invocation = &witness.invocation_script;
+    let invocation = witness.invocation_script();
     if invocation.len() != 66 {
         return None;
     }
@@ -1589,12 +1505,24 @@ fn extract_signature(witness: &Witness) -> Option<Vec<u8>> {
     Some(invocation[2..66].to_vec())
 }
 
-fn consensus_m_threshold(n: usize) -> usize {
-    if n == 0 {
-        return 0;
-    }
-    let f = (n - 1) / 3;
-    n - f
+/// Builds the proposal policy service for one round: consensus limits from the
+/// node settings plus the header/witness overhead of the active validator set.
+fn build_proposal_policy(
+    system: &neo_system::NeoSystem,
+    settings: &DbftSettings,
+    validators: &[neo_crypto::ECPoint],
+) -> ProposalPolicy {
+    let protocol = system.settings();
+    let limits = ProposalLimits::new(
+        protocol.max_transactions_per_block as usize,
+        settings.max_block_size as usize,
+        settings.max_block_system_fee,
+    );
+    let required_signatures = neo_consensus::required_signatures(validators.len());
+    ProposalPolicy::new(
+        limits,
+        estimate_header_size(validators, required_signatures),
+    )
 }
 
 fn estimate_header_size(validators: &[neo_crypto::ECPoint], m: usize) -> usize {
@@ -1613,10 +1541,6 @@ fn estimate_header_size(validators: &[neo_crypto::ECPoint], m: usize) -> usize {
     let mut header = Header::new();
     header.witness = witness;
     header.size()
-}
-
-fn var_size(count: u64) -> usize {
-    neo_io::serializable::helper::get_var_size(count)
 }
 
 fn conflicts_with_context(tx: &Transaction, existing: &HashMap<UInt256, Transaction>) -> bool {
@@ -1652,27 +1576,10 @@ fn signer_accounts(tx: &Transaction) -> Vec<neo_primitives::UInt160> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_consensus::ConsensusMessageType;
     use neo_crypto::{Crypto, Secp256r1Crypto};
     use neo_protocol::ProtocolSettings;
     use neo_wallets::{KeyPair, Nep6Wallet};
-
-    fn valid_commit_permit() -> CommitPersistencePermit {
-        let validators = vec![ValidatorInfo {
-            index: 0,
-            public_key: neo_crypto::ECPoint::infinity(neo_crypto::ECCurve::Secp256r1),
-            script_hash: UInt160::zero(),
-        }];
-        let mut context = ConsensusContext::new(42, validators, Some(0), None);
-        let proposal_hash = UInt256::from([0x42; 32]);
-        context.proposed_block_hash = Some(proposal_hash);
-        context
-            .add_commit(0, 0, vec![0xA5; 64])
-            .expect("add local commit");
-        context
-            .commit_persistence_permit()
-            .expect("build commit permit")
-            .expect("local commit permit")
-    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn consensus_signs_with_the_exact_wallet_validator_key() {
@@ -1738,106 +1645,6 @@ mod tests {
             .expect_err("a missing wallet account must fail closed");
     }
 
-    #[test]
-    fn commit_without_permit_has_no_consensus_egress() {
-        let network = 860_833_102;
-        let recovered_signature = vec![0x5A; 64];
-        let commit_payload = ConsensusPayload::new(
-            network,
-            42,
-            0,
-            3,
-            ConsensusMessageType::Commit,
-            recovered_signature.clone(),
-        );
-        let mut recovery = neo_consensus::messages::RecoveryMessage::new(42, 3, 0);
-        recovery
-            .commit_messages
-            .push(neo_consensus::messages::CommitPayloadCompact {
-                view_number: 3,
-                validator_index: 0,
-                signature: recovered_signature.clone(),
-                invocation_script: Vec::new(),
-            });
-        let recovery_payload = ConsensusPayload::new(
-            network,
-            42,
-            0,
-            3,
-            ConsensusMessageType::RecoveryMessage,
-            recovery.serialize(),
-        );
-        let block_data = BlockData {
-            block_index: 42,
-            timestamp: 0,
-            nonce: 0,
-            primary_index: 0,
-            transaction_hashes: Vec::new(),
-            signatures: vec![(0, recovered_signature)],
-            validator_pubkeys: vec![neo_crypto::ECPoint::infinity(
-                neo_crypto::ECCurve::Secp256r1,
-            )],
-            required_signatures: 1,
-            commit_persistence: None,
-        };
-        let mut persistence_attempts = 0;
-
-        let commit_broadcast = authorize_consensus_payload_egress(&commit_payload, Some(0), |_| {
-            persistence_attempts += 1;
-            true
-        });
-        let recovery_broadcast =
-            authorize_consensus_payload_egress(&recovery_payload, Some(0), |_| {
-                persistence_attempts += 1;
-                true
-            });
-        let block_persistence = authorize_block_commit_egress(&block_data, Some(0), |_| {
-            persistence_attempts += 1;
-            true
-        });
-
-        assert!(!commit_broadcast, "Commit broadcast requires its permit");
-        assert!(
-            !recovery_broadcast,
-            "RecoveryMessage carrying the recovered Commit requires its permit"
-        );
-        assert!(
-            !block_persistence,
-            "final block persistence requires the local Commit permit"
-        );
-        assert_eq!(
-            persistence_attempts, 0,
-            "missing permits must fail before durable persistence"
-        );
-    }
-
-    #[test]
-    fn commit_egress_fails_closed_when_persistence_fails() {
-        let permit = valid_commit_permit();
-        let mut persist_called = false;
-
-        let authorized = authorize_commit_egress(
-            Some(&permit),
-            permit.block_index,
-            permit.view_number,
-            permit.validator_index,
-            &permit.signature,
-            |_| {
-                persist_called = true;
-                false
-            },
-        );
-
-        assert!(
-            persist_called,
-            "valid permit must reach durable persistence"
-        );
-        assert!(
-            !authorized,
-            "signature egress must be withheld after persistence failure"
-        );
-    }
-
     #[cfg(all(feature = "tee", not(feature = "tee-sgx")))]
     #[tokio::test(flavor = "multi_thread")]
     async fn tee_ordered_candidates_fail_closed_against_local_view() {
@@ -1877,7 +1684,7 @@ mod tests {
 
         // ...but the local isolation view never verified it, so the
         // intersection is empty and no candidate is produced.
-        let candidates = ConsensusActor::tee_ordered_candidates(&runtime, &pool, 10);
+        let candidates = MempoolCandidateSource::tee_ordered_candidates(&runtime, &pool, 10);
         assert!(
             candidates.is_empty(),
             "TEE-ordered hashes must fail closed against the local isolation view"

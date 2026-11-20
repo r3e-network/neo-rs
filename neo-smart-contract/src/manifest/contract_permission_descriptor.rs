@@ -100,7 +100,7 @@ impl ContractPermissionDescriptor {
             ContractPermissionDescriptor::Hash(hash) => StackValue::ByteString(hash.to_bytes()),
             ContractPermissionDescriptor::Group(group) => {
                 StackValue::ByteString(group.encode_point(true).unwrap_or_else(|e| {
-                    tracing::error!("Failed to encode group key: {}", e);
+                    tracing::error!("Failed to encode group key: {e}");
                     group.to_bytes()
                 }))
             }

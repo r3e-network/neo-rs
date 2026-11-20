@@ -10,7 +10,7 @@ pub const NEO_COIN_TYPE: u32 = 888;
 /// Build BIP44 derivation path for Neo
 /// Format: m/44'/888'/account'/change/index
 pub fn neo_derivation_path(account: u32, index: u32) -> String {
-    format!("m/44'/{}'/{}'/{}/{}", NEO_COIN_TYPE, account, 0, index)
+    format!("m/44'/{NEO_COIN_TYPE}'/{account}'/0/{index}")
 }
 
 /// Parses and validates Neo's BIP44 derivation path.

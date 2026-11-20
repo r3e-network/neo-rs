@@ -168,14 +168,14 @@ impl neo_primitives::SerializablePayload for Header {
     }
     fn invocation_script(&self, index: usize) -> &[u8] {
         if index == 0 {
-            self.witness.invocation_script.as_slice()
+            self.witness.invocation_script()
         } else {
             &[]
         }
     }
     fn verification_script(&self, index: usize) -> &[u8] {
         if index == 0 {
-            self.witness.verification_script.as_slice()
+            self.witness.verification_script()
         } else {
             &[]
         }

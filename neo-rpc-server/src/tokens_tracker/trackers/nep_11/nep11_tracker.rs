@@ -3,23 +3,16 @@
 //! Tracks NEP-11 (non-fungible token) ownership and transfer history.
 
 use super::super::token_balance::TokenBalance;
-use super::super::token_transfer::TokenTransfer;
-use super::super::tracker_base::{Tracker, TrackerBase, TransferRecord};
+use super::super::tracker_base::{ContractCall, Tracker, TrackerBase, TransferRecord};
 use super::nep11_balance_key::Nep11BalanceKey;
 use super::nep11_transfer_key::Nep11TransferKey;
 use neo_ledger::ApplicationExecuted;
 use neo_native_contracts::native::contract_management::ContractManagement;
-use neo_primitives::CallFlags;
-use neo_primitives::TriggerType;
 use neo_primitives::UInt160;
 use neo_primitives::log_level::LogLevel;
 use neo_protocol::execution::Block;
-use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_storage::persistence::DataCache;
 use neo_system::NeoSystem;
-use neo_vm::OpCode;
-use neo_vm::ScriptBuilder;
-use neo_vm::StackItem;
 use neo_vm::VmState as VMState;
 use num_bigint::BigInt;
 use num_traits::One;
@@ -29,6 +22,9 @@ use std::sync::Arc;
 const NEP11_BALANCE_PREFIX: u8 = 0xf8;
 const NEP11_TRANSFER_SENT_PREFIX: u8 = 0xf9;
 const NEP11_TRANSFER_RECEIVED_PREFIX: u8 = 0xfa;
+
+/// Gas limit for the `balanceOf` query engine.
+const NEP11_BALANCE_OF_GAS: i64 = 34_000_000;
 
 /// NEP-11 token tracker.
 pub struct Nep11Tracker {
@@ -54,18 +50,11 @@ impl Nep11Tracker {
 
     fn handle_notification(
         &mut self,
+        record: &TransferRecord,
         container: Option<&Arc<dyn neo_primitives::Verifiable>>,
-        asset: &UInt160,
-        state_items: &[StackItem],
         transfers: &mut Vec<TransferRecord>,
         transfer_index: &mut u32,
     ) {
-        if state_items.len() != 4 {
-            return;
-        }
-        let Some(record) = TrackerBase::get_transfer_record(asset, state_items) else {
-            return;
-        };
         let Some(token_id) = record.token_id.clone() else {
             return;
         };
@@ -76,7 +65,7 @@ impl Nep11Tracker {
                 .as_any()
                 .downcast_ref::<neo_protocol::payloads::Transaction>()
         {
-            self.record_transfer_history(&record, &token_id, &tx.hash(), transfer_index);
+            self.record_transfer_history(record, &token_id, &tx.hash(), transfer_index);
         }
     }
 
@@ -94,40 +83,26 @@ impl Nep11Tracker {
             return;
         };
 
-        if record.from != UInt160::zero() {
-            let key = Nep11TransferKey::new(
-                record.from,
-                block.header.timestamp,
-                record.asset,
-                token_id.to_vec(),
-                *transfer_index,
-            );
-            let value = TokenTransfer {
-                amount: record.amount.clone(),
-                user_script_hash: record.to,
-                block_index: self.current_height,
-                tx_hash: *tx_hash,
-            };
-            let _ = self.base.put(NEP11_TRANSFER_SENT_PREFIX, &key, &value);
-        }
-
-        if record.to != UInt160::zero() {
-            let key = Nep11TransferKey::new(
-                record.to,
-                block.header.timestamp,
-                record.asset,
-                token_id.to_vec(),
-                *transfer_index,
-            );
-            let value = TokenTransfer {
-                amount: record.amount.clone(),
-                user_script_hash: record.from,
-                block_index: self.current_height,
-                tx_hash: *tx_hash,
-            };
-            let _ = self.base.put(NEP11_TRANSFER_RECEIVED_PREFIX, &key, &value);
-        }
-
+        let timestamp_ms = block.header.timestamp;
+        let block_index = self.current_height;
+        let index = *transfer_index;
+        self.base.record_transfer_history(
+            NEP11_TRANSFER_SENT_PREFIX,
+            NEP11_TRANSFER_RECEIVED_PREFIX,
+            record,
+            block_index,
+            *tx_hash,
+            index,
+            |user, xfer_index| {
+                Nep11TransferKey::new(
+                    user,
+                    timestamp_ms,
+                    record.asset,
+                    token_id.to_vec(),
+                    xfer_index,
+                )
+            },
+        );
         *transfer_index += 1;
     }
 
@@ -141,58 +116,32 @@ impl Nep11Tracker {
             return;
         };
 
-        let mut sb = ScriptBuilder::new();
-        // balanceOf(from, tokenId)
-        sb.emit_push(&record.from.to_bytes());
-        sb.emit_push(&token_id);
-        sb.emit_push_int(2);
-        sb.emit_opcode(OpCode::PACK);
-        sb.emit_push_int(CallFlags::ALL.bits() as i64);
-        sb.emit_push("balanceOf".as_bytes());
-        sb.emit_push(&record.asset.to_bytes());
-        if sb.emit_syscall("System.Contract.Call").is_err() {
-            return;
-        }
-
-        // balanceOf(to, tokenId)
-        sb.emit_push(&record.to.to_bytes());
-        sb.emit_push(&token_id);
-        sb.emit_push_int(2);
-        sb.emit_opcode(OpCode::PACK);
-        sb.emit_push_int(CallFlags::ALL.bits() as i64);
-        sb.emit_push("balanceOf".as_bytes());
-        sb.emit_push(&record.asset.to_bytes());
-        if sb.emit_syscall("System.Contract.Call").is_err() {
-            return;
-        }
-
-        let Ok(mut engine) = ApplicationEngine::new(
-            TriggerType::Application,
-            None,
-            Arc::new(snapshot.clone()),
-            self.current_block
-                .clone()
-                .map(neo_system::neo_system::converters::convert_ledger_block),
-            self.base.neo_system.settings().clone(),
-            34_000_000,
-            None,
-            neo_native_contracts::native::composition::default_native_services(),
+        // Both balances come from a single script, so the transfer costs one
+        // engine setup: the answer for `from` is pushed first and therefore sits
+        // deeper on the result stack.
+        let Some(engine) = self.base.call_contract(
+            snapshot,
+            self.current_block.as_ref(),
+            record.asset,
+            NEP11_BALANCE_OF_GAS,
+            &[
+                ContractCall {
+                    method: "balanceOf",
+                    args: vec![record.from.to_bytes(), token_id.clone()],
+                },
+                ContractCall {
+                    method: "balanceOf",
+                    args: vec![record.to.to_bytes(), token_id.clone()],
+                },
+            ],
         ) else {
-            return;
-        };
-
-        if engine
-            .load_script(sb.to_array(), CallFlags::ALL, Some(record.asset))
-            .and_then(|_| engine.execute())
-            .is_err()
-        {
             TrackerBase::log(
                 self.track_name(),
                 "Divisible NEP-11 balanceOf fault",
                 LogLevel::Warning,
             );
             return;
-        }
+        };
 
         if engine.state().contains(VMState::FAULT) || engine.result_stack().len() != 2 {
             TrackerBase::log(
@@ -282,37 +231,16 @@ impl Tracker for Nep11Tracker {
         self.current_block = Some(block.clone());
         self.current_height = block.index();
 
-        let mut transfer_index: u32 = 0;
         let mut transfers: Vec<TransferRecord> = Vec::new();
-
-        for app in executed_list {
-            if app.vm_state.contains(VMState::FAULT) {
-                continue;
-            }
-            for notify in &app.notifications {
-                if notify.event_name != "Transfer" || notify.state.is_empty() {
-                    continue;
-                }
-
-                let Ok(Some(contract)) =
-                    ContractManagement::get_contract_from_snapshot(snapshot, &notify.script_hash)
-                else {
-                    continue;
-                };
-
-                if !contract.manifest.supports_standard("NEP-11") {
-                    continue;
-                }
-
-                self.handle_notification(
-                    notify.script_container.as_ref(),
-                    &notify.script_hash,
-                    &notify.state,
-                    &mut transfers,
-                    &mut transfer_index,
-                );
-            }
-        }
+        TrackerBase::for_each_transfer(
+            snapshot,
+            executed_list,
+            "NEP-11",
+            4,
+            |record, container, transfer_index| {
+                self.handle_notification(record, container, &mut transfers, transfer_index);
+            },
+        );
 
         let mut divisibility: HashMap<UInt160, bool> = HashMap::new();
         for record in &transfers {

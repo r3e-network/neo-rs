@@ -28,7 +28,7 @@ impl OracleNeoFsProtocol {
         let Ok(response) = builder
             .header(
                 reqwest::header::RANGE,
-                format!("bytes={}-{}", range.offset, end),
+                format!("bytes={}-{end}", range.offset),
             )
             .send()
             .await

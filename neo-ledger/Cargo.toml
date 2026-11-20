@@ -29,6 +29,7 @@ neo-smart-contract = { path = "../neo-smart-contract" }
 
 # Third-party
 base64 = { workspace = true }
+dashmap = { workspace = true }
 lru = { workspace = true }
 num-bigint = { workspace = true }
 num-traits = { workspace = true }

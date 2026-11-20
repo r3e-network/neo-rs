@@ -239,7 +239,12 @@ impl Map {
     /// `(items, id, stack_references, is_read_only)`.
     pub(crate) fn debug_snapshot(
         &self,
-    ) -> (VmOrderedDictionary<StackItem, StackItem>, usize, usize, bool) {
+    ) -> (
+        VmOrderedDictionary<StackItem, StackItem>,
+        usize,
+        usize,
+        bool,
+    ) {
         let inner = self.inner.lock();
         (
             inner.items.clone(),

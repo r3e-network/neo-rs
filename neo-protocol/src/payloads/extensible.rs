@@ -6,11 +6,10 @@
 //! verification) is a higher-layer concern and intentionally not present here;
 //! this leaf depends only on neo-io / neo-crypto / neo-primitives.
 
-use super::validate_length;
 use crate::witness::{Witness, WitnessData};
 use neo_crypto::Crypto;
 use neo_io::serializable::helper::{get_var_size, get_var_size_bytes, get_var_size_str};
-use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable, ValidateLength};
 use neo_primitives::error::{PrimitiveError, PrimitiveResult};
 use neo_primitives::{Inventory, InventoryType, SerializablePayload, UInt160, UInt256};
 use serde::{Deserialize, Serialize};
@@ -161,14 +160,15 @@ impl Extensible {
     }
 
     fn serialize_unsigned(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        validate_length(self.category.len(), MAX_CATEGORY_LENGTH, "Category")?;
+        self.category
+            .validate_max_length(MAX_CATEGORY_LENGTH, "Category")?;
         writer.write_var_string(&self.category)?;
 
         writer.write_u32(self.valid_block_start)?;
         writer.write_u32(self.valid_block_end)?;
         writer.write_serializable(&self.sender)?;
 
-        validate_length(self.data.len(), MAX_DATA_LENGTH, "Data")?;
+        self.data.validate_max_length(MAX_DATA_LENGTH, "Data")?;
         writer.write_var_bytes(&self.data)?;
 
         Ok(())
@@ -211,7 +211,7 @@ impl SerializablePayload for Extensible {
 
     fn invocation_script(&self, index: usize) -> &[u8] {
         if index == 0 {
-            self.witness.invocation_script.as_slice()
+            self.witness.invocation_script()
         } else {
             &[]
         }
@@ -219,7 +219,7 @@ impl SerializablePayload for Extensible {
 
     fn verification_script(&self, index: usize) -> &[u8] {
         if index == 0 {
-            self.witness.verification_script.as_slice()
+            self.witness.verification_script()
         } else {
             &[]
         }
@@ -395,8 +395,8 @@ mod tests {
         }
         let mut witnesses = clone.witnesses_mut();
         assert_eq!(witnesses.len(), 1);
-        witnesses[0].invocation_script = vec![0x01];
-        assert_eq!(clone.witness.invocation_script, vec![0x01]);
+        witnesses[0].set_invocation_script(vec![0x01]);
+        assert_eq!(clone.witness.invocation_script(), [0x01]);
     }
 
     #[test]

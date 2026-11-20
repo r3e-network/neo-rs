@@ -101,11 +101,7 @@ impl EvidenceItem {
     pub fn content_hash(&self) -> Result<String, EvidenceError> {
         let encoded = serde_json::to_vec(self).map_err(|_| EvidenceError::Serialization)?;
         let digest = Sha256::digest(encoded);
-        Ok(digest.iter().fold(String::new(), |mut output, byte| {
-            use std::fmt::Write as _;
-            write!(output, "{byte:02x}").expect("formatting hex into a String cannot fail");
-            output
-        }))
+        Ok(hex::encode(digest.as_slice()))
     }
 }
 
@@ -342,11 +338,7 @@ impl EvidenceRecord {
         })
         .map_err(|_| EvidenceError::Serialization)?;
         let digest = Sha256::digest(encoded);
-        Ok(digest.iter().fold(String::new(), |mut output, byte| {
-            use std::fmt::Write as _;
-            write!(output, "{byte:02x}").expect("formatting hex into a String cannot fail");
-            output
-        }))
+        Ok(hex::encode(digest.as_slice()))
     }
 }
 

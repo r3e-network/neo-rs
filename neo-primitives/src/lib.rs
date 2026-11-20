@@ -67,9 +67,10 @@ pub mod uint256;
 mod uint_hex;
 pub mod unhandled_exception_policy;
 pub mod verifiable;
-pub mod verification;
 pub mod verify_result;
 pub mod witness_condition_type;
+/// Protocol witness-rule models (`WitnessCondition` / `WitnessRule`).
+pub mod witness_rule;
 pub mod witness_rule_action;
 pub mod witness_scope;
 
@@ -108,18 +109,13 @@ pub use uint256::{UINT256_SIZE, UInt256};
 pub use verifiable::Verifiable;
 pub use verify_result::VerifyResult;
 pub use witness_condition_type::WitnessConditionType;
+pub use witness_rule::{WitnessCondition, WitnessRule};
 pub use witness_scope::{InvalidWitnessScopeError, WitnessScope};
 
-// New trait re-exports for crate refactoring (Phase 1)
-pub use blockchain::{
-    BlockLike, BlockchainProvider, HeaderLike, NetworkMessage, PeerId, PeerInfo, PeerRegistry,
-    RelayError, RelayResult, SendError, SendResult, TransactionLike,
-};
+// Trait re-exports: `BlockLike` bounds ledger validation, and `RelayError` is the
+// relay-failure vocabulary shared with neo-p2p and neo-ledger.
+pub use blockchain::{BlockLike, RelayError, RelayResult};
 pub use extensions::ExtensionsUtility;
-pub use macros::{OptionExt, ValidateLength};
 pub use serializable_payload::SerializablePayload;
 pub use storage::{StorageValue, StorageValueError, StorageValueResult};
 pub use unhandled_exception_policy::{UnhandledExceptionPolicy, panic_message};
-pub use verification::{
-    BlockchainSnapshot, VerificationContext, VerificationError, VerificationResult, Witness,
-};

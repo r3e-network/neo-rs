@@ -15,6 +15,7 @@ description = "Capability-restricted detached transaction prevalidation worker"
 
 [dependencies]
 async-trait = { workspace = true }
+hex = { workspace = true }
 neo-ai-agent = { workspace = true }
 neo-native-contracts = { workspace = true }
 neo-primitives = { workspace = true }

@@ -1,10 +1,10 @@
 use crate::evidence::{
     EvidenceAuthority, EvidenceItem, EvidenceKind, EvidenceRecord, EvidenceSource,
 };
+use crate::store_files::{hex_sha256, valid_hash};
 use async_trait::async_trait;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fmt;
 use thiserror::Error;
@@ -678,20 +678,6 @@ fn hash_serializable(value: &impl Serialize) -> Result<String, ProbeContractErro
         return Err(ProbeContractError::ZeroContentHash);
     }
     Ok(hash)
-}
-
-fn hex_sha256(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .fold(String::new(), |mut output, byte| {
-            use std::fmt::Write as _;
-            write!(output, "{byte:02x}").expect("formatting hex into a String cannot fail");
-            output
-        })
-}
-
-fn valid_hash(hash: &str) -> bool {
-    hash.len() == 64 && hash != "00".repeat(32) && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 #[derive(Debug, Clone)]

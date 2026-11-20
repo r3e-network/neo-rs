@@ -57,7 +57,7 @@ impl TeeWallet {
         };
 
         wallet.save_metadata()?;
-        info!("Created new TEE wallet: {}", name);
+        info!("Created new TEE wallet: {name}");
 
         Ok(wallet)
     }
@@ -87,7 +87,7 @@ impl TeeWallet {
                         keys.insert(sealed_key.script_hash, sealed_key);
                     }
                     Err(e) => {
-                        warn!("Failed to load key {}: {}", key_filename, e);
+                        warn!("Failed to load key {key_filename}: {e}");
                     }
                 }
             }

@@ -1,13 +1,15 @@
+use crate::store_files::{
+    StoreFileError, discover_generations, generation_path, hash_json_value, null_device_file,
+    unix_time_ms, valid_hash,
+};
 use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 pub const AUDIT_SCHEMA_VERSION: u16 = 1;
@@ -366,7 +368,7 @@ impl AuditLog for FileAuditLog {
 fn rotate(state: &mut FileAuditState) -> Result<(), AuditError> {
     state.file.sync_all().map_err(|_| AuditError::Unavailable)?;
     // Close the active handle so the rename is portable across platforms.
-    let closed = std::mem::replace(&mut state.file, null_device_file()?);
+    let closed = std::mem::replace(&mut state.file, null_device_file::<AuditError>()?);
     drop(closed);
     // Drop generations beyond the retention count (e.g. after the policy shrank).
     let mut stale = state.options.generations + 1;
@@ -442,27 +444,6 @@ fn write_rotation_checkpoint(state: &mut FileAuditState) -> Result<(), AuditErro
     Ok(())
 }
 
-/// Path of a rotated generation, where generation 1 is the most recent archive.
-fn generation_path(path: &Path, generation: u32) -> PathBuf {
-    let mut name = path.as_os_str().to_os_string();
-    name.push(format!(".{generation}"));
-    PathBuf::from(name)
-}
-
-/// Discovers retained generations (`.1` newest first) with a defensive scan cap.
-fn discover_generations(path: &Path) -> Vec<PathBuf> {
-    const MAX_GENERATION_SCAN: u32 = 10_000;
-    let mut generations = Vec::new();
-    for generation in 1..=MAX_GENERATION_SCAN {
-        let candidate = generation_path(path, generation);
-        if !candidate.exists() {
-            break;
-        }
-        generations.push(candidate);
-    }
-    generations
-}
-
 fn read_events(path: &Path) -> Result<Vec<AuditEvent>, AuditError> {
     let reader = BufReader::new(File::open(path).map_err(|_| AuditError::Unavailable)?);
     let mut events = Vec::new();
@@ -473,26 +454,6 @@ fn read_events(path: &Path) -> Result<Vec<AuditEvent>, AuditError> {
         }
     }
     Ok(events)
-}
-
-fn null_device_file() -> Result<File, AuditError> {
-    #[cfg(windows)]
-    let path = "NUL";
-    #[cfg(not(windows))]
-    let path = "/dev/null";
-    OpenOptions::new()
-        .write(true)
-        .open(path)
-        .map_err(|_| AuditError::Unavailable)
-}
-
-fn unix_time_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(1, |duration| {
-            u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
-        })
-        .max(1)
 }
 
 #[async_trait]
@@ -535,10 +496,7 @@ fn validate_input(input: &AuditInput) -> Result<(), AuditError> {
             .iter()
             .any(std::string::String::is_empty)
         || input.evidence_refs.len() != input.evidence_hashes.len()
-        || input
-            .evidence_hashes
-            .iter()
-            .any(|hash| !valid_evidence_hash(hash))
+        || input.evidence_hashes.iter().any(|hash| !valid_hash(hash))
         || input
             .action
             .as_ref()
@@ -555,10 +513,6 @@ fn validate_input(input: &AuditInput) -> Result<(), AuditError> {
         return Err(AuditError::InvalidInput);
     }
     Ok(())
-}
-
-fn valid_evidence_hash(hash: &str) -> bool {
-    hash.len() == 64 && hash != "00".repeat(32) && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn calculate_hash(event: &AuditEvent) -> Result<String, AuditError> {
@@ -592,13 +546,7 @@ fn calculate_hash(event: &AuditEvent) -> Result<String, AuditError> {
         outcome_code: &event.outcome_code,
         previous_hash: &event.previous_hash,
     };
-    let encoded = serde_json::to_vec(&material).map_err(|_| AuditError::Serialization)?;
-    let digest = Sha256::digest(encoded);
-    Ok(digest.iter().fold(String::new(), |mut output, byte| {
-        use std::fmt::Write as _;
-        write!(output, "{byte:02x}").expect("formatting hex into a String cannot fail");
-        output
-    }))
+    hash_json_value::<AuditError>(&material)
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -615,6 +563,16 @@ pub enum AuditError {
     UnsupportedVersion(u16),
     #[error("audit hash chain is broken at sequence {0}")]
     BrokenChain(u64),
+}
+
+impl StoreFileError for AuditError {
+    fn unavailable() -> Self {
+        Self::Unavailable
+    }
+
+    fn serialization() -> Self {
+        Self::Serialization
+    }
 }
 
 #[cfg(test)]

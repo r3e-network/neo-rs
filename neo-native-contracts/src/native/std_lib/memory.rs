@@ -62,8 +62,7 @@ impl StdLib {
         // Validate start index
         if start < 0 || start as usize > mem.len() {
             return Err(Error::native_contract(format!(
-                "start index {} out of range [0, {}]",
-                start,
+                "start index {start} out of range [0, {}]",
                 mem.len()
             )));
         }

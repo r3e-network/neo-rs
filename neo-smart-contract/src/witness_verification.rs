@@ -15,7 +15,7 @@ use crate::helper::Helper;
 use neo_crypto::{Crypto, Secp256r1Crypto};
 use neo_primitives::UInt160;
 use neo_protocol::payloads::Witness;
-use neo_vm::OpCode;
+use neo_vm::script::parse_single_signature_invocation;
 use std::convert::TryInto;
 
 /// Verifies the witness signature (production-ready implementation).
@@ -109,13 +109,13 @@ pub fn verify_witness_multi_signature(
 
 /// Extracts public key from verification script (matches C# verification script parsing exactly).
 fn extract_public_key_from_verification_script(witness: &Witness) -> Result<Vec<u8>, CoreError> {
-    if !Helper::is_signature_contract(&witness.verification_script) {
+    if !Helper::is_signature_contract(witness.verification_script()) {
         return Err(CoreError::Invalid {
             message: "Unsupported verification script format".to_string(),
         });
     }
 
-    let public_key = witness.verification_script[2..35].to_vec();
+    let public_key = witness.verification_script()[2..35].to_vec();
 
     if public_key.len() != 33 || (public_key[0] != 0x02 && public_key[0] != 0x03) {
         return Err(CoreError::Invalid {
@@ -126,33 +126,17 @@ fn extract_public_key_from_verification_script(witness: &Witness) -> Result<Vec<
     Ok(public_key)
 }
 
-/// Extracts signature from invocation script (matches C# signature extraction exactly).
+/// Extracts the 64-byte signature from a single-signature invocation script.
+///
+/// The `PUSHDATA1`/length layout is owned by `neo-vm`'s
+/// [`parse_single_signature_invocation`]; this only maps the absent case onto
+/// this crate's error type so the layout cannot drift from the canonical one.
 fn extract_signature_from_invocation_script(witness: &Witness) -> Result<Vec<u8>, CoreError> {
-    // Real C# Neo N3 implementation: Invocation script signature extraction
-
-    if witness.invocation_script.len() != 66 {
-        return Err(CoreError::Invalid {
-            message: "Invalid invocation script length".to_string(),
-        });
-    }
-
-    if witness.invocation_script[0] != OpCode::PUSHDATA1.byte()
-        || witness.invocation_script[1] != 0x40
-    {
-        return Err(CoreError::Invalid {
+    parse_single_signature_invocation(witness.invocation_script())
+        .map(<[u8]>::to_vec)
+        .ok_or_else(|| CoreError::Invalid {
             message: "Invalid invocation script format".to_string(),
-        });
-    }
-
-    let signature = witness.invocation_script[2..66].to_vec();
-
-    if signature.len() != 64 {
-        return Err(CoreError::Invalid {
-            message: "Invalid signature length".to_string(),
-        });
-    }
-
-    Ok(signature)
+        })
 }
 
 /// Verifies ECDSA signature (matches C# ECDsa.VerifyData exactly).

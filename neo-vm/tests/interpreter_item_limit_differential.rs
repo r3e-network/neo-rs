@@ -51,11 +51,7 @@ fn run_fast(script: &[u8]) -> Fast {
     run_fast_with(script, Vec::new(), &mut PureHost)
 }
 
-fn run_fast_with(
-    script: &[u8],
-    stack: Vec<StackValue>,
-    host: &mut impl SyscallProvider,
-) -> Fast {
+fn run_fast_with(script: &[u8], stack: Vec<StackValue>, host: &mut impl SyscallProvider) -> Fast {
     match interpret_with_stack_and_syscalls(script, stack, host) {
         Ok(result) if result.state == VmState::Halt => Fast::Halt,
         Ok(result) => Fast::Fault(result.fault_message.unwrap_or_default()),
@@ -548,7 +544,11 @@ fn one_array_twice() -> Vec<StackValue> {
 /// in the stack it is given, so both engines fault on the same item count.
 #[test]
 fn compounds_from_the_host_are_counted_once_per_reference() {
-    let single = run_fast_with(&pushes(10), vec![one_array_twice()[0].clone()], &mut PureHost);
+    let single = run_fast_with(
+        &pushes(10),
+        vec![one_array_twice()[0].clone()],
+        &mut PureHost,
+    );
     assert_eq!(single, Fast::Halt, "one array of 1500");
 
     let initial = run_fast_with(&pushes(10), one_array_twice(), &mut PureHost);
@@ -638,9 +638,9 @@ impl Shape {
         Self {
             kind,
             struct_child: children.iter().any(|child| child.kind == Kind::Struct),
-            inside: children.iter().fold(object_bit(object), |inside, child| {
-                inside | child.inside
-            }),
+            inside: children
+                .iter()
+                .fold(object_bit(object), |inside, child| inside | child.inside),
         }
     }
 
@@ -870,4 +870,3 @@ fn random_mutating_scripts_reach_the_canonical_state() {
         "only {item_count_faults} generated scripts reached the item limit"
     );
 }
-

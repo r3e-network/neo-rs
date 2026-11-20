@@ -2,7 +2,6 @@
 
 #[cfg(test)]
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_crypto::{ECCurve, ECPoint};
 use neo_io::Serializable;
 use neo_native_contracts::native::{
     GasToken, LedgerContract, NativeContract, NeoToken, PolicyContract,
@@ -25,11 +24,12 @@ use neo_vm::VmState as VMState;
 use neo_wallets::helper::Helper as WalletHelper;
 use neo_wallets::signing::{
     FrozenSignIntent, ProtocolContext, SIGNING_SCHEMA_VERSION, SignPayload, SignPurpose,
-    SignResponse,
+    SignResponse, SignResult,
 };
 use neo_wallets::{
-    Helper, KeyPair, Nep6Wallet, TransferOutput, Wallet as CoreWallet, WalletAccount, WalletError,
-    WalletResult,
+    AccountSignature, AuthorizationLimits, ContractSignatureContext, Helper, KeyPair, Nep6Wallet,
+    TransactionAuthorizationError, TransactionAuthorizer, TransactionChainQuery, TransferOutput,
+    Wallet as CoreWallet, WalletAccount, WalletError, WalletResult,
 };
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
@@ -38,7 +38,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::io::ErrorKind;
 use std::path::{Component, Path, PathBuf};
-use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::runtime::{Builder as RuntimeBuilder, Handle, RuntimeFlavor};
@@ -179,188 +178,86 @@ impl AssetDescriptor {
     }
 }
 
-/// Context for collecting signatures for multi-signature transactions.
+/// Type name the RPC wallet reports for a transaction context, matching C#.
+const TRANSACTION_TYPE_NAME: &str = "Neo.Network.P2P.Payloads.Transaction";
+
+/// Local ledger answers for RPC wallet authorization.
 ///
-/// This structure manages the process of collecting signatures from multiple parties
-/// for transactions that require multi-signature authorization.
-struct ContractParametersContext {
-    _snapshot: Arc<DataCache>,
-    tx: Transaction,
+/// Every method reads the snapshot in place, so each port future is ready on
+/// its first poll and the synchronous RPC handlers can drive it without a
+/// reactor. This is the server-side counterpart of the client's RPC port: both
+/// feed the same [`TransactionAuthorizer`].
+struct LedgerChainQuery {
+    snapshot: DataCache,
+}
+
+impl LedgerChainQuery {
+    fn new(snapshot: DataCache) -> Self {
+        Self { snapshot }
+    }
+}
+
+#[async_trait::async_trait]
+impl TransactionChainQuery for LedgerChainQuery {
+    type Error = String;
+
+    async fn block_height(&self) -> Result<u32, Self::Error> {
+        LedgerContract::new()
+            .current_index(&self.snapshot)
+            .map_err(|err| err.to_string())
+    }
+
+    async fn gas_balance(&self, account: &UInt160) -> Result<BigInt, Self::Error> {
+        Ok(GasToken::new().balance_of_snapshot(&self.snapshot, account))
+    }
+
+    async fn network_fee(&self, transaction: &Transaction) -> Result<i64, Self::Error> {
+        // The node prices a transaction from its signed witnesses at relay
+        // time; wallet preparation validates the caller-supplied fee against
+        // the policy floor and `MaxFee` instead of re-estimating it here.
+        Ok(transaction.network_fee())
+    }
+}
+
+/// Renders an authorization context as the JSON the wallet RPC returns.
+///
+/// Signature slots, requirement counts and completion are read from the shared
+/// [`TransactionAuthorizer`]; only the wire shape is owned by the RPC layer.
+fn authorization_json(
+    authorizer: &TransactionAuthorizer,
     network: u32,
-    type_name: Option<String>,
-    /// Map of script hash to collected signatures and contract info
-    signatures: std::collections::HashMap<UInt160, ContractSignatures>,
-}
-
-/// Signatures collected for a specific contract
-#[derive(Debug, Clone)]
-struct ContractSignatures {
-    contract: neo_smart_contract::Contract,
-    /// Map of public key (in bytes) to signature
-    signatures: std::collections::HashMap<Vec<u8>, Vec<u8>>,
-    /// Number of signatures required
-    required: usize,
-}
-
-impl ContractParametersContext {
-    fn new_with_type(
-        snapshot: Arc<DataCache>,
-        tx: Transaction,
-        network: u32,
-        type_name: Option<String>,
-    ) -> Self {
-        Self {
-            _snapshot: snapshot,
-            tx,
-            network,
-            type_name,
-            signatures: std::collections::HashMap::new(),
-        }
-    }
-
-    fn add_contract(&mut self, contract: neo_smart_contract::Contract) {
-        let script_hash = contract.script_hash();
-
-        // Determine required signature count based on contract script
-        let required = self.parse_multisig_required(&contract).unwrap_or(1);
-
-        self.signatures.insert(
-            script_hash,
-            ContractSignatures {
-                contract,
-                signatures: std::collections::HashMap::new(),
-                required,
-            },
-        );
-    }
-
-    fn add_signature(
-        &mut self,
-        contract: &neo_smart_contract::Contract,
-        public_key: &ECPoint,
-        signature: Vec<u8>,
-    ) -> Result<bool, String> {
-        let script_hash = contract.script_hash();
-
-        // Ensure contract is registered
-        if !self.signatures.contains_key(&script_hash) {
-            self.add_contract(contract.clone());
-        }
-
-        let contract_sigs = self
-            .signatures
-            .get_mut(&script_hash)
-            .ok_or_else(|| "Contract not found".to_string())?;
-
-        // Add signature for this public key
-        let pk_bytes = public_key
-            .encode_point(true)
-            .map_err(|e| format!("Failed to encode public key: {e}"))?;
-        contract_sigs.signatures.insert(pk_bytes, signature);
-
-        // Return true if this contract now has enough signatures
-        Ok(contract_sigs.signatures.len() >= contract_sigs.required)
-    }
-
-    fn completed(&self) -> bool {
-        // Check if all signers have enough signatures
-        for signer in self.tx.signers() {
-            if let Some(contract_sigs) = self.signatures.get(&signer.account) {
-                if contract_sigs.signatures.len() < contract_sigs.required {
-                    return false;
-                }
-            } else {
-                // Missing contract for this signer
-                return false;
-            }
-        }
-        true
-    }
-
-    fn witnesses(&self) -> Vec<Witness> {
-        let mut witnesses = Vec::new();
-
-        for signer in self.tx.signers() {
-            if let Some(contract_sigs) = self.signatures.get(&signer.account) {
-                // Build witness from collected signatures
-                let witness = self.build_witness(contract_sigs);
-                witnesses.push(witness);
-            }
-        }
-
-        witnesses
-    }
-
-    fn to_json(&self) -> Value {
-        let items: Vec<Value> = self
-            .signatures
-            .iter()
-            .map(|(script_hash, contract_sigs)| {
-                let signatures_json: Vec<Value> = contract_sigs
-                    .signatures
-                    .iter()
-                    .map(|(pk, sig)| {
-                        json!({
-                            "publicKey": hex::encode(pk),
-                            "signature": hex::encode(sig)
-                        })
+    type_name: Option<&str>,
+) -> Value {
+    let items: Vec<Value> = authorizer
+        .entries()
+        .map(|(script_hash, context)| {
+            let signatures: Vec<Value> = context
+                .collected_signatures()
+                .into_iter()
+                .map(|(public_key, signature)| {
+                    json!({
+                        "publicKey": hex::encode(public_key),
+                        "signature": hex::encode(signature)
                     })
-                    .collect();
-
-                json!({
-                    "scriptHash": script_hash.to_string(),
-                    "required": contract_sigs.required,
-                    "collected": contract_sigs.signatures.len(),
-                    "signatures": signatures_json
                 })
+                .collect();
+
+            json!({
+                "scriptHash": script_hash.to_string(),
+                "required": context.required(),
+                "collected": context.collected(),
+                "signatures": signatures
             })
-            .collect();
-
-        json!({
-            "type": self.type_name.as_deref().unwrap_or("Neo.Network.P2P.Payloads.Transaction"),
-            "hash": self.tx.hash().to_string(),
-            "network": self.network,
-            "items": items,
-            "completed": self.completed()
         })
-    }
+        .collect();
 
-    /// Parse multisig contract to determine required signature count
-    fn parse_multisig_required(&self, contract: &neo_smart_contract::Contract) -> Option<usize> {
-        // Neo multisig script format: PUSH(m) PUSH(pubkey1) ... PUSH(pubkeyn) PUSH(n) SYSCALL(CheckMultisig)
-        let script = &contract.script;
-        if script.len() < 3 {
-            return None;
-        }
-
-        // First byte should be PUSH for m (required count)
-        // OpCode: PUSH1=0x51, PUSH2=0x52, ..., PUSH16=0x60
-        let first_byte = script[0];
-        if (0x51..=0x60).contains(&first_byte) {
-            Some((first_byte - 0x50) as usize)
-        } else {
-            None
-        }
-    }
-
-    /// Build witness from collected signatures
-    fn build_witness(&self, contract_sigs: &ContractSignatures) -> Witness {
-        let mut invocation_script = Vec::new();
-
-        // Sort signatures by public key order (required by Neo)
-        let mut sorted_sigs: Vec<_> = contract_sigs.signatures.iter().collect();
-        sorted_sigs.sort_by_key(|(pk, _)| pk.as_slice());
-
-        // Build invocation script with signatures
-        for (_, signature) in sorted_sigs.iter().take(contract_sigs.required) {
-            // PUSHDATA1 opcode (0x0c) followed by length and signature
-            invocation_script.push(0x0c);
-            invocation_script.push(signature.len() as u8);
-            invocation_script.extend_from_slice(signature);
-        }
-
-        Witness::new_with_scripts(invocation_script, contract_sigs.contract.script.clone())
-    }
+    json!({
+        "type": type_name.unwrap_or(TRANSACTION_TYPE_NAME),
+        "hash": authorizer.tx().hash().to_string(),
+        "network": network,
+        "items": items,
+        "completed": authorizer.is_complete()
+    })
 }
 
 pub struct RpcServerWallet;
@@ -370,19 +267,22 @@ const SIGNATURE_INVOCATION_SCRIPT_LENGTH: usize = 66;
 
 #[derive(Debug)]
 struct PreparedTransaction {
-    transaction: Transaction,
+    /// Authorization state shared with `neo-rpc-client`.
+    authorizer: TransactionAuthorizer,
+    /// Unsigned serialization the signatures are produced against.
     unsigned_data: Vec<u8>,
 }
 
 impl PreparedTransaction {
     fn transaction(&self) -> &Transaction {
-        &self.transaction
+        self.authorizer.tx()
     }
 
     fn complete(mut self, witnesses: Vec<Witness>) -> Result<Transaction, RpcException> {
-        self.transaction.set_witnesses(witnesses);
+        self.authorizer.install_witnesses(witnesses);
         let current_unsigned_data = self
-            .transaction
+            .authorizer
+            .tx()
             .try_get_hash_data()
             .map_err(|err| internal_error(err.to_string()))?;
         if current_unsigned_data != self.unsigned_data {
@@ -391,7 +291,7 @@ impl PreparedTransaction {
                     .to_string(),
             ));
         }
-        Ok(self.transaction)
+        Ok(self.authorizer.tx().clone())
     }
 }
 
@@ -456,9 +356,10 @@ impl RpcServerWallet {
         let key_pair = KeyPair::generate().map_err(|err| internal_error(err.to_string()))?;
         let wallet_clone = Arc::clone(&wallet);
         let key_bytes = Zeroizing::new(*key_pair.private_key());
-        let account = Self::await_wallet_future(Box::pin(async move {
-            wallet_clone.create_account(key_bytes.as_ref())
-        }))?;
+        let account =
+            Self::await_wallet_future(
+                async move { wallet_clone.create_account(key_bytes.as_ref()) },
+            )?;
         Self::save_wallet(&wallet)?;
         Ok(Value::String(account.address()))
     }
@@ -530,19 +431,18 @@ impl RpcServerWallet {
         let wallet_clone = Arc::clone(&wallet);
         let privkey_value = privkey;
         let account =
-            Self::await_wallet_future(Box::pin(
-                async move { wallet_clone.import_wif(&privkey_value) },
-            ))?;
+            Self::await_wallet_future(async move { wallet_clone.import_wif(&privkey_value) })?;
         Self::save_wallet(&wallet)?;
         Ok(Self::account_to_json(&account))
     }
 
     fn list_address(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
         let wallet = Self::require_wallet(server)?;
-        let mut entries = Vec::new();
-        for account in wallet.get_accounts() {
-            entries.push(Self::account_to_json(&account));
-        }
+        let entries = wallet
+            .get_accounts()
+            .into_iter()
+            .map(|account| Self::account_to_json(&account))
+            .collect::<Vec<_>>();
         Ok(Value::Array(entries))
     }
 
@@ -906,7 +806,7 @@ impl RpcServerWallet {
     }
 
     fn await_wallet_future<T: Send + 'static>(
-        future: Pin<Box<dyn Future<Output = WalletResult<T>> + Send>>,
+        future: impl Future<Output = WalletResult<T>> + Send + 'static,
     ) -> Result<T, RpcException> {
         let result = if let Ok(handle) = Handle::try_current() {
             match handle.runtime_flavor() {
@@ -941,7 +841,7 @@ impl RpcServerWallet {
 
     fn save_wallet(wallet: &Arc<dyn CoreWallet>) -> Result<(), RpcException> {
         let wallet_clone = Arc::clone(wallet);
-        Self::await_wallet_future(Box::pin(async move { wallet_clone.save() }))
+        Self::await_wallet_future(async move { wallet_clone.save() })
     }
 
     /// Maps an unexpected wallet backend failure to a client-safe error.
@@ -1181,8 +1081,7 @@ impl RpcServerWallet {
         before_relay: impl FnOnce(),
     ) -> Result<Value, RpcException> {
         let prepared = Self::prepare_transaction(server, wallet, tx, snapshot_arc.as_ref())?;
-        let tx = match Self::authorize_transaction(server, wallet, prepared, snapshot_arc.clone())?
-        {
+        let tx = match Self::authorize_transaction(server, wallet, prepared)? {
             WalletAuthorization::Signed(tx) => tx,
             WalletAuthorization::Pending(context) => return Ok(context),
         };
@@ -1204,20 +1103,33 @@ impl RpcServerWallet {
             }
             Err(err) => {
                 // Preverify failure: surface unsigned context
-                let mut context = ContractParametersContext::new_with_type(
-                    snapshot_arc,
+                let mut authorizer = Self::authorizer_for(
+                    server,
                     tx.clone(),
-                    server.system().settings().network,
-                    Some("Neo.Network.P2P.Payloads.Transaction".to_string()),
+                    server.system().store_cache().data_cache(),
                 );
                 for signer in tx.signers() {
-                    if let Some(account) = wallet.get_account(&signer.account)
-                        && let Some(contract) = account.contract()
-                    {
-                        context.add_contract(contract.clone());
+                    let Some(account) = wallet.get_account(&signer.account) else {
+                        continue;
+                    };
+                    let Some(contract) = account.contract() else {
+                        continue;
+                    };
+                    // The lookup above already matched a transaction signer, so
+                    // this can only reject a wallet whose contract hash drifted
+                    // from its account hash; the context then omits the item.
+                    if let Err(error) = authorizer.register_contract(contract) {
+                        tracing::debug!(
+                            %error,
+                            "wallet context skipped a contract that is not a signer"
+                        );
                     }
                 }
-                let mut json = context.to_json();
+                let mut json = authorization_json(
+                    &authorizer,
+                    server.system().settings().network,
+                    Some(TRANSACTION_TYPE_NAME),
+                );
                 // Attach reason
                 if let Some(obj) = json.as_object_mut() {
                     obj.insert("preverifyFail".to_string(), Value::String(err.to_string()));
@@ -1249,65 +1161,68 @@ impl RpcServerWallet {
             }
         }
 
-        Self::validate_transaction_before_signing(server, &tx, snapshot)?;
-        let unsigned_data = tx
+        let authorizer = Self::authorizer_for(server, tx, snapshot);
+        Self::validate_with_chain(&authorizer, snapshot)?;
+        let unsigned_data = authorizer
+            .tx()
             .try_get_hash_data()
             .map_err(|err| internal_error(err.to_string()))?;
         Ok(PreparedTransaction {
-            transaction: tx,
+            authorizer,
             unsigned_data,
         })
     }
 
-    fn validate_transaction_before_signing(
+    /// Builds an authorizer with the server's policy ceilings.
+    ///
+    /// `MaxFee` and the policy `MaxValidUntilBlockIncrement` are resolved from
+    /// the local ledger so the shared authorizer applies the same limits the
+    /// node enforces.
+    fn authorizer_for(
         server: &RpcServer,
-        tx: &Transaction,
+        tx: Transaction,
+        snapshot: &DataCache,
+    ) -> TransactionAuthorizer {
+        let system = server.system();
+        let settings = system.settings();
+        let limits = AuthorizationLimits::new(Self::max_valid_until_increment(snapshot, settings))
+            .with_max_network_fee(server.settings().max_fee);
+        TransactionAuthorizer::new(tx, settings.network, limits)
+    }
+
+    /// Reads the policy valid-until window from the local ledger.
+    fn max_valid_until_increment(
+        snapshot: &DataCache,
+        settings: &neo_protocol::ProtocolSettings,
+    ) -> u32 {
+        PolicyContract::new()
+            .get_max_valid_until_block_increment_snapshot(snapshot, settings)
+            .unwrap_or(settings.max_valid_until_block_increment)
+    }
+
+    /// Applies the wallets authorization rules against the local ledger.
+    ///
+    /// Structure, fee shape and the `MaxFee` ceiling come from
+    /// [`TransactionAuthorizer::validate_structure`]; the valid-until window
+    /// and the sender's GAS balance are resolved through the ledger port.
+    fn validate_with_chain(
+        authorizer: &TransactionAuthorizer,
         snapshot: &DataCache,
     ) -> Result<(), RpcException> {
-        if tx.version() != 0 {
-            return Err(invalid_params("Invalid transaction version"));
-        }
-        if tx.signers().is_empty() {
-            return Err(invalid_params("Transaction must have at least one signer"));
-        }
-        if tx.script().is_empty() {
-            return Err(invalid_params("Transaction script cannot be empty"));
-        }
-        neo_vm::validate_strict_script(tx.script())
-            .map_err(|err| invalid_params(format!("Invalid transaction script: {err}")))?;
-        if tx.system_fee() < 0 {
-            return Err(invalid_params("Invalid system fee"));
-        }
-        if tx.network_fee() < 0 {
-            return Err(invalid_params("Invalid network fee"));
-        }
-        let required_fee = tx
-            .system_fee()
-            .checked_add(tx.network_fee())
-            .ok_or_else(|| invalid_params("Combined transaction fee overflow"))?;
-        if tx.network_fee() > server.settings().max_fee {
-            return Err(RpcException::from(RpcError::wallet_fee_limit()));
-        }
+        authorizer
+            .validate_structure()
+            .map_err(Self::authorization_failure)?;
+        let chain = LedgerChainQuery::new(snapshot.clone());
+        Self::drive(authorizer.ensure_valid_until_window(&chain))
+            .map_err(Self::authorization_failure)?;
+        Self::drive(authorizer.ensure_sufficient_funds(&chain))
+            .map_err(Self::authorization_failure)?;
+        Self::validate_wire_format(authorizer.tx())
+    }
 
-        let current_height = LedgerContract::new()
-            .current_index(snapshot)
-            .map_err(|err| internal_error(err.to_string()))?;
-        let max_increment = PolicyContract::new()
-            .get_max_valid_until_block_increment_snapshot(snapshot, server.system().settings())
-            .unwrap_or(server.system().settings().max_valid_until_block_increment);
-        if tx.valid_until_block() <= current_height
-            || tx.valid_until_block() > current_height.saturating_add(max_increment)
-        {
-            return Err(invalid_params("Invalid valid-until-block"));
-        }
-
-        let sender = tx
-            .sender()
-            .ok_or_else(|| invalid_params("Transaction must have a sender"))?;
-        if GasToken::new().balance_of_snapshot(snapshot, &sender) < BigInt::from(required_fee) {
-            return Err(RpcException::from(RpcError::insufficient_funds_wallet()));
-        }
-
+    /// Rejects a transaction whose signers or witness scopes do not survive a
+    /// wire round-trip.
+    fn validate_wire_format(tx: &Transaction) -> Result<(), RpcException> {
         let mut validation_tx = tx.clone();
         validation_tx.set_witnesses(vec![Witness::new(); tx.signers().len()]);
         let bytes = validation_tx
@@ -1316,6 +1231,37 @@ impl RpcServerWallet {
         Transaction::from_bytes(&bytes)
             .map_err(|err| invalid_params(format!("Invalid signer or witness scope: {err}")))?;
         Ok(())
+    }
+
+    /// Drives an authorizer chain-port future to completion.
+    ///
+    /// [`LedgerChainQuery`] answers every port call from the snapshot in a
+    /// single poll, so a plain executor is enough; see the type documentation.
+    fn drive<T>(future: impl Future<Output = T>) -> T {
+        futures::executor::block_on(future)
+    }
+
+    /// Maps an authorization failure onto the RPC error vocabulary.
+    fn authorization_failure(error: TransactionAuthorizationError) -> RpcException {
+        match error {
+            TransactionAuthorizationError::FeeLimitExceeded { .. } => {
+                RpcException::from(RpcError::wallet_fee_limit())
+            }
+            TransactionAuthorizationError::InsufficientFunds { .. } => {
+                RpcException::from(RpcError::insufficient_funds_wallet())
+            }
+            TransactionAuthorizationError::ChainUnavailable(message) => internal_error(message),
+            other => invalid_params(other.to_string()),
+        }
+    }
+
+    fn validate_transaction_before_signing(
+        server: &RpcServer,
+        tx: &Transaction,
+        snapshot: &DataCache,
+    ) -> Result<(), RpcException> {
+        let authorizer = Self::authorizer_for(server, tx.clone(), snapshot);
+        Self::validate_with_chain(&authorizer, snapshot)
     }
 
     fn projected_signed_size(tx: &Transaction, wallet: &Arc<dyn CoreWallet>) -> usize {
@@ -1329,13 +1275,7 @@ impl RpcServerWallet {
                 let Some(contract) = account.contract().cloned() else {
                     return Witness::new();
                 };
-                let signature_count = contract
-                    .parameter_list
-                    .iter()
-                    .filter(|parameter| {
-                        **parameter == neo_primitives::ContractParameterType::Signature
-                    })
-                    .count();
+                let signature_count = ContractSignatureContext::from_contract(&contract).required();
                 Witness::new_with_scripts(
                     vec![0; signature_count * SIGNATURE_INVOCATION_SCRIPT_LENGTH],
                     contract.script,
@@ -1347,22 +1287,25 @@ impl RpcServerWallet {
         projected.size()
     }
 
+    /// Collects signatures for every wallet-held signer of `prepared`.
+    ///
+    /// Signer resolution, slot placement and completion come from the shared
+    /// [`TransactionAuthorizer`]; this handler only supplies keys (through the
+    /// unified signer service) and renders the RPC response. Chain state was
+    /// already validated during preparation, so no further snapshot is needed.
     fn authorize_transaction(
         server: &RpcServer,
         wallet: &Arc<dyn CoreWallet>,
         prepared: PreparedTransaction,
-        snapshot_arc: Arc<DataCache>,
     ) -> Result<WalletAuthorization, RpcException> {
-        let mut sign_data: Option<Vec<u8>> = None;
-        let tx = prepared.transaction();
-        let mut context = ContractParametersContext::new_with_type(
-            snapshot_arc,
-            tx.clone(),
-            server.system().settings().network,
-            Some("Neo.Network.P2P.Payloads.Transaction".to_string()),
-        );
-        let signer_accounts: Vec<UInt160> =
-            tx.signers().iter().map(|signer| signer.account).collect();
+        let network = server.system().settings().network;
+        let mut prepared = prepared;
+        let signer_accounts: Vec<UInt160> = prepared
+            .transaction()
+            .signers()
+            .iter()
+            .map(|signer| signer.account)
+            .collect();
         for signer_account in signer_accounts {
             let Some(account) = wallet.get_account(&signer_account) else {
                 continue;
@@ -1370,24 +1313,26 @@ impl RpcServerWallet {
             let Some(contract) = account.contract().cloned() else {
                 continue;
             };
-            context.add_contract(contract.clone());
+            prepared
+                .authorizer
+                .register_contract(&contract)
+                .map_err(Self::authorization_failure)?;
             if account.is_locked() || !account.has_key() {
                 continue;
             }
 
-            let canonical_data = if let Some(data) = sign_data.as_ref() {
-                data.clone()
-            } else {
-                let data = neo_protocol::get_sign_data_vec(tx, server.system().settings().network)
-                    .map_err(|err| internal_error(err.to_string()))?;
-                sign_data = Some(data.clone());
-                data
-            };
+            // The shared authorizer decides what is signed and where the
+            // signature belongs; this handler only supplies the signer.
+            let canonical_data = prepared
+                .authorizer
+                .signer_request(&signer_account)
+                .map_err(Self::authorization_failure)?
+                .sign_data;
             let signature = if let Some(runtime) = server.signer_runtime() {
                 Self::sign_transaction_with_service(
                     server,
                     runtime,
-                    tx,
+                    prepared.transaction(),
                     signer_account,
                     canonical_data,
                 )?
@@ -1401,9 +1346,9 @@ impl RpcServerWallet {
                 #[cfg(test)]
                 {
                     let wallet_clone = Arc::clone(wallet);
-                    Self::await_wallet_future(Box::pin(async move {
+                    Self::await_wallet_future(async move {
                         wallet_clone.sign(&canonical_data, &signer_account)
-                    }))?
+                    })?
                 }
             };
             if signature.len() != 64 {
@@ -1411,16 +1356,39 @@ impl RpcServerWallet {
                     "Invalid signature length from signer service".to_string(),
                 ));
             }
-            let pub_key_bytes = signature_contract_pubkey(&contract.script)?;
-            let pub_key = ECPoint::new(ECCurve::Secp256r1, pub_key_bytes)
-                .map_err(|err| internal_error(err.to_string()))?;
-            let _ = context.add_signature(&contract, &pub_key, signature);
+            // Standard accounts sign with the key embedded in their verification
+            // script, so a remote signer needs no local key material. Multi-sig
+            // accounts must use their own key, which selects the witness slot.
+            let public_key = if ContractHelper::is_signature_contract(&contract.script) {
+                signature_contract_pubkey(&contract.script)?
+            } else {
+                let Some(key_pair) = account.get_key() else {
+                    return Err(internal_error(
+                        "Signing account holds no key for its contract".to_string(),
+                    ));
+                };
+                key_pair.compressed_public_key()
+            };
+            prepared
+                .authorizer
+                .add_signature(
+                    &signer_account,
+                    AccountSignature::new(public_key, signature),
+                )
+                .map_err(Self::authorization_failure)?;
         }
 
-        if !context.completed() {
-            return Ok(WalletAuthorization::Pending(context.to_json()));
+        if !prepared.authorizer.is_complete() {
+            return Ok(WalletAuthorization::Pending(authorization_json(
+                &prepared.authorizer,
+                network,
+                Some(TRANSACTION_TYPE_NAME),
+            )));
         }
-        let witnesses = context.witnesses();
+        let witnesses = prepared
+            .authorizer
+            .witnesses()
+            .map_err(Self::authorization_failure)?;
         if witnesses.is_empty() {
             return Err(internal_error(
                 "Completed signature context has no witnesses".to_string(),
@@ -1474,16 +1442,12 @@ impl RpcServerWallet {
             targets: BTreeSet::new(),
         };
         let runtime = runtime.clone();
-        Self::await_signer_future(Box::pin(async move {
-            runtime.resume_or_start(&request_id, intent).await
-        }))
-        .map(|response| response.signature)
+        Self::await_signer_future(async move { runtime.resume_or_start(&request_id, intent).await })
+            .map(|response| response.signature)
     }
 
     fn await_signer_future(
-        future: Pin<
-            Box<dyn Future<Output = neo_wallets::signing::SignResult<SignResponse>> + Send>,
-        >,
+        future: impl Future<Output = SignResult<SignResponse>> + Send + 'static,
     ) -> Result<SignResponse, RpcException> {
         let result = if let Ok(handle) = Handle::try_current() {
             match handle.runtime_flavor() {

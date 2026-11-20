@@ -7,6 +7,7 @@ use crate::evaluation_stack::EvaluationStack;
 use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
 use crate::slot::Slot;
+use crate::stack_item::StackItem;
 use parking_lot::{Mutex, RwLock};
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
@@ -55,10 +56,30 @@ impl SharedStates {
     /// Creates a new shared states instance.
     #[must_use]
     pub fn new(script: Script, reference_counter: ReferenceCounter) -> Self {
+        Self::new_with_stack_buffer(script, reference_counter, None)
+    }
+
+    /// Creates a new shared states instance, optionally reusing a recycled
+    /// evaluation-stack backing allocation.
+    ///
+    /// `stack_buffer` is the storage the new evaluation stack starts with; when
+    /// it is `None` a fresh allocation is made. Callers only pass a buffer that
+    /// [`Self::take_exclusive_stack_buffer`] produced, so it is empty and no
+    /// surrounding state has ever observed it.
+    #[must_use]
+    pub fn new_with_stack_buffer(
+        script: Script,
+        reference_counter: ReferenceCounter,
+        stack_buffer: Option<Vec<StackItem>>,
+    ) -> Self {
         let script = Arc::new(script);
+        let evaluation_stack = match stack_buffer {
+            Some(buffer) => EvaluationStack::with_backing_buffer(reference_counter.clone(), buffer),
+            None => EvaluationStack::new(reference_counter.clone()),
+        };
         Self {
             script: Arc::clone(&script),
-            evaluation_stack: Arc::new(Mutex::new(EvaluationStack::new(reference_counter.clone()))),
+            evaluation_stack: Arc::new(Mutex::new(evaluation_stack)),
             static_fields: Arc::new(Mutex::new(None)),
             reference_counter,
             states: Arc::new(RwLock::new(HashMap::new())),
@@ -99,8 +120,25 @@ impl SharedStates {
         self.static_fields.lock().is_some()
     }
 
+    /// Detaches the evaluation stack's backing allocation when, and only when,
+    /// this instance is its exclusive owner.
+    ///
+    /// `Arc::get_mut` succeeds only with a strong count of 1 and no weak
+    /// handles. `ExecutionContext::clone_with_position` - the CALL path -
+    /// upgrades this handle into a second `Arc`, so while a caller, a callee or
+    /// any other shared context still aliases the stack this returns `None` and
+    /// the allocation stays where it is. The evaluation stack itself is left in
+    /// place and simply starts without storage.
+    pub fn take_exclusive_stack_buffer(&mut self) -> Option<Vec<StackItem>> {
+        let stack = Arc::get_mut(&mut self.evaluation_stack)?.get_mut();
+        Some(stack.take_backing_buffer())
+    }
+
     /// Executes a closure with mutable access to the shared static fields.
-    pub fn with_static_fields_mut<R, F: FnOnce(&mut Option<Slot>) -> R>(&self, f: F) -> R {
+    pub fn with_static_fields_mut<R, F>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut Option<Slot>) -> R,
+    {
         let mut guard = self.static_fields.lock();
         f(&mut guard)
     }
@@ -124,16 +162,20 @@ impl SharedStates {
 
     /// Gets custom data of the specified type. If the data does not exist, create a new one.
     /// Mirrors the C# SharedStates.GetState\<T>() behaviour by caching instances per type.
-    pub fn get_state<T: 'static + Default + Send + Sync>(&self) -> Arc<Mutex<T>> {
+    pub fn get_state<T>(&self) -> Arc<Mutex<T>>
+    where
+        T: 'static + Default + Send + Sync,
+    {
         self.get_state_with_factory(T::default)
     }
 
     /// Gets custom data of the specified type, creating it with the provided factory if it doesn't exist.
     /// Mirrors the C# SharedStates.GetState\<T>(Func\<T>) API.
-    pub fn get_state_with_factory<T: 'static + Send + Sync, F: FnOnce() -> T>(
-        &self,
-        factory: F,
-    ) -> Arc<Mutex<T>> {
+    pub fn get_state_with_factory<T, F>(&self, factory: F) -> Arc<Mutex<T>>
+    where
+        T: 'static + Send + Sync,
+        F: FnOnce() -> T,
+    {
         let type_id = TypeId::of::<T>();
 
         if let Some(existing) = self.states.read().get(&type_id)
@@ -156,7 +198,10 @@ impl SharedStates {
 
     /// Sets a state value by type.
     /// This matches the C# implementation's state setting behavior.
-    pub fn set_state<T: 'static + Send + Sync>(&self, value: T) {
+    pub fn set_state<T>(&self, value: T)
+    where
+        T: 'static + Send + Sync,
+    {
         let type_id = TypeId::of::<T>();
         let state = Arc::new(Mutex::new(value));
 

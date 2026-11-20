@@ -89,8 +89,8 @@ impl RpcServerState {
             |witness| {
                 use base64::{Engine as _, engine::general_purpose::STANDARD};
                 json!([{
-                    "invocation": STANDARD.encode(&witness.invocation_script),
-                    "verification": STANDARD.encode(&witness.verification_script),
+                    "invocation": STANDARD.encode(witness.invocation_script()),
+                    "verification": STANDARD.encode(witness.verification_script()),
                 }])
             },
         );

@@ -142,6 +142,37 @@ impl ProtocolMessage {
         !matches!(self, Self::Unknown { .. }) && self.command().allows_compression()
     }
 
+    /// Returns the exact payload length this message writes when uncompressed.
+    ///
+    /// The outbound batcher charges this value against its 64 KiB budget
+    /// instead of serializing eagerly, so a queued message costs one `size()`
+    /// walk rather than a temporary payload buffer. Compression can only shrink
+    /// a payload, so the value is also an upper bound for the compressed frame.
+    pub fn wire_payload_size(&self) -> usize {
+        match self {
+            Self::Version(p) => p.size(),
+            Self::Addr(p) => p.size(),
+            Self::Ping(p) => p.size(),
+            Self::Pong(p) => p.size(),
+            Self::GetHeaders(p) => p.size(),
+            Self::Headers(p) => p.size(),
+            Self::GetBlocks(p) => p.size(),
+            Self::Inv(p) => p.size(),
+            Self::GetData(p) => p.size(),
+            Self::GetBlockByIndex(p) => p.size(),
+            Self::NotFound(p) => p.size(),
+            Self::Transaction(p) => p.size(),
+            Self::Block(p) => p.size(),
+            Self::Extensible(p) => p.size(),
+            Self::FilterLoad(p) => p.size(),
+            Self::FilterAdd(p) => p.size(),
+            Self::MerkleBlock(p) => p.size(),
+            Self::Verack | Self::GetAddr | Self::Mempool | Self::FilterClear => 0,
+            Self::Alert(bytes) | Self::Reject(bytes) => bytes.len(),
+            Self::Unknown { bytes, .. } => bytes.len(),
+        }
+    }
+
     /// Serializes the payload into its binary representation.
     pub fn to_bytes(&self) -> P2PResult<Vec<u8>> {
         self.serialize_payload()
@@ -262,6 +293,16 @@ impl NetworkMessage {
         self.wire_payload.as_deref()
     }
 
+    /// Returns an upper bound, in bytes, for this message as written on the wire.
+    ///
+    /// The value covers the flags byte, the command byte, the var-length prefix
+    /// and the uncompressed payload. Negotiated compression can only shrink the
+    /// payload, so this is safe to use as a memory/write-budget charge.
+    pub fn wire_size(&self) -> usize {
+        let payload = self.payload.wire_payload_size();
+        2 + neo_io_crate::var_int::encoded_len(payload as u64) + payload
+    }
+
     /// Returns the message encoded as wire bytes (flags + command + payload).
     ///
     /// `allow_compression` mirrors the C# `Message.ToArray(bool)` behaviour.
@@ -370,8 +411,7 @@ fn ensure_empty(command: MessageCommand, bytes: &[u8]) -> P2PResult<()> {
         Ok(())
     } else {
         Err(P2PMessageError::InvalidMessage(format!(
-            "command {:?} does not carry a payload but {} byte(s) were provided",
-            command,
+            "command {command:?} does not carry a payload but {} byte(s) were provided",
             bytes.len()
         )))
     }
@@ -384,6 +424,8 @@ fn ensure_empty(command: MessageCommand, bytes: &[u8]) -> P2PResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::p2p::payloads::InventoryType;
+    use neo_primitives::UInt256;
 
     #[test]
     fn protocol_message_command_mapping_is_complete() {
@@ -500,5 +542,28 @@ mod tests {
 
         let block = ProtocolMessage::Block(Block::new());
         assert!(block.should_try_compress());
+    }
+
+    #[test]
+    fn wire_size_matches_the_serialized_frame_without_compression() {
+        let inv = InvPayload::create(InventoryType::Transaction, &[UInt256::from([3u8; 32])]);
+        let messages = [
+            NetworkMessage::new(ProtocolMessage::Verack),
+            NetworkMessage::new(ProtocolMessage::Mempool),
+            NetworkMessage::new(ProtocolMessage::Ping(PingPayload::create_with_nonce(7, 77))),
+            NetworkMessage::new(ProtocolMessage::Inv(inv)),
+            NetworkMessage::new(ProtocolMessage::Alert(vec![1, 2, 3])),
+            NetworkMessage::new(ProtocolMessage::Unknown {
+                command: MessageCommand::Unknown(0x99),
+                bytes: vec![9; 300],
+            }),
+        ];
+
+        for message in messages {
+            let serialized = message
+                .to_bytes(false)
+                .expect("serializes without compression");
+            assert_eq!(message.wire_size(), serialized.len(), "{message:?}");
+        }
     }
 }

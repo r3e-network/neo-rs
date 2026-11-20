@@ -27,9 +27,9 @@ pub use conflicts::Conflicts;
 pub use extensible::Extensible;
 pub use header::Header;
 pub use high_priority_attribute::HighPriorityAttribute;
-pub use neo_io::witness_rule::{WitnessCondition, WitnessRule, WitnessRuleAction};
 pub use neo_primitives::{
-    Inventory, InventoryType, OracleResponseCode, TransactionAttributeType, WitnessScope,
+    Inventory, InventoryType, OracleResponseCode, TransactionAttributeType, WitnessCondition,
+    WitnessRule, WitnessRuleAction, WitnessScope,
 };
 pub use not_valid_before::NotValidBefore;
 pub use notary_assisted::NotaryAssisted;
@@ -37,14 +37,3 @@ pub use oracle_response::{OracleResponse, get_fixed_script};
 pub use signer::{MAX_SIGNER_SUBITEMS, Signer};
 pub use transaction::Transaction;
 pub use transaction_attribute::TransactionAttribute;
-
-// Equivalent to the original collection-length macro, including error text.
-fn validate_length(len: usize, max: usize, field: &str) -> neo_io::IoResult<()> {
-    if len > max {
-        Err(neo_io::IoError::invalid_data(format!(
-            "{field} exceeds maximum length of {max} (got {len})"
-        )))
-    } else {
-        Ok(())
-    }
-}

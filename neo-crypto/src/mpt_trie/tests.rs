@@ -2,8 +2,10 @@
 //! Covers all test cases from UT_Node.cs, UT_Trie.cs, and UT_Cache.cs
 
 #[cfg(test)]
-mod mpt_tests {
-    use crate::mpt_trie::{MptCache, MptResult, MptStoreSnapshot, Node, NodeType, Trie};
+pub(crate) mod mpt_tests {
+    use crate::mpt_trie::{
+        MptCache, MptResult, MptStoreSnapshot, NODE_KEY_PREFIX, Node, NodeType, Trie, node_key,
+    };
     use neo_io::{BinaryWriter, MemoryReader, Serializable};
     use neo_primitives::UInt256;
     use parking_lot::Mutex;
@@ -22,12 +24,12 @@ mod mpt_tests {
     impl<T: Serializable> SerializableExt for T {}
 
     /// Mock store for testing - matches C# MemoryStore
-    struct MockStore {
+    pub(crate) struct MockStore {
         data: Arc<Mutex<HashMap<Vec<u8>, Vec<u8>>>>,
     }
 
     impl MockStore {
-        fn new() -> Self {
+        pub(crate) fn new() -> Self {
             Self {
                 data: Arc::new(Mutex::new(HashMap::new())),
             }
@@ -682,7 +684,7 @@ mod mpt_tests {
     #[test]
     fn test_resolve_leaf() {
         let store = Arc::new(MockStore::new());
-        let mut cache = MptCache::new(store, 0xf0);
+        let mut cache = MptCache::new(store, NODE_KEY_PREFIX);
 
         let leaf = Node::new_leaf(vec![1, 2, 3]);
         let hash = leaf.hash();
@@ -696,7 +698,7 @@ mod mpt_tests {
     #[test]
     fn test_resolve_branch() {
         let store = Arc::new(MockStore::new());
-        let mut cache = MptCache::new(store, 0xf0);
+        let mut cache = MptCache::new(store, NODE_KEY_PREFIX);
 
         let branch = Node::new_branch();
         let hash = branch.hash();
@@ -710,7 +712,7 @@ mod mpt_tests {
     #[test]
     fn test_resolve_extension() {
         let store = Arc::new(MockStore::new());
-        let mut cache = MptCache::new(store, 0xf0);
+        let mut cache = MptCache::new(store, NODE_KEY_PREFIX);
 
         let leaf = Node::new_leaf(vec![1, 2, 3]);
         let ext = Node::new_extension(vec![0x01, 0x02], leaf).unwrap();
@@ -725,7 +727,7 @@ mod mpt_tests {
     #[test]
     fn test_get_and_changed_branch() {
         let store = Arc::new(MockStore::new());
-        let mut cache = MptCache::new(store, 0xf0);
+        let mut cache = MptCache::new(store, NODE_KEY_PREFIX);
 
         let branch = Node::new_branch();
         let hash = branch.hash();
@@ -742,7 +744,7 @@ mod mpt_tests {
     #[test]
     fn test_get_and_changed_extension() {
         let store = Arc::new(MockStore::new());
-        let mut cache = MptCache::new(store, 0xf0);
+        let mut cache = MptCache::new(store, NODE_KEY_PREFIX);
 
         let leaf = Node::new_leaf(vec![1, 2, 3]);
         let ext = Node::new_extension(vec![0x01], leaf).unwrap();
@@ -760,7 +762,7 @@ mod mpt_tests {
     #[test]
     fn test_get_and_changed_leaf() {
         let store = Arc::new(MockStore::new());
-        let mut cache = MptCache::new(store, 0xf0);
+        let mut cache = MptCache::new(store, NODE_KEY_PREFIX);
 
         let leaf = Node::new_leaf(vec![1, 2, 3]);
         let hash = leaf.hash();
@@ -778,7 +780,7 @@ mod mpt_tests {
     #[test]
     fn test_put_and_changed_branch() {
         let store = Arc::new(MockStore::new());
-        let mut cache = MptCache::new(store, 0xf0);
+        let mut cache = MptCache::new(store, NODE_KEY_PREFIX);
 
         let mut branch = Node::new_branch();
         branch.set_child(0, Node::new_leaf(vec![1, 2, 3]));
@@ -796,7 +798,7 @@ mod mpt_tests {
     #[test]
     fn test_put_and_changed_extension() {
         let store = Arc::new(MockStore::new());
-        let mut cache = MptCache::new(store, 0xf0);
+        let mut cache = MptCache::new(store, NODE_KEY_PREFIX);
 
         let leaf1 = Node::new_leaf(vec![1, 2, 3]);
         let ext1 = Node::new_extension(vec![0x01], leaf1).unwrap();
@@ -814,7 +816,7 @@ mod mpt_tests {
     #[test]
     fn test_put_and_changed_leaf() {
         let store = Arc::new(MockStore::new());
-        let mut cache = MptCache::new(store, 0xf0);
+        let mut cache = MptCache::new(store, NODE_KEY_PREFIX);
 
         let leaf1 = Node::new_leaf(vec![1, 2, 3]);
         let hash1 = leaf1.hash();
@@ -830,7 +832,7 @@ mod mpt_tests {
     #[test]
     fn test_cache_reference1() {
         let store = Arc::new(MockStore::new());
-        let mut cache = MptCache::new(store, 0xf0);
+        let mut cache = MptCache::new(store, NODE_KEY_PREFIX);
 
         let leaf = Node::new_leaf(vec![1, 2, 3]);
         cache.put_node(leaf.clone()).unwrap();
@@ -843,7 +845,7 @@ mod mpt_tests {
     #[test]
     fn test_cache_reference2() {
         let store = Arc::new(MockStore::new());
-        let mut cache = MptCache::new(store, 0xf0);
+        let mut cache = MptCache::new(store, NODE_KEY_PREFIX);
 
         let leaf = Node::new_leaf(vec![1, 2, 3]);
         let hash = leaf.hash();
@@ -862,7 +864,7 @@ mod mpt_tests {
     #[test]
     fn test_cache_commit() {
         let store = Arc::new(MockStore::new());
-        let mut cache = MptCache::new(store.clone(), 0xf0);
+        let mut cache = MptCache::new(store.clone(), NODE_KEY_PREFIX);
 
         let leaf = Node::new_leaf(vec![1, 2, 3]);
         cache.put_node(leaf).unwrap();
@@ -1248,9 +1250,7 @@ mod mpt_tests {
             trie.put(&key, &val).unwrap();
             if let Some(h) = trie.root_hash() {
                 eprintln!(
-                    "after entry {}: key={} root={}",
-                    i,
-                    k,
+                    "after entry {i}: key={k} root={}",
                     hex::encode(h.to_bytes())
                 );
             } else {
@@ -1545,7 +1545,7 @@ mod mpt_tests {
         #[test]
         fn prop_cache_resolve_consistency(value in valid_value()) {
             let store = Arc::new(MockStore::new());
-            let mut cache = MptCache::new(store, 0xf0);
+            let mut cache = MptCache::new(store, NODE_KEY_PREFIX);
 
             let leaf = Node::new_leaf(value.clone());
             let hash = leaf.hash();
@@ -1708,25 +1708,18 @@ mod mpt_tests {
     fn commit_hints_new_nodes_and_preserves_the_existing_node_fallback() {
         let store = Arc::new(HintRecordingStore::new());
         let leaf = Node::new_leaf(vec![1, 2, 3]);
-        let mut initial = MptCache::new(store.clone(), 0xf0);
+        let mut initial = MptCache::new(store.clone(), NODE_KEY_PREFIX);
         initial.put_node(leaf.clone()).unwrap();
         initial.commit().unwrap();
         assert_eq!(
             store.writes.lock().as_slice(),
-            &[(
-                {
-                    let mut key = vec![0xf0];
-                    key.extend_from_slice(&leaf.hash().to_bytes());
-                    key
-                },
-                true
-            )]
+            &[(node_key(&leaf.hash()), true)]
         );
 
         // A fresh cache must resolve the persisted reference count and retain
         // the original put path rather than claiming that this node is absent.
         store.writes.lock().clear();
-        let mut existing = MptCache::new(store.clone(), 0xf0);
+        let mut existing = MptCache::new(store.clone(), NODE_KEY_PREFIX);
         existing.put_node(leaf).unwrap();
         existing.commit().unwrap();
         let existing_writes = store.writes.lock().clone();
@@ -1921,5 +1914,17 @@ mod mpt_tests {
         assert!(!detail.node_deserialize.is_zero());
         assert!(!detail.node_encode.is_zero());
         assert!(!detail.node_write.is_zero());
+    }
+
+    // The node-key layout is public API: external node stores (e.g. the state
+    // service) address nodes through `node_key`, so the byte format is a
+    // contract, not an implementation detail.
+    #[test]
+    fn node_key_is_the_prefix_followed_by_the_hash() {
+        let hash = UInt256::from_bytes(&[0x11; 32]).unwrap();
+        let key = node_key(&hash);
+        assert_eq!(key.len(), 1 + 32);
+        assert_eq!(key[0], NODE_KEY_PREFIX);
+        assert_eq!(&key[1..], &hash.to_bytes()[..]);
     }
 }

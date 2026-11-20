@@ -301,12 +301,13 @@ impl Blockchain {
 # Unit tests
 cargo test -p neo-core --lib state_service::prefetch_pipeline::tests
 
-# Integration tests
-cargo test --test prefetch_pipeline_integration_test
-
 # Benchmarks (require nightly features)
 cargo bench -p neo-core prefetch_pipeline
 ```
+
+> **Note:** the former prefetch-pipeline integration test target was removed.
+> It imported pipeline APIs that no longer exist after the state-service
+> extraction, so it never compiled and was not a registered test target.
 
 ### Test Coverage
 
@@ -317,12 +318,6 @@ The implementation includes:
    - Block submission non-blocking behavior
    - Pause/resume cycle
    - Graceful shutdown
-
-2. **Integration Tests** (`tests/prefetch_pipeline_integration_test.rs`):
-   - Concurrent access safety
-   - Metrics collection during operation
-   - Realistic block sync simulation
-   - Error handling scenarios
 
 ### Benchmarking
 

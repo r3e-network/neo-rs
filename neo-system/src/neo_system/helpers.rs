@@ -4,6 +4,7 @@
 //!
 //! - `initialise_plugins` - Bootstrap event logging (plugin system removed)
 //! - `to_core_error` - Convert actor runtime errors to CoreError
+//! - `hydration_error` - Convert ledger hydration failures to CoreError
 
 use std::sync::Arc;
 
@@ -30,6 +31,14 @@ pub(crate) fn initialise_plugins(system: &Arc<NeoSystem>) -> CoreResult<()> {
 /// Converts an actor runtime error into a CoreError.
 pub(crate) fn to_core_error(err: neo_actors::ActorRuntimeError) -> CoreError {
     CoreError::system(err.to_string())
+}
+
+/// Converts a ledger hydration failure into a CoreError.
+///
+/// Hydration rejects persisted state the ledger cannot prove to be a chain, so
+/// the lifted error carries the ledger-owned diagnostic verbatim.
+pub(crate) fn hydration_error(err: neo_ledger::LedgerHydrationError) -> CoreError {
+    CoreError::invalid_operation(err.to_string())
 }
 
 #[cfg(test)]

@@ -1,28 +1,33 @@
+//! Contract invocation endpoints (`invokefunction` / `invokescript`).
+//!
+//! Both endpoints are *read-only simulation*: the script is executed against a
+//! throwaway snapshot and only the VM result is reported. They never construct
+//! a transaction, never call `WalletAccount::create_witness`, and never consult
+//! the node wallet, so an open wallet cannot be turned into a signing oracle
+//! that bypasses the unified signer service.
+//!
+//! Signing and broadcasting belong to the wallet RPC endpoints
+//! (`sendtoaddress`, `sendfrom`, `sendmany`, `canceltransaction`, ...), which
+//! route every signature through the signer runtime so policy, provider
+//! selection, quota and durable-operation controls all apply. A caller that
+//! wants to invoke *and* sign builds the transaction locally (from the
+//! simulation result and the `calculatenetworkfee` response) and submits it
+//! through `sendrawtransaction`.
+
 use std::str::FromStr;
-use std::sync::Arc;
 
 use crate::rpc_helpers::expect_base64_param_with_decode_message;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_native_contracts::native::GasToken;
 use neo_primitives::UInt160;
-use neo_protocol::get_sign_data_vec;
 use neo_protocol::payloads::Signer;
-use neo_protocol::payloads::transaction::Transaction;
-use neo_protocol::payloads::transaction_attribute::TransactionAttribute;
 use neo_protocol::witness::Witness;
-use neo_storage::persistence::StoreCache;
-use neo_wallets::helper::Helper as WalletHelper;
-use neo_wallets::{Wallet, WalletAccount};
-use num_bigint::BigInt;
-use rand::random;
-use serde_json::{Map, Number as JsonNumber, Value, json};
+use serde_json::{Map, Value, json};
 
 use crate::diagnostic::Diagnostic;
 use crate::rpc_exception::RpcException;
 use crate::rpc_server::RpcServer;
 use crate::session::Session;
 use neo_vm::StackItem;
-use neo_vm::VmState as VMState;
 
 use super::helpers::{
     DEFAULT_RESPONSE_BUDGET_BYTES, build_dynamic_call_script, diagnostic_invocation_to_json,
@@ -31,20 +36,11 @@ use super::helpers::{
     stack_item_to_json,
 };
 
-const TRANSACTION_TYPE_NAME: &str = "Neo.Network.P2P.Payloads.Transaction";
-
-enum WalletInvocationOutcome {
-    Signed(Vec<u8>),
-    Pending(Value),
-}
-
-#[derive(Clone)]
-struct PendingSignatureItem {
-    account: UInt160,
-    script: Option<Vec<u8>>,
-    parameter_types: Vec<neo_primitives::ContractParameterType>,
-}
-
+/// Runs a dynamically built contract call for simulation only.
+///
+/// The optional `signers`/`witnesses` are used solely to give the simulated
+/// engine a `Runtime.CheckWitness` context; nothing is signed, and the result
+/// carries no transaction or signature context.
 pub(super) fn invoke_function(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
     let _span = tracing::info_span!("rpc_invoke_function").entered();
 
@@ -71,6 +67,10 @@ pub(super) fn invoke_function(server: &RpcServer, params: &[Value]) -> Result<Va
     execute_script(server, script, signers, witnesses, use_diagnostic)
 }
 
+/// Runs a caller-supplied script for simulation only.
+///
+/// See [`invoke_function`]: the optional signers/witnesses only shape the
+/// simulated witness context and never produce a signature.
 pub(super) fn invoke_script(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
     let _span = tracing::info_span!("rpc_invoke_script").entered();
 
@@ -92,6 +92,13 @@ pub(super) fn invoke_script(server: &RpcServer, params: &[Value]) -> Result<Valu
     execute_script(server, script, signers, witnesses, use_diagnostic)
 }
 
+/// Executes `script` and renders the VM result.
+///
+/// # Security
+/// This is the only execution path shared by the invocation endpoints and it
+/// is deliberately wallet-free: no transaction is built, no witness is
+/// produced and `RpcServer::wallet` is never read. Signing lives exclusively in
+/// the wallet RPC endpoints behind the unified signer service.
 #[tracing::instrument(name = "rpc_execute_script", skip(server, script, signers, witnesses), fields(script_len = script.len(), diagnostic = use_diagnostic))]
 fn execute_script(
     server: &RpcServer,
@@ -108,7 +115,7 @@ fn execute_script(
     let mut session = Session::new(
         server.system(),
         script,
-        signers.clone(),
+        signers,
         witnesses,
         server.settings().max_gas_invoke,
         diagnostic,
@@ -116,7 +123,6 @@ fn execute_script(
     .map_err(internal_error)?;
 
     let (
-        vm_state,
         engine_state,
         system_fee,
         exception_value,
@@ -125,8 +131,7 @@ fn execute_script(
         diagnostics_snapshot,
     ) = {
         let engine = session.engine();
-        let vm_state = engine.state();
-        let engine_state = final_rpc_vm_state_string(vm_state)?;
+        let engine_state = final_rpc_vm_state_string(engine.state())?;
         let system_fee = engine.fee_consumed();
         let exception_value = engine.fault_exception().map_or(Value::Null, |msg| {
             Value::String(normalize_fault_message(msg))
@@ -139,7 +144,6 @@ fn execute_script(
             (invocation, storage)
         });
         (
-            vm_state,
             engine_state,
             system_fee,
             exception_value,
@@ -208,16 +212,12 @@ fn execute_script(
         );
     }
 
-    if vm_state != VMState::FAULT {
-        process_invoke_with_wallet(
-            server,
-            &mut result,
-            session.script(),
-            signers.as_ref(),
-            session.snapshot(),
-            system_fee,
-        );
-    }
+    // No `tx` / `pendingsignature` key is ever produced here. The previous
+    // implementation built a transaction, signed it with
+    // `WalletAccount::create_witness`, and reported an empty pending list as
+    // "signed and complete" — even when the signing preimage could not be
+    // derived. Removing the signing path removes that bypass and its failure
+    // mode together.
 
     if server.session_enabled() && session.has_iterators() {
         server.purge_expired_sessions();
@@ -228,191 +228,10 @@ fn execute_script(
     Ok(Value::Object(result))
 }
 
-fn process_invoke_with_wallet(
-    server: &RpcServer,
-    result: &mut Map<String, Value>,
-    script: &[u8],
-    signers: Option<&Vec<Signer>>,
-    snapshot: &StoreCache,
-    system_fee: i64,
-) {
-    let signers = match signers {
-        Some(list) if !list.is_empty() => list,
-        _ => return,
-    };
-    let Some(wallet) = server.wallet() else {
-        return;
-    };
-
-    match build_and_sign_transaction(server, script, signers, snapshot, system_fee, wallet) {
-        Ok(WalletInvocationOutcome::Signed(bytes)) => {
-            result.insert(
-                "tx".to_string(),
-                Value::String(BASE64_STANDARD.encode(bytes)),
-            );
-        }
-        Ok(WalletInvocationOutcome::Pending(context)) => {
-            result.insert("pendingsignature".to_string(), context);
-        }
-        Err(message) => {
-            result.insert("exception".to_string(), Value::String(message));
-        }
-    }
-}
-
 fn normalize_fault_message(message: &str) -> String {
     if message.contains("Gas exhausted") || message.contains("Gas limit exceeded") {
         "Insufficient GAS".to_string()
     } else {
         message.to_string()
-    }
-}
-
-fn build_and_sign_transaction(
-    server: &RpcServer,
-    script: &[u8],
-    signers: &[Signer],
-    snapshot: &StoreCache,
-    system_fee: i64,
-    wallet: Arc<dyn Wallet>,
-) -> Result<WalletInvocationOutcome, String> {
-    let rpc_settings = server.settings().clone();
-    let system = server.system();
-    let protocol_settings = system.settings();
-    let mut tx = Transaction::new();
-    tx.set_version(0);
-    tx.set_nonce(random());
-    tx.set_script(script.to_vec());
-    tx.set_signers(signers.to_vec());
-    tx.set_attributes(Vec::<TransactionAttribute>::new());
-
-    let ledger = neo_native_contracts::native::ledger_contract::LedgerContract::new();
-    let valid_until = ledger
-        .current_index(snapshot)
-        .map_err(|err| err.to_string())?
-        .saturating_add(system.max_valid_until_block_increment());
-    tx.set_valid_until_block(valid_until);
-    tx.set_system_fee(system_fee);
-
-    let data_cache = snapshot.data_cache();
-    let network_fee = WalletHelper::calculate_network_fee_with_wallet(
-        &tx,
-        data_cache,
-        protocol_settings,
-        Some(wallet.as_ref()),
-        rpc_settings.max_gas_invoke,
-    )?;
-    tx.set_network_fee(network_fee);
-
-    let required_fee = BigInt::from(tx.system_fee()) + BigInt::from(tx.network_fee());
-    let gas_token = GasToken::new();
-    let sender = signers[0].account;
-    let available = gas_token.balance_of_snapshot(snapshot, &sender);
-    if available < required_fee {
-        return Err("Insufficient GAS balance to pay system and network fees.".to_string());
-    }
-
-    let mut tx_clone = tx.clone();
-    let pending =
-        sign_transaction_with_wallet(&mut tx_clone, signers, &wallet, protocol_settings.network);
-    if pending.is_empty() {
-        Ok(WalletInvocationOutcome::Signed(tx_clone.to_bytes()))
-    } else {
-        let context = build_pending_context(&tx_clone, pending, protocol_settings.network);
-        Ok(WalletInvocationOutcome::Pending(context))
-    }
-}
-
-fn sign_transaction_with_wallet(
-    tx: &mut Transaction,
-    signers: &[Signer],
-    wallet: &Arc<dyn Wallet>,
-    network: u32,
-) -> Vec<PendingSignatureItem> {
-    let mut pending = Vec::new();
-    let Ok(sign_data) = get_sign_data_vec(tx, network) else {
-        return pending;
-    };
-    for signer in signers {
-        match wallet.get_account(&signer.account) {
-            Some(account) if account.has_key() => match account.create_witness(&sign_data) {
-                Ok(witness) => tx.add_witness(witness),
-                Err(_) => pending.push(build_pending_item(signer.account, Some(account))),
-            },
-            Some(account) => pending.push(build_pending_item(signer.account, Some(account))),
-            None => pending.push(build_pending_item(signer.account, None)),
-        }
-    }
-    pending
-}
-
-fn build_pending_context(
-    tx: &Transaction,
-    pending: Vec<PendingSignatureItem>,
-    network: u32,
-) -> Value {
-    let mut context = Map::new();
-    context.insert(
-        "type".to_string(),
-        Value::String(TRANSACTION_TYPE_NAME.to_string()),
-    );
-    context.insert("hash".to_string(), Value::String(tx.hash().to_string()));
-    context.insert(
-        "data".to_string(),
-        Value::String(BASE64_STANDARD.encode(tx.hash_data())),
-    );
-
-    let mut items = Map::new();
-    for entry in pending {
-        let mut obj = Map::new();
-        obj.insert(
-            "script".to_string(),
-            entry.script.map_or(Value::Null, |bytes| {
-                Value::String(BASE64_STANDARD.encode(bytes))
-            }),
-        );
-
-        let parameters = entry
-            .parameter_types
-            .into_iter()
-            .map(|param_type| {
-                json!({
-                    "type": param_type.as_str(),
-                    "value": Value::Null,
-                })
-            })
-            .collect();
-        obj.insert("parameters".to_string(), Value::Array(parameters));
-        obj.insert("signatures".to_string(), Value::Object(Map::new()));
-
-        items.insert(entry.account.to_string(), Value::Object(obj));
-    }
-
-    context.insert("items".to_string(), Value::Object(items));
-    context.insert(
-        "network".to_string(),
-        Value::Number(JsonNumber::from(network)),
-    );
-    Value::Object(context)
-}
-
-fn build_pending_item(
-    account: UInt160,
-    wallet_account: Option<Arc<dyn WalletAccount>>,
-) -> PendingSignatureItem {
-    if let Some(account_ref) = wallet_account
-        && let Some(contract) = account_ref.contract()
-    {
-        return PendingSignatureItem {
-            account,
-            script: Some(contract.script.clone()),
-            parameter_types: contract.parameter_list.clone(),
-        };
-    }
-
-    PendingSignatureItem {
-        account,
-        script: None,
-        parameter_types: Vec::new(),
     }
 }

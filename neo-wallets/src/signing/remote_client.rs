@@ -1,6 +1,7 @@
 //! Dedicated mTLS remote signer and remotely attested TEE adapter.
 
 use super::config::{RemoteAttestationPolicySection, SignerProviderKind, SignerProviderSection};
+use super::remote::now_unix_ms;
 use crate::signing::{
     ALGORITHM_ECDSA_P256_SHA256, AttestationChallenge, AttestationEvidence,
     AttestationExpectations, AuthorizedSignRequest, CollateralStatus, KeyInfo, KeyRef,
@@ -20,7 +21,7 @@ use serde::de::DeserializeOwned;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 const KEY_INFO_PATH: &str = "v1/signer/key-info";
 const ATTEST_PATH: &str = "v1/signer/attest";
@@ -36,14 +37,6 @@ pub(crate) const MAX_ATTESTATION_CLOCK_SKEW_MS: u64 = 60_000;
 
 fn is_permanent_rejection_code(code: &str) -> bool {
     PERMANENT_REJECTION_CODES.contains(&code)
-}
-
-fn now_unix_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .min(i64::MAX as u128) as i64
 }
 
 fn provider_error(message: impl Into<String>) -> SignError {
@@ -104,15 +97,14 @@ pub fn validate_remote_provider_config(provider: &SignerProviderSection) -> Resu
     ] {
         let metadata = fs::metadata(path).with_context(|| {
             format!(
-                "remote signer provider '{}' cannot read TLS material '{}'",
-                provider.id, path
+                "remote signer provider '{}' cannot read TLS material '{path}'",
+                provider.id
             )
         })?;
         if !metadata.is_file() {
             bail!(
-                "remote signer provider '{}' TLS material '{}' is not a file",
-                provider.id,
-                path
+                "remote signer provider '{}' TLS material '{path}' is not a file",
+                provider.id
             );
         }
     }
@@ -888,7 +880,9 @@ impl SignerProvider for RemoteSignerProvider {
     }
 }
 
-#[cfg(test)]
+// Phase 9 (F14): the transport tests (including the local `hyper`
+// fault-injection servers) only exist when the `remote` feature is on.
+#[cfg(all(test, feature = "remote"))]
 mod tests {
     use super::*;
     use crate::signing::config::{RemoteSignerSection, SignerKeySection};

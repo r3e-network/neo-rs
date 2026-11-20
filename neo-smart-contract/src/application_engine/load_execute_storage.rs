@@ -217,7 +217,11 @@ impl ApplicationEngine {
             .find(Some(&search_prefix), SeekDirection::Forward)
             .map(|(key, _)| key)
             .collect();
+        // Wiping a contract range both scans it and writes every entry inside,
+        // so record the range as well as the keys that existed right now.
+        self.record_rw_prefix_read(contract_id, &[]);
         for key in keys {
+            self.record_rw_storage_write_key(&key);
             self.snapshot_cache.delete(&key);
         }
         Ok(())
@@ -231,6 +235,8 @@ impl ApplicationEngine {
         // 2. Reuse the engine contract cache; deserializing the full ContractState
         //    from the snapshot on every Storage.GetContext is expensive.
         let contract_id = if let Some(contract) = self.contracts.get(&contract_hash) {
+            contract.id
+        } else if let Some(contract) = self.cached_contract_metadata(&contract_hash) {
             contract.id
         } else {
             self.native_state_reader
@@ -275,6 +281,13 @@ impl ApplicationEngine {
             .snapshot_cache
             .find(Some(&search_key), direction)
             .collect::<Vec<_>>();
+        // A scan depends both on the entries it returned and on the range
+        // itself: a key created inside the prefix afterwards still invalidates
+        // the result.
+        self.record_rw_prefix_read(context.id, prefix);
+        for (key, _) in &entries {
+            self.record_rw_storage_read_key(key);
+        }
         Ok(StorageIterator::new(entries, prefix.len(), options))
     }
     /// Gets the storage price from the policy contract (matches C# StoragePrice property).

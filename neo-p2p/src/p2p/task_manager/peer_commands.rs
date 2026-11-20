@@ -22,9 +22,7 @@ pub(super) fn send_get_data_groups<I>(
                 target: "neo",
                 actor = %actor.path(),
                 %error,
-                "{}",
-                failure_message
-            );
+                "{failure_message}");
         }
     }
 }

@@ -7,19 +7,14 @@ use crate::rpc_exception::RpcException;
 use crate::rpc_helpers::{internal_error, serialize_to_base64};
 use crate::rpc_server::{RpcHandler, RpcServer};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_protocol::witness::Witness as LedgerWitness;
-use neo_rpc_client::models::RpcContractState;
-// The native `LedgerContract` hands back the execution block representation, so the RPC
-// converters operate on `neo_protocol::execution` rather than the neo-core ledger projection.
 use neo_io::Serializable;
 use neo_native_contracts::native::{
     contract_management::ContractManagement,
     ledger_contract::{HashOrIndex, LedgerContract},
 };
 use neo_primitives::{UInt160, UInt256};
-use neo_protocol::execution::{Block as LedgerBlock, BlockHeader as LedgerBlockHeader};
-use neo_protocol::payloads::witness::Witness as PayloadWitness;
 use neo_protocol::payloads::{block::Block, header::Header};
+use neo_rpc_client::models::RpcContractState;
 use neo_smart_contract::contract_state::ContractState;
 use neo_storage::StorageKey;
 use neo_storage::persistence::SeekDirection;
@@ -567,7 +562,9 @@ impl RpcServerBlockchain {
             .get_block(store, selector)
             .map_err(internal_error)?
             .ok_or_else(|| RpcException::from(RpcError::unknown_block()))?;
-        Ok(Self::convert_ledger_block(&ledger_block))
+        Ok(neo_protocol::execution::conversions::convert_ledger_block(
+            ledger_block,
+        ))
     }
 
     fn block_to_json(
@@ -646,50 +643,16 @@ impl RpcServerBlockchain {
         json
     }
 
-    fn convert_ledger_block(block: &LedgerBlock) -> Block {
-        Block {
-            header: Self::convert_ledger_header(&block.header),
-            transactions: block.transactions.clone(),
-        }
-    }
-
-    fn convert_ledger_header(header: &LedgerBlockHeader) -> Header {
-        let mut converted = Header::new();
-        converted.set_version(header.version);
-        converted.set_prev_hash(header.previous_hash);
-        converted.set_merkle_root(header.merkle_root);
-        converted.set_timestamp(header.timestamp);
-        converted.set_nonce(header.nonce);
-        converted.set_index(header.index);
-        converted.set_primary_index(header.primary_index);
-        converted.set_next_consensus(header.next_consensus);
-        let witness = header
-            .witnesses
-            .first()
-            .map(Self::convert_witness)
-            .unwrap_or_default();
-        converted.witness = witness;
-        converted
-    }
-
-    fn convert_witness(witness: &LedgerWitness) -> PayloadWitness {
-        PayloadWitness::new_with_scripts(
-            witness.invocation_script.clone(),
-            witness.verification_script.clone(),
-        )
-    }
-
     fn expect_u32_param(params: &[Value], index: usize, method: &str) -> Result<u32, RpcException> {
         params
             .get(index)
             .and_then(Value::as_u64)
             .and_then(|value| u32::try_from(value).ok())
             .ok_or_else(|| {
-                RpcException::from(RpcError::invalid_params().with_data(format!(
-                    "{} expects numeric parameter {}",
-                    method,
-                    index + 1
-                )))
+                RpcException::from(
+                    RpcError::invalid_params()
+                        .with_data(format!("{method} expects numeric parameter {}", index + 1)),
+                )
             })
     }
 
@@ -702,11 +665,10 @@ impl RpcServerBlockchain {
             .get(index)
             .and_then(Value::as_str)
             .ok_or_else(|| {
-                RpcException::from(RpcError::invalid_params().with_data(format!(
-                    "{} expects string parameter {}",
-                    method,
-                    index + 1
-                )))
+                RpcException::from(
+                    RpcError::invalid_params()
+                        .with_data(format!("{method} expects string parameter {}", index + 1)),
+                )
             })
             .and_then(|text| {
                 UInt256::from_str(text).map_err(|err| {

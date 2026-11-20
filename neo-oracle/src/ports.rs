@@ -8,8 +8,9 @@ use crate::error::OracleServiceError;
 use crate::request::OracleRequest;
 use async_trait::async_trait;
 use neo_crypto::ECPoint;
-use neo_primitives::{OracleResponseCode, UInt160, UInt256};
+use neo_primitives::{CallFlags, OracleResponseCode, UInt160, UInt256};
 use neo_protocol::payloads::Transaction;
+use neo_smart_contract::{ContractMethodDescriptor, ContractState};
 
 /// Opaque snapshot handle for reading blockchain state.
 ///
@@ -110,6 +111,44 @@ pub trait OracleSigner: Send + Sync {
         protocol: &str,
         fields: std::collections::BTreeMap<String, String>,
     ) -> Result<Vec<u8>, OracleServiceError>;
+}
+
+/// Outcome of a verification-trigger execution, as observed by the host.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VerificationOutcome {
+    /// Engine state after execution; the oracle domain requires `HALT`.
+    pub state: neo_vm::VmState,
+    /// Fee consumed by the execution, in datoshi.
+    pub fee_consumed: i64,
+}
+
+/// Host capabilities required to build an oracle response transaction.
+///
+/// `neo-oracle` owns the response-transaction domain rules (quorum, witness
+/// layout, fee math, budget downgrades). What it cannot own are the native
+/// contract identity, persisted contract state and execution engine of the
+/// host node, so those are requested through this narrow port.
+pub trait ResponseTxHost: Send + Sync {
+    /// Script hash of the native oracle contract that must verify responses.
+    fn oracle_contract_hash(&self) -> UInt160;
+
+    /// Loads the persisted contract definition at the snapshot.
+    fn contract_state(
+        &self,
+        snapshot: &dyn OracleSnapshot,
+        hash: &UInt160,
+    ) -> Result<Option<ContractState>, OracleServiceError>;
+
+    /// Loads `method` on `contract` under the Verification trigger with `tx` as
+    /// the script container and executes it.
+    fn execute_verification(
+        &self,
+        snapshot: &dyn OracleSnapshot,
+        tx: &Transaction,
+        contract: &ContractState,
+        method: &ContractMethodDescriptor,
+        call_flags: CallFlags,
+    ) -> Result<VerificationOutcome, OracleServiceError>;
 }
 
 /// Transaction builder for oracle response transactions.

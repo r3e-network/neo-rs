@@ -12,13 +12,13 @@ use async_trait::async_trait;
 use neo_ai_agent::{
     ActionBinding, AdmitOutcome, DiagnosticsSection, DurableActionStore, OperationId,
     OperationalAction, ProbeJob, ProbeOutcome, ProbeOutcomeStatus, ProbeResult,
-    ProbeResultValidator, RunId, TrustedLocalDiagnosticsIdentity,
+    ProbeResultValidator, RunId, TrustedLocalDiagnosticsIdentity, unix_time_ms,
 };
 use std::collections::{HashMap, VecDeque};
 use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot};
@@ -628,15 +628,6 @@ fn mark_uncertain(action_log: &DurableActionStore, operation_id: &OperationId) {
     let _ = action_log.mark_uncertain(operation_id, unix_time_ms());
 }
 
-fn unix_time_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(1, |duration| {
-            u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
-        })
-        .max(1)
-}
-
 fn oom_indicator(stderr: &[u8]) -> bool {
     let stderr = String::from_utf8_lossy(stderr).to_ascii_lowercase();
     [
@@ -1144,13 +1135,7 @@ mod tests {
     }
 
     fn hash(bytes: &[u8]) -> String {
-        Sha256::digest(bytes)
-            .iter()
-            .fold(String::new(), |mut output, byte| {
-                use std::fmt::Write as _;
-                write!(output, "{byte:02x}").expect("formatting hex into a String cannot fail");
-                output
-            })
+        hex::encode(Sha256::digest(bytes).as_slice())
     }
 
     fn request(id: usize) -> ProbeRequestFrame {

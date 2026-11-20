@@ -51,9 +51,7 @@ impl<T> ValidateLength for Vec<T> {
     fn validate_max_length(&self, max: usize, field_name: &str) -> IoResult<()> {
         if self.len() > max {
             Err(IoError::invalid_data(format!(
-                "{} exceeds maximum length of {} (got {})",
-                field_name,
-                max,
+                "{field_name} exceeds maximum length of {max} (got {})",
                 self.len()
             )))
         } else {
@@ -66,9 +64,7 @@ impl ValidateLength for [u8] {
     fn validate_max_length(&self, max: usize, field_name: &str) -> IoResult<()> {
         if self.len() > max {
             Err(IoError::invalid_data(format!(
-                "{} exceeds maximum length of {} (got {})",
-                field_name,
-                max,
+                "{field_name} exceeds maximum length of {max} (got {})",
                 self.len()
             )))
         } else {
@@ -81,9 +77,7 @@ impl ValidateLength for str {
     fn validate_max_length(&self, max: usize, field_name: &str) -> IoResult<()> {
         if self.len() > max {
             Err(IoError::invalid_data(format!(
-                "{} exceeds maximum length of {} (got {})",
-                field_name,
-                max,
+                "{field_name} exceeds maximum length of {max} (got {})",
                 self.len()
             )))
         } else {

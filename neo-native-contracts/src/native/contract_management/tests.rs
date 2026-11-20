@@ -920,3 +920,66 @@ fn get_contract_hashes_excludes_destroyed_contract_in_same_snapshot() {
         "destroyed contracts must not appear in getContractHashes results"
     );
 }
+
+#[test]
+fn update_counter_peek_matches_the_stored_record() {
+    let snapshot = DataCache::new(false);
+    let mut contract = ContractState::default();
+    contract.id = 7;
+    contract.hash = UInt160::from_bytes(&[0x11; 20]).expect("hash");
+    contract.nef = make_nef(vec![OpCode::RET.byte()]);
+    contract.manifest = default_manifest();
+    contract.update_counter = 0;
+    add_contract_to_snapshot(&snapshot, &contract);
+
+    // The contract metadata cache keys records on `(hash, update_counter)`, so
+    // the cheap two-byte peek has to report the counter the record stores.
+    assert_eq!(
+        ContractManagement::get_contract_update_counter_from_snapshot(&snapshot, &contract.hash)
+            .expect("peek"),
+        Some(0)
+    );
+
+    // An upgrade rewrites the record under the same hash and bumps the counter,
+    // which is exactly what re-keys the metadata cache.
+    contract.update_counter = 1;
+    let mut writer = BinaryWriter::new();
+    contract
+        .serialize(&mut writer)
+        .expect("serialize upgraded contract");
+    snapshot.update(
+        StorageKey::new(
+            ContractManagement::ID,
+            ContractManagement::contract_storage_key(&contract.hash),
+        ),
+        StorageItem::from_bytes(writer.into_bytes()),
+    );
+    assert_eq!(
+        ContractManagement::get_contract_update_counter_from_snapshot(&snapshot, &contract.hash)
+            .expect("peek after upgrade"),
+        Some(1)
+    );
+
+    // An unknown hash and a record too short to carry a counter both report
+    // nothing, so the cache is skipped instead of being addressed with a guess.
+    let missing = UInt160::from_bytes(&[0x22; 20]).expect("hash");
+    assert_eq!(
+        ContractManagement::get_contract_update_counter_from_snapshot(&snapshot, &missing)
+            .expect("peek missing"),
+        None
+    );
+
+    let truncated = UInt160::from_bytes(&[0x33; 20]).expect("hash");
+    snapshot.add(
+        StorageKey::new(
+            ContractManagement::ID,
+            ContractManagement::contract_storage_key(&truncated),
+        ),
+        StorageItem::from_bytes(vec![0u8; 5]),
+    );
+    assert_eq!(
+        ContractManagement::get_contract_update_counter_from_snapshot(&snapshot, &truncated)
+            .expect("peek truncated"),
+        None
+    );
+}

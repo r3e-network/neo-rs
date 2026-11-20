@@ -8,6 +8,8 @@ use std::any::Any;
 pub enum UnhandledExceptionPolicy {
     /// Ignore exceptions and continue processing.
     Ignore,
+    /// Log the exception and continue processing.
+    Log,
     /// Stop the plugin/service on exception.
     StopPlugin,
     /// Stop the node on exception.
@@ -27,7 +29,7 @@ impl UnhandledExceptionPolicy {
     /// return.
     pub fn apply(self, stop_plugin: impl FnOnce()) -> bool {
         match self {
-            Self::Ignore | Self::Continue => true,
+            Self::Ignore | Self::Log | Self::Continue => true,
             Self::StopPlugin => {
                 stop_plugin();
                 false
@@ -63,6 +65,9 @@ mod tests {
             stopped.store(true, Ordering::Relaxed);
         }));
         assert!(UnhandledExceptionPolicy::Continue.apply(|| {
+            stopped.store(true, Ordering::Relaxed);
+        }));
+        assert!(UnhandledExceptionPolicy::Log.apply(|| {
             stopped.store(true, Ordering::Relaxed);
         }));
 

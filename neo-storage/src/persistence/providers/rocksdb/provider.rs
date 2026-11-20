@@ -7,8 +7,8 @@ use crate::persistence::{
     write_batch_buffer::{WriteBatchBuffer, WriteBatchConfig},
 };
 use rocksdb::{
-    BlockBasedOptions, Cache, DB, DBIteratorWithThreadMode, Direction, IteratorMode, Options,
-    ReadOptions, Snapshot as DbSnapshot,
+    BlockBasedOptions, Cache, DB, DBIteratorWithThreadMode, DataBlockIndexType, Direction,
+    IteratorMode, Options, ReadOptions, Snapshot as DbSnapshot,
 };
 use std::{path::PathBuf, sync::Arc};
 
@@ -250,6 +250,22 @@ pub(crate) fn reverse_prefix_iterator<'a>(
     prefix: &[u8],
     read_ahead_config: &ReadAheadConfig,
 ) -> DBIteratorWithThreadMode<'a, DB> {
+    reverse_prefix_iterator_from(db, read_options, prefix, None, read_ahead_config)
+}
+
+/// Reverse iterator over `prefix` that starts at `from` instead of the range end.
+///
+/// `from` is an *inclusive* seek target: the first row may be `from` itself, so
+/// callers that need an exclusive cursor skip it. Because the iterator is still
+/// bounded by the prefix range, starting it early can only ever expose rows of
+/// the same namespace — it never walks into the neighbouring range.
+pub(crate) fn reverse_prefix_iterator_from<'a>(
+    db: &'a DB,
+    read_options: Option<ReadOptions>,
+    prefix: &[u8],
+    from: Option<&[u8]>,
+    read_ahead_config: &ReadAheadConfig,
+) -> DBIteratorWithThreadMode<'a, DB> {
     let mut opts = read_options.unwrap_or_else(|| build_read_options(None, read_ahead_config));
     // PrefixRange is silently ignored without a configured prefix extractor.
     // Use explicit byte-range bounds instead: lower bound is the prefix itself;
@@ -258,7 +274,11 @@ pub(crate) fn reverse_prefix_iterator<'a>(
     if let Some(upper) = prefix_successor(prefix) {
         opts.set_iterate_upper_bound(upper);
     }
-    db.iterator_opt(IteratorMode::End, opts)
+    let mode = match from {
+        Some(from) => IteratorMode::From(from, Direction::Reverse),
+        None => IteratorMode::End,
+    };
+    db.iterator_opt(mode, opts)
 }
 
 pub(crate) fn build_db_options(config: &StorageConfig, enable_bloom_filters: bool) -> Options {
@@ -320,21 +340,39 @@ pub(crate) fn build_db_options(config: &StorageConfig, enable_bloom_filters: boo
     }
     options.set_allow_mmap_writes(false);
     options.set_enable_pipelined_write(true);
+    // Memtable bloom filters only help whole-key point lookups: no prefix
+    // extractor is configured, so a prefix-only filter would never match.
+    // `optimize_for_point_lookup` used to set both implicitly (at ratio 0.02);
+    // they are pinned here so dropping that call cannot weaken point lookups.
     options.set_memtable_prefix_bloom_ratio(0.1); // better hit rate on memtable lookups
+    options.set_memtable_whole_key_filtering(true);
     // Delay write stalls during heavy initial sync
     options.set_level_zero_slowdown_writes_trigger(30);
     options.set_level_zero_stop_writes_trigger(48);
     options.set_max_total_wal_size(512 * 1024 * 1024); // 512MB WAL cap
 
-    // Configure block cache and bloom filters
+    // Configure block cache and bloom filters.
+    //
+    // `Options::optimize_for_point_lookup` is deliberately not called: its
+    // argument is a cache size in MiB (RocksDB multiplies it by 1024 * 1024),
+    // while `cache_size` is expressed in bytes, so the old call requested a
+    // ~137 TiB cache. It also installs its own table factory that the explicit
+    // `BlockBasedOptions` below replaces anyway. Its point-lookup intent is kept
+    // explicitly here instead: byte-sized LRU block cache, bloom filter,
+    // index/filter pinning, and the binary-and-hash data-block index.
     let cache_size = config.cache_size.unwrap_or(256 * 1024 * 1024);
-    options.optimize_for_point_lookup((cache_size / 2) as u64);
     let cache = Cache::new_lru_cache(cache_size);
     let row_cache_size = (cache_size / 4).clamp(64 * 1024 * 1024, 512 * 1024 * 1024);
     let row_cache = Cache::new_lru_cache(row_cache_size);
     options.set_row_cache(&row_cache);
     let mut table_options = BlockBasedOptions::default();
     table_options.set_block_cache(&cache);
+    // Hash-probe the data block after the binary search narrows its key range;
+    // the default data-block index is binary search only. A 0.75 hash
+    // utilisation ratio matches the RocksDB default and the ratio the removed
+    // point-lookup preset requested.
+    table_options.set_data_block_index_type(DataBlockIndexType::BinaryAndHash);
+    table_options.set_data_block_hash_ratio(0.75);
 
     if enable_bloom_filters {
         // Enable bloom filters with 10 bits per key for ~1% false positive rate

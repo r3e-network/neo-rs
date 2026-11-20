@@ -1,10 +1,7 @@
 use crate::{IoError, IoResult, MemoryReader};
 use hex::{decode as hex_decode, encode as hex_encode};
 
-/// Size of a compressed ECPoint in bytes.
-pub const ECPOINT_COMPRESSED_SIZE: usize = 33;
-/// Size of an uncompressed ECPoint in bytes.
-pub const ECPOINT_UNCOMPRESSED_SIZE: usize = 65;
+pub use neo_primitives::witness_rule::{ECPOINT_COMPRESSED_SIZE, ECPOINT_UNCOMPRESSED_SIZE};
 
 fn strip_0x(value: &str) -> &str {
     value.strip_prefix("0x").unwrap_or(value)
@@ -27,9 +24,7 @@ pub fn parse_group_bytes(value: &str) -> Result<Vec<u8>, String> {
     match bytes.len() {
         ECPOINT_COMPRESSED_SIZE | ECPOINT_UNCOMPRESSED_SIZE => Ok(bytes),
         _ => Err(format!(
-            "Invalid ECPoint length: expected {} or {} bytes, got {}",
-            ECPOINT_COMPRESSED_SIZE,
-            ECPOINT_UNCOMPRESSED_SIZE,
+            "Invalid ECPoint length: expected {ECPOINT_COMPRESSED_SIZE} or {ECPOINT_UNCOMPRESSED_SIZE} bytes, got {}",
             bytes.len()
         )),
     }

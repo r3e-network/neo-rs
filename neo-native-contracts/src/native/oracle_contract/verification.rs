@@ -41,10 +41,15 @@ impl OracleContract {
 
     /// Verify the oracle response attribute against on-chain state.
     ///
+    /// This is the canonical oracle-response verifier: `Oracle.verify` calls it
+    /// directly, and ledger attribute validation
+    /// (`neo_ledger::validation::attribute`) delegates to it, so the two entry
+    /// points can never drift apart.
+    ///
     /// The fixed script comparison uses the single source of truth in
     /// `neo_protocol::payloads::get_fixed_script`, so this verifier and the
-    /// transaction producers can never drift apart.
-    fn verify_oracle_response(
+    /// transaction producers can never drift apart either.
+    pub fn verify_oracle_response(
         response: &OracleResponse,
         snapshot: &DataCache,
         tx: &Transaction,

@@ -278,12 +278,7 @@ fn chain_grown_from_inside(new_link: &[OpCode], store: &[OpCode], rounds: usize)
 /// Each way of linking a value held at the bottom of the stack to a new parent,
 /// with the number of rounds that stops at each engine's bound.
 const GROWN_FROM_INSIDE: [(&str, &[OpCode], &[OpCode], usize); 3] = [
-    (
-        "APPEND",
-        &[OpCode::NEWARRAY0],
-        &[OpCode::APPEND],
-        LIMIT - 3,
-    ),
+    ("APPEND", &[OpCode::NEWARRAY0], &[OpCode::APPEND], LIMIT - 3),
     (
         "SETITEM on an array",
         &[OpCode::PUSH1, OpCode::NEWARRAY],
@@ -319,7 +314,10 @@ fn alias_updates_stop_at_the_limit() {
     on_node_stack(|| {
         for (label, new_link, store, deepest) in GROWN_FROM_INSIDE {
             // The root is on the stack only.
-            assert_halts(run(&chain_grown_from_inside(new_link, store, deepest)), label);
+            assert_halts(
+                run(&chain_grown_from_inside(new_link, store, deepest)),
+                label,
+            );
             assert_refused(
                 run(&chain_grown_from_inside(new_link, store, deepest + 1)),
                 label,

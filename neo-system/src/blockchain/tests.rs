@@ -9,8 +9,8 @@ use super::*;
 mod tests {
     use super::{
         Blockchain, ImportDisposition, InventoryCacheKey, InventoryPayload,
-        MAX_REVERIFY_INVENTORY_CACHE, MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT, STATE_SERVICE_CATEGORY,
-        StateRoot, VerifyResult, classify_import_block,
+        MAX_REVERIFY_INVENTORY_CACHE, STATE_SERVICE_CATEGORY, StateRoot, VerifyResult,
+        classify_import_block,
     };
     use crate::NeoSystem;
     use crate::events::handlers::CoreResult;
@@ -23,7 +23,7 @@ mod tests {
     use crate::state_service::StateServiceSettings;
     use neo_io_crate::BinaryWriter;
     use neo_io_crate::Serializable;
-    use neo_ledger::LedgerContext;
+    use neo_ledger::{LedgerContext, MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT};
     use neo_native_contracts::fungible_token::{PREFIX_ACCOUNT, PREFIX_TOTAL_SUPPLY};
     use neo_native_contracts::gas_token::GasToken;
     use neo_native_contracts::{
@@ -1087,31 +1087,26 @@ mod tests {
 
         {
             let entry = blockchain
-                ._block_cache_unverified
-                .get(&10)
+                .cache
+                .unverified_candidates(10)
                 .expect("height cached");
             assert_eq!(entry.len(), MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT);
         }
         assert_eq!(
-            blockchain._unverified_cache_blocks.load(Ordering::Relaxed),
+            blockchain.cache.unverified_block_count(),
             MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT
         );
         assert!(
-            blockchain._unverified_cache_bytes.load(Ordering::Relaxed) > 0,
+            blockchain.cache.unverified_bytes() > 0,
             "byte accounting must observe cached blocks"
         );
 
         let removed = blockchain
+            .cache
             .remove_unverified_index(10)
             .expect("cached height removed");
         assert_eq!(removed.len(), MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT);
-        assert_eq!(
-            blockchain._unverified_cache_blocks.load(Ordering::Relaxed),
-            0
-        );
-        assert_eq!(
-            blockchain._unverified_cache_bytes.load(Ordering::Relaxed),
-            0
-        );
+        assert_eq!(blockchain.cache.unverified_block_count(), 0);
+        assert_eq!(blockchain.cache.unverified_bytes(), 0);
     }
 }

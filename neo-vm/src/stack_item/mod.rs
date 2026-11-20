@@ -6,6 +6,8 @@
 pub mod array;
 /// Buffer stack item type.
 pub mod buffer;
+/// Shared state of the compound (array and struct) stack item types.
+pub(crate) mod compound;
 /// Map stack item type.
 pub mod map;
 /// Pointer stack item type.

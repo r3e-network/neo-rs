@@ -16,6 +16,7 @@ description = "Capability-limited AI-assisted diagnostics for Neo N3 node operat
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+hex = { workspace = true }
 parking_lot = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

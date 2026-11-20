@@ -173,7 +173,7 @@ impl StateRoot {
         // Build the canonical multi-sig script (keys are sorted internally).
         let expected_script =
             Contract::create_multi_sig_redeem_script(required_signatures, &validators);
-        if witness.verification_script != expected_script {
+        if witness.verification_script() != expected_script.as_slice() {
             debug!(
                 target: "neo",
                 index = self.index,
@@ -183,7 +183,7 @@ impl StateRoot {
         }
 
         let Some(signatures) =
-            Helper::parse_multi_sig_invocation(&witness.invocation_script, required_signatures)
+            Helper::parse_multi_sig_invocation(witness.invocation_script(), required_signatures)
         else {
             return false;
         };

@@ -123,9 +123,9 @@ impl SealedKey {
 
         if self.sealed_data.counter > floor {
             return Err(TeeError::RollbackProtection(format!(
-                "sealed blob counter {} is ahead of the rollback floor {}; the floor \
+                "sealed blob counter {} is ahead of the rollback floor {floor}; the floor \
                  witness was rolled back or the blob is foreign; refusing to unseal (fail-closed)",
-                self.sealed_data.counter, floor
+                self.sealed_data.counter
             )));
         }
 

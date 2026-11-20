@@ -2,6 +2,8 @@
 
 /// Deterministic genesis block construction from protocol settings.
 pub mod genesis;
+/// Startup hydration policy for persisted native-contract metadata.
+pub mod hydration;
 pub mod native;
 
 // Re-export the native-contract surface at the crate root so downstream crates
@@ -12,6 +14,7 @@ pub use native::*;
 // Genesis lives here (not in neo-core) so the native-contract storage
 // initialization and the genesis block that seeds it stay in one crate.
 pub use genesis::create_genesis_block;
+pub use hydration::{NativeHydrationError, hydrate_native_contracts, metadata_hydration_contracts};
 
 /// Oracle module re-export for convenience
 pub mod oracle {
@@ -19,18 +22,26 @@ pub mod oracle {
     pub use crate::native::oracle_request::OracleRequest;
 }
 
-/// Returns the default native services configuration.
-///
-/// This creates a standard native contract registry with all built-in contracts.
-pub fn default_native_services() -> native::NativeRegistry {
-    native::composition::standard_registry()
-}
+// The canonical, production native-service composition lives in
+// `native::composition`. It is re-exported here so that
+// `neo_native_contracts::default_native_services()` denotes exactly one thing
+// across the workspace: the complete composition with the snapshot-backed
+// `StandardNativeStateReader` and the `StandardWitnessHashResolver`.
+pub use native::composition::{default_native_services, header_verifying_script_hashes};
 
-/// Creates a basic EngineNativeServices from a NativeRegistry.
+/// Builds a **minimal** native-service composition around a caller-supplied
+/// registry.
 ///
-/// This is a convenience helper for tests and simple scenarios. Production code
-/// should construct EngineNativeServices with proper state readers and resolvers.
-pub fn engine_native_services_from_registry(
+/// This is a test/diagnostic-only builder, not the production composition. The
+/// returned `EngineNativeServices` uses a no-op state reader (no contract
+/// state, block height always `0`, nothing blocked or whitelisted, no oracle
+/// original signers) and a no-op witness-hash resolver (so every `CheckWitness`
+/// fails).
+///
+/// Oracle verification, RPC engines and any other engine that must observe real
+/// chain state MUST use [`default_native_services`] (equivalently
+/// `native::composition::default_native_services()`) instead.
+pub fn minimal_native_services_from_registry(
     registry: native::NativeRegistry,
 ) -> neo_smart_contract::application_engine::EngineNativeServices {
     use neo_primitives::UInt160;
@@ -42,7 +53,8 @@ pub fn engine_native_services_from_registry(
     use neo_storage::persistence::DataCache;
     use std::sync::Arc;
 
-    // Minimal no-op implementations for basic scenarios
+    // Minimal no-op implementations for basic scenarios: no chain state is
+    // visible, which is only acceptable for tests and diagnostics.
     struct NoopStateReader;
     impl NativeStateReader for NoopStateReader {
         fn contract(
@@ -76,6 +88,7 @@ pub fn engine_native_services_from_registry(
         }
     }
 
+    // Resolves no verifying hashes, so witness checks always fail.
     struct NoopResolver;
     impl WitnessHashResolver for NoopResolver {
         fn resolve(

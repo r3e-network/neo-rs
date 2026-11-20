@@ -29,7 +29,7 @@ use super::payloads::{
     block::Block,
     inv_payload::{InvPayload, MAX_HASHES_COUNT},
 };
-use super::task_session::TaskSession;
+use super::sessions::task_session::TaskSession;
 use crate::p2p::P2PContext;
 use async_trait::async_trait;
 use neo_actors::{

@@ -146,7 +146,7 @@ pub static RPC_REQ_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
                 .expect("fallback counter creation should never fail")
         });
     if let Err(err) = prometheus::register(Box::new(counter.clone())) {
-        warn!("Failed to register neo_rpc_requests_total: {}", err);
+        warn!("Failed to register neo_rpc_requests_total: {err}");
     }
     counter
 });
@@ -156,7 +156,7 @@ pub static RPC_ERR_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
             .expect("fallback counter creation should never fail")
     });
     if let Err(err) = prometheus::register(Box::new(counter.clone())) {
-        warn!("Failed to register neo_rpc_errors_total: {}", err);
+        warn!("Failed to register neo_rpc_errors_total: {err}");
     }
     counter
 });
@@ -345,25 +345,25 @@ impl RpcServer {
             let std_listener = match std::net::TcpListener::bind(address) {
                 Ok(listener) => listener,
                 Err(err) => {
-                    error!("error binding RPC TLS server to {}: {}", address, err);
+                    error!("error binding RPC TLS server to {address}: {err}");
                     return;
                 }
             };
             let bound_addr = match std_listener.local_addr() {
                 Ok(addr) => addr,
                 Err(err) => {
-                    error!("error getting RPC TLS bound address: {}", err);
+                    error!("error getting RPC TLS bound address: {err}");
                     return;
                 }
             };
             if let Err(err) = std_listener.set_nonblocking(true) {
-                error!("error configuring RPC TLS listener: {}", err);
+                error!("error configuring RPC TLS listener: {err}");
                 return;
             }
             let listener = match TcpListener::from_std(std_listener) {
                 Ok(listener) => listener,
                 Err(err) => {
-                    error!("error initializing RPC TLS listener: {}", err);
+                    error!("error initializing RPC TLS listener: {err}");
                     return;
                 }
             };
@@ -386,8 +386,7 @@ impl RpcServer {
                                 let Ok(permit) = connection_limiter.clone().try_acquire_owned()
                                 else {
                                     debug!(
-                                        "RPC max concurrent connections reached; dropping {}",
-                                        remote_addr
+                                        "RPC max concurrent connections reached; dropping {remote_addr}"
                                     );
                                     continue;
                                 };
@@ -409,21 +408,17 @@ impl RpcServer {
                                         }
                                         Ok(Err(err)) => {
                                             warn!(
-                                                "RPC TLS handshake failed for {}: {}",
-                                                remote_addr, err
+                                                "RPC TLS handshake failed for {remote_addr}: {err}"
                                             );
                                         }
                                         Err(_) => {
-                                            debug!(
-                                                "RPC TLS handshake timed out for {}",
-                                                remote_addr
-                                            );
+                                            debug!("RPC TLS handshake timed out for {remote_addr}");
                                         }
                                     }
                                 });
                             }
                             Err(err) => {
-                                error!("RPC TLS accept error: {}", err);
+                                error!("RPC TLS accept error: {err}");
                                 sleep(Duration::from_millis(250)).await;
                             }
                         }
@@ -463,7 +458,7 @@ impl RpcServer {
             });
             let task = tokio::spawn(async move {
                 if let Err(err) = server.await {
-                    error!("RPC server error: {}", err);
+                    error!("RPC server error: {err}");
                 }
             });
             (task, bound_addr)
@@ -472,25 +467,25 @@ impl RpcServer {
             let std_listener = match std::net::TcpListener::bind(address) {
                 Ok(listener) => listener,
                 Err(err) => {
-                    error!("error binding RPC server to {}: {}", address, err);
+                    error!("error binding RPC server to {address}: {err}");
                     return;
                 }
             };
             let bound_addr = match std_listener.local_addr() {
                 Ok(addr) => addr,
                 Err(err) => {
-                    error!("error getting RPC bound address: {}", err);
+                    error!("error getting RPC bound address: {err}");
                     return;
                 }
             };
             if let Err(err) = std_listener.set_nonblocking(true) {
-                error!("error configuring RPC listener: {}", err);
+                error!("error configuring RPC listener: {err}");
                 return;
             }
             let listener = match TcpListener::from_std(std_listener) {
                 Ok(listener) => listener,
                 Err(err) => {
-                    error!("error initializing RPC listener: {}", err);
+                    error!("error initializing RPC listener: {err}");
                     return;
                 }
             };
@@ -506,8 +501,7 @@ impl RpcServer {
                                 let Ok(permit) = connection_limiter.clone().try_acquire_owned()
                                 else {
                                     debug!(
-                                        "RPC max concurrent connections reached; dropping {}",
-                                        remote_addr
+                                        "RPC max concurrent connections reached; dropping {remote_addr}"
                                     );
                                     continue;
                                 };
@@ -515,7 +509,7 @@ impl RpcServer {
                                 return Some((Ok::<PlainConnection, io::Error>(conn), listener));
                             }
                             Err(err) => {
-                                error!("RPC accept error: {}", err);
+                                error!("RPC accept error: {err}");
                                 sleep(Duration::from_millis(250)).await;
                                 continue;
                             }
@@ -552,13 +546,13 @@ impl RpcServer {
             });
             let task = tokio::spawn(async move {
                 if let Err(err) = server.await {
-                    error!("RPC server error: {}", err);
+                    error!("RPC server error: {err}");
                 }
             });
             (task, bound_addr)
         };
 
-        info!("RPC server bound on {}", bound_addr);
+        info!("RPC server bound on {bound_addr}");
 
         self.shutdown_signal = Some(shutdown_tx);
         self.server_task = Some(task);

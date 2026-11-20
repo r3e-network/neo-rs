@@ -11,7 +11,6 @@ use crate::p2p::payloads::{block::Block, extensible_payload::ExtensiblePayload};
 use crate::p2p::task_manager::BLOCK_INDEX_LOOKAHEAD;
 use neo_io_crate::Serializable;
 use neo_ledger::BlockchainCommand;
-use neo_native_contracts::ledger_contract::LedgerContract;
 use neo_primitives::ContainsTransactionType;
 use neo_primitives::UInt160;
 use neo_primitives::UInt256;
@@ -61,32 +60,26 @@ impl RemoteNode {
         }
 
         let now = std::time::Instant::now();
-        let ledger_contract = LedgerContract::new();
         let mut hashes = Vec::with_capacity(payload.hashes.len());
 
         match payload.inventory_type {
             InventoryType::Block => {
-                let store_cache = self.system.store_cache();
                 for hash in payload.hashes.iter().copied() {
                     if self.should_skip_inventory(&hash) {
                         continue;
                     }
-                    if ledger_contract.contains_block(&store_cache, &hash) {
+                    if self.system.contains_block(&hash) {
                         continue;
                     }
                     hashes.push(hash);
                 }
             }
             InventoryType::Transaction => {
-                let store_cache = self.system.store_cache();
                 for hash in payload.hashes.iter().copied() {
                     if self.should_skip_inventory(&hash) {
                         continue;
                     }
-                    if ledger_contract
-                        .contains_transaction(&store_cache, &hash)
-                        .unwrap_or(false)
-                    {
+                    if self.system.contains_ledger_transaction(&hash) {
                         continue;
                     }
                     hashes.push(hash);
@@ -290,10 +283,7 @@ impl RemoteNode {
             .system
             .blockchain()
             .tell_from_async(
-                BlockchainCommand::InventoryBlock {
-                    block,
-                    relay: true,
-                },
+                BlockchainCommand::InventoryBlock { block, relay: true },
                 Some(ctx.self_ref()),
             )
             .await
@@ -360,7 +350,7 @@ impl RemoteNode {
         }
 
         for group in InvPayload::create_group(InventoryType::Transaction, hashes) {
-            self.enqueue_message(NetworkMessage::new(ProtocolMessage::Inv(group)))
+            self.enqueue_immediate(NetworkMessage::new(ProtocolMessage::Inv(group)))
                 .await?;
         }
 
@@ -381,7 +371,9 @@ impl RemoteNode {
                         continue;
                     }
                     if let Some(transaction) = self.system.try_get_transaction_from_mempool(&hash) {
-                        self.enqueue_message(NetworkMessage::new(ProtocolMessage::Transaction(
+                        // `getdata` reply: the peer is waiting on it, so it must
+                        // not wait behind a pending batch.
+                        self.enqueue_immediate(NetworkMessage::new(ProtocolMessage::Transaction(
                             transaction,
                         )))
                         .await?;
@@ -409,12 +401,12 @@ impl RemoteNode {
                                     continue;
                                 }
                             };
-                            self.enqueue_message(NetworkMessage::new(
+                            self.enqueue_immediate(NetworkMessage::new(
                                 ProtocolMessage::MerkleBlock(payload),
                             ))
                             .await?;
                         } else {
-                            self.enqueue_message(NetworkMessage::new(ProtocolMessage::Block(
+                            self.enqueue_immediate(NetworkMessage::new(ProtocolMessage::Block(
                                 block,
                             )))
                             .await?;
@@ -430,12 +422,12 @@ impl RemoteNode {
                         continue;
                     }
                     if let Some(extensible) = self.system.try_get_relay_extensible(&hash) {
-                        self.enqueue_message(NetworkMessage::new(ProtocolMessage::Extensible(
+                        self.enqueue_immediate(NetworkMessage::new(ProtocolMessage::Extensible(
                             extensible,
                         )))
                         .await?;
                     } else if let Some(extensible) = self.system.try_get_extensible(&hash) {
-                        self.enqueue_message(NetworkMessage::new(ProtocolMessage::Extensible(
+                        self.enqueue_immediate(NetworkMessage::new(ProtocolMessage::Extensible(
                             extensible,
                         )))
                         .await?;
@@ -471,7 +463,8 @@ impl RemoteNode {
         }
 
         for group in InvPayload::create_group(InventoryType::Block, hashes) {
-            self.enqueue_message(NetworkMessage::new(ProtocolMessage::Inv(group)))
+            // `getblocks` reply: request answers stay immediate.
+            self.enqueue_immediate(NetworkMessage::new(ProtocolMessage::Inv(group)))
                 .await?;
         }
 
@@ -511,10 +504,10 @@ impl RemoteNode {
                         continue;
                     }
                 };
-                self.enqueue_message(NetworkMessage::new(ProtocolMessage::MerkleBlock(payload)))
+                self.enqueue_immediate(NetworkMessage::new(ProtocolMessage::MerkleBlock(payload)))
                     .await?;
             } else {
-                self.enqueue_message(NetworkMessage::new(ProtocolMessage::Block(block)))
+                self.enqueue_immediate(NetworkMessage::new(ProtocolMessage::Block(block)))
                     .await?;
             }
         }

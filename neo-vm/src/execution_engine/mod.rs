@@ -67,6 +67,7 @@ use crate::evaluation_stack::EvaluationStack;
 use crate::execution_context::ExecutionContext;
 use crate::interop_service::{InteropHost, InteropService};
 use crate::jump_table::JumpTable;
+use crate::memory::{StackAllocator, StackAllocatorLimits, StackAllocatorStats};
 use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
 use crate::stack_item::StackItem;
@@ -235,6 +236,14 @@ pub struct ExecutionEngine {
     /// The stack to store the return values
     pub(crate) result_stack: EvaluationStack,
 
+    /// Bounded pool of cleared evaluation-stack backing allocations.
+    ///
+    /// A context that leaves the invocation stack and exclusively owns its
+    /// evaluation stack hands that stack's `Vec<StackItem>` back here, and
+    /// `create_context` takes one before allocating a new one. See
+    /// [`crate::memory::StackAllocator`] for the ownership rules and bounds.
+    pub(crate) stack_allocator: StackAllocator,
+
     /// The VM object representing the uncaught exception
     pub(crate) uncaught_exception: Option<StackItem>,
 
@@ -261,5 +270,7 @@ mod interop;
 mod stack;
 mod stubs;
 
+#[cfg(test)]
+mod stack_reuse_tests;
 #[cfg(test)]
 mod tests;

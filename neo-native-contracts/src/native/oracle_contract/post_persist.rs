@@ -24,24 +24,39 @@ impl OracleContract {
         &self,
         engine: &mut ApplicationEngine,
     ) -> Result<Vec<u64>> {
-        let Some(block) = engine.persisting_block().cloned() else {
+        let Some(block) = engine.persisting_block() else {
             return Ok(Vec::new());
         };
+
+        // Collect the completed response ids while the block is still borrowed.
+        // An empty block, or one whose transactions carry no OracleResponse
+        // attribute, has nothing to clean up, so the snapshot handle is never
+        // taken and no storage read is issued. Ordering is unchanged: the ids are
+        // visited in the same transaction-then-attribute order as before, and the
+        // read/delete sequence per id stays sequential.
+        let response_ids: Vec<u64> = block
+            .transactions
+            .iter()
+            .flat_map(|transaction| transaction.attributes().iter())
+            .filter_map(|attribute| match attribute {
+                TransactionAttribute::OracleResponse(response) => Some(response.id),
+                _ => None,
+            })
+            .collect();
+        if response_ids.is_empty() {
+            return Ok(Vec::new());
+        }
 
         let snapshot_arc = engine.snapshot_cache();
         let snapshot = snapshot_arc.as_ref();
         let mut completed_response_ids = Vec::new();
 
-        for transaction in &block.transactions {
-            for attribute in transaction.attributes() {
-                if let TransactionAttribute::OracleResponse(response) = attribute
-                    && let Some(request) = self.read_request(snapshot, response.id)?
-                {
-                    let url_hash = self.compute_url_hash(&request.url);
-                    self.delete_request(snapshot, response.id);
-                    self.remove_request_id(snapshot, &url_hash, response.id)?;
-                    completed_response_ids.push(response.id);
-                }
+        for response_id in response_ids {
+            if let Some(request) = self.read_request(snapshot, response_id)? {
+                let url_hash = self.compute_url_hash(&request.url);
+                self.delete_request(snapshot, response_id);
+                self.remove_request_id(snapshot, &url_hash, response_id)?;
+                completed_response_ids.push(response_id);
             }
         }
 
@@ -57,7 +72,9 @@ impl OracleContract {
             return Ok(());
         }
 
-        let Some(block) = engine.persisting_block().cloned() else {
+        // Only the block index is needed; keep the borrow read-only instead of
+        // cloning the whole block.
+        let Some(block_index) = engine.persisting_block().map(|block| block.header.index()) else {
             return Ok(());
         };
 
@@ -68,7 +85,7 @@ impl OracleContract {
             return Ok(());
         }
 
-        let recipients = self.resolve_oracle_accounts(engine, block.header.index());
+        let recipients = self.resolve_oracle_accounts(engine, block_index);
         if recipients.is_empty() {
             return Ok(());
         }
@@ -127,7 +144,7 @@ impl OracleContract {
                 })
                 .collect(),
             Err(err) => {
-                tracing::debug!("failed to fetch designated oracle nodes: {}", err);
+                tracing::debug!("failed to fetch designated oracle nodes: {err}");
                 Vec::new()
             }
         }

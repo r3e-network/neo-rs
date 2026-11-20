@@ -19,9 +19,10 @@ neo-primitives = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
 # Phase 2 S5: the client is a transaction-building client (mempool-like
-# reviewed downward edges): it binds ledger/storage/VM/native-contract
-# vocabulary directly instead of routing through neo-system.
-neo-storage = { workspace = true }
+# reviewed downward edges): it binds ledger/VM/native-contract vocabulary
+# directly instead of routing through neo-system. Ledger *storage* is no
+# longer needed: transaction authorization reads chain state through the
+# `neo-wallets` chain-query port implemented over RPC.
 neo-ledger = { workspace = true }
 neo-protocol = { workspace = true }
 neo-vm = { workspace = true }
@@ -32,6 +33,8 @@ neo-json = { path = "../neo-json" }
 
 # Async runtime
 tokio = { workspace = true }
+# The client implements the `neo-wallets` authorization ports.
+async-trait = { workspace = true }
 
 # Serialization
 serde = { workspace = true }

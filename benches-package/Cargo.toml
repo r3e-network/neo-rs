@@ -5,7 +5,9 @@ edition = "2024"
 license = "MIT"
 
 [features]
-rocksdb = []
+# Must forward to neo-storage: the RocksDB provider (and the `rocksdb` crate
+# itself) only exist when neo-storage's own `rocksdb` feature is active.
+rocksdb = ["neo-storage/rocksdb"]
 
 [dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
@@ -15,6 +17,9 @@ neo-io = { workspace = true }
 neo-native-contracts = { workspace = true }
 neo-primitives = { workspace = true }
 neo-protocol = { workspace = true }
+# `rocksdb` is forwarded from this package's `rocksdb` feature to
+# `neo-storage/rocksdb`; the crate itself stays a plain dependency because
+# every other benchmark uses the in-memory store.
 neo-storage = { workspace = true }
 neo-mempool = { workspace = true }
 neo-system = { workspace = true }

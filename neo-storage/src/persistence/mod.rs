@@ -1,6 +1,7 @@
 pub mod commit_profile;
 pub mod data_cache;
 pub mod detached_snapshot;
+pub mod hot_key_cache;
 pub mod index;
 pub mod providers;
 pub mod read_cache;
@@ -24,13 +25,17 @@ pub use detached_snapshot::{
     DetachedSnapshot, DetachedSnapshotEntry, DetachedSnapshotError, DetachedSnapshotLimits,
     DisposableOverlay,
 };
+pub use hot_key_cache::{
+    DEFAULT_HOT_KEY_CACHE_CAPACITY, HOT_KEY_CACHE_SHARDS, HotKeyCache, HotKeyCacheStats,
+    HotKeyCacheStatsSnapshot,
+};
 pub use read_cache::{
-    PrefetchHint, ReadCache, ReadCacheConfig, ReadCacheStats, ReadCacheStatsSnapshot,
-    StorageReadCache,
+    PrefetchAdmission, PrefetchHint, ReadCache, ReadCacheConfig, ReadCacheStats,
+    ReadCacheStatsSnapshot, StorageReadCache,
 };
 pub use read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric};
 pub use seek_direction::SeekDirection;
-pub use store::Store;
+pub use store::{Store, StoreAccelerationStats};
 pub use store_cache::StoreCache;
 pub use store_factory::StoreFactory;
 pub use store_provider::StoreProvider;

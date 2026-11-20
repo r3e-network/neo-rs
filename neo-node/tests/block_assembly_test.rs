@@ -65,24 +65,24 @@ async fn test_complete_block_assembly_workflow() {
 
     // Verify witness
     let witness = block.witness();
-    assert!(!witness.invocation_script.is_empty());
-    assert!(!witness.verification_script.is_empty());
+    assert!(!witness.invocation_script().is_empty());
+    assert!(!witness.verification_script().is_empty());
 
     // Verify invocation script: 3 signatures * 66 bytes = 198 bytes
-    assert_eq!(witness.invocation_script.len(), 198);
+    assert_eq!(witness.invocation_script().len(), 198);
 
     // Verify verification script format
-    assert_eq!(witness.verification_script[0], OpCode::PUSH3.byte()); // PUSH3 for M=3
+    assert_eq!(witness.verification_script()[0], OpCode::PUSH3.byte()); // PUSH3 for M=3
 
     println!("✓ Block assembly test passed");
     println!("  Block index: {}", block.index());
     println!(
         "  Invocation script size: {} bytes",
-        witness.invocation_script.len()
+        witness.invocation_script().len()
     );
     println!(
         "  Verification script size: {} bytes",
-        witness.verification_script.len()
+        witness.verification_script().len()
     );
 }
 

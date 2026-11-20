@@ -3,7 +3,7 @@ pub mod controller;
 
 use neo_ai_agent::{
     EvidenceAuthority, PROBE_SCHEMA_VERSION, ProbeAction, ProbeContractError, ProbeJob,
-    ProbeOutcome, ProbeOutcomeStatus,
+    ProbeOutcome, ProbeOutcomeStatus, valid_hash,
 };
 use neo_native_contracts::native::composition::default_native_services;
 use neo_primitives::{CallFlags, TriggerType, Verifiable};
@@ -390,15 +390,7 @@ fn update_length_prefixed(hasher: &mut Sha256, bytes: &[u8]) {
 }
 
 fn hex_digest(bytes: &[u8]) -> String {
-    bytes.iter().fold(String::new(), |mut output, byte| {
-        use std::fmt::Write as _;
-        write!(output, "{byte:02x}").expect("formatting hex into a String cannot fail");
-        output
-    })
-}
-
-fn valid_hash(hash: &str) -> bool {
-    hash.len() == 64 && hash != "00".repeat(32) && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+    hex::encode(bytes)
 }
 
 // ============================================================================

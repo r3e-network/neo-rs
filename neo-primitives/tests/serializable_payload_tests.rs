@@ -86,8 +86,8 @@ fn serializable_payload_empty_scripts() {
         witnesses: vec![(vec![], vec![])],
     };
 
-    assert_eq!(payload.invocation_script(0), &[]);
-    assert_eq!(payload.verification_script(0), &[]);
+    assert_eq!(payload.invocation_script(0), &[] as &[u8]);
+    assert_eq!(payload.verification_script(0), &[] as &[u8]);
 }
 
 #[test]

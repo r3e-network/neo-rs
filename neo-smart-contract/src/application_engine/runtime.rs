@@ -148,9 +148,8 @@ impl ApplicationEngine {
         let gas_left = self.gas_left();
         if Self::should_trace_block(self.current_block_index()) {
             eprintln!(
-                "TRACE gas_left block={} value={} consumed_pico={} limit_pico={}",
+                "TRACE gas_left block={} value={gas_left} consumed_pico={} limit_pico={}",
                 self.current_block_index(),
-                gas_left,
                 self.fee_consumed,
                 self.fee_amount,
             );
@@ -162,9 +161,8 @@ impl ApplicationEngine {
         let message_bytes = self.pop_bytes()?;
         if message_bytes.len() > MAX_NOTIFICATION_SIZE {
             return Err(format!(
-                "Notification size {} exceeds maximum allowed size of {} bytes",
-                message_bytes.len(),
-                MAX_NOTIFICATION_SIZE
+                "Notification size {} exceeds maximum allowed size of {MAX_NOTIFICATION_SIZE} bytes",
+                message_bytes.len()
             ));
         }
         let message = StdString::from_utf8(message_bytes).map_err(|_| {
@@ -188,9 +186,8 @@ impl ApplicationEngine {
         let state = self.pop_array()?;
         if event_name.len() > MAX_EVENT_NAME {
             return Err(format!(
-                "Event name size {} exceeds maximum allowed size of {} bytes",
-                event_name.len(),
-                MAX_EVENT_NAME
+                "Event name size {} exceeds maximum allowed size of {MAX_EVENT_NAME} bytes",
+                event_name.len()
             ));
         }
         if !self.is_hardfork_enabled(Hardfork::HfBasilisk) {

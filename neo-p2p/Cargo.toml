@@ -24,12 +24,9 @@ neo-primitives = { workspace = true }
 neo-crypto = { workspace = true }
 neo-actors = { workspace = true }
 neo-protocol = { workspace = true }
-neo-smart-contract = { workspace = true }
-neo-native-contracts = { workspace = true }
 
 # Internal crates (path deps, mirroring neo-system)
 neo-ledger = { path = "../neo-ledger" }
-neo-storage = { path = "../neo-storage" }
 # Shared caches (HashSetCache/RelayCache) used by the P2P actors. Bound under
 # the historical `neo_io_crate` alias used throughout the moved code.
 neo_io_crate = { path = "../neo-io", package = "neo-io" }

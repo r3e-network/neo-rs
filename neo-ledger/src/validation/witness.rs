@@ -54,7 +54,7 @@ pub fn verify_witness<V: VerifiableExt>(
     witness: &Witness,
     max_gas: i64,
 ) -> CoreResult<i64> {
-    if !is_valid_script(&witness.invocation_script) {
+    if !is_valid_script(witness.invocation_script()) {
         return Err(CoreError::invalid_operation(
             "Invalid invocation script".to_string(),
         ));
@@ -81,7 +81,7 @@ pub fn verify_witness<V: VerifiableExt>(
         None,
         standard_native_services(Arc::new(LedgerWitnessHashResolver)),
     )?;
-    if witness.verification_script.is_empty() {
+    if witness.verification_script().is_empty() {
         let mut contract = ContractManagement::get_contract_from_snapshot(snapshot, hash)?
             .ok_or_else(|| {
                 CoreError::invalid_operation(format!("Contract not found for hash {hash}"))
@@ -116,18 +116,18 @@ pub fn verify_witness<V: VerifiableExt>(
                 "Witness script hash mismatch".to_string(),
             ));
         }
-        if !is_valid_script(&witness.verification_script) {
+        if !is_valid_script(witness.verification_script()) {
             return Err(CoreError::invalid_operation(
                 "Invalid verification script".to_string(),
             ));
         }
         engine.load_script(
-            witness.verification_script.clone(),
+            witness.verification_script().to_vec(),
             CallFlags::READ_ONLY,
             Some(*hash),
         )?;
     }
-    engine.load_script(witness.invocation_script.clone(), CallFlags::NONE, None)?;
+    engine.load_script(witness.invocation_script().to_vec(), CallFlags::NONE, None)?;
     engine.execute()?;
     if engine.state() == VmState::FAULT {
         return Err(CoreError::invalid_operation(

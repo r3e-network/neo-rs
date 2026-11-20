@@ -75,7 +75,7 @@ impl ContractGroup {
         ) {
             Ok(is_valid) => Ok(is_valid),
             Err(e) => {
-                tracing::info!("Error verifying contract group signature: {}", e);
+                tracing::info!("Error verifying contract group signature: {e}");
                 Ok(false)
             }
         }
@@ -122,7 +122,7 @@ impl ContractGroup {
     /// Converts to a neo-vm-rs stack value.
     pub fn to_stack_value(&self) -> StackValue {
         let pub_key_bytes = self.pub_key.encode_point(true).unwrap_or_else(|e| {
-            tracing::error!("Failed to encode ECPoint: {}", e);
+            tracing::error!("Failed to encode ECPoint: {e}");
             self.pub_key.to_bytes()
         });
 
@@ -192,7 +192,7 @@ impl Interoperable for ContractGroup {
             }) {
             Ok(group) => *self = group,
             Err(e) => {
-                tracing::error!("Failed to parse ContractGroup from stack item: {}", e);
+                tracing::error!("Failed to parse ContractGroup from stack item: {e}");
             }
         }
         Ok(())

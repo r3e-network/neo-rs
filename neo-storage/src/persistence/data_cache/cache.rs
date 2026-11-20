@@ -1,13 +1,17 @@
 use super::prefetch::AccessPatternTracker;
-use super::prefetch::PrefetchPattern;
+use super::prefetch::{PrefetchConfig, PrefetchMetrics, PrefetchMetricsSnapshot};
+use super::prefetch::{PrefetchPattern, PrefetchScanPlan, PrefetchWindow};
 use super::storage_watch::log_watched_storage_event;
 use super::trackable::{DataCacheConfig, DataCacheError, DataCacheResult, InnerState, Trackable};
+use crate::persistence::hot_key_cache::{
+    HOT_KEY_CACHE_SHARDS, HotKeyCache, HotKeyCacheStatsSnapshot,
+};
 use crate::persistence::read_cache::{ReadCache, ReadCacheStatsSnapshot};
 use crate::persistence::read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric};
 use crate::persistence::seek_direction::SeekDirection;
 use crate::types::{StorageItem, StorageKey, TrackState};
 use parking_lot::RwLock;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use tracing::{debug, trace, warn};
@@ -19,6 +23,18 @@ pub type OnEntryDelegate = Arc<dyn Fn(&DataCache, &StorageKey, &StorageItem) + S
 pub(crate) type StoreGetFn = dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync;
 pub(crate) type StoreFindFn =
     dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)> + Send + Sync;
+/// Bounded scan delegate: `(prefix, exclusive cursor, direction, limit)`.
+///
+/// Prefetch asks the backing store for at most `limit` rows inside `prefix`
+/// instead of collecting a whole prefix range and discarding the tail.
+pub(crate) type StoreSeekFn = dyn Fn(
+        Option<&StorageKey>,
+        Option<&StorageKey>,
+        SeekDirection,
+        usize,
+    ) -> Vec<(StorageKey, StorageItem)>
+    + Send
+    + Sync;
 pub(crate) type CommitApplyFn = dyn Fn(&[(StorageKey, Trackable)]) + Send + Sync;
 /// Monotonic version probe of a mutable backing store. Values must change on
 /// every commit that can alter previously read entries.
@@ -38,18 +54,24 @@ pub struct DataCache {
     store_get: Option<Arc<StoreGetFn>>,
     /// Optional store finder for prefix searches
     store_find: Option<Arc<StoreFindFn>>,
+    /// Optional bounded store scan used by speculative prefetch
+    store_seek: Option<Arc<StoreSeekFn>>,
     /// Strong count for CoW detection
     ref_count: Arc<AtomicUsize>,
     /// Optional LRU read cache for frequently accessed keys
     read_cache: Option<Arc<ReadCache<StorageKey, StorageItem>>>,
+    /// Optional sharded hot-key cache for committed reads
+    hot_key_cache: Option<Arc<HotKeyCache>>,
     /// Configuration
     config: DataCacheConfig,
     /// Access pattern tracker for intelligent prefetching
     pattern_tracker: RwLock<AccessPatternTracker>,
     /// Global access sequence counter
     access_seq: AtomicU64,
-    /// Prefetch window - keys that were recently prefetched
-    prefetch_window: RwLock<HashSet<StorageKey>>,
+    /// Bounded window of keys that were prefetched and not yet consumed
+    prefetch_window: RwLock<PrefetchWindow>,
+    /// Counters describing what speculative prefetching actually did
+    prefetch_metrics: Arc<PrefetchMetrics>,
     /// Optional commit sink used by cloned overlays to propagate tracked
     /// changes into their parent cache (mirrors Neo C# ClonedCache semantics).
     commit_apply: Option<Arc<CommitApplyFn>>,
@@ -61,10 +83,18 @@ pub struct DataCache {
 }
 
 fn key_matches_prefix(key: &StorageKey, prefix: Option<&[u8]>) -> bool {
-    match prefix {
-        Some(prefix) => key.as_bytes().starts_with(prefix),
-        None => true,
-    }
+    // An absent prefix matches every key.
+    prefix.is_none_or(|prefix| key.as_bytes().starts_with(prefix))
+}
+
+/// Capacity of the prefetch window: two scans' worth of keys, never unbounded.
+fn prefetch_window_capacity(config: &DataCacheConfig) -> usize {
+    config
+        .prefetch
+        .limits
+        .max_admit_keys
+        .saturating_mul(2)
+        .clamp(8, 4096)
 }
 
 fn visible_trackable_item(trackable: &Trackable) -> Option<StorageItem> {
@@ -91,12 +121,15 @@ impl Clone for DataCache {
             on_update: Arc::clone(&self.on_update),
             store_get: self.store_get.as_ref().map(Arc::clone),
             store_find: self.store_find.as_ref().map(Arc::clone),
+            store_seek: self.store_seek.as_ref().map(Arc::clone),
             ref_count: Arc::clone(&self.ref_count),
             read_cache: self.read_cache.clone(),
+            hot_key_cache: self.hot_key_cache.clone(),
             config: self.config,
             pattern_tracker: RwLock::new(AccessPatternTracker::new()),
             access_seq: AtomicU64::new(0),
-            prefetch_window: RwLock::new(HashSet::new()),
+            prefetch_window: RwLock::new(PrefetchWindow::new(self.prefetch_window_capacity())),
+            prefetch_metrics: Arc::clone(&self.prefetch_metrics),
             commit_apply: self.commit_apply.as_ref().map(Arc::clone),
             generation_source: self.generation_source.as_ref().map(Arc::clone),
             observed_generation: AtomicU64::new(self.observed_generation.load(Ordering::Acquire)),
@@ -164,13 +197,25 @@ impl DataCache {
         read_only: bool,
         store_get: Option<Arc<StoreGetFn>>,
         store_find: Option<Arc<StoreFindFn>>,
-        config: DataCacheConfig,
+        mut config: DataCacheConfig,
     ) -> Self {
+        // Prefetch cannot be switched on by a configuration that asks for an
+        // unbounded scan: the limits are clamped into the hard ceilings before
+        // they are stored, whichever source produced them.
+        if config.prefetch.enabled {
+            config.prefetch = config.prefetch.sanitized();
+        }
         let read_cache = if config.enable_read_cache {
             Some(Arc::new(ReadCache::new(config.read_cache_config)))
         } else {
             None
         };
+        let hot_key_cache = config.enable_hot_key_cache.then(|| {
+            Arc::new(HotKeyCache::new(
+                config.hot_key_cache_capacity,
+                HOT_KEY_CACHE_SHARDS,
+            ))
+        });
 
         Self {
             state: Arc::new(RwLock::new(InnerState::new())),
@@ -179,16 +224,49 @@ impl DataCache {
             on_update: Arc::new(RwLock::new(Vec::new())),
             store_get,
             store_find,
+            store_seek: None,
             ref_count: Arc::new(AtomicUsize::new(1)),
             read_cache,
+            hot_key_cache,
+            prefetch_window: RwLock::new(PrefetchWindow::new(prefetch_window_capacity(&config))),
+            prefetch_metrics: Arc::new(PrefetchMetrics::new()),
             config,
             pattern_tracker: RwLock::new(AccessPatternTracker::new()),
             access_seq: AtomicU64::new(0),
-            prefetch_window: RwLock::new(HashSet::new()),
             commit_apply: None,
             generation_source: None,
             observed_generation: AtomicU64::new(0),
         }
+    }
+
+    /// Installs the bounded store scan used by speculative prefetch.
+    ///
+    /// A cache without this delegate never prefetches: falling back to the
+    /// unbounded `store_find` would reintroduce exactly the eager
+    /// materialisation prefetch is supposed to avoid.
+    pub fn set_store_seek<F>(&mut self, seek: F)
+    where
+        F: Fn(
+                Option<&StorageKey>,
+                Option<&StorageKey>,
+                SeekDirection,
+                usize,
+            ) -> Vec<(StorageKey, StorageItem)>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.store_seek = Some(Arc::new(seek));
+    }
+
+    /// Returns the prefetch counters as of this call.
+    #[must_use]
+    pub fn prefetch_metrics(&self) -> PrefetchMetricsSnapshot {
+        self.prefetch_metrics.snapshot()
+    }
+
+    fn prefetch_window_capacity(&self) -> usize {
+        prefetch_window_capacity(&self.config)
     }
 
     /// Binds this cache to a mutable backing store's version probe.
@@ -227,6 +305,9 @@ impl DataCache {
                 .retain(|_, trackable| !matches!(trackable.state, TrackState::None));
         }
         if let Some(ref cache) = self.read_cache {
+            cache.clear();
+        }
+        if let Some(ref cache) = self.hot_key_cache {
             cache.clear();
         }
         self.observed_generation.store(current, Ordering::Release);
@@ -280,7 +361,8 @@ impl DataCache {
         let overlay_config = DataCacheConfig {
             track_reads_in_write_cache: false,
             enable_read_cache: false,
-            enable_prefetching: false,
+            enable_hot_key_cache: false,
+            prefetch: PrefetchConfig::disabled(),
             ..self.config
         };
         let mut overlay =
@@ -351,6 +433,14 @@ impl DataCache {
             .config
             .enable_read_cache
             .then(|| Arc::new(ReadCache::new(self.config.read_cache_config)));
+        // A fork owns a private hot-key cache: its speculative fills are
+        // discarded together with the fork, never observed by the parent.
+        let hot_key_cache = self.config.enable_hot_key_cache.then(|| {
+            Arc::new(HotKeyCache::new(
+                self.config.hot_key_cache_capacity,
+                HOT_KEY_CACHE_SHARDS,
+            ))
+        });
 
         Self {
             state: Arc::new(RwLock::new(cloned_state)),
@@ -359,12 +449,20 @@ impl DataCache {
             on_update: Arc::clone(&self.on_update),
             store_get: self.store_get.as_ref().map(Arc::clone),
             store_find: self.store_find.as_ref().map(Arc::clone),
+            store_seek: self.store_seek.as_ref().map(Arc::clone),
             ref_count: Arc::new(AtomicUsize::new(1)),
             read_cache,
-            config: self.config,
+            hot_key_cache,
+            // A fork owns a private, short-lived read cache: speculative fills
+            // would be discarded with it, so prefetch stays off in forks.
+            config: DataCacheConfig {
+                prefetch: PrefetchConfig::disabled(),
+                ..self.config
+            },
             pattern_tracker: RwLock::new(AccessPatternTracker::new()),
             access_seq: AtomicU64::new(0),
-            prefetch_window: RwLock::new(HashSet::new()),
+            prefetch_window: RwLock::new(PrefetchWindow::new(self.prefetch_window_capacity())),
+            prefetch_metrics: Arc::clone(&self.prefetch_metrics),
             commit_apply: None,
             generation_source: self.generation_source.as_ref().map(Arc::clone),
             observed_generation: AtomicU64::new(self.observed_generation.load(Ordering::Acquire)),
@@ -376,11 +474,12 @@ impl DataCache {
     pub fn get(&self, key: &StorageKey) -> Option<StorageItem> {
         self.refresh_if_store_changed();
 
-        let should_track_pattern = self.config.enable_prefetching && self.read_cache.is_some();
-        let pattern = if should_track_pattern {
+        // A disabled prefetch configuration costs one predictable branch here
+        // and never touches the tracker, the window or the counters.
+        let prefetch_plan = if self.prefetch_active() {
             self.record_access_pattern(key)
         } else {
-            PrefetchPattern::None
+            None
         };
 
         // First check write cache
@@ -411,16 +510,43 @@ impl DataCache {
             }
         }
 
+        // Check the sharded hot-key cache. It only ever retains values read
+        // from committed backing state, so a hit needs neither the global
+        // read-cache lock nor a storage trip.
+        if let Some(ref hot) = self.hot_key_cache
+            && let Some(item) = hot.get(key)
+        {
+            if self.take_prefetched(key) {
+                self.prefetch_metrics.record_useful_hit();
+            }
+
+            // No read mirror is added here: for a hot key the hot cache *is*
+            // the read mirror, and mirroring it would make every first read
+            // take the dictionary's exclusive lock for a value this hit already
+            // serves.
+            for handler in self.on_read.read().iter() {
+                handler(self, key, &item);
+            }
+
+            if let Some(plan) = prefetch_plan {
+                self.run_prefetch(plan);
+            }
+
+            log_watched_storage_event("get", "hot_key_cache_hit", key, None, None, Some(&item));
+            return Some(item);
+        }
+
         // Check read cache
         if let Some(ref cache) = self.read_cache
             && let Some(item) = cache.get(key)
         {
-            if self.is_recently_prefetched(key) {
+            if self.take_prefetched(key) {
                 cache.record_prefetch_hit();
+                self.prefetch_metrics.record_useful_hit();
             }
 
-            if pattern != PrefetchPattern::None {
-                self.trigger_prefetch_if_needed(key, pattern);
+            if let Some(plan) = prefetch_plan {
+                self.run_prefetch(plan);
             }
 
             log_watched_storage_event("get", "read_cache_hit", key, None, None, Some(&item));
@@ -436,17 +562,43 @@ impl DataCache {
                 cache.put(key.clone(), item.clone(), size);
             }
 
-            self.track_in_write_cache(key, &item);
+            // A value just read from committed state is what the hot cache is
+            // for. When it is retained there, the write dictionary keeps only
+            // pending writes instead of mirroring every cold read.
+            let retained_in_hot_cache = if let Some(ref hot) = self.hot_key_cache {
+                hot.insert(key.clone(), item.clone());
+                true
+            } else {
+                false
+            };
+            if !retained_in_hot_cache {
+                self.track_in_write_cache(key, &item);
+            }
 
             for handler in self.on_read.read().iter() {
                 handler(self, key, &item);
             }
 
             log_watched_storage_event("get", "store_get_hit", key, None, None, Some(&item));
+
+            // A run of cold reads is exactly the pattern speculative prefetch
+            // exists for, so the scan is evaluated here too instead of only on
+            // cache hits.
+            if let Some(plan) = prefetch_plan {
+                self.run_prefetch(plan);
+            }
+
             return Some(item);
         }
 
         log_watched_storage_event("get", "miss", key, None, None, None);
+
+        // A miss still advances the access pattern: skipping it here would make
+        // the feature depend on some earlier read having warmed the cache.
+        if let Some(plan) = prefetch_plan {
+            self.run_prefetch(plan);
+        }
+
         None
     }
 
@@ -487,6 +639,9 @@ impl DataCache {
     }
 
     fn add_writable(&self, key: StorageKey, value: StorageItem) -> DataCacheResult {
+        if let Some(ref cache) = self.hot_key_cache {
+            cache.invalidate(&key);
+        }
         if let Some(ref cache) = self.read_cache {
             cache.remove(&key);
         }
@@ -556,6 +711,9 @@ impl DataCache {
     }
 
     fn update_writable(&self, key: StorageKey, value: StorageItem) {
+        if let Some(ref cache) = self.hot_key_cache {
+            cache.invalidate(&key);
+        }
         if let Some(ref cache) = self.read_cache {
             let size = value.value_bytes().len() + std::mem::size_of::<StorageKey>();
             cache.put(key.clone(), value.clone(), size);
@@ -625,6 +783,9 @@ impl DataCache {
     }
 
     fn delete_writable(&self, key: &StorageKey) {
+        if let Some(ref cache) = self.hot_key_cache {
+            cache.invalidate(key);
+        }
         if let Some(ref cache) = self.read_cache {
             cache.remove(key);
         }
@@ -778,8 +939,12 @@ impl DataCache {
         let mut state = self.state.write();
         state.dictionary.clear();
         drop(state);
-        if self.config.enable_prefetching {
+        if let Some(ref cache) = self.hot_key_cache {
+            cache.clear();
+        }
+        if self.config.prefetch.enabled {
             *self.pattern_tracker.write() = AccessPatternTracker::new();
+            self.prefetch_window.write().clear();
         }
     }
 
@@ -867,6 +1032,26 @@ impl DataCache {
     /// Gets read cache statistics if caching is enabled.
     pub fn read_cache_stats(&self) -> Option<ReadCacheStatsSnapshot> {
         self.read_cache.as_ref().map(|c| c.stats())
+    }
+
+    /// Returns true if the sharded hot-key cache is enabled.
+    pub fn has_hot_key_cache(&self) -> bool {
+        self.hot_key_cache.is_some()
+    }
+
+    /// Gets hot-key cache statistics if that cache is enabled.
+    pub fn hot_key_cache_stats(&self) -> Option<HotKeyCacheStatsSnapshot> {
+        self.hot_key_cache
+            .as_ref()
+            .map(|cache| cache.stats_snapshot())
+    }
+
+    /// Clears the hot-key cache.
+    pub fn clear_hot_key_cache(&self) {
+        if let Some(ref cache) = self.hot_key_cache {
+            cache.clear();
+            debug!(target: "neo", "DataCache hot-key cache cleared");
+        }
     }
 
     /// Clears the read cache.
@@ -989,18 +1174,22 @@ impl DataCache {
             .collect()
     }
 
-    /// Records an access pattern for intelligent prefetching.
-    pub(super) fn record_access_pattern(&self, key: &StorageKey) -> PrefetchPattern {
+    /// Records an access pattern and returns a bounded scan plan when one is due.
+    pub(super) fn record_access_pattern(&self, key: &StorageKey) -> Option<PrefetchScanPlan> {
         let seq = self.access_seq.fetch_add(1, Ordering::Relaxed);
-        self.pattern_tracker.write().record_access(key, seq)
+        self.pattern_tracker
+            .write()
+            .record_access(key, seq, &self.config.prefetch)
     }
 
     /// Gets the current detected prefetch pattern.
     pub fn current_prefetch_pattern(&self) -> PrefetchPattern {
-        self.pattern_tracker.read().current_pattern(30)
+        self.pattern_tracker
+            .read()
+            .current_pattern(self.config.prefetch.confidence_threshold)
     }
 
-    /// Checks if a key is in the prefetch window.
+    /// Checks if a key is inside the prefetch window.
     pub fn is_recently_prefetched(&self, key: &StorageKey) -> bool {
         self.prefetch_window.read().contains(key)
     }
@@ -1010,78 +1199,138 @@ impl DataCache {
         self.prefetch_window.write().clear();
     }
 
-    /// Trigger prefetching based on detected access pattern.
-    pub(super) fn trigger_prefetch_if_needed(&self, key: &StorageKey, pattern: PrefetchPattern) {
-        if !self.config.enable_prefetching {
+    #[inline]
+    fn prefetch_active(&self) -> bool {
+        self.config.prefetch.is_active() && self.read_cache.is_some() && self.store_seek.is_some()
+    }
+
+    /// Removes `key` from the window, reporting whether prefetch put it there.
+    fn take_prefetched(&self, key: &StorageKey) -> bool {
+        if !self.config.prefetch.enabled {
+            return false;
+        }
+        self.prefetch_window.write().take(key)
+    }
+
+    /// Returns true when this cache owns pending state for `key`.
+    ///
+    /// Any dictionary entry — a write, a delete, a tombstone or a read mirror —
+    /// belongs to the overlay and must never be replaced by a speculative value.
+    fn has_local_state(&self, key: &StorageKey) -> bool {
+        self.state.read().dictionary.contains_key(key)
+    }
+
+    /// Runs one bounded speculative scan described by `plan`.
+    ///
+    /// The scan is confined to `plan.prefix`, reads at most
+    /// `limits.max_scan_keys` rows, admits at most `limits.max_admit_keys` keys
+    /// and `limits.max_admit_bytes` value bytes, skips anything this cache owns
+    /// locally, and tags the batch with the read-cache generation captured
+    /// before the scan so a concurrent refresh can reject it.
+    fn run_prefetch(&self, plan: PrefetchScanPlan) {
+        let (Some(cache), Some(seek)) = (self.read_cache.as_ref(), self.store_seek.as_ref()) else {
+            return;
+        };
+        let config = &self.config.prefetch;
+        let admit_target = config.admit_target();
+        if admit_target == 0 || config.limits.max_scan_keys == 0 {
+            self.prefetch_metrics.record_declined();
             return;
         }
 
-        match pattern {
-            PrefetchPattern::SequentialForward => {
-                self.prefetch_next_keys(key, self.config.prefetch_count);
-            }
-            PrefetchPattern::SequentialBackward => {
-                self.prefetch_prev_keys(key, self.config.prefetch_count);
-            }
-            _ => {}
+        // Snapshot every clock the batch will be validated against before the
+        // backing store is touched.
+        let source_generation = cache.generation();
+        let store_generation = self.observed_generation.load(Ordering::Acquire);
+
+        self.prefetch_metrics.record_request();
+        let scanned = seek(
+            Some(&plan.prefix),
+            Some(&plan.start),
+            plan.direction,
+            config.limits.max_scan_keys,
+        );
+        self.prefetch_metrics.record_scan(scanned.len());
+        if scanned.is_empty() {
+            self.prefetch_metrics.record_declined();
+            return;
         }
-    }
 
-    fn prefetch_next_keys(&self, key: &StorageKey, count: usize) {
-        if let Some(ref store_find) = self.store_find {
-            let items: Vec<(StorageKey, StorageItem)> =
-                store_find(Some(key), SeekDirection::Forward)
-                    .into_iter()
-                    .filter(|(k, _)| !self.is_recently_prefetched(k))
-                    .take(count)
-                    .collect();
+        // A commit that landed mid-scan makes every row suspect: drop the batch
+        // instead of admitting values the refresh has already invalidated.
+        if let Some(source) = &self.generation_source
+            && source() != store_generation
+        {
+            self.prefetch_metrics.record_canceled();
+            self.clear_prefetch_window();
+            return;
+        }
 
-            if !items.is_empty() {
-                {
-                    let mut window = self.prefetch_window.write();
-                    for (k, _) in &items {
-                        window.insert(k.clone());
-                    }
-                    if window.len() > 1000 {
-                        window.clear();
-                    }
-                }
+        let prefix_bytes = plan.prefix.to_array();
+        let mut items: Vec<(StorageKey, StorageItem, usize)> = Vec::with_capacity(admit_target);
+        let mut admitted_bytes = 0usize;
+        let mut declined = 0u64;
+        let mut scanned_kept = 0usize;
+        for (key, item) in scanned {
+            scanned_kept += 1;
+            if items.len() >= admit_target {
+                break;
+            }
+            // Defensive: never admit a row outside the namespace the plan named.
+            if !key.as_bytes().starts_with(&prefix_bytes) {
+                break;
+            }
+            if self.is_recently_prefetched(&key) || self.has_local_state(&key) {
+                declined += 1;
+                continue;
+            }
+            let size = item.value_bytes().len() + std::mem::size_of::<StorageKey>();
+            if admitted_bytes.saturating_add(size) > config.limits.max_admit_bytes {
+                declined += 1;
+                break;
+            }
+            admitted_bytes = admitted_bytes.saturating_add(size);
+            items.push((key, item, size));
+        }
 
-                self.prefetch(items);
-                trace!(target: "neo", count, "prefetched forward sequential keys");
+        if items.is_empty() {
+            self.prefetch_metrics.record_declined();
+            return;
+        }
+
+        {
+            let mut window = self.prefetch_window.write();
+            for (key, _, _) in &items {
+                window.record(key.clone());
             }
         }
-    }
 
-    fn prefetch_prev_keys(&self, key: &StorageKey, count: usize) {
-        if let Some(ref store_find) = self.store_find {
-            let items: Vec<(StorageKey, StorageItem)> =
-                store_find(Some(key), SeekDirection::Backward)
-                    .into_iter()
-                    .filter(|(k, _)| !self.is_recently_prefetched(k))
-                    .take(count)
-                    .collect();
-
-            if !items.is_empty() {
-                {
-                    let mut window = self.prefetch_window.write();
-                    for (k, _) in &items {
-                        window.insert(k.clone());
-                    }
-                    if window.len() > 1000 {
-                        window.clear();
-                    }
-                }
-
-                self.prefetch(items);
-                trace!(target: "neo", count, "prefetched backward sequential keys");
-            }
+        let admission = cache.put_batch_with_generation(items, source_generation);
+        self.prefetch_metrics.record_admission(
+            admission.admitted as u64,
+            admission.stale_skips as u64,
+            admission.bytes as u64,
+        );
+        for _ in 0..declined.saturating_add(admission.rejected as u64) {
+            self.prefetch_metrics.record_declined();
         }
+        trace!(
+            target: "neo",
+            direction = ?plan.direction,
+            scanned = scanned_kept,
+            admitted = admission.admitted,
+            "prefetched sequential keys"
+        );
     }
 
     /// Pre-fetches items into the read cache.
+    ///
+    /// Public entry point for callers that already hold speculative values. The
+    /// batch is tagged with the current read-cache generation and never replaces
+    /// a resident entry, matching the internal prefetch path.
     pub fn prefetch(&self, items: Vec<(StorageKey, StorageItem)>) {
         if let Some(ref cache) = self.read_cache {
+            let generation = cache.generation();
             let cache_items: Vec<_> = items
                 .into_iter()
                 .map(|(k, v)| {
@@ -1089,12 +1338,79 @@ impl DataCache {
                     (k, v, size)
                 })
                 .collect();
-            cache.put_batch(cache_items);
+            let admission = cache.put_batch_with_generation(cache_items, generation);
+            self.prefetch_metrics.record_admission(
+                admission.admitted as u64,
+                admission.stale_skips as u64,
+                admission.bytes as u64,
+            );
         }
     }
 }
 
-impl ReadOnlyStore for DataCache {}
+impl ReadOnlyStore for DataCache {
+    /// Overlay-first bounded scan.
+    ///
+    /// Backing rows are read through the bounded seek when one is installed, so
+    /// the scan never materialises a prefix range larger than `limit`. Local
+    /// writes and tombstones are then applied on top, which keeps this call
+    /// consistent with [`Self::find`] without multiplying the read cost.
+    fn seek_limited(
+        &self,
+        key_prefix: Option<&StorageKey>,
+        start: Option<&StorageKey>,
+        direction: SeekDirection,
+        limit: usize,
+    ) -> Vec<(StorageKey, StorageItem)> {
+        if limit == 0 {
+            return Vec::new();
+        }
+
+        let prefix_bytes = key_prefix.map(|key| key.as_bytes().into_owned());
+        let inside_cursor = |key: &StorageKey| match direction {
+            SeekDirection::Forward => start.is_none_or(|cursor| *key > *cursor),
+            SeekDirection::Backward => start.is_none_or(|cursor| *key < *cursor),
+        };
+
+        let backing = match &self.store_seek {
+            Some(seek) => seek(key_prefix, start, direction, limit),
+            None => match &self.store_find {
+                Some(find) => find(key_prefix, direction)
+                    .into_iter()
+                    .filter(|(key, _)| {
+                        key_matches_prefix(key, prefix_bytes.as_deref()) && inside_cursor(key)
+                    })
+                    .take(limit)
+                    .collect(),
+                None => Vec::new(),
+            },
+        };
+
+        let mut merged: BTreeMap<StorageKey, StorageItem> = backing.into_iter().collect();
+        {
+            let state = self.state.read();
+            for (key, trackable) in &state.dictionary {
+                if !key_matches_prefix(key, prefix_bytes.as_deref()) || !inside_cursor(key) {
+                    continue;
+                }
+                match overlay_item(trackable) {
+                    Some(Some(item)) => {
+                        merged.insert(key.clone(), item);
+                    }
+                    Some(None) => {
+                        merged.remove(key);
+                    }
+                    None => {}
+                }
+            }
+        }
+
+        match direction {
+            SeekDirection::Forward => merged.into_iter().take(limit).collect(),
+            SeekDirection::Backward => merged.into_iter().rev().take(limit).collect(),
+        }
+    }
+}
 
 impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for DataCache {
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
@@ -1130,7 +1446,6 @@ mod tests {
     fn untracked_read_config() -> DataCacheConfig {
         DataCacheConfig {
             track_reads_in_write_cache: false,
-            enable_prefetching: false,
             ..DataCacheConfig::default()
         }
     }
@@ -1166,12 +1481,8 @@ mod tests {
         let key = StorageKey::new(1, b"shared".to_vec());
         let store_get: Arc<StoreGetFn> =
             Arc::new(|_key: &StorageKey| Some(StorageItem::from_bytes(b"parent".to_vec())));
-        let parent = DataCache::new_with_config(
-            false,
-            Some(store_get),
-            None,
-            untracked_read_config(),
-        );
+        let parent =
+            DataCache::new_with_config(false, Some(store_get), None, untracked_read_config());
         assert_eq!(parent.get(&key).unwrap().to_value(), b"parent".to_vec());
 
         let fork = parent.fork_isolated();
@@ -1189,12 +1500,8 @@ mod tests {
         let store_get: Arc<StoreGetFn> = Arc::new(move |_key: &StorageKey| {
             Some(StorageItem::from_bytes(backing_get.lock().clone()))
         });
-        let mut cache = DataCache::new_with_config(
-            false,
-            Some(store_get),
-            None,
-            DataCacheConfig::default(),
-        );
+        let mut cache =
+            DataCache::new_with_config(false, Some(store_get), None, DataCacheConfig::default());
         let generation = Arc::new(AtomicU64::new(0));
         let generation_probe = Arc::clone(&generation);
         cache.set_generation_source(move || generation_probe.load(Ordering::Acquire));

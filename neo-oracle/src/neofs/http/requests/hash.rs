@@ -27,7 +27,7 @@ impl OracleNeoFsProtocol {
             };
             builder.header(
                 reqwest::header::RANGE,
-                format!("bytes={}-{}", range.offset, end),
+                format!("bytes={}-{end}", range.offset),
             )
         } else {
             match self.request_builder(reqwest::Method::GET, object_url, auth) {

@@ -16,7 +16,7 @@ use super::{
     DEFAULT_PRICE, MAX_PENDING_PER_URL, OracleContract, PREFIX_ID_LIST, PREFIX_PRICE,
     PREFIX_REQUEST, PREFIX_REQUEST_ID, PendingRequest,
 };
-use crate::native::oracle_request::OracleRequest;
+use crate::native::oracle_request::{OracleRequest, OracleRequestStackProjection};
 use neo_crypto::Crypto;
 use neo_primitives::{UInt160, UInt256};
 use neo_smart_contract::binary_serializer::BinarySerializer;

@@ -10,7 +10,7 @@ pub static SERVERS: LazyLock<RwLock<HashMap<u32, Arc<RwLock<RpcServer>>>>> =
 
 pub fn remove_server(network: u32) {
     if SERVERS.write().remove(&network).is_some() {
-        info!("Removed RPC server for network {}", network);
+        info!("Removed RPC server for network {network}");
     }
 }
 
@@ -21,8 +21,7 @@ pub fn register_server(network: u32, server: Arc<RwLock<RpcServer>>) {
             panic!("double-registration of RPC server for network {network}");
         } else {
             tracing::error!(
-                "Double-registration of RPC server for network {} — previous instance replaced",
-                network
+                "Double-registration of RPC server for network {network} — previous instance replaced"
             );
         }
         if let Some(mut previous_guard) = previous.try_write() {

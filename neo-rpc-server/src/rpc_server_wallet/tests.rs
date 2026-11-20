@@ -1,6 +1,6 @@
 use super::*;
 use crate::rpc_server_settings::RpcServerConfig;
-use neo_crypto::Secp256r1Crypto;
+use neo_crypto::{ECPoint, Secp256r1Crypto};
 use neo_io::BinaryWriter;
 use neo_native_contracts::native::LedgerContract;
 use neo_primitives::UInt256;
@@ -17,6 +17,7 @@ use neo_smart_contract::helper::Helper as ContractHelper;
 use neo_storage::{StorageItem, StorageKey};
 use neo_system::NeoSystem;
 use neo_vm::VmState as VMState;
+use neo_wallets::SignatureAddOutcome;
 use neo_wallets::signing::{
     AuthenticatedContext, KeyRef, SignRequest, SignerService, SigningKeyBinding, SigningKeyResolver,
 };
@@ -367,6 +368,98 @@ fn signature_contract_pubkey_roundtrip() {
     assert_eq!(recovered, public_key);
 }
 
+#[test]
+fn wallet_context_requires_m_of_n_multisig_signatures() {
+    let keys: Vec<KeyPair> = (1u8..=3)
+        .map(|seed| KeyPair::from_private_key(&[seed; 32]).expect("key"))
+        .collect();
+    let points: Vec<ECPoint> = keys
+        .iter()
+        .map(|key| key.get_public_key_point().expect("point"))
+        .collect();
+    // 2-of-3 contract: the threshold must come from the script's PUSH2 opcode.
+    let contract = neo_smart_contract::Contract::create_multi_sig_contract(2, &points);
+    let mut tx = Transaction::new();
+    tx.set_signers(vec![Signer::new(
+        contract.script_hash(),
+        WitnessScope::GLOBAL,
+    )]);
+
+    let mut authorizer = TransactionAuthorizer::new(
+        tx,
+        ProtocolSettings::default().network,
+        AuthorizationLimits::new(ProtocolSettings::default().max_valid_until_block_increment),
+    );
+    authorizer
+        .register_contract(&contract)
+        .expect("multisig signer registered");
+    assert!(
+        !authorizer.is_complete(),
+        "an unsigned contract stays pending"
+    );
+
+    let digest = b"wallet context multisig";
+    fn add_signature(
+        authorizer: &mut TransactionAuthorizer,
+        contract: &neo_smart_contract::Contract,
+        key: &KeyPair,
+        digest: &[u8],
+    ) -> SignatureAddOutcome {
+        authorizer
+            .add_signature(
+                &contract.script_hash(),
+                AccountSignature::new(
+                    key.compressed_public_key(),
+                    key.sign(digest).expect("signature"),
+                ),
+            )
+            .expect("signature accepted")
+    }
+    assert_eq!(
+        add_signature(&mut authorizer, &contract, &keys[0], digest),
+        SignatureAddOutcome::Added
+    );
+    assert!(
+        !authorizer.is_complete(),
+        "one of two required signatures must stay pending"
+    );
+    assert_eq!(
+        add_signature(&mut authorizer, &contract, &keys[2], digest),
+        SignatureAddOutcome::Added
+    );
+    assert!(authorizer.is_complete());
+
+    let witnesses = authorizer.witnesses().expect("witnesses");
+    assert_eq!(witnesses.len(), 1);
+    let signatures: Vec<Vec<u8>> = witnesses[0]
+        .invocation_script()
+        .chunks(66)
+        .map(|chunk| chunk[2..].to_vec())
+        .collect();
+    assert_eq!(signatures.len(), 2);
+    let (_, script_keys) =
+        ContractHelper::parse_multi_sig_contract(&contract.script).expect("canonical script");
+    assert!(
+        neo_smart_contract::witness_verification::verify_witness_multi_signature(
+            digest,
+            &contract.script_hash(),
+            2,
+            &script_keys,
+            &signatures
+        )
+        .expect("verifier must not fault")
+    );
+
+    let json = authorization_json(&authorizer, ProtocolSettings::default().network, None);
+    assert_eq!(json["items"][0]["required"].as_u64(), Some(2));
+    assert_eq!(json["items"][0]["collected"].as_u64(), Some(2));
+    assert_eq!(
+        json["items"][0]["signatures"].as_array().map(Vec::len),
+        Some(2)
+    );
+    assert_eq!(json["completed"].as_bool(), Some(true));
+}
+
 #[tokio::test]
 async fn signer_runtime_rejects_missing_rpc_credentials() {
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
@@ -554,9 +647,7 @@ async fn rpc_rejects_key_version_mismatch_without_default_fallback() {
     let snapshot_arc = Arc::new(snapshot.data_cache().clone());
     let wallet = server.wallet().expect("wallet");
     let error = RpcServerWallet::prepare_transaction(&server, &wallet, tx, snapshot_arc.as_ref())
-        .and_then(|prepared| {
-            RpcServerWallet::authorize_transaction(&server, &wallet, prepared, snapshot_arc)
-        })
+        .and_then(|prepared| RpcServerWallet::authorize_transaction(&server, &wallet, prepared))
         .err()
         .expect("version mismatch must fail closed");
     // R-10: the signer rejection detail is logged under a correlation id and
@@ -681,11 +772,15 @@ fn prepared_transaction_rejects_hash_field_mutation_before_completion() {
     tx.set_script(vec![OpCode::RET.byte()]);
     let unsigned_data = tx.try_get_hash_data().expect("unsigned transaction");
     let mut prepared = PreparedTransaction {
-        transaction: tx,
+        authorizer: TransactionAuthorizer::new(
+            tx,
+            ProtocolSettings::default().network,
+            AuthorizationLimits::new(ProtocolSettings::default().max_valid_until_block_increment),
+        ),
         unsigned_data,
     };
 
-    prepared.transaction.set_network_fee(3);
+    prepared.authorizer.set_network_fee(3);
     let err = prepared
         .complete(vec![Witness::new()])
         .expect_err("changed hash field must invalidate authorization");
@@ -2199,7 +2294,7 @@ fn await_wallet_future_supports_current_thread_runtime() {
         .expect("current-thread runtime");
 
     let result = runtime.block_on(async {
-        RpcServerWallet::await_wallet_future(Box::pin(async { Ok::<i32, WalletError>(7) }))
+        RpcServerWallet::await_wallet_future(async { Ok::<i32, WalletError>(7) })
     });
 
     assert_eq!(result.expect("await_wallet_future result"), 7);

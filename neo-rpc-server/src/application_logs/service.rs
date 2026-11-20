@@ -5,13 +5,15 @@ use neo_primitives::TriggerType;
 use neo_primitives::UInt256;
 use neo_primitives::panic_message;
 use neo_protocol::execution::Block as ExecutionBlock;
+use neo_rpc_client::serialization::stack_item_json::{
+    stack_item_rpc_json, stack_items_rpc_json_per_item,
+};
 use neo_storage::persistence::{DataCache, Store, StoreSnapshot};
 use neo_system::NeoSystem;
 use neo_system::i_event_handlers::{CommittedHandler, CommittingHandler};
 use neo_vm::NotifyEventArgs;
 use neo_vm::StackItem;
 use neo_vm::VmState as VMState;
-use neo_vm::rpc_json::{stack_item_rpc_json, stack_items_rpc_json_per_item};
 use parking_lot::Mutex;
 use serde_json::{Map, Value};
 use std::any::Any;

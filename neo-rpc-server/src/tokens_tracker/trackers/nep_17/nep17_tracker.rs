@@ -3,23 +3,15 @@
 //! Tracks NEP-17 (fungible token) balances and transfer history.
 
 use super::super::token_balance::TokenBalance;
-use super::super::token_transfer::TokenTransfer;
-use super::super::tracker_base::{Tracker, TrackerBase, TransferRecord};
+use super::super::tracker_base::{ContractCall, Tracker, TrackerBase, TransferRecord};
 use super::nep17_balance_key::Nep17BalanceKey;
 use super::nep17_transfer_key::Nep17TransferKey;
 use neo_ledger::ApplicationExecuted;
-use neo_native_contracts::native::contract_management::ContractManagement;
-use neo_primitives::CallFlags;
 use neo_primitives::UInt160;
 use neo_primitives::log_level::LogLevel;
 use neo_protocol::execution::Block;
-use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_storage::persistence::DataCache;
 use neo_system::NeoSystem;
-use neo_vm::OpCode;
-use neo_vm::ScriptBuilder;
-use neo_vm::StackItem;
-use neo_vm::VmState as VMState;
 use num_traits::Zero;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -27,6 +19,9 @@ use std::sync::Arc;
 const NEP17_BALANCE_PREFIX: u8 = 0xe8;
 const NEP17_TRANSFER_SENT_PREFIX: u8 = 0xe9;
 const NEP17_TRANSFER_RECEIVED_PREFIX: u8 = 0xea;
+
+/// Gas limit for the `balanceOf` query engine.
+const NEP17_BALANCE_OF_GAS: i64 = 17_000_000;
 
 #[derive(Hash, Eq, PartialEq)]
 struct BalanceChangeRecord {
@@ -58,19 +53,11 @@ impl Nep17Tracker {
 
     fn handle_notification(
         &mut self,
+        record: &TransferRecord,
         container: Option<&Arc<dyn neo_primitives::Verifiable>>,
-        asset: &UInt160,
-        state_items: &[StackItem],
         balance_records: &mut HashSet<BalanceChangeRecord>,
         transfer_index: &mut u32,
     ) {
-        if state_items.len() != 3 {
-            return;
-        }
-        let Some(record) = TrackerBase::get_transfer_record(asset, state_items) else {
-            return;
-        };
-
         if record.from != UInt160::zero() {
             balance_records.insert(BalanceChangeRecord {
                 user: record.from,
@@ -89,7 +76,7 @@ impl Nep17Tracker {
                 .as_any()
                 .downcast_ref::<neo_protocol::payloads::Transaction>()
         {
-            self.record_transfer_history(&record, &tx.hash(), transfer_index);
+            self.record_transfer_history(record, &tx.hash(), transfer_index);
         }
     }
 
@@ -106,76 +93,36 @@ impl Nep17Tracker {
             return;
         };
 
-        if record.from != UInt160::zero() {
-            let key = Nep17TransferKey::new(
-                record.from,
-                block.header.timestamp,
-                record.asset,
-                *transfer_index,
-            );
-            let value = TokenTransfer {
-                amount: record.amount.clone(),
-                user_script_hash: record.to,
-                block_index: self.current_height,
-                tx_hash: *tx_hash,
-            };
-            let _ = self.base.put(NEP17_TRANSFER_SENT_PREFIX, &key, &value);
-        }
-
-        if record.to != UInt160::zero() {
-            let key = Nep17TransferKey::new(
-                record.to,
-                block.header.timestamp,
-                record.asset,
-                *transfer_index,
-            );
-            let value = TokenTransfer {
-                amount: record.amount.clone(),
-                user_script_hash: record.from,
-                block_index: self.current_height,
-                tx_hash: *tx_hash,
-            };
-            let _ = self.base.put(NEP17_TRANSFER_RECEIVED_PREFIX, &key, &value);
-        }
-
+        let timestamp_ms = block.header.timestamp;
+        let block_index = self.current_height;
+        let index = *transfer_index;
+        self.base.record_transfer_history(
+            NEP17_TRANSFER_SENT_PREFIX,
+            NEP17_TRANSFER_RECEIVED_PREFIX,
+            record,
+            block_index,
+            *tx_hash,
+            index,
+            |user, xfer_index| Nep17TransferKey::new(user, timestamp_ms, record.asset, xfer_index),
+        );
         *transfer_index += 1;
     }
 
     fn save_nep17_balance(&mut self, record: &BalanceChangeRecord, snapshot: &DataCache) {
         let key = Nep17BalanceKey::new(record.user, record.asset);
 
-        let mut sb = ScriptBuilder::new();
-        sb.emit_push(&record.user.to_bytes());
-        sb.emit_push_int(1);
-        sb.emit_opcode(OpCode::PACK);
-        sb.emit_push_int(CallFlags::ALL.bits() as i64);
-        sb.emit_push("balanceOf".as_bytes());
-        sb.emit_push(&record.asset.to_bytes());
-        if sb.emit_syscall("System.Contract.Call").is_err() {
-            return;
-        }
-
-        let Ok(mut engine) = ApplicationEngine::new(
-            neo_primitives::TriggerType::Application,
-            None,
-            Arc::new(snapshot.clone()),
-            self.current_block
-                .clone()
-                .map(neo_system::neo_system::converters::convert_ledger_block),
-            self.base.neo_system.settings().clone(),
-            17_000_000,
-            None,
-            neo_native_contracts::native::composition::default_native_services(),
+        let Some(engine) = self.base.call_contract(
+            snapshot,
+            self.current_block.as_ref(),
+            record.asset,
+            NEP17_BALANCE_OF_GAS,
+            &[ContractCall {
+                method: "balanceOf",
+                args: vec![record.user.to_bytes()],
+            }],
         ) else {
             return;
         };
-        if engine
-            .load_script(sb.to_array(), CallFlags::ALL, Some(record.asset))
-            .and_then(|_| engine.execute())
-            .is_err()
-        {
-            return;
-        }
 
         let Ok(balance_item) = engine.peek(0) else {
             return;
@@ -226,37 +173,16 @@ impl Tracker for Nep17Tracker {
         self.current_block = Some(block.clone());
         self.current_height = block.index();
 
-        let mut transfer_index: u32 = 0;
         let mut balance_records: HashSet<BalanceChangeRecord> = HashSet::new();
-
-        for app in executed_list {
-            if app.vm_state.contains(VMState::FAULT) {
-                continue;
-            }
-            for notify in &app.notifications {
-                if notify.event_name != "Transfer" || notify.state.is_empty() {
-                    continue;
-                }
-
-                let Ok(Some(contract)) =
-                    ContractManagement::get_contract_from_snapshot(snapshot, &notify.script_hash)
-                else {
-                    continue;
-                };
-
-                if !contract.manifest.supports_standard("NEP-17") {
-                    continue;
-                }
-
-                self.handle_notification(
-                    notify.script_container.as_ref(),
-                    &notify.script_hash,
-                    &notify.state,
-                    &mut balance_records,
-                    &mut transfer_index,
-                );
-            }
-        }
+        TrackerBase::for_each_transfer(
+            snapshot,
+            executed_list,
+            "NEP-17",
+            3,
+            |record, container, transfer_index| {
+                self.handle_notification(record, container, &mut balance_records, transfer_index);
+            },
+        );
 
         for record in balance_records {
             self.save_nep17_balance(&record, snapshot);

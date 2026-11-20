@@ -196,9 +196,11 @@ impl JsonSerializer {
                 StackItem::ByteString(bytes) => Ok(Some(JsonValue::String(
                     String::from_utf8_lossy(bytes).to_string(),
                 ))),
-                StackItem::Buffer(buffer) => Ok(Some(JsonValue::String(
-                    buffer.with_data(|data| String::from_utf8_lossy(data).to_string()),
-                ))),
+                StackItem::Buffer(buffer) => {
+                    Ok(Some(JsonValue::String(buffer.with_data(|data| {
+                        String::from_utf8_lossy(data).to_string()
+                    }))))
+                }
                 StackItem::Pointer(_) => Err("Cannot serialize Pointer to JSON".to_string()),
                 StackItem::InteropInterface(_) => {
                     Err("Cannot serialize InteropInterface to JSON".to_string())

@@ -30,16 +30,13 @@ impl CryptoLib {
     const ID: i32 = -3;
 
     /// Creates a new CryptoLib instance with its native method table.
+    ///
+    /// Hash: `0x726cb6e0cd8628a1350a611384688911ab75f51b`.
     pub fn new() -> Self {
-        // CryptoLib contract hash: 0x726cb6e0cd8628a1350a611384688911ab75f51b
-        let hash =
-            crate::native::static_contract_hash!("0x726cb6e0cd8628a1350a611384688911ab75f51b");
-
-        Self {
-            id: Self::ID,
-            hash,
-            methods: crate::native::static_native_methods!(CryptoLib::native_methods()),
-        }
+        crate::native::stateless_native_contract!(
+            CryptoLib,
+            "0x726cb6e0cd8628a1350a611384688911ab75f51b"
+        )
     }
 
     /// SHA256 hash function backed by the shared cryptography crate.

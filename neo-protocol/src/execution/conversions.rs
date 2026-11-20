@@ -35,8 +35,8 @@ pub fn convert_payload_block(block: &Block) -> ExecutionBlock {
 /// Converts an execution witness to a payload witness with a fresh hash cache.
 pub fn convert_witness(witness: Witness) -> Witness {
     Witness::new_with_scripts(
-        witness.invocation_script.clone(),
-        witness.verification_script.clone(),
+        witness.invocation_script().to_vec(),
+        witness.verification_script().to_vec(),
     )
 }
 /// Converts a list-witness header, selecting the first witness or an empty one.
@@ -69,8 +69,8 @@ mod tests {
     fn convert_witness_roundtrip() {
         let original = Witness::new_with_scripts(vec![1, 2, 3], vec![4, 5, 6]);
         let back = convert_payload_witness(&convert_witness(original.clone()));
-        assert_eq!(original.invocation_script, back.invocation_script);
-        assert_eq!(original.verification_script, back.verification_script);
+        assert_eq!(original.invocation_script(), back.invocation_script());
+        assert_eq!(original.verification_script(), back.verification_script());
     }
     #[test]
     fn convert_header_preserves_fields() {
@@ -91,16 +91,19 @@ mod tests {
     #[test]
     fn reverse_conversion_keeps_first_or_empty_witness() {
         let empty = convert_ledger_header(BlockHeader::default());
-        assert!(empty.witness.invocation_script.is_empty());
-        assert!(empty.witness.verification_script.is_empty());
+        assert!(empty.witness.invocation_script().is_empty());
+        assert!(empty.witness.verification_script().is_empty());
         let first = Witness::new_with_scripts(vec![1], vec![2]);
         let mut header = BlockHeader::default();
         header.witnesses = vec![first.clone(), Witness::new_with_scripts(vec![3], vec![4])];
         let converted = convert_ledger_header(header);
-        assert_eq!(converted.witness.invocation_script, first.invocation_script);
         assert_eq!(
-            converted.witness.verification_script,
-            first.verification_script
+            converted.witness.invocation_script(),
+            first.invocation_script()
+        );
+        assert_eq!(
+            converted.witness.verification_script(),
+            first.verification_script()
         );
         assert_eq!(convert_payload_header(&converted).witnesses.len(), 1);
     }

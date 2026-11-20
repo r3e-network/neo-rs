@@ -249,7 +249,7 @@ fn block_witness_data_borrows_and_mutates_only_the_header_witness() {
         let witnesses = WitnessData::witnesses(&block);
         assert_eq!(witnesses.len(), 1);
         assert!(std::ptr::eq(witnesses[0], &block.header.witness));
-        assert_eq!(witnesses[0].invocation_script, vec![0x70]);
+        assert_eq!(witnesses[0].invocation_script(), [0x70]);
     }
     assert_eq!(SerializablePayload::witness_count(&block), 4);
     assert_eq!(SerializablePayload::invocation_script(&block, 1), &[0x72]);
@@ -258,11 +258,11 @@ fn block_witness_data_borrows_and_mutates_only_the_header_witness() {
     {
         let mut witnesses = WitnessData::witnesses_mut(&mut block);
         assert_eq!(witnesses.len(), 1);
-        witnesses[0].invocation_script = vec![0x78, 0x79];
-        witnesses[0].verification_script = vec![0x7a];
+        witnesses[0].set_invocation_script(vec![0x78, 0x79]);
+        witnesses[0].set_verification_script(vec![0x7a]);
     }
-    assert_eq!(block.header.witness.invocation_script, vec![0x78, 0x79]);
-    assert_eq!(block.header.witness.verification_script, vec![0x7a]);
+    assert_eq!(block.header.witness.invocation_script(), [0x78, 0x79]);
+    assert_eq!(block.header.witness.verification_script(), [0x7a]);
     assert_eq!(
         block.transactions[0].witnesses(),
         first_witnesses.as_slice()

@@ -115,7 +115,7 @@ pub fn verify_transaction_state_dependent_at_height(
     let sign_data = match transaction_sign_data(transaction, settings.network) {
         Ok(data) => data,
         Err(error) => {
-            tracing::warn!("Failed to get transaction sign data: {:?}", error);
+            tracing::warn!("Failed to get transaction sign data: {error:?}");
             return VerifyResult::Invalid;
         }
     };
@@ -168,7 +168,7 @@ pub fn verify_transaction_state_independent(
     let sign_data = match transaction_sign_data(transaction, settings.network) {
         Ok(data) => data,
         Err(error) => {
-            tracing::warn!("Failed to get transaction sign data: {:?}", error);
+            tracing::warn!("Failed to get transaction sign data: {error:?}");
             return VerifyResult::Invalid;
         }
     };

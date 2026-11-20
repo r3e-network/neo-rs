@@ -77,9 +77,8 @@ impl Message {
     ) -> Result<Self> {
         if payload_bytes.len() > PAYLOAD_MAX_SIZE {
             return Err(NetworkError::InvalidMessage(format!(
-                "Payload exceeds maximum size ({} > {})",
-                payload_bytes.len(),
-                PAYLOAD_MAX_SIZE
+                "Payload exceeds maximum size ({} > {PAYLOAD_MAX_SIZE})",
+                payload_bytes.len()
             )));
         }
 

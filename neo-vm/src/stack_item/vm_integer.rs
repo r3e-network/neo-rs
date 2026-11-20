@@ -156,6 +156,16 @@ pub fn vm_integer_stack_value(value: &VmInteger) -> StackValue {
     }
 }
 
+/// Converts an integer into the shared VM [`StackValue`] representation.
+///
+/// The value takes the compact `Integer` form whenever it fits in an `i64`,
+/// which is the same rule [`VmInteger`] applies to its own representation, so
+/// every producer of a stack value agrees on when a heap form is needed.
+#[inline]
+pub fn vm_integer_from_bigint(value: BigInt) -> StackValue {
+    vm_integer_stack_value(&VmInteger::from_bigint(value))
+}
+
 // From impls so StackItem::Integer(x.into()) works for all integer types
 impl From<BigInt> for VmInteger {
     fn from(v: BigInt) -> Self {

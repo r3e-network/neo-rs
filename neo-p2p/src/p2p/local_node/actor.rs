@@ -590,9 +590,7 @@ impl LocalNodeActor {
         // task, and remote node actor are created. Connections that withhold the
         // `version` message previously consumed all of those resources without
         // counting against `max_connections` / `max_connections_per_address`.
-        if inbound
-            && let Err(reason) = self.state.try_reserve_inbound_slot(&actor_name, remote)
-        {
+        if inbound && let Err(reason) = self.state.try_reserve_inbound_slot(&actor_name, remote) {
             debug!(
                 target: "neo",
                 endpoint = %remote,

@@ -265,9 +265,7 @@ fn contract_call_native_handler(
         if native_call_trace_enabled() {
             let preview_len = result_bytes.len().min(24);
             eprintln!(
-                "call_native result contract={} method={} len={} preview=0x{}",
-                script_hash,
-                method_name,
+                "call_native result contract={script_hash} method={method_name} len={} preview=0x{}",
                 result_bytes.len(),
                 hex::encode(&result_bytes[..preview_len])
             );

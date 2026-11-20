@@ -204,11 +204,11 @@ impl ContractParameter {
             }),
             ContractParameterValue::Hash160(v) => serde_json::json!({
                 "type": "Hash160",
-                "value": format!("0x{}", v)
+                "value": format!("0x{v}")
             }),
             ContractParameterValue::Hash256(v) => serde_json::json!({
                 "type": "Hash256",
-                "value": format!("0x{}", v)
+                "value": format!("0x{v}")
             }),
             ContractParameterValue::PublicKey(v) => serde_json::json!({
                 "type": "PublicKey",

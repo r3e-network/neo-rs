@@ -1,4 +1,21 @@
 //! Shared NeoVM syscall helpers.
+//!
+//! # Scope: ABI only
+//!
+//! This module owns exactly two things: the canonical syscall id
+//! (`SHA-256(name)` truncated to four little-endian bytes) and the number of
+//! stack arguments a syscall consumes at the host boundary. Both are required
+//! by the interpreter bridge before any engine (and therefore any
+//! registration) exists, and both are self-verified against SHA-256 by the
+//! tests below, so they cannot drift.
+//!
+//! What does **not** belong here: GAS prices and required [`CallFlags`]. Those
+//! are host-service policy owned by the layer that implements the service —
+//! `ApplicationEngine::register_host_service` in `neo-smart-contract` — and are
+//! stored once per engine as a `VmInteropDescriptor`. The VM dispatches from
+//! those registered descriptors only; it keeps no price or permission table.
+//!
+//! [`CallFlags`]: neo_primitives::CallFlags
 
 use sha2::{Digest, Sha256};
 

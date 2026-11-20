@@ -18,8 +18,8 @@ use super::adapters::{
 };
 use crate::neo_system::NeoSystem;
 use neo_crypto::ECPoint;
+pub use neo_oracle::OracleServiceError;
 use neo_oracle::service::OracleService as EngineService;
-pub use neo_oracle::{OracleServiceError, OracleStatus};
 use neo_wallets::Wallet;
 use neo_wallets::signing::TrustedSignerClient;
 #[cfg(test)]
@@ -32,6 +32,12 @@ use std::sync::Arc;
 /// [`EngineService`], with the host-node adapters supplying the ledger
 /// snapshot, wallet account selection, trusted signing, response transaction
 /// building, relay and signature verification.
+///
+/// Only the host entry points are exposed here — construction, self-reference
+/// wiring, signer installation and `submitoracleresponse` handling. The
+/// engine's operational surface (start/stop, lifecycle status, dedup and queue
+/// metrics) stays on [`EngineService`], which owns those loops; mirroring it
+/// here would add a second surface with no consumer.
 pub struct OracleService {
     inner: Arc<
         EngineService<
@@ -74,32 +80,6 @@ impl OracleService {
             .set_signer(Some(Arc::new(CoreOracleSigner::new(network, signer))));
     }
 
-    /// Returns the normalized settings in effect.
-    pub fn settings(&self) -> &OracleServiceSettings {
-        self.inner.settings()
-    }
-
-    /// Returns the current lifecycle status.
-    pub fn status(&self) -> OracleStatus {
-        self.inner.status()
-    }
-
-    /// Returns true while the service is running.
-    pub fn is_running(&self) -> bool {
-        self.inner.is_running()
-    }
-
-    /// Starts the service with the given oracle wallet: resolves the oracle
-    /// designated set and spawns the request and timer tasks.
-    pub fn start(self: &Arc<Self>, wallet: Arc<dyn Wallet>) {
-        self.inner.start(Arc::new(CoreOracleWallet::new(wallet)));
-    }
-
-    /// Stops the service, cancelling pending requests and timers.
-    pub fn stop(&self) {
-        self.inner.stop();
-    }
-
     /// Signs `payload` with the installed trusted signer (fails closed).
     ///
     /// Only exercised by the signing tests below: production signing flows
@@ -129,47 +109,6 @@ impl OracleService {
     ) -> Result<(), OracleServiceError> {
         self.inner
             .submit_oracle_response(oracle_pub, request_id, tx_sign, msg_sign)
-    }
-
-    /// Checks if a request is a duplicate and should be skipped.
-    /// Returns true if the request is a duplicate.
-    pub fn is_duplicate_request(&self, request_id: u64, url: &str) -> bool {
-        self.inner.is_duplicate_request(request_id, url)
-    }
-
-    /// Marks a request as completed and removes it from in-flight.
-    pub fn mark_request_completed(&self, request_id: u64, url: &str) {
-        self.inner.mark_request_completed(request_id, url);
-    }
-
-    /// Cleans up in-flight requests (call on error/timeout).
-    pub fn cleanup_in_flight(&self, url: &str) {
-        self.inner.cleanup_in_flight(url);
-    }
-
-    /// Validates a URL against security policies.
-    pub fn validate_url(&self, url: &str) -> Result<(), OracleServiceError> {
-        self.inner.validate_url(url)
-    }
-
-    /// Gets the current deduplication cache size (for monitoring).
-    pub fn dedup_cache_size(&self) -> usize {
-        self.inner.dedup_cache_size()
-    }
-
-    /// Gets the current in-flight request count (for monitoring).
-    pub fn in_flight_count(&self) -> usize {
-        self.inner.in_flight_count()
-    }
-
-    /// Gets the current pending queue size (for monitoring).
-    pub fn pending_queue_size(&self) -> usize {
-        self.inner.pending_queue_size()
-    }
-
-    /// Checks if the pending queue is at capacity.
-    pub fn is_queue_full(&self) -> bool {
-        self.inner.is_queue_full()
     }
 }
 

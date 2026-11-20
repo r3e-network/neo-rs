@@ -4,14 +4,20 @@
 //! quota state, and provider execution. It intentionally exposes no production
 //! shortcut for arbitrary blind signing.
 
+pub mod authorizer;
 pub mod config;
 mod durable_store;
 mod error;
 mod policy;
 mod remote;
+/// Phase 9 (F14): the only `reqwest` consumer in this crate. Gated behind the
+/// default-on `remote` feature so a core-only build (`--no-default-features`)
+/// links no TLS stack; the wire vocabulary in [`remote`] stays unconditional.
+#[cfg(feature = "remote")]
 mod remote_client;
 pub mod scripts;
 mod service;
+mod state;
 mod store;
 mod types;
 
@@ -20,6 +26,10 @@ mod memory_store;
 #[cfg(test)]
 mod tests;
 
+pub use authorizer::{
+    AccountSignature, AuthorizationLimits, SIGNATURE_LENGTH, SignerRequest,
+    TransactionAuthorizationError, TransactionAuthorizer, TransactionChainQuery, TransactionSigner,
+};
 pub use config::{
     Pkcs11ProviderSection, RemoteAttestationPolicySection, RemoteSignerSection, SignerKeySection,
     SignerProviderKind, SignerProviderSection, SignerServiceSection,
@@ -32,12 +42,14 @@ pub use remote::{
     REMOTE_SIGNER_PROTOCOL_VERSION, RejectingAttestationVerifier, RemoteAttestationVerifier,
     RemoteKeyInfoResponse, RemoteOperationQuery, RemoteOperationStatus, RemoteSignDispatchResult,
     RemoteSignRejection, RemoteSignRequest, RemoteSignResponse, RemoteSignerTransport, TcbStatus,
-    VerifiedAttestation, validate_remote_schema,
+    VerifiedAttestation, now_unix_ms, validate_remote_schema,
 };
+#[cfg(feature = "remote")]
 pub use remote_client::{
     MtlsRemoteSignerTransport, RemoteSignerProvider, validate_remote_provider_config,
 };
 pub use scripts::signature_invocation;
+pub use scripts::witness_from_signature;
 pub use service::{
     AuthorizedSignRequest, DefaultSignerService, ProviderOperationStatus, SignerProvider,
     SignerProviderRegistry, SignerService, SigningDeadlineRegistry, TrustedSignerClient,

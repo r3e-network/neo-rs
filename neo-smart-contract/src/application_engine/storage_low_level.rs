@@ -2,11 +2,15 @@ use super::*;
 use crate::iterators::IteratorInterop;
 impl ApplicationEngine {
     /// Gets the raw value stored under the given key in the context's storage.
+    ///
+    /// This is the single read choke point for script syscalls and native
+    /// contracts alike, so it is also where read-write set instrumentation
+    /// records the observed key.
     pub fn get_storage_item(&self, context: &StorageContext, key: &[u8]) -> Option<Vec<u8>> {
         let storage_key = StorageKey::new(context.id, key.to_vec());
-        self.snapshot_cache
-            .get(&storage_key)
-            .map(|item| item.value_bytes().into_owned())
+        let item = self.snapshot_cache.get(&storage_key);
+        self.record_rw_storage_read(context.id, key, item.is_some());
+        item.map(|item| item.value_bytes().into_owned())
     }
     pub(super) fn validate_find_options(&self, options: FindOptions) -> Result<(), String> {
         if options.bits() & !FindOptions::All.bits() != 0 {
@@ -74,12 +78,14 @@ impl ApplicationEngine {
         } else {
             self.snapshot_cache.add(storage_key, item);
         }
+        self.record_rw_storage_write(context.id, key);
         Ok(())
     }
     /// Deletes the storage entry for the given key from the context's storage.
     pub fn delete_storage_item(&mut self, context: &StorageContext, key: &[u8]) -> Result<()> {
         let storage_key = StorageKey::new(context.id, key.to_vec());
         self.snapshot_cache.delete(&storage_key);
+        self.record_rw_storage_write(context.id, key);
         Ok(())
     }
     /// Pushes a verifiable script container onto the VM stack as an interop
@@ -125,12 +131,7 @@ impl ApplicationEngine {
         if Self::should_trace_block(block_index) {
             let (position, len, key) = iterator.trace_position();
             eprintln!(
-                "TRACE iterator block={} id={} next={} position={:?} len={} key={}",
-                block_index,
-                iterator_id,
-                has_next,
-                position,
-                len,
+                "TRACE iterator block={block_index} id={iterator_id} next={has_next} position={position:?} len={len} key={}",
                 key.map(hex::encode).unwrap_or_default(),
             );
         }
@@ -146,10 +147,8 @@ impl ApplicationEngine {
         if Self::should_trace_block(self.current_block_index()) {
             let (position, _, key) = iterator.trace_position();
             eprintln!(
-                "TRACE iterator_value block={} id={} position={:?} key={} type={:?}",
+                "TRACE iterator_value block={} id={iterator_id} position={position:?} key={} type={:?}",
                 self.current_block_index(),
-                iterator_id,
-                position,
                 key.map(hex::encode).unwrap_or_default(),
                 value.stack_item_type(),
             );

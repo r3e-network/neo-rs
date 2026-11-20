@@ -3,77 +3,76 @@
 //
 
 use super::*;
+use neo_mempool::{AdmissionChainPort, ChainQuery, ChainQueryError, ChainQueryResult};
+
+/// The node's persisted chain state, as mempool admission asks for it.
+///
+/// Admission decides *whether* a transaction may enter the pool. This view only
+/// answers the questions admission asks — the snapshot to verify and insert
+/// against, the chain height for diagnostics, and the two persisted-state
+/// lookups — over one store snapshot, so every gate and the insertion itself see
+/// the same chain.
+pub(super) struct PersistedChain<'a> {
+    store_cache: &'a StoreCache,
+    settings: &'a ProtocolSettings,
+    ledger_contract: LedgerContract,
+}
+
+impl<'a> PersistedChain<'a> {
+    /// Builds the view over one store snapshot and its protocol settings.
+    pub(super) fn new(store_cache: &'a StoreCache, settings: &'a ProtocolSettings) -> Self {
+        Self {
+            store_cache,
+            settings,
+            ledger_contract: LedgerContract::new(),
+        }
+    }
+}
+
+impl AdmissionChainPort for PersistedChain<'_> {
+    fn snapshot(&self) -> &DataCache {
+        self.store_cache.data_cache()
+    }
+
+    fn chain_height(&self) -> u32 {
+        self.ledger_contract
+            .current_index(self.store_cache)
+            .unwrap_or(0)
+    }
+
+    fn contains_transaction(&self, hash: &UInt256) -> ChainQueryResult<bool> {
+        self.ledger_contract
+            .contains_transaction(self.store_cache, hash)
+            .map_err(|error| {
+                ChainQueryError::new(ChainQuery::TransactionExistence, error.to_string())
+            })
+    }
+
+    fn max_traceable_blocks(&self) -> u32 {
+        self.ledger_contract
+            .max_traceable_blocks_snapshot(self.store_cache, self.settings)
+            .unwrap_or(self.settings.max_traceable_blocks)
+    }
+
+    fn contains_conflict_hash(
+        &self,
+        hash: &UInt256,
+        signers: &[UInt160],
+        max_traceable_blocks: u32,
+    ) -> ChainQueryResult<bool> {
+        self.ledger_contract
+            .contains_conflict_hash(self.store_cache, hash, signers, max_traceable_blocks)
+            .map_err(|error| ChainQueryError::new(ChainQuery::ConflictExistence, error.to_string()))
+    }
+}
 
 impl Blockchain {
-    #[tracing::instrument(name = "blockchain_tx_exists", skip(self, tx, snapshot), fields(tx_hash = tracing::field::Empty))]
-    pub(super) fn transaction_exists_on_chain(
-        &self,
-        tx: &Transaction,
-        snapshot: &StoreCache,
-    ) -> bool {
-        let span = tracing::Span::current();
-        if let Ok(hash) = tx.try_hash() {
-            span.record("tx_hash", tracing::field::display(&hash));
-        }
-        let hash = match tx.try_hash() {
-            Ok(hash) => hash,
-            Err(error) => {
-                tracing::warn!(
-                    target: "neo",
-                    error = %error,
-                    "transaction hash computation failed during on-chain lookup"
-                );
-                return true;
-            }
-        };
-
-        LedgerContract::new()
-            .contains_transaction(snapshot, &hash)
-            .unwrap_or_else(|error| {
-                tracing::warn!(
-                    target: "neo",
-                    error = %error,
-                    "ledger contains_transaction failed; treating as present (fail-closed)"
-                );
-                true
-            })
-    }
-
-    pub(super) fn conflict_exists_on_chain(
-        &self,
-        tx: &Transaction,
-        snapshot: &StoreCache,
-        max_traceable_blocks: u32,
-    ) -> bool {
-        let signers: Vec<UInt160> = tx.signers().iter().map(|signer| signer.account).collect();
-        if signers.is_empty() {
-            return false;
-        }
-
-        let hash = match tx.try_hash() {
-            Ok(hash) => hash,
-            Err(error) => {
-                tracing::warn!(
-                    target: "neo",
-                    error = %error,
-                    "transaction hash computation failed during conflict lookup"
-                );
-                return true;
-            }
-        };
-
-        LedgerContract::new()
-            .contains_conflict_hash(snapshot, &hash, &signers, max_traceable_blocks)
-            .unwrap_or_else(|error| {
-                tracing::warn!(
-                    target: "neo",
-                    error = %error,
-                    "ledger contains_conflict_hash failed; treating as conflict (fail-closed)"
-                );
-                true
-            })
-    }
-
+    /// Admits a relayed transaction into the memory pool.
+    ///
+    /// The admission policy itself (pool membership, on-chain presence, persisted
+    /// conflicts, then the pool's own checks) is owned by
+    /// `neo_mempool::admit_transaction`; the actor only supplies the runtime pool
+    /// handle and the chain-state view and returns the verdict.
     #[tracing::instrument(name = "blockchain_new_tx", skip(self, transaction), fields(tx_hash = tracing::field::Empty))]
     pub(super) fn on_new_transaction(&self, transaction: &Transaction) -> VerifyResult {
         let span = tracing::Span::current();
@@ -84,75 +83,11 @@ impl Blockchain {
             return VerifyResult::Invalid;
         };
 
-        let hash = match transaction.try_hash() {
-            Ok(hash) => hash,
-            Err(error) => {
-                tracing::warn!(
-                    target: "neo",
-                    error = %error,
-                    "transaction hash computation failed before mempool admission"
-                );
-                return VerifyResult::Invalid;
-            }
-        };
-
-        let memory_pool = context.memory_pool_handle();
-        if memory_pool.lock().contains_key(&hash) {
-            return VerifyResult::AlreadyInPool;
-        }
-
         let store_cache = context.store_cache();
-        let ledger_contract = LedgerContract::new();
-        match ledger_contract.contains_transaction(&store_cache, &hash) {
-            Ok(true) => return VerifyResult::AlreadyExists,
-            Ok(false) => {}
-            Err(error) => {
-                tracing::warn!(
-                    target: "neo",
-                    error = %error,
-                    "ledger contains_transaction failed during mempool admission"
-                );
-                return VerifyResult::Invalid;
-            }
-        }
-
-        let signers: Vec<UInt160> = transaction
-            .signers()
-            .iter()
-            .map(|signer| signer.account)
-            .collect();
-        if !signers.is_empty() {
-            let settings = context.protocol_settings();
-            let max_traceable = ledger_contract
-                .max_traceable_blocks_snapshot(&store_cache, &settings)
-                .unwrap_or(settings.max_traceable_blocks);
-
-            match ledger_contract.contains_conflict_hash(
-                &store_cache,
-                &hash,
-                &signers,
-                max_traceable,
-            ) {
-                Ok(true) => return VerifyResult::HasConflicts,
-                Ok(false) => {}
-                Err(error) => {
-                    tracing::warn!(
-                        target: "neo",
-                        error = %error,
-                        "ledger contains_conflict_hash failed during mempool admission"
-                    );
-                    return VerifyResult::Invalid;
-                }
-            }
-        }
-
-        let snapshot = store_cache.data_cache();
         let settings = context.protocol_settings();
-
-        // Pass to mempool - scope the lock to avoid lifetime issues
-        {
-            let mut pool = memory_pool.lock();
-            pool.try_add(transaction.clone(), snapshot, &settings)
-        }
+        let chain = PersistedChain::new(&store_cache, &settings);
+        let memory_pool = context.memory_pool_handle();
+        let mut pool = memory_pool.lock();
+        neo_mempool::admit_transaction(&mut pool, transaction, &chain, &settings)
     }
 }

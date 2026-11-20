@@ -410,6 +410,44 @@ impl<T: Clone> Clone for PooledVec<T> {
     }
 }
 
+/// One slot of the fixed bucket array used by [`PooledHashMap`].
+///
+/// A tombstone records that a slot used to hold an entry. A linear probe that
+/// walks into a tombstone keeps looking, exactly as it would for an occupied
+/// slot, so removing an entry can never hide the rest of its collision chain.
+/// Only an `Empty` slot terminates a probe.
+#[derive(Clone, Debug)]
+enum Bucket<K, V> {
+    /// Never used, or cleared: this slot terminates a probe chain.
+    Empty,
+    /// Holds a live entry.
+    Occupied(K, V),
+    /// Held an entry that was removed: the probe chain continues past it.
+    Tombstone,
+}
+
+impl<K, V> Bucket<K, V> {
+    /// Returns the value when this bucket is occupied.
+    #[inline]
+    fn value(&self) -> Option<&V> {
+        match self {
+            Self::Occupied(_, value) => Some(value),
+            Self::Empty | Self::Tombstone => None,
+        }
+    }
+}
+
+/// Outcome of a linear probe for one key.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Probe {
+    /// The key already occupies this bucket index.
+    Found(usize),
+    /// The key is absent; this bucket index can receive it.
+    Vacant(usize),
+    /// The key is absent and no bucket can receive it.
+    Full,
+}
+
 /// Simple open-addressing hash map with fixed bucket array.
 ///
 /// Unlike `std::collections::HashMap`, this type uses a fixed-size bucket array
@@ -422,6 +460,14 @@ impl<T: Clone> Clone for PooledVec<T> {
 /// - **Zero allocations** after initial construction
 /// - **No rehashing** - bucket count is fixed
 /// - **Linear probing** resolves collisions
+/// - **Tombstone deletion** - removal never hides a collision chain
+///
+/// ## Probe Termination
+///
+/// Every probe walks at most `capacity` buckets. A lookup therefore terminates
+/// even when all buckets are occupied by other keys, and an insertion can find
+/// and update an existing key in a completely full table before the capacity
+/// check is applied.
 ///
 /// ## Load Factor Management
 ///
@@ -458,7 +504,7 @@ pub struct PooledHashMap<K, V>
 where
     K: Eq + Hash,
 {
-    buckets: Vec<Option<(K, V)>>,
+    buckets: Vec<Bucket<K, V>>,
     capacity: usize,
     filled_count: usize,
 }
@@ -498,7 +544,7 @@ where
         let rounded_capacity = capacity.next_power_of_two();
 
         Self {
-            buckets: (0..rounded_capacity).map(|_| None).collect(),
+            buckets: (0..rounded_capacity).map(|_| Bucket::Empty).collect(),
             capacity: rounded_capacity,
             filled_count: 0,
         }
@@ -513,7 +559,11 @@ where
     /// Inserts a key-value pair without reallocating buckets.
     ///
     /// Uses FNV-1a hash function for fast computation and linear probing for
-    /// collision resolution. Returns `None` if map is full (filled_count >= capacity).
+    /// collision resolution.
+    ///
+    /// The probe searches for the key first and only then asks for a free
+    /// bucket, so updating a key that is already present succeeds even when
+    /// every bucket is occupied.
     ///
     /// # Arguments
     ///
@@ -523,11 +573,12 @@ where
     /// # Returns
     ///
     /// * `Some(old_value)` - Replaced existing value for this key
-    /// * `None` - Either inserted new entry OR map is full
+    /// * `None` - A new entry was inserted
     ///
     /// # Panics
     ///
-    /// Panics if `filled_count >= capacity` (no available slots).
+    /// Panics when the key is absent and the table has no free bucket left
+    /// (`filled_count == capacity` and no tombstone to reuse).
     ///
     /// # Examples
     ///
@@ -544,39 +595,63 @@ where
     /// assert_eq!(old, "One");
     /// ```
     pub fn insert_no_alloc(&mut self, key: K, value: V) -> Option<V> {
-        if self.filled_count >= self.capacity {
-            panic!(
-                "PooledHashMap full: filled_count={} capacity={}",
-                self.filled_count, self.capacity
-            );
-        }
-
-        let hash = fnv1a_hash_u64(hash_key(&key));
-        let slot = hash as usize & (self.capacity - 1); // Fast modulo with power-of-2
-
-        // Linear probing for collisions
-        let mut index = slot;
-        loop {
-            match &self.buckets[index] {
-                None => {
-                    // Found empty slot, insert here
-                    self.buckets[index] = Some((key, value));
-                    self.filled_count += 1;
-                    return None;
-                }
-                Some((existing_key, _)) => {
-                    if *existing_key == key {
-                        // Key exists, replace value
-                        let existing_value = self.buckets[index]
-                            .replace((key, value))
-                            .map(|(_, v)| v)
-                            .expect("bucket was occupied by an existing key");
-                        return Some(existing_value);
-                    }
-                    // Collision, probe next slot
-                    index = (index + 1) & (self.capacity - 1);
+        match self.probe(&key) {
+            Probe::Found(index) => {
+                // Key exists: replace the value in place. This happens before
+                // any capacity check, so a full table still accepts updates.
+                let previous =
+                    std::mem::replace(&mut self.buckets[index], Bucket::Occupied(key, value));
+                match previous {
+                    Bucket::Occupied(_, old_value) => Some(old_value),
+                    // `Probe::Found` guarantees an occupied bucket.
+                    Bucket::Empty | Bucket::Tombstone => None,
                 }
             }
+            Probe::Vacant(index) => {
+                self.buckets[index] = Bucket::Occupied(key, value);
+                self.filled_count += 1;
+                None
+            }
+            Probe::Full => panic!(
+                "PooledHashMap full: filled_count={} capacity={}",
+                self.filled_count, self.capacity
+            ),
+        }
+    }
+
+    /// Walks the linear probe chain for `key` and stops after at most
+    /// `capacity` buckets, so a missing key terminates on a completely
+    /// occupied table.
+    ///
+    /// The first tombstone seen is remembered as a candidate insertion slot;
+    /// it is only used when the key itself is absent.
+    fn probe(&self, key: &K) -> Probe {
+        let mask = self.capacity - 1;
+        let hash = fnv1a_hash_u64(hash_key(key));
+        let mut index = hash as usize & mask; // Fast modulo with power-of-2
+        let mut first_tombstone: Option<usize> = None;
+
+        for _ in 0..self.capacity {
+            match &self.buckets[index] {
+                Bucket::Occupied(existing_key, _) => {
+                    if existing_key == key {
+                        return Probe::Found(index);
+                    }
+                }
+                Bucket::Tombstone => {
+                    first_tombstone.get_or_insert(index);
+                }
+                Bucket::Empty => {
+                    return Probe::Vacant(first_tombstone.unwrap_or(index));
+                }
+            }
+            index = (index + 1) & mask;
+        }
+
+        // Every bucket was visited: no empty slot terminates the chain.
+        match first_tombstone {
+            Some(index) => Probe::Vacant(index),
+            None => Probe::Full,
         }
     }
 
@@ -602,28 +677,19 @@ where
     /// assert_eq!(map.get_no_alloc(&999), None);
     /// ```
     pub fn get_no_alloc(&self, key: &K) -> Option<&V> {
-        let hash = fnv1a_hash_u64(hash_key(&key));
-        let slot = hash as usize & (self.capacity - 1);
-
-        // Linear probing
-        let mut index = slot;
-        loop {
-            match &self.buckets[index] {
-                None => return None, // Slot empty, key not present
-                Some((existing_key, value)) => {
-                    if *existing_key == *key {
-                        return Some(value);
-                    }
-                    index = (index + 1) & (self.capacity - 1);
-                }
-            }
+        match self.probe(key) {
+            Probe::Found(index) => self.buckets[index].value(),
+            // Absent, or the whole table was visited without a match.
+            Probe::Vacant(_) | Probe::Full => None,
         }
     }
 
     /// Removes a key-value pair without reallocating buckets.
     ///
-    /// Requires lazy deletion strategy (marking slots as tombstones) to preserve
-    /// probe chains. For simplicity, currently uses aggressive clearing approach.
+    /// Deletion leaves a tombstone so the rest of the collision chain stays
+    /// reachable. Whenever the bucket ahead is already `Empty`, the tombstone
+    /// is repaired back to `Empty` and the same check walks backwards over
+    /// neighbouring tombstones, which keeps tombstones from accumulating.
     ///
     /// # Arguments
     ///
@@ -633,24 +699,45 @@ where
     ///
     /// `Some(V)` if key existed, `None` otherwise
     pub fn remove_no_alloc(&mut self, key: &K) -> Option<V> {
-        let hash = fnv1a_hash_u64(hash_key(&key));
-        let slot = hash as usize & (self.capacity - 1);
+        let Probe::Found(index) = self.probe(key) else {
+            return None;
+        };
 
-        let mut index = slot;
-        loop {
-            match &self.buckets[index] {
-                None => return None,
-                Some((existing_key, _)) => {
-                    if *existing_key == *key {
-                        let entry = self.buckets[index].take();
-                        if entry.is_some() {
-                            self.filled_count -= 1;
-                        }
-                        return entry.map(|(_, v)| v);
-                    }
-                    index = (index + 1) & (self.capacity - 1);
-                }
+        let removed = std::mem::replace(&mut self.buckets[index], Bucket::Tombstone);
+        let value = match removed {
+            Bucket::Occupied(_, value) => value,
+            // `Probe::Found` guarantees an occupied bucket.
+            Bucket::Empty | Bucket::Tombstone => return None,
+        };
+        self.filled_count -= 1;
+        self.repair_tombstone(index);
+        Some(value)
+    }
+
+    /// Turns a fresh tombstone back into an `Empty` bucket when nothing after
+    /// it in the counter-clockwise direction needs it, then repeats the check
+    /// for the previous bucket.
+    ///
+    /// A probe chain that would have terminated at one of the cleared
+    /// tombstones terminates at the `Empty` bucket that now sits behind it
+    /// instead, so no live entry becomes unreachable. The walk is bounded by
+    /// `capacity`, and it stops immediately on a table without an empty slot.
+    fn repair_tombstone(&mut self, start: usize) {
+        let mask = self.capacity - 1;
+        let mut index = start;
+
+        for _ in 0..self.capacity {
+            let next = (index + 1) & mask;
+            if !matches!(self.buckets[next], Bucket::Empty) {
+                return;
             }
+            self.buckets[index] = Bucket::Empty;
+
+            let previous = (index + self.capacity - 1) & mask;
+            if !matches!(self.buckets[previous], Bucket::Tombstone) {
+                return;
+            }
+            index = previous;
         }
     }
 
@@ -676,7 +763,7 @@ where
     #[inline]
     pub fn clear_no_dealloc(&mut self) {
         for slot in &mut self.buckets {
-            *slot = None;
+            *slot = Bucket::Empty;
         }
         self.filled_count = 0;
     }
@@ -717,6 +804,28 @@ where
     pub fn is_nearly_full(&self) -> bool {
         self.filled_count > (self.capacity as f64 * 0.7) as usize
     }
+
+    /// Bucket indices that currently hold an entry, in ascending order.
+    #[cfg(test)]
+    fn occupied_slots(&self) -> Vec<usize> {
+        self.buckets
+            .iter()
+            .enumerate()
+            .filter(|(_, bucket)| matches!(bucket, Bucket::Occupied(..)))
+            .map(|(index, _)| index)
+            .collect()
+    }
+
+    /// Bucket indices that currently hold a tombstone, in ascending order.
+    #[cfg(test)]
+    fn tombstone_slots(&self) -> Vec<usize> {
+        self.buckets
+            .iter()
+            .enumerate()
+            .filter(|(_, bucket)| matches!(bucket, Bucket::Tombstone))
+            .map(|(index, _)| index)
+            .collect()
+    }
 }
 
 impl<K, V> Default for PooledHashMap<K, V>
@@ -746,6 +855,43 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Home bucket a key maps to for a fixed bucket count.
+    fn home_slot(key: &u64, capacity: usize) -> usize {
+        fnv1a_hash_u64(hash_key(key)) as usize & (capacity - 1)
+    }
+
+    /// Returns `count` distinct keys whose home bucket is `home`.
+    fn keys_with_home(home: usize, capacity: usize, count: usize) -> Vec<u64> {
+        (0u64..)
+            .filter(|candidate| home_slot(candidate, capacity) == home)
+            .take(count)
+            .collect()
+    }
+
+    /// Returns a key whose home bucket is `home` but that is not in `occupied`.
+    fn absent_key_with_home(home: usize, capacity: usize, occupied: &[u64]) -> u64 {
+        (0u64..)
+            .find(|candidate| {
+                home_slot(candidate, capacity) == home && !occupied.contains(candidate)
+            })
+            .expect("a key outside the occupied set always exists")
+    }
+
+    /// Fills a map of `capacity` buckets with distinct keys.
+    fn full_map(capacity: usize) -> (PooledHashMap<u64, u64>, Vec<u64>) {
+        let mut map = PooledHashMap::<u64, u64>::new(capacity);
+        let mut keys = Vec::new();
+        let mut candidate = 0u64;
+        while keys.len() < map.capacity() {
+            if map.insert_no_alloc(candidate, candidate).is_none() {
+                keys.push(candidate);
+            }
+            candidate += 1;
+        }
+        assert_eq!(map.len(), map.capacity());
+        (map, keys)
+    }
 
     #[test]
     fn test_pooled_vec_basic() {
@@ -848,5 +994,145 @@ mod tests {
         // Different inputs should likely produce different outputs
         let hash_different = fnv1a_hash_u64(43);
         assert_ne!(hash1, hash_different);
+    }
+
+    #[test]
+    fn missing_key_lookup_terminates_when_every_bucket_is_occupied() {
+        let (mut map, keys) = full_map(4);
+        assert_eq!(map.capacity(), 4);
+        assert_eq!(map.load_factor(), 1.0);
+        assert_eq!(map.occupied_slots(), vec![0, 1, 2, 3]);
+
+        // Every bucket is taken by another key: the probe must stop after at
+        // most `capacity` steps instead of spinning forever.
+        for home in 0..map.capacity() {
+            let absent = absent_key_with_home(home, map.capacity(), &keys);
+            assert_eq!(map.get_no_alloc(&absent), None);
+            assert_eq!(map.remove_no_alloc(&absent), None);
+        }
+        assert_eq!(map.len(), 4);
+        assert_eq!(map.tombstone_slots(), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn deleting_a_collided_entry_keeps_the_rest_of_the_chain_reachable() {
+        let mut map = PooledHashMap::<u64, u64>::new(8);
+        let chain = keys_with_home(home_slot(&0, 8), 8, 3);
+        for key in &chain {
+            assert_eq!(map.insert_no_alloc(*key, *key), None);
+        }
+        assert_eq!(map.len(), 3);
+        // The three keys occupy three consecutive buckets: home, home+1, home+2.
+        let head = home_slot(&chain[0], 8);
+        assert_eq!(
+            map.occupied_slots(),
+            vec![head, (head + 1) & 7, (head + 2) & 7]
+        );
+
+        // Removing the head of the chain must not hide the tail behind it.
+        assert_eq!(map.remove_no_alloc(&chain[0]), Some(chain[0]));
+        assert_eq!(map.get_no_alloc(&chain[0]), None);
+        assert_eq!(map.get_no_alloc(&chain[1]), Some(&chain[1]));
+        assert_eq!(map.get_no_alloc(&chain[2]), Some(&chain[2]));
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.tombstone_slots(), vec![head]);
+
+        // Removing the new head again leaves the last entry reachable.
+        assert_eq!(map.remove_no_alloc(&chain[1]), Some(chain[1]));
+        assert_eq!(map.get_no_alloc(&chain[2]), Some(&chain[2]));
+        assert_eq!(map.len(), 1);
+
+        // The final removal empties the chain, so the trailing tombstones are
+        // repaired away instead of lingering.
+        assert_eq!(map.remove_no_alloc(&chain[2]), Some(chain[2]));
+        assert!(map.is_empty());
+        assert_eq!(map.tombstone_slots(), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn updating_an_existing_key_succeeds_when_every_bucket_is_occupied() {
+        let (mut map, keys) = full_map(4);
+        assert_eq!(map.load_factor(), 1.0);
+
+        // The existence check runs before the capacity check, so a full table
+        // still accepts updates for keys it already holds.
+        for key in &keys {
+            assert_eq!(map.insert_no_alloc(*key, key + 100), Some(*key));
+            assert_eq!(map.get_no_alloc(key), Some(&(key + 100)));
+        }
+        assert_eq!(map.len(), 4);
+    }
+
+    #[test]
+    #[should_panic(expected = "PooledHashMap full")]
+    fn inserting_a_new_key_into_a_full_table_panics() {
+        let (mut map, keys) = full_map(4);
+        let mut candidate = 1_000_000u64;
+        while keys.contains(&candidate) {
+            candidate += 1;
+        }
+        map.insert_no_alloc(candidate, candidate);
+    }
+
+    #[test]
+    fn repeated_delete_and_reinsert_keeps_every_entry_reachable() {
+        let mut map = PooledHashMap::<u64, u64>::new(8);
+        let chain = keys_with_home(home_slot(&0, 8), 8, 4);
+        for key in &chain {
+            map.insert_no_alloc(*key, *key);
+        }
+
+        for round in 0..64u64 {
+            assert_eq!(map.remove_no_alloc(&chain[1]), Some(chain[1]));
+            assert_eq!(map.len(), 3);
+            // The entries behind the removed one stay reachable in every round.
+            assert_eq!(map.get_no_alloc(&chain[2]), Some(&chain[2]));
+            assert_eq!(map.get_no_alloc(&chain[3]), Some(&chain[3]));
+
+            // A brand new value proves the reinsert really happened.
+            let new_value = chain[1] + round + 1;
+            assert_eq!(map.insert_no_alloc(chain[1], new_value), None);
+            assert_eq!(map.len(), 4);
+            assert_eq!(map.get_no_alloc(&chain[1]), Some(&new_value));
+            assert_eq!(map.get_no_alloc(&chain[0]), Some(&chain[0]));
+            // The previous value must be gone; restore the stable one.
+            assert_ne!(map.get_no_alloc(&chain[1]), Some(&chain[1]));
+            map.insert_no_alloc(chain[1], chain[1]);
+        }
+
+        assert_eq!(map.len(), 4);
+        assert_eq!(map.tombstone_slots(), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn probing_wraps_around_the_end_of_the_bucket_array() {
+        let mut map = PooledHashMap::<u64, u64>::new(4);
+        let last = map.capacity() - 1;
+        let chain = keys_with_home(last, 4, 3);
+        for key in &chain {
+            map.insert_no_alloc(*key, *key);
+        }
+
+        // The chain starts in the final bucket and overflows into bucket 0.
+        assert_eq!(home_slot(&chain[0], 4), last);
+        assert_eq!(map.occupied_slots(), vec![0, 1, last]);
+        for key in &chain {
+            assert_eq!(map.get_no_alloc(key), Some(key));
+        }
+
+        // A key homed at the last bucket but absent must still terminate.
+        let absent = keys_with_home(last, 4, 4)[3];
+        assert_eq!(map.get_no_alloc(&absent), None);
+
+        // Deleting the wrapped entry must keep the slot after the wrap reachable.
+        assert_eq!(map.remove_no_alloc(&chain[1]), Some(chain[1]));
+        assert_eq!(map.tombstone_slots(), vec![0]);
+        assert_eq!(map.get_no_alloc(&chain[2]), Some(&chain[2]));
+        assert_eq!(map.get_no_alloc(&chain[0]), Some(&chain[0]));
+
+        // Reinsert reuses the tombstone that wrapped around.
+        assert_eq!(map.insert_no_alloc(chain[1], chain[1]), None);
+        assert_eq!(map.occupied_slots(), vec![0, 1, last]);
+        assert_eq!(map.len(), 3);
     }
 }

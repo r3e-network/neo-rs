@@ -15,7 +15,8 @@
 //!   -> `neo_vm::BinarySerializer`
 //! - `crate::smart_contract::native::helpers::serialize_stack_value_native`
 //!   -> `crate::native::helpers::serialize_stack_value_native`
-//! - `crate::smart_contract::storage_context::StorageContext` -> `neo_vm::StorageContext`
+//! - `crate::smart_contract::storage_context::StorageContext`
+//!   -> `neo_smart_contract::storage_context::StorageContext`
 
 use super::{
     AccountState, ID, NFTState, PREFIX_ACCOUNT_STATE, PREFIX_NFT_STATE, PREFIX_TOKEN_STATE,
@@ -25,12 +26,12 @@ use crate::native::helpers::serialize_stack_value_native;
 use neo_primitives::UInt160;
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::error::{CoreError, CoreResult, ToNativeError};
+use neo_smart_contract::storage_context::StorageContext;
 use neo_storage::StorageKey;
 use neo_storage::persistence::read_only_store::ReadOnlyStoreGeneric;
 use neo_vm::BinarySerializer;
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::StackValue;
-use neo_vm::StorageContext;
 use num_bigint::BigInt;
 use num_traits::{Signed, Zero};
 

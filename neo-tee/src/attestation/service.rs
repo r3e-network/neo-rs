@@ -341,7 +341,7 @@ impl AttestationService {
         #[cfg(feature = "tee-sgx")]
         {
             if let Err(err) = crate::sgx::verify_quote_signature(quote_bytes) {
-                warn!("SGX DCAP quote verification failed: {}", err);
+                warn!("SGX DCAP quote verification failed: {err}");
                 return Ok(QuoteValidationResult::InvalidSignature);
             }
 
@@ -386,7 +386,7 @@ impl AttestationService {
         #[cfg(feature = "tee-sgx")]
         {
             if let Err(err) = crate::sgx::verify_quote_signature(quote_bytes) {
-                warn!("SGX DCAP quote verification failed: {}", err);
+                warn!("SGX DCAP quote verification failed: {err}");
                 return Ok(QuoteValidationResult::InvalidSignature);
             }
 

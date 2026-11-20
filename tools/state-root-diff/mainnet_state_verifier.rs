@@ -9,7 +9,9 @@ use neo_protocol::ProtocolSettings;
 use neo_protocol::payloads::Block;
 use neo_system::ExecutionMode;
 use neo_validator::executor::{BlockExecutor, NeoExecutor};
-use neo_validator::upstream::{ExecutionReceipt, validate_protocol_identity};
+use neo_validator::upstream::{
+    ExecutionReceipt, parse_execution, parse_hash, strict_u32, validate_protocol_identity,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -1754,29 +1756,6 @@ fn decode_block(raw: &[u8], height: u32) -> Result<Block> {
     Ok(block)
 }
 
-fn parse_hash(value: Option<&str>, field: &str) -> Result<UInt256> {
-    let value = value.with_context(|| format!("{field} is not a string"))?;
-    UInt256::parse(value).map_err(|error| anyhow::anyhow!("invalid {field}: {error}"))
-}
-
-fn strict_u32(value: &Value, field: &str) -> Result<u32> {
-    let value = value
-        .as_u64()
-        .with_context(|| format!("{field} is not an unsigned integer"))?;
-    u32::try_from(value).with_context(|| format!("{field} exceeds u32"))
-}
-
-fn strict_i64(value: &Value, field: &str) -> Result<i64> {
-    if let Some(number) = value.as_i64() {
-        return Ok(number);
-    }
-    value
-        .as_str()
-        .with_context(|| format!("{field} is not an integer or decimal string"))?
-        .parse()
-        .with_context(|| format!("{field} is not a signed 64-bit integer"))
-}
-
 fn parse_application_log(value: &Value, expected_hash: UInt256) -> Result<Vec<ExecutionReceipt>> {
     let block_hash = parse_hash(
         value.get("blockhash").and_then(Value::as_str),
@@ -1805,32 +1784,7 @@ fn parse_execution_receipts(value: &Value) -> Result<Vec<ExecutionReceipt>> {
         .and_then(Value::as_array)
         .context("application log executions missing")?
         .iter()
-        .map(|execution| {
-            let has_exception = match execution.get("exception") {
-                None | Some(Value::Null) => false,
-                Some(Value::String(message)) => !message.is_empty(),
-                Some(_) => bail!("execution exception is not a string or null"),
-            };
-            Ok(ExecutionReceipt {
-                trigger: execution
-                    .get("trigger")
-                    .and_then(Value::as_str)
-                    .context("execution trigger missing")?
-                    .to_owned(),
-                vm_state: execution
-                    .get("vmstate")
-                    .and_then(Value::as_str)
-                    .context("execution vmstate missing")?
-                    .to_owned(),
-                gas_consumed: strict_i64(
-                    execution
-                        .get("gasconsumed")
-                        .context("execution gas missing")?,
-                    "gas consumed",
-                )?,
-                has_exception,
-            })
-        })
+        .map(parse_execution)
         .collect()
 }
 

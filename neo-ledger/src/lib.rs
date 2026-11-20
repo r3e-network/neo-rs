@@ -3,6 +3,7 @@
 pub mod block_cache_budget;
 pub mod blockchain;
 pub mod events;
+pub mod hydration;
 pub mod ledger_context;
 pub mod persistence;
 pub mod services;
@@ -18,7 +19,20 @@ pub use ledger_context::LedgerContext;
 pub use services::LedgerService;
 pub use validation::{HeaderCache, HeaderCacheIter};
 
+// Re-export the ledger-owned hydration surface
+pub use hydration::{
+    LedgerHydrationError, LedgerHydrationResult, PointerField, hydrate_ledger,
+    hydrate_ledger_tip_for_checkpoint_replay,
+};
+
 // Re-export blockchain types
+pub use blockchain::admission::{
+    BlockAdmissionPort, PersistenceAdmission, admit_block_for_persistence,
+};
+pub use blockchain::cache_policy::{
+    BlockCachePolicy, MAX_BLOCK_CACHE_SIZE, MAX_UNVERIFIED_CACHE_BYTES, MAX_UNVERIFIED_CACHE_SIZE,
+    MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT, PersistedBodyCache, RetainedBlock,
+};
 pub use blockchain::types::{
     BlockchainCommand, BlockchainHandle, FillCompleted, FillMemoryPool, Import, ImportCompleted,
     ImportDisposition, InventoryPayload, PersistCompleted, PersistFailed, PreverifyCompleted,
@@ -31,7 +45,9 @@ pub use persistence::{
     ExecutionReceipt, FaultCategory, FaultObservation, LedgerError, LedgerResult,
     MAX_PENDING_FAULT_OBSERVATIONS_PER_BLOCK, NativeCacheHandle, NativeEnginePort, PersistOptions,
     PersistReceipt, PersistenceProfiler, PersistenceStage, RuntimeCacheSink, SeededNativeContracts,
-    SnapshotStore, StageContext, StoreTransactionPort, persist_block, persist_block_profiled,
+    SnapshotStore, SpeculativeExecution, StageContext, StoreTransactionPort,
+    TransactionLoopContext, TransactionLoopOutcome, TransactionLoopStrategy, execute_serially,
+    persist_block, persist_block_profiled, persist_block_with_loop_strategy,
 };
 
 // Re-export validation types

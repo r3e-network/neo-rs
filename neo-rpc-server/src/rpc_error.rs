@@ -5,16 +5,31 @@
 // that can be serialised to JSON responses for the RPC subsystem.
 
 use neo_json::{JObject, JToken};
-use thiserror::Error;
+use neo_primitives::RpcException;
+use std::fmt;
 
 /// Represents a JSON-RPC error returned by the RPC server (matches the C#
 /// `RpcError` class semantics).
-#[derive(Error, Clone, Debug, PartialEq, Eq)]
-#[error("{message} ({code}){}", .data.as_ref().map(|d| format!(" - {d}")).unwrap_or_default())]
+///
+/// The `code`/`message`/`data` triple is owned by the shared
+/// [`RpcException`] envelope so the empty-data trimming rule lives in exactly
+/// one place. This type only adds the server-side constructors, Neo JSON
+/// rendering and the server-specific `Display` layout.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RpcError {
-    code: i32,
-    message: String,
-    data: Option<String>,
+    envelope: RpcException,
+}
+
+impl std::error::Error for RpcError {}
+
+impl fmt::Display for RpcError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} ({})", self.envelope.message(), self.envelope.code())?;
+        if let Some(data) = self.envelope.data() {
+            write!(f, " - {data}")?;
+        }
+        Ok(())
+    }
 }
 
 macro_rules! rpc_error_constructors {
@@ -45,63 +60,60 @@ macro_rules! rpc_error_constructors {
 impl RpcError {
     /// Creates a new `RpcError` instance.
     pub fn new(code: i32, message: impl Into<String>, data: Option<String>) -> Self {
-        let message = message.into();
-        let data = data.and_then(|value| {
-            let trimmed = value.trim().to_string();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed)
-            }
-        });
         Self {
-            code,
-            message,
-            data,
+            envelope: RpcException::from_parts(code, message, data),
         }
+    }
+
+    /// Wraps an existing shared envelope without copying its parts.
+    #[must_use]
+    pub const fn from_envelope(envelope: RpcException) -> Self {
+        Self { envelope }
+    }
+
+    /// Returns the shared envelope backing this error.
+    #[must_use]
+    pub const fn envelope(&self) -> &RpcException {
+        &self.envelope
+    }
+
+    /// Consumes the error, returning the shared envelope.
+    #[must_use]
+    pub fn into_envelope(self) -> RpcException {
+        self.envelope
     }
 
     /// Returns the JSON-RPC error code.
     #[must_use]
     pub const fn code(&self) -> i32 {
-        self.code
+        self.envelope.code()
     }
 
     /// Returns the human readable error message.
     #[must_use]
     pub fn message(&self) -> &str {
-        &self.message
+        self.envelope.message()
     }
 
     /// Returns any additional error data when available.
     #[must_use]
     pub fn data(&self) -> Option<&str> {
-        self.data.as_deref()
+        self.envelope.data()
     }
 
     /// Creates a copy of the error carrying an additional data payload.
     pub fn with_data(&self, data: impl Into<String>) -> Self {
-        Self {
-            code: self.code,
-            message: self.message.clone(),
-            data: {
-                let value = data.into();
-                if value.trim().is_empty() {
-                    None
-                } else {
-                    Some(value)
-                }
-            },
-        }
+        Self::new(
+            self.envelope.code(),
+            self.envelope.message().to_string(),
+            Some(data.into()),
+        )
     }
 
     /// Returns the formatted error message used for exceptions/logging.
     #[must_use]
     pub fn error_message(&self) -> String {
-        match &self.data {
-            Some(data) => format!("{} - {}", self.message, data),
-            None => self.message.clone(),
-        }
+        self.envelope.to_string()
     }
 
     /// Serialises the error into a Neo JSON token (matches C# `ToJson`).
@@ -110,14 +122,14 @@ impl RpcError {
         let mut obj = JObject::new();
         obj.set(
             "code".to_string(),
-            Some(JToken::Number(f64::from(self.code))),
+            Some(JToken::Number(f64::from(self.envelope.code()))),
         );
         obj.set(
             "message".to_string(),
             Some(JToken::String(self.error_message())),
         );
-        if let Some(data) = &self.data {
-            obj.set("data".to_string(), Some(JToken::String(data.clone())));
+        if let Some(data) = self.envelope.data() {
+            obj.set("data".to_string(), Some(JToken::String(data.to_string())));
         }
         JToken::Object(obj)
     }

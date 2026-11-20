@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use super::super::super::super::proto::neofs_v2;
-use super::super::super::helpers::{json_string, json_u64_string, push_json_field};
+use super::super::super::helpers::{json_string, push_json_field, token_lifetime_json};
 use super::super::super::object::{neofs_json_owner_id, neofs_json_signature};
 use super::context::neofs_json_session_context_v2;
 
@@ -66,7 +66,11 @@ fn neofs_json_session_token_v2_body(
         subjects_json.push_str(" ]");
         push_json_field(&mut out, &mut first, "subjects", &subjects_json);
     }
-    if let Some(lifetime) = body.lifetime.as_ref().and_then(neofs_json_token_lifetime) {
+    if let Some(lifetime) = body
+        .lifetime
+        .as_ref()
+        .map(|lifetime| token_lifetime_json(lifetime.exp, lifetime.nbf, lifetime.iat))
+    {
         push_json_field(&mut out, &mut first, "lifetime", &lifetime);
     }
     if !body.contexts.is_empty() {
@@ -111,28 +115,6 @@ fn neofs_json_session_target(target: &neofs_v2::session::Target) -> Option<Strin
                 push_json_field(&mut out, &mut first, "nnsName", &json_string(name));
             }
         }
-    }
-
-    if first {
-        out.push('}');
-    } else {
-        out.push_str(" }");
-    }
-    Some(out)
-}
-
-fn neofs_json_token_lifetime(lifetime: &neofs_v2::session::TokenLifetime) -> Option<String> {
-    let mut out = String::from("{ ");
-    let mut first = true;
-
-    if lifetime.exp != 0 {
-        push_json_field(&mut out, &mut first, "exp", &json_u64_string(lifetime.exp));
-    }
-    if lifetime.nbf != 0 {
-        push_json_field(&mut out, &mut first, "nbf", &json_u64_string(lifetime.nbf));
-    }
-    if lifetime.iat != 0 {
-        push_json_field(&mut out, &mut first, "iat", &json_u64_string(lifetime.iat));
     }
 
     if first {

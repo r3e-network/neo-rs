@@ -256,10 +256,9 @@ impl PeerConnection {
         let _timeout = self.frame_config.write_timeout;
 
         tracing::debug!(
-            "Sending message to {}: {} bytes, command: {:?}",
+            "Sending message to {}: {} bytes, command: {command:?}",
             self.address,
-            bytes.len(),
-            command
+            bytes.len()
         );
         tracing::debug!("First bytes: {:02x?}", &bytes[..24.min(bytes.len())]);
 
@@ -708,6 +707,110 @@ mod tests {
         assert_ping(&received_first, 11, 101);
         assert_ping(&received_second, 22, 202);
         assert_eq!(connection.stats().messages_received, 2);
+    }
+
+    #[tokio::test]
+    async fn send_messages_batch_writes_every_frame_in_order_with_one_write_call() {
+        let Some((client_stream, server_stream)) = tcp_pair().await else {
+            return;
+        };
+        let addr = "127.0.0.1:0".parse().expect("valid socket address");
+        let mut client = PeerConnection::from_channels_config(
+            client_stream,
+            addr,
+            false,
+            &ChannelsConfig::default(),
+        );
+        let mut server = PeerConnection::from_channels_config(
+            server_stream,
+            addr,
+            true,
+            &ChannelsConfig::default(),
+        );
+
+        let messages: Vec<NetworkMessage> = (1..=3u32)
+            .map(|nonce| {
+                NetworkMessage::new(ProtocolMessage::Ping(PingPayload::create_with_nonce(
+                    nonce,
+                    nonce * 10,
+                )))
+            })
+            .collect();
+        let expected_bytes: usize = messages
+            .iter()
+            .map(|message| message.to_bytes(false).expect("frame serializes").len())
+            .sum();
+
+        let before = client.stats();
+        client
+            .send_messages_batch(&messages)
+            .await
+            .expect("batch write succeeds");
+        let after = client.stats();
+
+        assert_eq!(after.messages_sent, before.messages_sent + 3);
+        assert_eq!(after.direct_writes, before.direct_writes + 1);
+        assert_eq!(after.buffered_writes, before.buffered_writes);
+        assert_eq!(after.bytes_sent, before.bytes_sent + expected_bytes as u64);
+
+        for nonce in 1..=3u32 {
+            let received =
+                tokio::time::timeout(Duration::from_secs(1), server.receive_message(false))
+                    .await
+                    .expect("server receive timed out")
+                    .expect("server receives batched frame");
+            assert_ping(&received, nonce, nonce * 10);
+        }
+    }
+
+    #[tokio::test]
+    async fn send_messages_batch_rejects_inactive_connection() {
+        let Some((client_stream, _server_stream)) = tcp_pair().await else {
+            return;
+        };
+        let addr = "127.0.0.1:0".parse().expect("valid socket address");
+        let mut connection = PeerConnection::from_channels_config(
+            client_stream,
+            addr,
+            false,
+            &ChannelsConfig::default(),
+        );
+        connection.set_state(ConnectionState::Disconnected);
+        let messages = [NetworkMessage::new(ProtocolMessage::Ping(
+            PingPayload::create_with_nonce(0, 0),
+        ))];
+
+        let result = connection.send_messages_batch(&messages).await;
+
+        assert!(matches!(
+            result,
+            Err(NetworkError::ConnectionError(msg)) if msg.contains("Connection not active")
+        ));
+    }
+
+    #[tokio::test]
+    async fn send_messages_batch_with_no_messages_does_not_write() {
+        let Some((client_stream, _server_stream)) = tcp_pair().await else {
+            return;
+        };
+        let addr = "127.0.0.1:0".parse().expect("valid socket address");
+        let mut connection = PeerConnection::from_channels_config(
+            client_stream,
+            addr,
+            false,
+            &ChannelsConfig::default(),
+        );
+        let before = connection.stats();
+
+        connection
+            .send_messages_batch(&[])
+            .await
+            .expect("empty batch is a no-op");
+
+        let after = connection.stats();
+        assert_eq!(after.messages_sent, before.messages_sent);
+        assert_eq!(after.direct_writes, before.direct_writes);
+        assert_eq!(after.bytes_sent, before.bytes_sent);
     }
 
     #[test]

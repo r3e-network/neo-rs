@@ -1,11 +1,26 @@
 use super::{
-    read_only_store::ReadOnlyStore, store_snapshot::StoreSnapshot, write_store::WriteStore,
+    read_cache::ReadCacheStatsSnapshot, read_only_store::ReadOnlyStore,
+    store_snapshot::StoreSnapshot, write_batch_buffer::WriteBatchStatsSnapshot,
+    write_store::WriteStore,
 };
 use std::any::Any;
 use std::sync::Arc;
 
 /// Delegate for OnNewSnapshot event
 pub type OnNewSnapshotDelegate = Box<dyn Fn(&dyn Store, Arc<dyn StoreSnapshot>) + Send + Sync>;
+
+/// Observation-only snapshot of the acceleration structures a store owns.
+///
+/// A backend reports only the components it actually runs. `None` means the
+/// backend has no such component, which callers must distinguish from a
+/// component that is present but idle.
+#[derive(Debug, Clone, Default)]
+pub struct StoreAccelerationStats {
+    /// Point read cache counters, when this backend runs one.
+    pub read_cache: Option<ReadCacheStatsSnapshot>,
+    /// Write-batch buffer counters, when this backend buffers writes.
+    pub write_buffer: Option<WriteBatchStatsSnapshot>,
+}
 
 /// This interface provides methods for reading, writing from/to database.
 /// Developers should implement this interface to provide new storage engines for NEO.
@@ -24,6 +39,20 @@ pub trait Store: ReadOnlyStore + WriteStore<Vec<u8>, Vec<u8>> + Send + Sync + An
 
     /// Flushes pending writes to durable storage when supported.
     fn flush(&self) {}
+
+    /// Runs a blocking full-range compaction when the backend supports it.
+    ///
+    /// This is an operational maintenance hook, not part of the write path: it
+    /// merges accumulated sorted tables so later reads stop paying an unbounded
+    /// file fan-out. Backends without a compaction concept keep the no-op
+    /// default, and callers must treat it as best effort.
+    fn compact_all(&self) {}
+
+    /// Returns per-level table file counts, lowest level first, when the
+    /// backend exposes them. Used to observe whether compaction keeps up.
+    fn level_file_counts(&self) -> Vec<(u32, u64)> {
+        Vec::new()
+    }
 
     /// Forces all writes already accepted by the backend to durable storage.
     /// Unlike legacy `flush`, failures are returned so callers can fail closed.
@@ -49,4 +78,14 @@ pub trait Store: ReadOnlyStore + WriteStore<Vec<u8>, Vec<u8>> + Send + Sync + An
 
     /// Downcast support for concrete implementations.
     fn as_any(&self) -> &dyn Any;
+
+    /// Returns acceleration telemetry for the caching structures this backend
+    /// actually runs.
+    ///
+    /// The default reports nothing: a backend without a read cache or a write
+    /// buffer must not fabricate counters. Implementations return a snapshot
+    /// only; the store's behaviour never depends on who reads it.
+    fn acceleration_stats(&self) -> Option<StoreAccelerationStats> {
+        None
+    }
 }

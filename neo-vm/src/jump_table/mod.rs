@@ -14,12 +14,62 @@ pub mod types; // Matches JumpTable.Types.cs
 
 use crate::Instruction;
 use crate::OpCode;
+use crate::StackValue;
 use crate::error::VmError;
 use crate::error::VmResult;
+use crate::execution_context::ExecutionContext;
 use crate::execution_engine::ExecutionEngine;
+use crate::stack_item::StackItem;
 
 /// A handler for a VM instruction.
 pub type InstructionHandler = fn(&mut ExecutionEngine, &Instruction) -> VmResult<()>;
+
+/// The context the instruction being executed belongs to.
+#[inline]
+pub(crate) fn require_context(engine: &mut ExecutionEngine) -> VmResult<&mut ExecutionContext> {
+    engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))
+}
+
+/// Wraps a failure reported by the semantics layer as a VM error.
+#[inline]
+pub(crate) fn semantics_error(error: String) -> VmError {
+    VmError::invalid_operation_msg(error)
+}
+
+/// Pops an operand as the value the semantics layer operates on.
+///
+/// A `Buffer` is handed over as its bytes: the operators treat buffers the same
+/// way C# `JumpTable` does, as byte strings.
+#[inline]
+pub(crate) fn value_from_stack_item(item: StackItem) -> VmResult<StackValue> {
+    match item {
+        StackItem::Buffer(buffer) => Ok(StackValue::ByteString(buffer.data())),
+        item => StackValue::try_from(item),
+    }
+}
+
+/// Pushes a value the semantics layer produced back onto the evaluation stack.
+#[inline]
+pub(crate) fn push_stack_value(ctx: &mut ExecutionContext, value: StackValue) -> VmResult<()> {
+    ctx.push(StackItem::try_from(value)?)
+}
+
+/// Runs the binary operator `op` over the two top-most operands.
+///
+/// Every binary numeric and bitwise opcode has this shape, so the pop order
+/// (`right` before `left`) is stated once instead of per opcode family.
+pub(crate) fn binary_op(
+    engine: &mut ExecutionEngine,
+    op: fn(StackValue, StackValue) -> Result<StackValue, String>,
+) -> VmResult<()> {
+    let ctx = require_context(engine)?;
+    let right = value_from_stack_item(ctx.pop()?)?;
+    let left = value_from_stack_item(ctx.pop()?)?;
+    let result = op(left, right).map_err(semantics_error)?;
+    push_stack_value(ctx, result)
+}
 
 macro_rules! register_jump_handlers {
     ($jump_table:expr_2021; $($opcode:expr_2021 => $handler:expr_2021),+ $(,)?) => {

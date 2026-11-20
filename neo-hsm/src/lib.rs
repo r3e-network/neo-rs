@@ -18,6 +18,9 @@
 
 #[cfg(feature = "hsm")]
 pub mod config;
+// Phase 9 (F15): injectable credential acquisition (replaces hardcoded stdin).
+#[cfg(feature = "hsm")]
+pub mod credentials;
 #[cfg(feature = "hsm")]
 pub mod device;
 #[cfg(feature = "hsm")]
@@ -42,13 +45,18 @@ pub mod pkcs11;
 #[cfg(feature = "hsm")]
 pub use config::HsmConfig;
 #[cfg(feature = "hsm")]
+pub use credentials::{ConsoleCredentialProvider, CredentialProvider};
+#[cfg(feature = "hsm")]
 pub use device::{HsmDeviceInfo, HsmDeviceType};
 #[cfg(feature = "hsm")]
 pub use error::{HsmError, HsmResult};
 #[cfg(feature = "hsm")]
 pub use pin::prompt_pin;
 #[cfg(feature = "hsm")]
-pub use runtime::{HsmRuntime, initialize_with_config, print_hsm_status, run_hardware_operation};
+pub use runtime::{
+    HsmRuntime, initialize_with_config, initialize_with_config_interactive, print_hsm_status,
+    run_hardware_operation,
+};
 #[cfg(feature = "hsm")]
 pub use signer::{HsmKeyInfo, HsmSigner};
 #[cfg(feature = "hsm")]

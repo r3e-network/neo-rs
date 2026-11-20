@@ -4,6 +4,7 @@
 //! of a deployed smart contract in the Neo blockchain.
 
 use crate::error::{CoreError, CoreResult};
+use crate::method_token::MethodToken;
 use crate::{helper::Helper, manifest::ContractManifest};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
@@ -11,7 +12,7 @@ use neo_crypto::Crypto;
 use neo_io::serializable::helper::{
     get_var_size_bytes, get_var_size_serializable_slice, get_var_size_str,
 };
-use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, MethodToken, Serializable};
+use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::UInt160;
 use neo_vm::{Interoperable, StackItem};
 use neo_vm::{OpCode, StackValue};
@@ -252,36 +253,18 @@ impl NefFile {
             "magic": Self::MAGIC,
             "compiler": self.compiler,
             "source": self.source,
-            "tokens": self.tokens.iter().map(neo_io::MethodToken::to_json).collect::<Vec<_>>(),
+            "tokens": self.tokens.iter().map(MethodToken::to_json).collect::<Vec<_>>(),
             "script": BASE64_STANDARD.encode(&self.script),
             "checksum": self.checksum,
         })
     }
 }
 
-impl Interoperable for ContractState {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), neo_vm::VmError> {
-        let sv = StackValue::try_from(stack_item).map_err(|error| {
-            neo_vm::VmError::invalid_operation_msg(format!(
-                "ContractState expects Array/Struct stack item: {error}"
-            ))
-        })?;
-        self.from_stack_value(sv)
-            .map_err(|e| neo_vm::VmError::invalid_operation_msg(e.to_string()))
-    }
-
-    fn to_stack_item(&self) -> Result<StackItem, neo_vm::VmError> {
-        StackItem::try_from(self.to_stack_value()).map_err(|error| {
-            neo_vm::VmError::invalid_operation_msg(format!(
-                "ContractState StackValue conversion failed: {error}"
-            ))
-        })
-    }
-
-    fn clone_box(&self) -> Box<dyn Interoperable> {
-        Box::new(self.clone())
-    }
-}
+impl_interoperable!(
+    ContractState,
+    "ContractState expects Array/Struct stack item: {error}",
+    "ContractState StackValue conversion failed: {error}"
+);
 
 impl ContractState {
     /// Converts the contract state into a VM stack value (array of id, update
@@ -436,9 +419,8 @@ impl Serializable for NefFile {
         let max_item_size = ExecutionEngineLimits::default().max_item_size as usize;
         if self.script.len() > max_item_size {
             return Err(IoError::invalid_data(format!(
-                "Script size {} exceeds MaxItemSize {}",
-                self.script.len(),
-                max_item_size
+                "Script size {} exceeds MaxItemSize {max_item_size}",
+                self.script.len()
             )));
         }
         writer.write_var_bytes(&self.script)?;
@@ -468,10 +450,9 @@ impl Serializable for NefFile {
         }
 
         let token_count = reader.read_var_int(Self::MAX_TOKENS as u64)? as usize;
-        let mut tokens = Vec::with_capacity(token_count);
-        for _ in 0..token_count {
-            tokens.push(<MethodToken as Serializable>::deserialize(reader)?);
-        }
+        let tokens = (0..token_count)
+            .map(|_| <MethodToken as Serializable>::deserialize(reader))
+            .collect::<IoResult<Vec<_>>>()?;
 
         let reserved2 = reader.read_uint16()?;
         if reserved2 != 0 {

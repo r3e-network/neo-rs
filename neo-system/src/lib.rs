@@ -47,9 +47,7 @@ pub mod neo_system;
 /// Matches C# `Neo.IEventHandlers`. Kept at the historical module path from
 /// `neo-core` so moved code and consumers keep resolving.
 pub mod i_event_handlers {
-    pub use crate::events::handlers::{
-        CommittedHandler, CommittingHandler, MessageReceivedHandler, WalletChangedHandler,
-    };
+    pub use crate::events::handlers::{CommittedHandler, CommittingHandler, WalletChangedHandler};
 }
 
 // Task 208: state root verification service moved from
@@ -64,9 +62,9 @@ pub use events::{EventHandler, EventManager, PluginEvent, broadcast_plugin_event
 pub use services::SystemContext;
 
 pub use neo_system::{
-    ExecutionMode, ExecutionProfileSnapshot, ExecutionStats, NeoSystem, NeoSystemBuilder,
-    NeoSystemContext, ReadinessStatus, STATE_STORE_SERVICE, ServiceRegistry,
-    TRANSACTION_EXECUTION_OBSERVATION_RULE_VERSION,
+    ExecutionMode, ExecutionProfileSnapshot, ExecutionStats, FastPathStatsSnapshot, NeoSystem,
+    NeoSystemBuilder, NeoSystemContext, ParallelExecutionSnapshot, ReadinessStatus,
+    STATE_STORE_SERVICE, ServiceRegistry, TRANSACTION_EXECUTION_OBSERVATION_RULE_VERSION,
     TRANSACTION_EXECUTION_OBSERVATION_SCHEMA_VERSION, TransactionExecutionExceptionCategory,
     TransactionExecutionObservation, TransactionExecutionSink, TransactionExecutionStage,
     TransactionRouterHandle,

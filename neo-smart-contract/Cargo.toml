@@ -24,6 +24,7 @@ neo-vm = { workspace = true }
 
 # Third-party
 base64 = { workspace = true }
+dashmap = { workspace = true }
 hex = { workspace = true }
 indexmap = { workspace = true }
 num-bigint = { workspace = true }

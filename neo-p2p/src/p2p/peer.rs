@@ -558,8 +558,7 @@ fn is_intranet_address(addr: &IpAddr) -> bool {
         }
         IpAddr::V6(v6) => v6
             .to_ipv4()
-            .map(|v4| is_intranet_address(&IpAddr::V4(v4)))
-            .unwrap_or(false),
+            .is_some_and(|v4| is_intranet_address(&IpAddr::V4(v4))),
     }
 }
 

@@ -142,16 +142,16 @@ impl Blockchain {
         {
             let prev_hash = *block.prev_hash();
             if !prev_hash.is_zero() {
-                self._block_cache.remove(&prev_hash);
+                self.cache.remove_verified(&prev_hash);
             }
 
             // The entry of the new tip keeps the charge the block was cached
             // with. A block that was persisted without having been cached is
             // only retained when the budget has room for it as things stand.
-            if !self._block_cache.contains_key(&hash)
-                && let Some(retained) = self.try_retain_block(Arc::clone(&block), hash)
+            if !self.cache.contains_verified(&hash)
+                && let Some(retained) = self.cache.try_retain(Arc::clone(&block), hash)
             {
-                self._block_cache.insert(hash, retained);
+                self.cache.insert_verified(retained);
             }
         }
 
@@ -202,7 +202,7 @@ impl Blockchain {
                 });
         }
 
-        self.remove_unverified_index(index);
+        self.cache.remove_unverified_index(index);
 
         if let Some(context) = &self.system_context {
             context.header_cache().remove_up_to(index);
@@ -364,36 +364,14 @@ impl Blockchain {
         if let Some(context) = &self.system_context {
             let store_cache = context.store_cache();
             let settings = context.settings();
+            let chain = super::transaction::PersistedChain::new(&store_cache, &settings);
             let memory_pool = context.memory_pool();
             let mut pool = memory_pool.lock();
             pool.invalidate_all_transactions();
-            let snapshot = store_cache.data_cache();
-            let max_traceable_blocks = LedgerContract::new()
-                .max_traceable_blocks_snapshot(&store_cache, &settings)
-                .unwrap_or(settings.max_traceable_blocks);
+            // Filling is best effort: every verdict but `Succeed` means an
+            // admission gate refused the transaction, so it is skipped.
             for tx in fill.transactions {
-                if self.transaction_exists_on_chain(&tx, &store_cache) {
-                    continue;
-                }
-
-                if self.conflict_exists_on_chain(&tx, &store_cache, max_traceable_blocks) {
-                    continue;
-                }
-
-                let tx_hash = match tx.try_hash() {
-                    Ok(hash) => hash,
-                    Err(error) => {
-                        tracing::warn!(
-                            target: "neo",
-                            error = %error,
-                            "transaction hash computation failed while filling memory pool"
-                        );
-                        continue;
-                    }
-                };
-                let _ = pool.remove_unverified(&tx_hash);
-
-                let _ = pool.try_add(tx, snapshot, &settings);
+                let _ = neo_mempool::admit_transaction(&mut pool, &tx, &chain, &settings);
             }
 
             let needs_idle = pool.unverified_count() > 0;
@@ -535,7 +513,7 @@ impl Blockchain {
         if let Some(context) = &self.system_context {
             let current_height = context.ledger().current_height();
             let next_index = current_height.saturating_add(1);
-            if self._block_cache_unverified.contains_key(&next_index) {
+            if self.cache.contains_unverified_height(next_index) {
                 self.handle_drain_unverified(ctx).await;
             }
         }

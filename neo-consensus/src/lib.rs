@@ -270,7 +270,7 @@ pub use signer::{ConsensusSignContext, ConsensusSigner};
 
 pub use context::{
     BLOCK_TIME_MS, CommitPersistencePermit, ConsensusContext, ConsensusState,
-    DEFAULT_BLOCK_TIME_MS, MAX_VALIDATORS, ValidatorInfo,
+    DEFAULT_BLOCK_TIME_MS, MAX_VALIDATORS, ValidatorInfo, fault_tolerance, required_signatures,
 };
 
 // ============================================================================
@@ -287,3 +287,18 @@ pub use messages::{
 // ============================================================================
 
 pub use service::{BlockData, ConsensusCommand, ConsensusEvent, ConsensusService};
+
+// ============================================================================
+// Public Re-exports - Policy
+// ============================================================================
+
+pub use service::policy::{
+    BlockLimitVerdict, CommitEgressGuard, CommitPersistencePort, PrepareRequestPrecheck,
+    PrepareRequestRejection, ProposalCandidateSource, ProposalLimits, ProposalPolicy,
+    ProposalSelection, ProposalStop, ProposalTransactionCheck, ProposalTransactionVerdict,
+    RecoveryLoadOutcome, RecoveryResumeAction, RejectionCause, TransactionSummary,
+    TransactionSummarySource, VerificationOutcome, block_size_with_transactions,
+    evaluate_block_limits, evaluate_proposal_transaction, evaluate_recovery_context,
+    precheck_prepare_request, recovery_resume_action, select_proposal_transactions,
+    select_proposal_transactions_from_source, should_request_recovery_on_start,
+};

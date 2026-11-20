@@ -90,6 +90,7 @@ use self::crypto::register_crypto_interops;
 use self::iterator::register_iterator_interops;
 use self::runtime::register_runtime_interops;
 use self::storage::register_storage_interops;
+use self::storage_context::StorageContext;
 use crate::contract_state::ContractState;
 use crate::diagnostic::Diagnostic;
 use crate::execution_context_state::ExecutionContextState;
@@ -97,7 +98,24 @@ use crate::helper::Helper;
 use crate::iterators::StorageIterator;
 use crate::iterators::iterator::StorageIterator as _;
 use crate::manifest::ContractMethodDescriptor;
+pub use contract_metadata_cache::{
+    CONTRACT_METADATA_CACHE_CAPACITY, ContractMetadataCache, ContractMetadataCacheStatsSnapshot,
+    ContractMetadataKey, contract_metadata_cache_stats,
+};
+pub use contract_script_cache::{
+    CONTRACT_SCRIPT_CACHE_CAPACITY, CONTRACT_SCRIPT_CACHE_MAX_BYTES,
+    ContractScriptCacheStatsSnapshot, contract_script_cache_stats,
+};
 pub use execution_state::{LedgerTransactionStates, PersistedTransactionState};
+pub use execution_strategy::{
+    CanonicalVerificationSource, ExecutionFingerprint, ExecutionMode, ExecutionReport,
+    ExecutionRequest, ExecutionStrategy, ExecutionStrategyObserver, TransferParams,
+    execute_application_script, parse_fast_path_candidate,
+};
+pub use fast_path::{
+    BlockScriptExecutor, BlockScriptType, FastPathClassifier, FastPathStats, Nep17Parser,
+    TransactionClassifier, TransactionComplexity,
+};
 pub use hardfork_activable::HardforkActivable;
 pub use native_contract::{
     NativeContract, NativeContractsCache, NativeContractsCacheEntry, NativeMethod,
@@ -120,18 +138,20 @@ use neo_storage::{StorageItem, StorageKey};
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::Instruction;
 use neo_vm::InterpreterSemantics;
+use neo_vm::NotifyEventArgs;
 use neo_vm::OpCode;
+use neo_vm::RwSetTracker;
 use neo_vm::StackValue as VmStackValue;
 use neo_vm::SyscallProvider;
 use neo_vm::VmState as VMState;
 use neo_vm::interpret_with_stack_and_syscalls_at;
 use neo_vm::interpret_with_stack_and_syscalls_at_with_result_limit;
 use neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
-use neo_vm::{NotifyEventArgs, StorageContext};
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -285,12 +305,28 @@ pub struct ApplicationEngine {
     states: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
     event_observer: Option<Arc<dyn EngineEventObserver>>,
     profiler: Option<Arc<dyn ApplicationEngineProfiler>>,
+    /// Opt-in read/write set recording for speculative parallel execution.
+    ///
+    /// `None` (the default) means instrumentation is off and storage access
+    /// performs no allocation and no bookkeeping at all. The mutex is only
+    /// needed because read-only storage paths must record too; it is never
+    /// contended, since one engine is owned by one execution thread.
+    rw_set_tracker: Mutex<Option<RwSetTracker>>,
+    /// Lock-free gate every recording site checks before touching
+    /// `rw_set_tracker`, so the disabled path costs one relaxed load and never
+    /// enters the mutex. It mirrors `rw_set_tracker.is_some()`, is only written
+    /// by the engine's owning thread, and is therefore `Relaxed`.
+    rw_set_tracking: AtomicBool,
 }
+mod contract_metadata_cache;
+mod contract_script_cache;
 mod contracts;
 mod direct_nep17;
 mod drop;
 pub mod execution_state;
+pub mod execution_strategy;
 mod external_vm;
+pub mod fast_path;
 mod fees_events_native;
 mod hardfork_activable;
 mod interop_host;
@@ -299,6 +335,8 @@ pub mod native_contract;
 mod native_contract_cache;
 pub mod native_interop;
 pub mod native_services;
+mod rw_set_instrumentation;
 mod state;
+pub mod storage_context;
 mod storage_low_level;
 mod witness_and_misc;

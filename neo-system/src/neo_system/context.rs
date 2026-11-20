@@ -17,7 +17,6 @@ use tokio::sync::mpsc;
 use tracing::trace;
 
 use super::actors::TransactionRouterHandle;
-use super::converters::{convert_execution_block, convert_execution_header};
 use super::registry::ServiceRegistry;
 use super::relay::{RelayExtensibleCache, RelayExtensibleEntry};
 use super::system::ReadinessStatus;
@@ -38,9 +37,11 @@ use neo_primitives::LogEventArgs;
 use neo_primitives::LogLevel;
 use neo_primitives::contains_transaction_type::ContainsTransactionType;
 use neo_primitives::{UInt160, UInt256};
+use neo_protocol::execution::conversions::{convert_ledger_block, convert_ledger_header};
 use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::error::{CoreError, CoreResult};
+use neo_storage::persistence::data_cache::{DataCacheConfig, PrefetchConfig};
 use neo_storage::persistence::{StoreCache, store::Store, store_provider::StoreProvider};
 use neo_vm::NotifyEventArgs;
 use neo_vm::VmState;
@@ -144,6 +145,9 @@ pub struct NeoSystemContext {
     pub store_provider: Arc<dyn StoreProvider>,
     /// Active persistence store.
     pub store: Arc<dyn Store>,
+    /// Speculative prefetch configuration applied to caches opened over the
+    /// store's latest state (disabled unless the owner opts in).
+    pub(crate) store_prefetch: PrefetchConfig,
     /// Cached genesis block shared with the blockchain actor.
     pub(crate) genesis_block: Arc<neo_protocol::execution::Block>,
     pub(crate) ledger: Arc<LedgerContext>,
@@ -195,14 +199,31 @@ impl NeoSystemContext {
 
     /// Opens a typed read/write cache directly over the store's latest state.
     pub fn store_cache(&self) -> StoreCache {
-        StoreCache::new_from_store(self.store.clone(), false)
+        StoreCache::new_from_store_with_config(
+            self.store.clone(),
+            false,
+            DataCacheConfig {
+                prefetch: self.store_prefetch,
+                ..DataCacheConfig::default()
+            },
+        )
     }
 
     /// Opens a typed read/write cache over a fresh store snapshot, isolating
     /// reads from concurrent writes until the snapshot is committed.
+    ///
+    /// A snapshot is immutable, so it has no bounded seek delegate and the
+    /// prefetch configuration cannot cause speculative reads here; the setting
+    /// is forwarded only so counters and configuration stay observable.
     pub fn store_snapshot_cache(&self) -> StoreCache {
         let snapshot = self.store.snapshot();
-        StoreCache::new_from_snapshot(snapshot)
+        StoreCache::new_from_snapshot_with_config(
+            snapshot,
+            DataCacheConfig {
+                prefetch: self.store_prefetch,
+                ..DataCacheConfig::default()
+            },
+        )
     }
 
     /// Returns the canonical genesis block.
@@ -326,10 +347,11 @@ impl NeoSystemContext {
         rpc_service_name: Option<&str>,
         storage_ready: Option<bool>,
     ) -> ReadinessStatus {
-        let status = self.readiness(max_header_lag);
-        let rpc_ready = rpc_service_name.is_none_or(|name| self.has_named_service(name));
-        let storage_ready = storage_ready.unwrap_or(true);
-        status.with_services(rpc_ready, storage_ready)
+        self.readiness(max_header_lag).with_service_checks(
+            rpc_service_name,
+            storage_ready,
+            |name| self.has_named_service(name),
+        )
     }
 
     /// Convenience wrapper that uses the configured RPC service name for this network.
@@ -569,15 +591,6 @@ impl NeoSystemContext {
         self.service_registry.has_named_service(name)
     }
 
-    #[cfg(test)]
-    pub(crate) fn hydrate_ledger_from_store(
-        store_cache: &StoreCache,
-        ledger: &Arc<LedgerContext>,
-        header_cache: &Arc<HeaderCache>,
-    ) -> Result<(), super::storage::StorageError> {
-        super::storage::hydrate_ledger(store_cache, ledger, header_cache)
-    }
-
     /// Returns the current best block index known to the system. This will be wired
     /// to the ledger subsystem once the persistence layer is fully ported.
     pub fn current_block_index(&self) -> u32 {
@@ -611,7 +624,7 @@ impl NeoSystemContext {
             .get_block(&store_cache, HashOrIndex::Hash(*hash))
             .ok()
             .flatten()
-            .map(convert_execution_block)
+            .map(convert_ledger_block)
     }
 
     /// Attempts to retrieve an extensible payload by hash.
@@ -743,7 +756,7 @@ impl NeoSystemContext {
 
         while headers.len() < count {
             match ledger_contract.get_block(&store_cache, HashOrIndex::Index(next_index)) {
-                Ok(Some(block)) => headers.push(convert_execution_header(block.header)),
+                Ok(Some(block)) => headers.push(convert_ledger_header(block.header)),
                 _ => break,
             }
             next_index = next_index.saturating_add(1);
@@ -853,18 +866,6 @@ impl SystemContext for NeoSystemContext {
 
 #[async_trait]
 impl P2PContext for NeoSystemContext {
-    fn store_cache(&self) -> StoreCache {
-        NeoSystemContext::store_cache(self)
-    }
-
-    fn ledger(&self) -> Arc<LedgerContext> {
-        NeoSystemContext::ledger(self)
-    }
-
-    fn header_cache(&self) -> Arc<HeaderCache> {
-        NeoSystemContext::header_cache(self)
-    }
-
     fn event_stream(&self) -> EventStreamHandle {
         NeoSystemContext::event_stream(self)
     }
@@ -887,6 +888,35 @@ impl P2PContext for NeoSystemContext {
 
     fn current_block_index(&self) -> u32 {
         NeoSystemContext::current_block_index(self)
+    }
+
+    fn highest_header_index(&self) -> u32 {
+        self.ledger.highest_header_index()
+    }
+
+    fn header_tip_index(&self) -> Option<u32> {
+        self.header_cache.last().map(|header| header.index())
+    }
+
+    fn contains_block(&self, hash: &UInt256) -> bool {
+        LedgerContract::new().contains_block(&self.store_cache(), hash)
+    }
+
+    fn contains_ledger_transaction(&self, hash: &UInt256) -> bool {
+        match LedgerContract::new().contains_transaction(&self.store_cache(), hash) {
+            Ok(contains) => contains,
+            Err(error) => {
+                // Absent answers keep the request alive: the peer is asked for
+                // a payload whose local state could not be read, which is the
+                // safe direction for a sync request.
+                tracing::warn!(
+                    target: "neo",
+                    error = %error,
+                    "ledger contains_transaction failed; treating as not persisted"
+                );
+                false
+            }
+        }
     }
 
     fn try_get_block(&self, hash: &UInt256) -> Option<neo_ledger::Block> {

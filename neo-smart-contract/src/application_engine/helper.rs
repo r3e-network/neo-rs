@@ -21,8 +21,7 @@ impl ApplicationEngine {
         if let Some(calling_hash) = self.get_calling_script_hash() {
             let _ = writeln!(
                 output,
-                "CallingScriptHash={}{}",
-                calling_hash,
+                "CallingScriptHash={calling_hash}{}",
                 self.contract_display_name(&calling_hash)
                     .map(|name| format!("[{name}]"))
                     .unwrap_or_default()
@@ -31,8 +30,7 @@ impl ApplicationEngine {
         if let Some(current_hash) = self.current_script_hash() {
             let _ = writeln!(
                 output,
-                "CurrentScriptHash={}{}",
-                current_hash,
+                "CurrentScriptHash={current_hash}{}",
                 self.contract_display_name(&current_hash)
                     .map(|name| format!("[{name}]"))
                     .unwrap_or_default()
@@ -192,9 +190,8 @@ impl ApplicationEngine {
                 .map_err(|e| e.clone())?;
         if serialized.len() > MAX_NOTIFICATION_SIZE {
             return Err(format!(
-                "Notification size {} exceeds maximum allowed size of {} bytes",
-                serialized.len(),
-                MAX_NOTIFICATION_SIZE
+                "Notification size {} exceeds maximum allowed size of {MAX_NOTIFICATION_SIZE} bytes",
+                serialized.len()
             ));
         }
         Ok(())

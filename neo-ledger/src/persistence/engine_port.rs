@@ -34,7 +34,7 @@ use neo_protocol::execution::Block;
 use neo_smart_contract::application_engine::{LedgerTransactionStates, NativeContractsCache};
 use neo_smart_contract::contract_state::ContractState;
 use neo_storage::persistence::DataCache;
-use neo_vm::VmState;
+use neo_vm::{RwSetTracker, VmState};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -47,6 +47,23 @@ pub type SeededNativeContracts = HashMap<UInt160, Arc<ContractState>>;
 /// Opaque handle to the shared native-contracts cache threaded from the `OnPersist`
 /// engine into every child engine (step 8).
 pub type NativeCacheHandle = Arc<Mutex<NativeContractsCache>>;
+
+/// One captured speculative execution: the pure receipt plus its read-write set.
+///
+/// A speculative scheduler runs transactions ahead of the commit order and only needs
+/// two things back from each run: the receipt the serial path would have produced, and
+/// the read-write set that decides whether the run may be committed as-is or has to be
+/// replayed against the committed state.
+///
+/// The scheduler adapter keeps any richer observation record (for example the
+/// `neo-system` `ApplicationExecuted` payload) on its own side; this struct stays
+/// ledger-neutral.
+pub struct SpeculativeExecution {
+    /// The receipt the serial path would have projected for this transaction.
+    pub receipt: ExecutionReceipt,
+    /// Storage reads/writes, range reads and event keys recorded by the run.
+    pub rw_set: RwSetTracker,
+}
 
 /// `OnPersist`/`PostPersist` native execution port (steps 6, 11).
 ///
@@ -112,6 +129,29 @@ pub trait ApplicationEnginePort: Send {
 
     /// Projects the pure execution receipt for this transaction engine (step 10).
     fn execution_receipt(&mut self) -> ExecutionReceipt;
+
+    /// Enables read-write set recording positioned at `generation`.
+    ///
+    /// Speculative schedulers call this before `load_script` so the engine records what
+    /// the transaction observed. The default is a no-op: the canonical serial loop never
+    /// asks for a read-write set and therefore never pays for one.
+    fn enable_rw_set_tracking_at_generation(&mut self, _generation: u64) {}
+
+    /// Captures the run as a [`SpeculativeExecution`] without publishing it.
+    ///
+    /// The adapter must retain whatever it would have published so
+    /// [`Self::publish_capture`] can release it later in block order. Returns `None` when
+    /// the port cannot produce a read-write set, which tells the caller to fall back to
+    /// the serial loop.
+    fn capture_speculative(&mut self, _detailed: bool) -> Option<SpeculativeExecution> {
+        None
+    }
+
+    /// Releases the record retained by [`Self::capture_speculative`].
+    ///
+    /// Called exactly once per successful capture, during ordered validation, so an
+    /// out-of-order speculative run never leaks an out-of-order observation.
+    fn publish_capture(&mut self) {}
 }
 
 /// Opens the native and application engine ports over a supplied snapshot.

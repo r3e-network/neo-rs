@@ -1,6 +1,6 @@
 // Cross-implementation differential execution runner (C# side).
 //
-// Mirrors neo-vm/examples/vm_diff_runner.rs: reads the same JSON vector file,
+// Mirrors neo-rpc-client/examples/vm_diff_runner.rs: reads the same JSON vector file,
 // executes each script on a bare ExecutionEngine, and writes the same result
 // schema. See scripts/vm-diff.py.
 //

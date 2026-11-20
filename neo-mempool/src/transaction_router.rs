@@ -10,26 +10,14 @@
 //! exposed by `neo_ledger::validation::verify_transaction_state_independent`,
 //! which this crate already consumes for its mempool validation path.
 
+use neo_ledger::PreverifyCompleted;
 use neo_ledger::validation::verify_transaction_state_independent;
-use neo_primitives::VerifyResult;
 use neo_protocol::payloads::Transaction;
 use neo_protocol::protocol_settings::ProtocolSettings;
 use rayon::prelude::*;
-use serde::{Deserialize, Serialize};
 
 /// Below this size, serial verification avoids parallel scheduling overhead.
 const PARALLEL_PREVERIFY_THRESHOLD: usize = 4;
-
-/// public record PreverifyCompleted(Transaction Transaction, bool Relay, VerifyResult Result);
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PreverifyCompleted {
-    /// The transaction that was verified.
-    pub transaction: Transaction,
-    /// Whether the transaction should be relayed to the network after verification.
-    pub relay: bool,
-    /// The outcome of the state-independent verification.
-    pub result: VerifyResult,
-}
 
 /// Transaction router for handling transaction pre-verification
 pub struct TransactionRouter {
@@ -47,6 +35,7 @@ impl TransactionRouter {
         let result = verify_transaction_state_independent(&transaction, &self.settings);
 
         PreverifyCompleted {
+            hash: transaction.hash(),
             transaction,
             relay,
             result,

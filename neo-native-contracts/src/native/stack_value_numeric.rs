@@ -5,10 +5,13 @@
 //! `neo_smart_contract::error::CoreError`. `neo_vm`, `num_bigint`, and
 //! `num_traits` are external crates and keep their paths.
 
-use neo_smart_contract::error::CoreError;
 use neo_vm::StackValue;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
+// Phase 9 (F17): only the `experimental` token-management module converts a
+// stack value into a `CoreError`-carrying result.
+#[cfg(feature = "experimental")]
+use neo_smart_contract::error::CoreError;
 
 pub(crate) const MAX_VM_INTEGER_BYTES: usize = 32;
 
@@ -26,6 +29,11 @@ pub(crate) fn stack_value_to_bigint(value: &StackValue) -> Option<BigInt> {
     }
 }
 
+/// Converts a stack value into a `BigInt`, or a native-contract error.
+///
+/// Phase 9 (F17): consumed only by `native::token_management`, which is gated
+/// behind the `experimental` feature.
+#[cfg(feature = "experimental")]
 pub(crate) fn stack_value_to_bigint_result(value: &StackValue) -> Result<BigInt, CoreError> {
     stack_value_to_bigint(value)
         .ok_or_else(|| CoreError::native_contract("cannot convert stack value to integer"))

@@ -11,7 +11,7 @@ use neo_protocol::payloads::transaction::Transaction;
 use neo_protocol::witness::Witness;
 use neo_protocol::{ProtocolSettings, get_sign_data_vec};
 use neo_smart_contract::contract::Contract;
-use neo_wallets::signing::signature_invocation;
+use neo_wallets::signing::witness_from_signature;
 use neo_wallets::{Helper, KeyPair, Version, Wallet, WalletAccount, WalletError, WalletResult};
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -389,11 +389,7 @@ impl WalletAccount for HsmWalletAccount {
 
     fn create_witness(&self, sign_data: &[u8]) -> WalletResult<Witness> {
         let signature = self.sign_data(sign_data)?;
-        let invocation = signature_invocation(&signature)?;
-        Ok(Witness::new_with_scripts(
-            invocation,
-            self.contract.script.clone(),
-        ))
+        witness_from_signature(&signature, &self.contract.script)
     }
 }
 
@@ -585,8 +581,8 @@ mod tests {
 
             let account = wallet.get_default_account().expect("default account");
             let witness = account.create_witness(payload).expect("trait witness");
-            assert_eq!(witness.invocation_script.len(), 66);
-            assert_eq!(&witness.invocation_script[2..], signature.as_slice());
+            assert_eq!(witness.invocation_script().len(), 66);
+            assert_eq!(&witness.invocation_script()[2..], signature.as_slice());
 
             let mut transaction = Transaction::new();
             transaction.set_script(vec![OpCode::PUSH1.byte()]);
@@ -598,7 +594,7 @@ mod tests {
             assert_eq!(transaction.witnesses().len(), 1);
 
             let sign_data = get_sign_data_vec(&transaction, settings.network).expect("sign data");
-            let invocation = &transaction.witnesses()[0].invocation_script;
+            let invocation = transaction.witnesses()[0].invocation_script();
             let transaction_signature: [u8; 64] =
                 invocation[2..66].try_into().expect("transaction signature");
             assert!(

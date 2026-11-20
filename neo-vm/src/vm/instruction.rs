@@ -110,9 +110,7 @@ impl Instruction {
                     })?;
                     if data_end > script.len() {
                         return Err(InstructionError::parse(format!(
-                            "PUSHDATA1 operand size exceeds script bounds: {} + {} > {}",
-                            data_start,
-                            length,
+                            "PUSHDATA1 operand size exceeds script bounds: {data_start} + {length} > {}",
                             script.len()
                         )));
                     }
@@ -132,9 +130,7 @@ impl Instruction {
                     })?;
                     if data_end > script.len() {
                         return Err(InstructionError::parse(format!(
-                            "PUSHDATA2 operand size exceeds script bounds: {} + {} > {}",
-                            data_start,
-                            length,
+                            "PUSHDATA2 operand size exceeds script bounds: {data_start} + {length} > {}",
                             script.len()
                         )));
                     }
@@ -156,9 +152,7 @@ impl Instruction {
                     })?;
                     if data_end > script.len() {
                         return Err(InstructionError::parse(format!(
-                            "PUSHDATA4 operand size exceeds script bounds: {} + {} > {}",
-                            data_start,
-                            length,
+                            "PUSHDATA4 operand size exceeds script bounds: {data_start} + {length} > {}",
                             script.len()
                         )));
                     }

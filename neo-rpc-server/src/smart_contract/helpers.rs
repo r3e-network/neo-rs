@@ -4,9 +4,9 @@ use neo_primitives::CallFlags;
 use neo_primitives::UInt160;
 use neo_protocol::payloads::Signer;
 use neo_protocol::witness::Witness;
+use neo_rpc_client::serialization::stack_item_json::stack_item_rpc_json_deferred_size_check;
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::contract_parameter::{ContractParameter, ContractParameterValue};
-use neo_vm::rpc_json::stack_item_rpc_json_deferred_size_check;
 use neo_vm::{NotifyEventArgs, ScriptBuilder, StackItem, StackValue, VmState};
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
@@ -307,5 +307,5 @@ pub(super) fn expect_uuid_param(
 ) -> Result<Uuid, RpcException> {
     let text = expect_string_param(params, index, method)?;
     Uuid::parse_str(text.trim())
-        .map_err(|_| invalid_params(format!("{} expects GUID parameter {}", method, index + 1)))
+        .map_err(|_| invalid_params(format!("{method} expects GUID parameter {}", index + 1)))
 }

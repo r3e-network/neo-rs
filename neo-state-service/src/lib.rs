@@ -84,12 +84,7 @@ pub struct StateServiceSettings {
 }
 
 /// Policy for handling unhandled exceptions in plugins.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UnhandledExceptionPolicy {
-    /// Ignore exceptions and continue.
-    Ignore,
-    /// Stop the plugin on exception.
-    StopPlugin,
-    /// Stop the entire node on exception.
-    StopNode,
-}
+///
+/// Owned by `neo-primitives` so every plugin-style service shares one policy
+/// vocabulary; it is re-exported here for this crate's settings surface.
+pub use neo_primitives::UnhandledExceptionPolicy;

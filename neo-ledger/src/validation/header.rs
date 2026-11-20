@@ -128,8 +128,8 @@ pub fn verify_header_witness_against_hash(
         return false;
     }
     let verification_gas = gas_limit.min(Helper::MAX_VERIFICATION_GAS);
-    if let Err(e) = neo_vm::validate_strict_script(&witness.invocation_script) {
-        tracing::warn!(target: "neo", %script_hash, error = %e, invocation_len = witness.invocation_script.len(), "invocation script is invalid");
+    if let Err(e) = neo_vm::validate_strict_script(witness.invocation_script()) {
+        tracing::warn!(target: "neo", %script_hash, error = %e, invocation_len = witness.invocation_script().len(), "invocation script is invalid");
         return false;
     }
     let container: Arc<dyn Verifiable> = Arc::new(header.clone());
@@ -150,7 +150,7 @@ pub fn verify_header_witness_against_hash(
             return false;
         }
     };
-    let verification_script = witness.verification_script.clone();
+    let verification_script = witness.verification_script().to_vec();
     if verification_script.is_empty() {
         let Ok(Some(contract)) =
             ContractManagement::get_contract_from_snapshot(snapshot, script_hash)
@@ -203,7 +203,7 @@ pub fn verify_header_witness_against_hash(
         }
     }
     if engine
-        .load_script_with_state(witness.invocation_script.clone(), -1, 0, |state| {
+        .load_script_with_state(witness.invocation_script().to_vec(), -1, 0, |state| {
             state.call_flags = CallFlags::NONE;
         })
         .is_err()
@@ -312,7 +312,7 @@ pub fn verify_header_with_cache(
         let prev_index = prev_header.index();
         let prev_timestamp = prev_header.timestamp();
         let script_hash = *prev_header.next_consensus();
-        debug!(target: "neo", index = header.index(), prev_index, %prev_hash, "verifying header index {} against previous index {}", header.index(), prev_index);
+        debug!(target: "neo", index = header.index(), prev_index, %prev_hash, "verifying header index {} against previous index {prev_index}", header.index());
         debug!(target: "neo", index = header.index(), prev_index, %prev_hash, "attempting validate_against_previous");
         if let Err(reason) = validate_header_against_previous(
             header,
@@ -324,7 +324,7 @@ pub fn verify_header_with_cache(
             tracing::warn!(target: "neo", index = header.index(), %prev_hash, prev_index, %reason, "header failed validation against cached previous");
             return false;
         }
-        debug!(target: "neo", index = header.index(), prev_index, %prev_hash, %script_hash, "verifying witness against script_hash: {}", script_hash);
+        debug!(target: "neo", index = header.index(), prev_index, %prev_hash, %script_hash, "verifying witness against script_hash: {script_hash}");
         let verified = verify_header_witness_against_hash(
             header,
             settings,

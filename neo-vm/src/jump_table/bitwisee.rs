@@ -1,37 +1,14 @@
 //! Bitwise operations for the Neo Virtual Machine.
 
 use crate::error::{VmError, VmResult};
-use crate::execution_context::ExecutionContext;
 use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{JumpTable, register_jump_handlers};
+use crate::jump_table::{
+    JumpTable, binary_op, push_stack_value, register_jump_handlers, require_context,
+    semantics_error, value_from_stack_item,
+};
 use crate::semantics::arithmetic;
 use crate::stack_item::StackItem;
-use crate::{Instruction, OpCode, StackValue};
-
-#[inline]
-fn require_context(engine: &mut ExecutionEngine) -> VmResult<&mut ExecutionContext> {
-    engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))
-}
-
-#[inline]
-fn semantics_error(error: String) -> VmError {
-    VmError::invalid_operation_msg(error)
-}
-
-#[inline]
-fn value_from_stack_item(item: StackItem) -> VmResult<StackValue> {
-    match item {
-        StackItem::Buffer(buffer) => Ok(StackValue::ByteString(buffer.data())),
-        item => StackValue::try_from(item),
-    }
-}
-
-#[inline]
-fn push_stack_value(ctx: &mut ExecutionContext, value: StackValue) -> VmResult<()> {
-    ctx.push(StackItem::try_from(value)?)
-}
+use crate::{Instruction, OpCode};
 
 /// Registers the bitwise operation handlers.
 pub fn register_handlers(jump_table: &mut JumpTable) {
@@ -53,27 +30,16 @@ fn invert(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     push_stack_value(ctx, result)
 }
 
-fn binary_bitwise(
-    engine: &mut ExecutionEngine,
-    op: fn(StackValue, StackValue) -> Result<StackValue, String>,
-) -> VmResult<()> {
-    let ctx = require_context(engine)?;
-    let right = value_from_stack_item(ctx.pop()?)?;
-    let left = value_from_stack_item(ctx.pop()?)?;
-    let result = op(left, right).map_err(semantics_error)?;
-    push_stack_value(ctx, result)
-}
-
 fn and(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    binary_bitwise(engine, arithmetic::bitwise_and_values)
+    binary_op(engine, arithmetic::bitwise_and_values)
 }
 
 fn or(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    binary_bitwise(engine, arithmetic::bitwise_or_values)
+    binary_op(engine, arithmetic::bitwise_or_values)
 }
 
 fn xor(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    binary_bitwise(engine, arithmetic::bitwise_xor_values)
+    binary_op(engine, arithmetic::bitwise_xor_values)
 }
 
 fn equal(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {

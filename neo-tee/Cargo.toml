@@ -17,11 +17,14 @@ description = "TEE sealing, attestation, wallet and fair-ordering support for Ne
 path = "src/mod.rs"
 
 [features]
-default = []
-# Phase 3 S6c: gates the runtime + wallet_adapter modules that sank from
-# neo-node (formerly its `tee` feature). Default off to keep the workspace
-# baseline build/test surface unchanged.
-integration = []
+default = ["integration"]
+# Phase 3 S6c / Phase 9 (F14): gates the runtime + wallet_adapter modules that
+# sank from neo-node (formerly its `tee` feature) *and* the integration-only
+# crate edges they need (neo-wallets / neo-protocol / neo-smart-contract).
+# On by default so downstream consumers keep the pre-Phase-9 build surface;
+# `--no-default-features` yields core TEE only (sealing, attestation, mempool)
+# with no wallet or protocol vocabulary linked.
+integration = ["dep:neo-wallets", "dep:neo-protocol", "dep:neo-smart-contract"]
 tee-sgx = ["dep:sgx-isa"]
 attestation = ["tee-sgx"]
 # C-2: compiles the software (simulated) sealing-key derivation into a build
@@ -36,11 +39,12 @@ tee-sgx-sim = []
 [dependencies]
 neo-crypto = { workspace = true }
 neo-primitives = { workspace = true }
-# Phase 3 S6c: wallet adapter binds the wallet/protocol/contract vocabulary
-# directly (TypeId-preserving move, same rationale as neo-hsm).
-neo-wallets = { workspace = true }
-neo-protocol = { workspace = true }
-neo-smart-contract = { workspace = true }
+# Phase 3 S6c / Phase 9 (F14): wallet adapter binds the wallet/protocol/contract
+# vocabulary directly (TypeId-preserving move, same rationale as neo-hsm).
+# Optional: only the `integration` feature activates these edges.
+neo-wallets = { workspace = true, optional = true }
+neo-protocol = { workspace = true, optional = true }
+neo-smart-contract = { workspace = true, optional = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }

@@ -1,4 +1,3 @@
-use crate::network::p2p::Message;
 use neo_protocol::execution::{ApplicationExecuted, Block};
 use neo_storage::persistence::DataCache;
 use neo_wallets::Wallet;
@@ -53,13 +52,6 @@ pub trait CommittingHandler {
     ) -> CoreResult<()> {
         Ok(())
     }
-}
-
-/// Handler of MessageReceived event from RemoteNode.
-/// Triggered when a new message is received from a peer.
-pub trait MessageReceivedHandler {
-    /// Called when a message is received from a remote peer; returns whether it was handled.
-    fn remote_node_message_received_handler(&self, system: &dyn Any, message: &Message) -> bool;
 }
 
 /// Handler of WalletChanged event from the WalletProvider.

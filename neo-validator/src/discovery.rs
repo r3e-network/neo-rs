@@ -15,9 +15,8 @@ pub fn discover_protocol(config: &ValidatorConfig) -> Result<(ProtocolSettings, 
         let settings = load_protocol(path)?;
         if settings.network != expected_magic {
             bail!(
-                "protocol network {} does not match configured magic {}",
-                settings.network,
-                expected_magic
+                "protocol network {} does not match configured magic {expected_magic}",
+                settings.network
             );
         }
         validate_directory_identity(config)?;

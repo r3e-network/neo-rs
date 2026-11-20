@@ -22,9 +22,7 @@ fn validate_args_not_empty(args: &[Vec<u8>], method: &str) -> Result<()> {
 fn validate_max_input_length(data: &[u8], method: &str) -> Result<()> {
     if data.len() > MAX_INPUT_LENGTH {
         return Err(Error::native_contract(format!(
-            "{} input exceeds max length {} (got {})",
-            method,
-            MAX_INPUT_LENGTH,
+            "{method} input exceeds max length {MAX_INPUT_LENGTH} (got {})",
             data.len()
         )));
     }

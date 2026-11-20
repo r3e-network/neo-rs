@@ -36,6 +36,8 @@ pub struct WriteBatchStats {
     pub flush_timeouts: AtomicU64,
     /// Current pending operations
     pub pending_operations: AtomicUsize,
+    /// Current pending payload bytes
+    pub pending_bytes: AtomicUsize,
 }
 
 impl WriteBatchStats {
@@ -65,6 +67,14 @@ impl WriteBatchStats {
         self.pending_operations.store(count, Ordering::Relaxed);
     }
 
+    /// Updates pending bytes count.
+    ///
+    /// Mirrors [`Self::set_pending`] so the two backlog gauges always describe
+    /// the same staged queue.
+    pub fn set_pending_bytes(&self, bytes: usize) {
+        self.pending_bytes.store(bytes, Ordering::Relaxed);
+    }
+
     /// Gets a snapshot of statistics.
     pub fn snapshot(&self) -> WriteBatchStatsSnapshot {
         WriteBatchStatsSnapshot {
@@ -74,12 +84,15 @@ impl WriteBatchStats {
             total_flush_duration_ms: self.total_flush_duration_ms.load(Ordering::Relaxed),
             flush_timeouts: self.flush_timeouts.load(Ordering::Relaxed),
             pending_operations: self.pending_operations.load(Ordering::Relaxed),
+            pending_bytes: self.pending_bytes.load(Ordering::Relaxed),
         }
     }
 }
 
 /// Snapshot of write batch statistics.
-#[derive(Debug, Clone, Copy)]
+///
+/// `Default` is the zero snapshot a caller uses when no write buffer is running.
+#[derive(Debug, Clone, Copy, Default)]
 pub struct WriteBatchStatsSnapshot {
     /// Total number of batches flushed so far.
     pub batches_flushed: u64,
@@ -93,6 +106,8 @@ pub struct WriteBatchStatsSnapshot {
     pub flush_timeouts: u64,
     /// Operations currently buffered and not yet flushed.
     pub pending_operations: usize,
+    /// Payload bytes currently buffered and not yet flushed.
+    pub pending_bytes: usize,
 }
 
 impl WriteBatchStatsSnapshot {
@@ -204,6 +219,17 @@ enum BatchOp {
     Delete(Vec<u8>),
 }
 
+#[cfg(feature = "rocksdb")]
+impl BatchOp {
+    /// Number of payload bytes this operation contributes to the buffer.
+    fn staged_bytes(&self) -> usize {
+        match self {
+            Self::Put(key, value) => key.len() + value.len(),
+            Self::Delete(key) => key.len(),
+        }
+    }
+}
+
 /// Buffered write batch for RocksDB.
 #[cfg(feature = "rocksdb")]
 pub struct WriteBatchBuffer {
@@ -273,12 +299,27 @@ impl WriteBatchBuffer {
     }
 
     fn push(&self, op: BatchOp, op_bytes: usize) -> StorageResult<()> {
-        self.ops.lock().push(op);
+        // The queue mutation and the counter updates share one critical section.
+        // Updating the counters outside of it would let a concurrent flush reset
+        // a counter that already accounts for an operation the flush cannot see.
+        let (new_count, new_bytes) = {
+            let mut ops = self.ops.lock();
+            ops.push(op);
 
-        let new_count = self.pending_count.fetch_add(1, Ordering::Relaxed) + 1;
-        let new_bytes = self.pending_bytes.fetch_add(op_bytes, Ordering::Relaxed) + op_bytes;
+            let new_count = ops.len();
+            let new_bytes = self.pending_bytes.fetch_add(op_bytes, Ordering::Relaxed) + op_bytes;
+            self.pending_count.store(new_count, Ordering::Relaxed);
+            self.stats.set_pending(new_count);
+            self.stats.set_pending_bytes(new_bytes);
 
-        self.stats.set_pending(new_count);
+            debug_assert_eq!(
+                self.pending_bytes.load(Ordering::Relaxed),
+                ops.iter().map(BatchOp::staged_bytes).sum::<usize>(),
+                "pending bytes must always match the staged queue"
+            );
+
+            (new_count, new_bytes)
+        };
 
         trace!(
             target: "neo",
@@ -330,11 +371,23 @@ impl WriteBatchBuffer {
         let mut ops = self.ops.lock();
 
         if ops.is_empty() {
+            // Nothing staged, so the accounting must describe an empty backlog.
+            // Resetting under the guard keeps it consistent with the queue.
+            self.pending_count.store(0, Ordering::Relaxed);
+            self.pending_bytes.store(0, Ordering::Relaxed);
+            self.stats.set_pending(0);
+            self.stats.set_pending_bytes(0);
             return Ok(());
         }
 
-        let count = self.pending_count.load(Ordering::Relaxed);
-        let bytes = self.pending_bytes.load(Ordering::Relaxed);
+        // Derive the accounting from the queue while holding the guard so the
+        // numbers reported for this flush describe exactly what is written.
+        let count = ops.len();
+        let bytes: usize = ops.iter().map(BatchOp::staged_bytes).sum();
+        self.pending_count.store(count, Ordering::Relaxed);
+        self.pending_bytes.store(bytes, Ordering::Relaxed);
+        self.stats.set_pending(count);
+        self.stats.set_pending_bytes(bytes);
 
         let start = Instant::now();
 
@@ -361,7 +414,7 @@ impl WriteBatchBuffer {
                 ops.clear();
                 let duration_ms = start.elapsed().as_millis() as u64;
 
-                // Reset counters
+                // Reset counters under the same guard that cleared the queue.
                 self.pending_count.store(0, Ordering::Relaxed);
                 self.pending_bytes.store(0, Ordering::Relaxed);
 
@@ -374,6 +427,7 @@ impl WriteBatchBuffer {
                 self.stats.record_flush(count, bytes, duration_ms);
 
                 self.stats.set_pending(0);
+                self.stats.set_pending_bytes(0);
 
                 debug!(
                     target: "neo",
@@ -395,7 +449,7 @@ impl WriteBatchBuffer {
                     "write batch flush failed; operations retained for retry"
                 );
                 Err(StorageError::Io {
-                    message: format!("RocksDB write batch flush failed: {}", e),
+                    message: format!("RocksDB write batch flush failed: {e}"),
                 })
             }
         }
@@ -434,11 +488,28 @@ impl WriteBatchBuffer {
 
     /// Clears all pending operations without flushing.
     pub fn clear(&self) {
-        self.ops.lock().clear();
+        // Queue and counters are cleared under one guard: a push racing this call
+        // either lands fully before or fully after the reset.
+        let mut ops = self.ops.lock();
+        ops.clear();
         self.pending_count.store(0, Ordering::Relaxed);
         self.pending_bytes.store(0, Ordering::Relaxed);
         self.stats.set_pending(0);
+        drop(ops);
         debug!(target: "neo", "write batch cleared");
+    }
+
+    /// Returns true when the pending counters describe the staged queue exactly.
+    ///
+    /// Both the counters and the queue are only mutated while the queue lock is
+    /// held, so they must agree whenever this check observes the lock.
+    #[cfg(test)]
+    fn counters_match_queue(&self) -> bool {
+        let ops = self.ops.lock();
+        self.pending_count.load(Ordering::Relaxed) == ops.len()
+            && self.pending_bytes.load(Ordering::Relaxed)
+                == ops.iter().map(BatchOp::staged_bytes).sum::<usize>()
+            && self.stats.pending_operations.load(Ordering::Relaxed) == ops.len()
     }
 }
 
@@ -565,8 +636,15 @@ mod tests {
             error.to_string().contains("write batch flush failed"),
             "unexpected error: {error}"
         );
-        assert_eq!(buffer.pending_count(), 2, "failed flush must retain the batch");
-        assert_eq!(buffer.pending_bytes(), b"key1".len() + b"value1".len() + b"key2".len() + b"value2".len());
+        assert_eq!(
+            buffer.pending_count(),
+            2,
+            "failed flush must retain the batch"
+        );
+        assert_eq!(
+            buffer.pending_bytes(),
+            b"key1".len() + b"value1".len() + b"key2".len() + b"value2".len()
+        );
         assert!(buffer.has_pending());
 
         // Clearing is the only path that discards staged writes.
@@ -608,7 +686,7 @@ mod tests {
 
         // Add 4 items - should not flush yet
         for i in 0..4 {
-            buffer.put(format!("key{}", i).as_bytes(), b"value").unwrap();
+            buffer.put(format!("key{i}").as_bytes(), b"value").unwrap();
         }
 
         assert_eq!(buffer.pending_count(), 4);
@@ -670,5 +748,76 @@ mod tests {
 
         let balanced = WriteBatchConfig::balanced();
         assert_eq!(balanced.max_batch_size, 500);
+    }
+
+    #[test]
+    fn concurrent_push_and_flush_keep_counters_consistent() {
+        const THREADS: usize = 8;
+        const OPS_PER_THREAD: usize = 100;
+
+        let (db, _tmp) = create_test_db();
+        // Auto-flush is disabled so the explicit flush below races the writers
+        // instead of every push serialising itself through the size threshold.
+        let config = WriteBatchConfig {
+            max_batch_size: usize::MAX,
+            max_delay_ms: u64::MAX,
+            min_operations: usize::MAX,
+            max_batch_bytes: usize::MAX,
+            sync_on_flush: false,
+            disable_wal: true,
+        };
+        let buffer = Arc::new(WriteBatchBuffer::new(db, config));
+
+        let flusher = {
+            let buffer = Arc::clone(&buffer);
+            std::thread::spawn(move || {
+                for _ in 0..THREADS * OPS_PER_THREAD {
+                    buffer
+                        .flush()
+                        .expect("flushing into an open database must succeed");
+                    assert!(
+                        buffer.counters_match_queue(),
+                        "counters drifted from the staged queue after a concurrent flush"
+                    );
+                    std::thread::yield_now();
+                }
+            })
+        };
+
+        let writers: Vec<_> = (0..THREADS)
+            .map(|thread| {
+                let buffer = Arc::clone(&buffer);
+                std::thread::spawn(move || {
+                    for op in 0..OPS_PER_THREAD {
+                        let key = format!("key-{thread}-{op}");
+                        buffer
+                            .put(key.as_bytes(), b"value")
+                            .expect("staging a write into a healthy buffer must succeed");
+                        assert!(
+                            buffer.counters_match_queue(),
+                            "counters drifted from the staged queue after a concurrent push"
+                        );
+                    }
+                })
+            })
+            .collect();
+
+        for writer in writers {
+            writer.join().expect("writer thread must not panic");
+        }
+        flusher.join().expect("flusher thread must not panic");
+
+        buffer.force_flush().expect("final flush must succeed");
+
+        let stats = buffer.stats_snapshot();
+        assert_eq!(buffer.pending_count(), 0);
+        assert_eq!(buffer.pending_bytes(), 0);
+        assert_eq!(stats.pending_operations, 0);
+        assert_eq!(
+            stats.operations_written,
+            (THREADS * OPS_PER_THREAD) as u64,
+            "every staged operation must reach the database exactly once"
+        );
+        assert!(buffer.counters_match_queue());
     }
 }

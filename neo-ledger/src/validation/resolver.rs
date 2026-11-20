@@ -1,5 +1,4 @@
-use neo_native_contracts::LedgerContract;
-use neo_primitives::{UInt160, UInt256, Verifiable};
+use neo_primitives::{UInt160, Verifiable};
 use neo_protocol::payloads::{Block, Header, Transaction};
 use neo_protocol::witness::WitnessData;
 use neo_smart_contract::application_engine::WitnessHashResolver;
@@ -13,22 +12,14 @@ pub trait VerifiableExt: WitnessData {
     }
 }
 
+/// Delegates to the canonical header verifying-hash policy in
+/// `neo-native-contracts`.
+///
+/// Consensus-critical witness selection must resolve identically for every
+/// caller, so the genesis/`next_consensus` rule has a single owner and this
+/// entry point only forwards to it.
 pub fn header_script_hashes_for_verifying(header: &Header, snapshot: &DataCache) -> Vec<UInt160> {
-    if *header.prev_hash() == UInt256::default() {
-        return vec![header.witness.script_hash()];
-    }
-    let prev = match LedgerContract::new().get_trimmed_block(snapshot, header.prev_hash()) {
-        Ok(Some(prev)) => prev,
-        Ok(None) => {
-            tracing::warn!(prev_hash = %header.prev_hash(), "previous header not found when verifying header");
-            return Vec::new();
-        }
-        Err(err) => {
-            tracing::warn!(prev_hash = %header.prev_hash(), error = %err, "failed to fetch previous header when verifying header");
-            return Vec::new();
-        }
-    };
-    vec![prev.header.next_consensus]
+    neo_native_contracts::header_verifying_script_hashes(header, snapshot)
 }
 
 pub fn block_script_hashes_for_verifying(block: &Block, snapshot: &DataCache) -> Vec<UInt160> {

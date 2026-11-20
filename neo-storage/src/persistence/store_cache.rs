@@ -2,7 +2,10 @@
 
 use super::{
     commit_profile::{StoreCommitProfiler, StoreCommitStage, StoreCommitTimer},
-    data_cache::{DataCache, DataCacheConfig, DataCacheError, DataCacheResult},
+    data_cache::{
+        DataCache, DataCacheConfig, DataCacheError, DataCacheResult, PrefetchMetricsSnapshot,
+        StoreSeekFn,
+    },
     read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
     seek_direction::SeekDirection,
     store::Store,
@@ -45,6 +48,7 @@ impl StoreCache {
     ) -> Self {
         let store_for_get = store.clone();
         let store_for_find = store.clone();
+        let store_for_seek = store.clone();
         let store_generation = store.clone();
         let store_get: Arc<StoreGetFn> =
             Arc::new(move |key: &StorageKey| store_for_get.try_get(key));
@@ -53,12 +57,16 @@ impl StoreCache {
                 .find(prefix, direction)
                 .collect::<Vec<(StorageKey, StorageItem)>>()
         });
-        let mut data_cache = DataCache::new_with_config(
-            read_only,
-            Some(store_get),
-            Some(store_find),
-            config,
-        );
+        // Prefetch scans go through the bounded seek so the backing store stops
+        // at the requested row count instead of materialising a whole prefix.
+        let store_seek: Arc<StoreSeekFn> = Arc::new(move |prefix, start, direction, limit| {
+            store_for_seek.seek_limited(prefix, start, direction, limit)
+        });
+        let mut data_cache =
+            DataCache::new_with_config(read_only, Some(store_get), Some(store_find), config);
+        data_cache.set_store_seek(move |prefix, start, direction, limit| {
+            store_seek(prefix, start, direction, limit)
+        });
         // A store-backed cache is a latest-state view: other writers may commit
         // to the same store, so cached reads must be revalidated against the
         // store's version before they are returned.
@@ -74,6 +82,12 @@ impl StoreCache {
     /// Provides read-only access to the underlying in-memory data cache.
     pub fn data_cache(&self) -> &DataCache {
         &self.data_cache
+    }
+
+    /// Returns the speculative prefetch counters.
+    #[must_use]
+    pub fn prefetch_metrics(&self) -> PrefetchMetricsSnapshot {
+        self.data_cache.prefetch_metrics()
     }
 
     /// Initializes a new instance of the StoreCache class with a snapshot.
@@ -242,7 +256,18 @@ where
     Ok(())
 }
 
-impl ReadOnlyStore for StoreCache {}
+impl ReadOnlyStore for StoreCache {
+    fn seek_limited(
+        &self,
+        key_prefix: Option<&StorageKey>,
+        start: Option<&StorageKey>,
+        direction: SeekDirection,
+        limit: usize,
+    ) -> Vec<(StorageKey, StorageItem)> {
+        self.data_cache
+            .seek_limited(key_prefix, start, direction, limit)
+    }
+}
 
 impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for StoreCache {
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {

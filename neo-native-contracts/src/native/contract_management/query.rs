@@ -42,6 +42,28 @@ impl ContractManagement {
         Ok(Some(contract))
     }
 
+    /// Gets only the `update_counter` of a deployed contract record.
+    ///
+    /// `ContractState` is serialized as `id: i32` followed by
+    /// `update_counter: u16` in little-endian order, so the counter occupies
+    /// bytes 4..6 of the stored value. Returning just that field lets callers
+    /// address a deserialized-record cache without paying for NEF checksum
+    /// verification and manifest parsing on every lookup.
+    pub fn get_contract_update_counter_from_snapshot(
+        snapshot: &DataCache,
+        hash: &UInt160,
+    ) -> Result<Option<u16>> {
+        let storage_key = StorageKey::new(Self::ID, Self::contract_storage_key(hash));
+        let Some(item) = snapshot.get(&storage_key) else {
+            return Ok(None);
+        };
+        let bytes = item.value_bytes();
+        if bytes.len() < 6 {
+            return Ok(None);
+        }
+        Ok(Some(u16::from_le_bytes([bytes[4], bytes[5]])))
+    }
+
     /// Gets a contract by ID directly from the snapshot (single key lookup).
     pub fn get_contract_by_id_from_snapshot(
         snapshot: &DataCache,

@@ -9,6 +9,7 @@
 //   crate::smart_contract::env_flags                  -> neo_smart_contract::env_flags
 
 use super::*;
+use crate::native::helpers::encode_bigint;
 use crate::native::security_fixes::{
     ReentrancyGuardType, SafeArithmetic, SecurityContext, StateValidator,
 };
@@ -27,7 +28,7 @@ impl NeoToken {
                 "unclaimedGas expects account and end arguments".to_string(),
             ));
         }
-        let account = self.read_account(&args[0])?;
+        let account = Self::ft_read_account(&args[0])?;
         let end = if args[1].is_empty() {
             0
         } else {
@@ -53,7 +54,7 @@ impl NeoToken {
             ));
         }
         let gas = self.unclaimed_gas(snapshot.as_ref(), &account, end)?;
-        Ok(Self::encode_amount(&gas))
+        Ok(encode_bigint(&gas))
     }
 
     /// getAccountState invoke wrapper
@@ -67,7 +68,7 @@ impl NeoToken {
                 "getAccountState expects account argument".to_string(),
             ));
         }
-        let account = self.read_account(&args[0])?;
+        let account = Self::ft_read_account(&args[0])?;
         let snapshot = engine.snapshot_cache();
         match self.get_account_state(snapshot.as_ref(), &account)? {
             Some(state) => {
@@ -156,14 +157,12 @@ impl NeoToken {
         }
         let pubkey = self.read_public_key(&args[0])?;
         let snapshot = engine.snapshot_cache();
-        if let Some(state) = self.get_candidate_state(snapshot.as_ref(), &pubkey)? {
-            if state.registered {
-                Ok(Self::encode_amount(&state.votes))
-            } else {
-                Ok(Self::encode_amount(&BigInt::from(-1)))
-            }
+        if let Some(state) = self.get_candidate_state(snapshot.as_ref(), &pubkey)?
+            && state.registered
+        {
+            Ok(encode_bigint(&state.votes))
         } else {
-            Ok(Self::encode_amount(&BigInt::from(-1)))
+            Ok(encode_bigint(&BigInt::from(-1)))
         }
     }
 
@@ -176,12 +175,10 @@ impl NeoToken {
     where
         S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
-        if let Some(state) = self.get_candidate_state(snapshot, pubkey)? {
-            if state.registered {
-                Ok(state.votes)
-            } else {
-                Ok(BigInt::from(-1))
-            }
+        if let Some(state) = self.get_candidate_state(snapshot, pubkey)?
+            && state.registered
+        {
+            Ok(state.votes)
         } else {
             Ok(BigInt::from(-1))
         }
@@ -364,7 +361,7 @@ impl NeoToken {
         let current_index = ledger.current_index(snapshot.as_ref()).unwrap_or(0);
         let gas_per_block =
             self.get_gas_per_block_internal(snapshot.as_ref(), current_index.saturating_add(1));
-        Ok(Self::encode_amount(&gas_per_block))
+        Ok(encode_bigint(&gas_per_block))
     }
 
     /// Internal helper to get GAS per block at specific height
@@ -386,7 +383,7 @@ impl NeoToken {
             || BigInt::from(Self::DEFAULT_REGISTER_PRICE),
             |item| item.to_bigint(),
         );
-        Ok(Self::encode_amount(&price))
+        Ok(encode_bigint(&price))
     }
 
     /// onNEP17Payment - candidate registration via GAS transfer (Echidna+).
@@ -408,7 +405,7 @@ impl NeoToken {
             ));
         }
 
-        let from = self.read_account(&args[0])?;
+        let from = Self::ft_read_account(&args[0])?;
         let amount = Self::decode_amount(&args[1]);
         let pubkey = self.read_public_key(&args[2])?;
 
@@ -577,7 +574,7 @@ impl NeoToken {
             ));
         }
 
-        let account = self.read_account(&args[0])?;
+        let account = Self::ft_read_account(&args[0])?;
         // A Null StackItem is serialized as [0x00] (BinarySerializer type tag for Any/Null).
         // Check for both empty and the serialized-null sentinel.
         let vote_to = if args[1].is_empty() || args[1] == [0x00] {
@@ -660,7 +657,7 @@ impl NeoToken {
             engine.put_storage_item(
                 &context,
                 voters_key.suffix(),
-                &Self::encode_amount(&updated_voters),
+                &encode_bigint(&updated_voters),
             )?;
         }
 
@@ -779,7 +776,7 @@ impl NeoToken {
         let mut key_data = vec![Self::PREFIX_GAS_PER_BLOCK];
         key_data.extend_from_slice(&index.to_be_bytes());
 
-        engine.put_storage_item(&context, &key_data, &Self::encode_amount(&gas_per_block))?;
+        engine.put_storage_item(&context, &key_data, &encode_bigint(&gas_per_block))?;
         Ok(vec![])
     }
 
@@ -814,7 +811,7 @@ impl NeoToken {
         let key = StorageKey::create(Self::ID, Self::PREFIX_REGISTER_PRICE)
             .suffix()
             .to_vec();
-        engine.put_storage_item(&context, &key, &Self::encode_amount(&price))?;
+        engine.put_storage_item(&context, &key, &encode_bigint(&price))?;
         Ok(vec![])
     }
 }

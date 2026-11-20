@@ -374,11 +374,10 @@ impl AttestationReport {
 
     /// Verify the report is not expired
     pub fn verify_timestamp(&self, max_age: Duration) -> bool {
-        let now = SystemTime::now();
-        match now.duration_since(self.timestamp) {
-            Ok(age) => age <= max_age,
-            Err(_) => false, // Clock skew - timestamp in future
-        }
+        // Clock skew - a timestamp in the future is treated as expired.
+        SystemTime::now()
+            .duration_since(self.timestamp)
+            .is_ok_and(|age| age <= max_age)
     }
 
     /// Check if the security version is acceptable

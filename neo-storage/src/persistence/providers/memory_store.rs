@@ -152,7 +152,72 @@ impl WriteStore<Vec<u8>, Vec<u8>> for MemoryStore {
     }
 }
 
-impl ReadOnlyStore for MemoryStore {}
+impl ReadOnlyStore for MemoryStore {
+    fn seek_limited(
+        &self,
+        key_prefix: Option<&StorageKey>,
+        start: Option<&StorageKey>,
+        direction: SeekDirection,
+        limit: usize,
+    ) -> Vec<(StorageKey, StorageItem)> {
+        if limit == 0 {
+            return Vec::new();
+        }
+
+        let data = self.inner_data.read();
+        let prefix_bytes = key_prefix.map(StorageKey::to_array);
+        let start_bytes = start
+            .map(StorageKey::to_array)
+            // The cursor only narrows the range while it lies inside the
+            // namespace; anything else leaves the prefix bounds authoritative.
+            .filter(|cursor| {
+                prefix_bytes
+                    .as_ref()
+                    .is_none_or(|prefix| cursor.starts_with(prefix))
+            });
+
+        let (prefix_lower, prefix_upper) = prefix_bytes
+            .as_deref()
+            .map_or((Bound::Unbounded, Bound::Unbounded), prefix_bounds);
+        let (lower, upper) = match direction {
+            SeekDirection::Forward => (
+                start_bytes
+                    .as_ref()
+                    .map_or(prefix_lower, |cursor| Bound::Excluded(cursor.clone())),
+                prefix_upper,
+            ),
+            SeekDirection::Backward => (
+                prefix_lower,
+                start_bytes
+                    .as_ref()
+                    .map_or(prefix_upper, |cursor| Bound::Excluded(cursor.clone())),
+            ),
+        };
+
+        let range = data.range((lower, upper));
+        match direction {
+            SeekDirection::Forward => range
+                .take(limit)
+                .map(|(key, value)| {
+                    (
+                        StorageKey::from_bytes(key),
+                        StorageItem::from_bytes(value.clone()),
+                    )
+                })
+                .collect(),
+            SeekDirection::Backward => range
+                .rev()
+                .take(limit)
+                .map(|(key, value)| {
+                    (
+                        StorageKey::from_bytes(key),
+                        StorageItem::from_bytes(value.clone()),
+                    )
+                })
+                .collect(),
+        }
+    }
+}
 
 impl Store for MemoryStore {
     fn snapshot(&self) -> Arc<dyn StoreSnapshot> {

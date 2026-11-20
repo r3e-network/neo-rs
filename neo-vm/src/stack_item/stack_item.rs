@@ -186,18 +186,13 @@ impl fmt::Debug for StackItem {
             out.push(text(","));
         }
 
-        /// One `Array`/`Struct` node, in print order. `id_first` selects the
-        /// field order of the corresponding wrapper (`Struct` prints `id`
-        /// before `stack_references`).
-        #[allow(clippy::too_many_arguments)]
+        /// One `Array`/`Struct` node, in print order.
         fn list_node(
             kind: &str,
-            kind_inner: &str,
             items: Vec<StackItem>,
             id: usize,
             stack_references: usize,
             is_read_only: bool,
-            id_first: bool,
             indent: usize,
             pretty: bool,
         ) -> Vec<Task> {
@@ -209,18 +204,13 @@ impl fmt::Debug for StackItem {
                 out.push(Task::Indent(indent + 8));
                 out.push(text("inner: Mutex {"));
                 out.push(Task::Indent(indent + 12));
-                out.push(Task::Text(format!("data: {kind_inner} {{")));
+                out.push(text("data: CompoundInner {"));
                 out.push(Task::Indent(indent + 16));
                 out.push(text("items: "));
                 push_list(&mut out, items, indent + 16, pretty);
                 out.push(text(","));
-                if id_first {
-                    push_num_field(&mut out, "id", id, indent + 16);
-                    push_num_field(&mut out, "stack_references", stack_references, indent + 16);
-                } else {
-                    push_num_field(&mut out, "stack_references", stack_references, indent + 16);
-                    push_num_field(&mut out, "id", id, indent + 16);
-                }
+                push_num_field(&mut out, "stack_references", stack_references, indent + 16);
+                push_num_field(&mut out, "id", id, indent + 16);
                 out.push(Task::Indent(indent + 16));
                 out.push(text("is_read_only: "));
                 out.push(Task::Bool(is_read_only));
@@ -237,20 +227,13 @@ impl fmt::Debug for StackItem {
             }
 
             out.push(Task::Text(format!(
-                "{kind}({kind} {{ inner: Mutex {{ data: {kind_inner} {{ items: "
+                "{kind}({kind} {{ inner: Mutex {{ data: CompoundInner {{ items: "
             )));
             push_list(&mut out, items, 0, pretty);
-            if id_first {
-                out.push(text(", id: "));
-                out.push(Task::Num(id));
-                out.push(text(", stack_references: "));
-                out.push(Task::Num(stack_references));
-            } else {
-                out.push(text(", stack_references: "));
-                out.push(Task::Num(stack_references));
-                out.push(text(", id: "));
-                out.push(Task::Num(id));
-            }
+            out.push(text(", stack_references: "));
+            out.push(Task::Num(stack_references));
+            out.push(text(", id: "));
+            out.push(Task::Num(id));
             out.push(text(", is_read_only: "));
             out.push(Task::Bool(is_read_only));
             out.push(text(" } } })"));
@@ -344,15 +327,14 @@ impl fmt::Debug for StackItem {
                 Task::Item(item, indent) => {
                     let tokens = match &item {
                         Self::Array(array) => {
-                            let (items, id, stack_references, is_read_only) = array.debug_snapshot();
+                            let (items, id, stack_references, is_read_only) =
+                                array.debug_snapshot();
                             Some(list_node(
                                 "Array",
-                                "ArrayInner",
                                 items,
                                 id,
                                 stack_references,
                                 is_read_only,
-                                false,
                                 indent,
                                 pretty,
                             ))
@@ -362,18 +344,17 @@ impl fmt::Debug for StackItem {
                                 structure.debug_snapshot();
                             Some(list_node(
                                 "Struct",
-                                "StructInner",
                                 items,
                                 id,
                                 stack_references,
                                 is_read_only,
-                                true,
                                 indent,
                                 pretty,
                             ))
                         }
                         Self::Map(map) => {
-                            let (entries, id, stack_references, is_read_only) = map.debug_snapshot();
+                            let (entries, id, stack_references, is_read_only) =
+                                map.debug_snapshot();
                             let entries = entries
                                 .iter()
                                 .map(|(key, value)| (key.clone(), value.clone()))
@@ -808,7 +789,9 @@ impl StackItem {
                 StackItem::Boolean(value) => Some(StackItem::Boolean(*value)),
                 StackItem::Integer(value) => Some(StackItem::Integer(value.clone())),
                 StackItem::ByteString(value) => Some(StackItem::ByteString(value.clone())),
-                StackItem::Buffer(buffer) => Some(StackItem::Buffer(BufferItem::new(buffer.data()))),
+                StackItem::Buffer(buffer) => {
+                    Some(StackItem::Buffer(BufferItem::new(buffer.data())))
+                }
                 StackItem::Pointer(pointer) => Some(StackItem::Pointer(pointer.clone())),
                 StackItem::InteropInterface(interface) => {
                     Some(StackItem::InteropInterface(interface.clone()))
@@ -827,7 +810,10 @@ impl StackItem {
                 StackItem::Array(array) => {
                     let copy = ArrayItem::new(Vec::new());
                     let target = StackItem::Array(copy.clone());
-                    refs.insert(compound_identity(item).expect("compound item"), target.clone());
+                    refs.insert(
+                        compound_identity(item).expect("compound item"),
+                        target.clone(),
+                    );
                     Frame {
                         sink: Sink::Array(copy),
                         target,
@@ -837,7 +823,10 @@ impl StackItem {
                 StackItem::Struct(structure) => {
                     let copy = StructItem::new(Vec::new());
                     let target = StackItem::Struct(copy.clone());
-                    refs.insert(compound_identity(item).expect("compound item"), target.clone());
+                    refs.insert(
+                        compound_identity(item).expect("compound item"),
+                        target.clone(),
+                    );
                     Frame {
                         sink: Sink::Struct(copy),
                         target,
@@ -847,7 +836,10 @@ impl StackItem {
                 StackItem::Map(map) => {
                     let copy = MapItem::new(VmOrderedDictionary::new());
                     let target = StackItem::Map(copy.clone());
-                    refs.insert(compound_identity(item).expect("compound item"), target.clone());
+                    refs.insert(
+                        compound_identity(item).expect("compound item"),
+                        target.clone(),
+                    );
                     let mut source = Vec::with_capacity(map.len() * 2);
                     for (key, value) in map.iter() {
                         source.push(key);
@@ -893,7 +885,8 @@ impl StackItem {
 
         loop {
             if let Some(item) = pending.take() {
-                if let Some(known) = compound_identity(&item).and_then(|identity| refs.get(&identity))
+                if let Some(known) =
+                    compound_identity(&item).and_then(|identity| refs.get(&identity))
                 {
                     cloned = known.clone();
                 } else if let Some(leaf) = clone_leaf(&item) {
@@ -1616,7 +1609,9 @@ impl StackItem {
         /// `unwrap_or(false)` of the recursive map search.
         fn advance(frame: &mut Frame, result: &mut VmResult<bool>) -> Advance {
             match frame {
-                Frame::Sequence { left, right, index, .. } => {
+                Frame::Sequence {
+                    left, right, index, ..
+                } => {
                     if !matches!(result, Ok(true)) {
                         return Advance::Done { release: false };
                     }
@@ -1744,18 +1739,20 @@ impl TryFrom<StackValue> for StackItem {
         fn convert_leaf(value: &StackValue) -> VmResult<Option<StackItem>> {
             match value {
                 StackValue::Integer(value) => Ok(Some(StackItem::from_i64(*value))),
-                StackValue::BigInteger(bytes) => Ok(Some(StackItem::from_int(BigInt::from_signed_bytes_le(
-                    bytes,
-                )))),
-                StackValue::ByteString(bytes) => Ok(Some(StackItem::from_byte_string(bytes.clone()))),
+                StackValue::BigInteger(bytes) => Ok(Some(StackItem::from_int(
+                    BigInt::from_signed_bytes_le(bytes),
+                ))),
+                StackValue::ByteString(bytes) => {
+                    Ok(Some(StackItem::from_byte_string(bytes.clone())))
+                }
                 StackValue::Buffer(bytes) => Ok(Some(StackItem::from_buffer(bytes.clone()))),
                 StackValue::Boolean(value) => Ok(Some(StackItem::from_bool(*value))),
                 StackValue::Null => Ok(Some(StackItem::Null)),
-                StackValue::Pointer(_)
-                | StackValue::Interop(_)
-                | StackValue::Iterator(_) => Err(VmError::invalid_operation_msg(format!(
-                    "Cannot convert {value:?} into neo-vm StackItem without host runtime identity"
-                ))),
+                StackValue::Pointer(_) | StackValue::Interop(_) | StackValue::Iterator(_) => {
+                    Err(VmError::invalid_operation_msg(format!(
+                        "Cannot convert {value:?} into neo-vm StackItem without host runtime identity"
+                    )))
+                }
                 _ => Ok(None),
             }
         }
@@ -1815,9 +1812,7 @@ impl TryFrom<StackValue> for StackItem {
         fn close(frame: Frame) -> StackItem {
             match frame {
                 Frame::List {
-                    structure,
-                    items,
-                    ..
+                    structure, items, ..
                 } => {
                     if structure {
                         StackItem::from_struct(items)
@@ -1973,9 +1968,7 @@ impl TryFrom<StackItem> for StackValue {
         fn close(frame: Frame) -> StackValue {
             match frame {
                 Frame::List {
-                    structure,
-                    items,
-                    ..
+                    structure, items, ..
                 } => {
                     if structure {
                         StackValue::Struct(items)

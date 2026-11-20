@@ -79,9 +79,8 @@ fn convert(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
             // Map, Pointer, InteropInterface conversions are only valid to the same type
             (item, target_type) => {
                 return Err(VmError::invalid_type_simple(format!(
-                    "Cannot convert {:?} to {:?}",
-                    item.stack_item_type(),
-                    target_type
+                    "Cannot convert {:?} to {target_type:?}",
+                    item.stack_item_type()
                 )));
             }
         }

@@ -50,7 +50,35 @@ impl RemoteNode {
                 .await?;
         }
 
+        self.log_outbound_batch_snapshot();
         self.ensure_timer(ctx);
         Ok(())
+    }
+
+    /// Emits one bounded telemetry line per peer describing outbound batching.
+    ///
+    /// The snapshot is emitted from the periodic timer rather than per write so
+    /// the log volume stays proportional to the peer count, not the traffic.
+    fn log_outbound_batch_snapshot(&self) {
+        let stats = self.outbound_batch_stats();
+        if stats.messages_written == 0 {
+            return;
+        }
+        tracing::debug!(
+            target: "neo",
+            endpoint = %self.endpoint,
+            batches = stats.batches,
+            batch_messages = stats.batch_messages,
+            batch_bytes = stats.batch_bytes,
+            timer_flushes = stats.timer_flushes,
+            threshold_flushes = stats.threshold_flushes,
+            urgent_flushes = stats.urgent_flushes,
+            shutdown_flushes = stats.shutdown_flushes,
+            immediate_writes = stats.immediate_writes,
+            write_calls = stats.write_calls,
+            messages_written = stats.messages_written,
+            write_calls_saved = stats.write_calls_saved,
+            "outbound batching telemetry snapshot"
+        );
     }
 }

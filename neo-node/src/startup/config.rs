@@ -134,16 +134,16 @@ pub(crate) fn check_storage_access<T>(
 
         // Clean up test file
         if let Err(e) = std::fs::remove_file(&test_file) {
-            warn!("Failed to remove test file: {}", e);
+            warn!("Failed to remove test file: {e}");
         }
 
-        info!("Storage path validated: {}", path_str);
+        info!("Storage path validated: {path_str}");
     } else {
         // Try to create directory with parents
         std::fs::create_dir_all(path)
             .with_context(|| format!("Failed to create storage directory: {path_str}"))?;
 
-        info!("Created storage directory: {}", path_str);
+        info!("Created storage directory: {path_str}");
     }
 
     // Backend-specific health checks. LevelDB is deliberately absent: no
@@ -165,12 +165,11 @@ pub(crate) fn check_storage_access<T>(
 
                 // Check for corruption indicators
                 let current_file = path.join("CURRENT");
-                if current_file.exists() {
-                    if let Ok(content) = std::fs::read_to_string(&current_file) {
-                        if content.trim().is_empty() {
-                            warn!("CURRENT file is empty, database may be corrupted");
-                        }
-                    }
+                if current_file.exists()
+                    && let Ok(content) = std::fs::read_to_string(&current_file)
+                    && content.trim().is_empty()
+                {
+                    warn!("CURRENT file is empty, database may be corrupted");
                 }
             }
             "memory" => {
@@ -189,7 +188,7 @@ pub(crate) fn check_storage_access<T>(
             let available = metadata.blocks() * 512; // Approximate
             if available < 1_000_000_000 {
                 // Less than 1GB
-                warn!("Low disk space available: ~{} bytes", available);
+                warn!("Low disk space available: ~{available} bytes");
             }
         }
     }
@@ -227,16 +226,14 @@ pub(crate) fn check_storage_network(
 
         if stored_network != expected_network {
             anyhow::bail!(
-                "Storage network mismatch at {}: expected network {}, found network {}. \
+                "Storage network mismatch at {}: expected network {expected_network}, found network {stored_network}. \
                  This storage directory belongs to a different network. \
                  Use --storage-path to specify a different location or --network to match the stored network.",
-                path.display(),
-                expected_network,
-                stored_network
+                path.display()
             );
         }
 
-        info!("Storage network validated: network {}", expected_network);
+        info!("Storage network validated: network {expected_network}");
     } else if !read_only {
         // Write network identifier for future validation
         std::fs::write(&metadata_file, expected_network.to_string()).with_context(|| {
@@ -246,28 +243,23 @@ pub(crate) fn check_storage_network(
             )
         })?;
 
-        info!(
-            "Initialized storage network metadata: network {}",
-            expected_network
-        );
+        info!("Initialized storage network metadata: network {expected_network}");
     }
 
     // Also check storage version
     let version_file = path.join(VERSION_METADATA_FILE);
-    if version_file.exists() {
-        if let Ok(content) = std::fs::read_to_string(&version_file) {
-            if let Ok(stored_version) = content.trim().parse::<u32>() {
-                if stored_version != STORAGE_VERSION {
-                    warn!(
-                        "Storage version mismatch: expected {}, found {}. Migration may be required.",
-                        STORAGE_VERSION, stored_version
-                    );
-                }
-            }
-        }
-    } else if !read_only {
+    let version_file_exists = version_file.exists();
+    if version_file_exists
+        && let Ok(content) = std::fs::read_to_string(&version_file)
+        && let Ok(stored_version) = content.trim().parse::<u32>()
+        && stored_version != STORAGE_VERSION
+    {
+        warn!(
+            "Storage version mismatch: expected {STORAGE_VERSION}, found {stored_version}. Migration may be required."
+        );
+    } else if !version_file_exists && !read_only {
         if let Err(e) = std::fs::write(&version_file, STORAGE_VERSION.to_string()) {
-            warn!("Failed to write version metadata: {}", e);
+            warn!("Failed to write version metadata: {e}");
         }
     }
 
@@ -391,34 +383,31 @@ pub(crate) fn validate_node_config(
     // Validate network consistency across all plugins
     let expected_network = protocol_settings.network;
 
-    if let Some(ref state_service) = config.state_service {
-        if let Some(network) = state_service.network {
-            if network != expected_network {
-                anyhow::bail!(
-                    "State service network ({network}) doesn't match protocol network ({expected_network})"
-                );
-            }
-        }
+    if let Some(ref state_service) = config.state_service
+        && let Some(network) = state_service.network
+        && network != expected_network
+    {
+        anyhow::bail!(
+            "State service network ({network}) doesn't match protocol network ({expected_network})"
+        );
     }
 
-    if let Some(ref app_logs) = config.application_logs {
-        if let Some(network) = app_logs.network {
-            if network != expected_network {
-                anyhow::bail!(
-                    "Application logs network ({network}) doesn't match protocol network ({expected_network})"
-                );
-            }
-        }
+    if let Some(ref app_logs) = config.application_logs
+        && let Some(network) = app_logs.network
+        && network != expected_network
+    {
+        anyhow::bail!(
+            "Application logs network ({network}) doesn't match protocol network ({expected_network})"
+        );
     }
 
-    if let Some(ref tokens_tracker) = config.tokens_tracker {
-        if let Some(network) = tokens_tracker.network {
-            if network != expected_network {
-                anyhow::bail!(
-                    "Tokens tracker network ({network}) doesn't match protocol network ({expected_network})"
-                );
-            }
-        }
+    if let Some(ref tokens_tracker) = config.tokens_tracker
+        && let Some(network) = tokens_tracker.network
+        && network != expected_network
+    {
+        anyhow::bail!(
+            "Tokens tracker network ({network}) doesn't match protocol network ({expected_network})"
+        );
     }
 
     // Validate RPC configuration
@@ -428,14 +417,14 @@ pub(crate) fn validate_node_config(
     }
 
     // Validate bind address
-    if let Some(ref bind_addr) = rpc_config.bind_address {
-        if bind_addr.starts_with("0.0.0.0") && !rpc_hardened {
-            warn!(
-                "RPC server binding to all interfaces ({}). Consider using 127.0.0.1 \
-                 or enable --rpc-hardened for production.",
-                bind_addr
-            );
-        }
+    if let Some(ref bind_addr) = rpc_config.bind_address
+        && bind_addr.starts_with("0.0.0.0")
+        && !rpc_hardened
+    {
+        warn!(
+            "RPC server binding to all interfaces ({bind_addr}). Consider using 127.0.0.1 \
+             or enable --rpc-hardened for production."
+        );
     }
 
     // Validate max connections
@@ -444,10 +433,7 @@ pub(crate) fn validate_node_config(
             anyhow::bail!("RPC max_connections must be greater than 0");
         }
         if max_conn > 10000 {
-            warn!(
-                "RPC max_connections ({}) is very high, may impact performance",
-                max_conn
-            );
+            warn!("RPC max_connections ({max_conn}) is very high, may impact performance");
         }
     }
 
@@ -485,10 +471,7 @@ pub(crate) fn validate_node_config(
             }
             if max_block_size > 10_000_000 {
                 // 10MB
-                warn!(
-                    "dBFT max_block_size ({}) exceeds recommended maximum (10MB)",
-                    max_block_size
-                );
+                warn!("dBFT max_block_size ({max_block_size}) exceeds recommended maximum (10MB)");
             }
         }
     }
@@ -518,21 +501,18 @@ pub(crate) fn validate_node_config(
             }
             if timeout > 300000 {
                 // 5 minutes
-                warn!("Oracle max_task_timeout ({} ms) is very long", timeout);
+                warn!("Oracle max_task_timeout ({timeout} ms) is very long");
             }
         }
     }
 
     // Validate wallet unlock configuration
-    if let Some(ref wallet_path_str) = config.unlock_wallet.path {
-        if !wallet_path_str.is_empty() {
-            let wallet_path = Path::new(wallet_path_str);
-            if !wallet_path.exists() {
-                warn!(
-                    "Wallet file does not exist: {}. Will fail at runtime if needed.",
-                    wallet_path_str
-                );
-            }
+    if let Some(ref wallet_path_str) = config.unlock_wallet.path
+        && !wallet_path_str.is_empty()
+    {
+        let wallet_path = Path::new(wallet_path_str);
+        if !wallet_path.exists() {
+            warn!("Wallet file does not exist: {wallet_path_str}. Will fail at runtime if needed.");
         }
     }
 

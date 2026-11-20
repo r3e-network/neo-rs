@@ -13,6 +13,7 @@
 
 use super::{TokenManagement, TokenType};
 use crate::native::NativeContract;
+use crate::native::fungible_token::emit_transfer_notification;
 use neo_primitives::UInt160;
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::error::{CoreResult, ToNativeError};
@@ -27,20 +28,9 @@ impl TokenManagement {
         to: Option<&UInt160>,
         amount: &BigInt,
     ) -> CoreResult<()> {
-        let from_item = from.map_or_else(StackItem::null, |addr| {
-            StackItem::from_byte_string(addr.to_bytes())
-        });
-        let to_item = to.map_or_else(StackItem::null, |addr| {
-            StackItem::from_byte_string(addr.to_bytes())
-        });
-        let amount_item = StackItem::from_int(amount.clone());
-        engine
-            .send_notification(
-                self.hash(),
-                "Transfer".to_string(),
-                vec![from_item, to_item, amount_item],
-            )
-            .native_err()
+        // Notification shape is owned by `fungible_token`; the token manager is
+        // not itself a fungible token, so it calls the shared emitter directly.
+        emit_transfer_notification(engine, self.hash(), from, to, amount)
     }
 
     pub(super) fn emit_created_event(

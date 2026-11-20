@@ -11,8 +11,8 @@ impl OracleNeoFsProtocol {
     ) -> (OracleResponseCode, String) {
         let base = endpoint.trim_end_matches('/');
         let object_url = format!(
-            "{}/v1/objects/{}/by_id/{}",
-            base, request.container, request.object
+            "{base}/v1/objects/{}/by_id/{}",
+            request.container, request.object
         );
 
         match request.command {

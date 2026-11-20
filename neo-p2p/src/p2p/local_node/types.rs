@@ -70,7 +70,7 @@ impl RelayInventory {
             RelayInventory::Extensible(payload) => Serializable::serialize(payload, &mut writer),
         };
         if let Err(e) = result {
-            tracing::error!("Failed to serialize inventory: {:?}", e);
+            tracing::error!("Failed to serialize inventory: {e:?}");
             return Vec::new();
         }
         writer.into_bytes()

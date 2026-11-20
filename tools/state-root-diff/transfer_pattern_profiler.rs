@@ -5,7 +5,7 @@ use clap::Parser;
 use neo_io::{MemoryReader, Serializable};
 use neo_primitives::UInt160;
 use neo_protocol::payloads::Block;
-use neo_vm::fast_path::Nep17Parser;
+use neo_smart_contract::application_engine::Nep17Parser;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;

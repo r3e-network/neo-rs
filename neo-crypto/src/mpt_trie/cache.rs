@@ -17,6 +17,28 @@ use std::num::NonZero;
 /// Default capacity for the global node cache (number of nodes, not bytes)
 const DEFAULT_NODE_CACHE_CAPACITY: usize = 1_000_000; // Increased from 500K
 
+/// Prefix byte every MPT node storage key starts with.
+pub const NODE_KEY_PREFIX: u8 = 0xf0;
+
+/// Builds the canonical storage key of the MPT node with hash `hash`.
+///
+/// The layout — [`NODE_KEY_PREFIX`] followed by the 32-byte node hash — is the
+/// single authoritative node-key format of this module. [`super::Trie`],
+/// [`MptCache`] and any external [`MptStoreSnapshot`] (for example the state
+/// service recovering a root node) must address nodes through this function
+/// rather than re-deriving the byte layout.
+pub fn node_key(hash: &UInt256) -> Vec<u8> {
+    key_with_prefix(NODE_KEY_PREFIX, hash)
+}
+
+/// Single construction site of the `prefix || hash` node-key layout.
+fn key_with_prefix(prefix: u8, hash: &UInt256) -> Vec<u8> {
+    let mut buffer = Vec::with_capacity(1 + UINT256_SIZE);
+    buffer.push(prefix);
+    buffer.extend_from_slice(hash.as_ref());
+    buffer
+}
+
 /// High-performance global LRU cache for MPT nodes with statistics tracking.
 ///
 /// This cache persists across block boundaries and stores fully-deserialized `Arc<Node>`
@@ -556,10 +578,7 @@ where
     }
 
     fn key_for(prefix: u8, hash: &UInt256) -> Vec<u8> {
-        let mut buffer = Vec::with_capacity(1 + UINT256_SIZE);
-        buffer.push(prefix);
-        buffer.extend_from_slice(hash.as_ref());
-        buffer
+        key_with_prefix(prefix, hash)
     }
 }
 

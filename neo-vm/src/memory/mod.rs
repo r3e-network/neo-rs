@@ -28,9 +28,18 @@
 //!
 //! Reusable containers (`PooledVec`, `PooledHashMap`) prevent reallocations during
 //! typical transaction processing by maintaining fixed capacity buffers.
+//!
+//! ## Stack Allocator
+//!
+//! `StackAllocator` recycles the cleared backing buffers of unloaded evaluation
+//! stacks, within explicit bounds on buffer count, capacity and bytes.
 
 pub mod object_pool;
 pub mod pooled_containers;
+pub mod stack_allocator;
 
 pub use object_pool::{ObjectPool, PooledRef};
 pub use pooled_containers::{PooledHashMap, PooledVec};
+pub use stack_allocator::{
+    StackAllocator, StackAllocatorLimits, StackAllocatorStats, StackBufferRejection,
+};

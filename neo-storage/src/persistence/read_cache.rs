@@ -1,5 +1,4 @@
 use crate::types::{StorageItem, StorageKey};
-use hashbrown::HashMap;
 use lru::LruCache;
 use parking_lot::RwLock;
 use std::hash::Hash;
@@ -14,6 +13,30 @@ mod prefetch;
 pub use bloom_filter::{BloomFilter, BloomFilterKey, NegativeLookupBloom};
 pub use prefetch::PrefetchHint;
 
+/// A single entry may occupy at most this fraction of the byte budget.
+///
+/// Admitting a larger value would evict the whole working set for a value that
+/// cannot stay resident anyway, so such entries are rejected up front instead of
+/// being inserted after every other entry was dropped.
+const MAX_ENTRY_BUDGET_DIVISOR: usize = 4;
+
+/// Outcome of admitting a speculative batch into the read cache.
+///
+/// The caller needs this to report what a prefetch actually bought: the cache
+/// stays silent about dropped rows otherwise, and a prefetch whose whole batch
+/// is stale would look identical to one that admitted everything.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PrefetchAdmission {
+    /// Keys that entered the cache.
+    pub admitted: usize,
+    /// Keys dropped because a fresher entry was already resident.
+    pub stale_skips: usize,
+    /// Keys the cache refused (oversized, or over budget after eviction).
+    pub rejected: usize,
+    /// Value bytes of the admitted keys.
+    pub bytes: usize,
+}
+
 /// Cache entry with metadata.
 #[derive(Debug, Clone)]
 struct CacheEntry<V> {
@@ -21,15 +44,22 @@ struct CacheEntry<V> {
     access_count: u64,
     last_access: Instant,
     size_bytes: usize,
+    /// Cache generation observed when this entry was written.
+    ///
+    /// Speculative (pre-fetched) writes carry the generation of the read that
+    /// produced them, so a resident entry with a newer generation is known to be
+    /// at least as fresh as the batch that wants to replace it.
+    generation: u64,
 }
 
 impl<V> CacheEntry<V> {
-    fn new(value: V, size_bytes: usize) -> Self {
+    fn new(value: V, size_bytes: usize, generation: u64) -> Self {
         Self {
             value,
             access_count: 1,
             last_access: Instant::now(),
             size_bytes,
+            generation,
         }
     }
 
@@ -52,6 +82,9 @@ pub struct ReadCacheStats {
     current_bytes: AtomicUsize,
     bloom_filter_negatives: AtomicU64,
     bloom_filter_checks: AtomicU64,
+    rejected_oversized: AtomicU64,
+    rejected_budget: AtomicU64,
+    prefetch_stale_skips: AtomicU64,
 }
 
 impl ReadCacheStats {
@@ -108,6 +141,26 @@ impl ReadCacheStats {
         self.bloom_filter_checks.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Records an insert rejected because the entry alone is larger than the
+    /// per-entry share of the byte budget.
+    #[inline]
+    pub fn record_rejected_oversized(&self) {
+        self.rejected_oversized.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Records an insert rejected because the byte budget was still exhausted
+    /// after evicting candidates.
+    #[inline]
+    pub fn record_rejected_budget(&self) {
+        self.rejected_budget.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Records a pre-fetched value dropped because a fresher entry is resident.
+    #[inline]
+    pub fn record_prefetch_stale_skip(&self) {
+        self.prefetch_stale_skips.fetch_add(1, Ordering::Relaxed);
+    }
+
     /// Gets a snapshot of statistics.
     pub fn snapshot(&self) -> ReadCacheStatsSnapshot {
         ReadCacheStatsSnapshot {
@@ -121,6 +174,9 @@ impl ReadCacheStats {
             current_bytes: self.current_bytes.load(Ordering::Relaxed),
             bloom_filter_negatives: self.bloom_filter_negatives.load(Ordering::Relaxed),
             bloom_filter_checks: self.bloom_filter_checks.load(Ordering::Relaxed),
+            rejected_oversized: self.rejected_oversized.load(Ordering::Relaxed),
+            rejected_budget: self.rejected_budget.load(Ordering::Relaxed),
+            prefetch_stale_skips: self.prefetch_stale_skips.load(Ordering::Relaxed),
         }
     }
 
@@ -194,7 +250,11 @@ impl ReadCacheStats {
 }
 
 /// Snapshot of read cache statistics.
-#[derive(Debug, Clone, Copy)]
+///
+/// `Default` is the zero snapshot a caller uses when no cache is running, so a
+/// missing cache and an idle cache stay distinguishable by the caller's own
+/// presence flag rather than by guessed values.
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ReadCacheStatsSnapshot {
     pub hits: u64,
     pub misses: u64,
@@ -206,6 +266,12 @@ pub struct ReadCacheStatsSnapshot {
     pub current_bytes: usize,
     pub bloom_filter_negatives: u64,
     pub bloom_filter_checks: u64,
+    /// Inserts rejected because the entry alone exceeded the per-entry budget.
+    pub rejected_oversized: u64,
+    /// Inserts rejected because the byte budget stayed exhausted after eviction.
+    pub rejected_budget: u64,
+    /// Pre-fetched values dropped because a fresher entry was already resident.
+    pub prefetch_stale_skips: u64,
 }
 
 impl ReadCacheStatsSnapshot {
@@ -334,6 +400,11 @@ where
     data: RwLock<LruCache<K, CacheEntry<V>>>,
     stats: Arc<ReadCacheStats>,
     bloom_filter: Option<Arc<NegativeLookupBloom>>,
+    /// Monotonic counter advanced by every authoritative write.
+    ///
+    /// It is the freshness clock that lets speculative batch inserts recognise
+    /// entries written after the read that produced their payload.
+    generation: AtomicU64,
 }
 
 impl<K, V> ReadCache<K, V>
@@ -360,6 +431,7 @@ where
             )),
             stats: Arc::new(ReadCacheStats::new()),
             bloom_filter,
+            generation: AtomicU64::new(0),
         }
     }
 
@@ -453,7 +525,16 @@ where
     }
 
     /// Puts a value into the cache.
+    ///
+    /// Entries that cannot reasonably fit the byte budget are rejected before
+    /// any eviction runs: admitting them would drop every resident entry and
+    /// still leave the cache over budget.
     pub fn put(&self, key: K, value: V, size_bytes: usize) {
+        if !self.admit_entry_size(size_bytes) {
+            return;
+        }
+
+        let generation = self.next_generation();
         let mut data = self.data.write();
         if data.peek(&key).is_some() {
             let _ = data.get_mut(&key);
@@ -468,8 +549,21 @@ where
             }
         }
 
+        // Eviction may be unable to free enough room, so verify the budget again
+        // instead of inserting an entry that leaves the cache over budget.
+        if self.projected_bytes_after_put(&data, &key, size_bytes) > self.config.max_bytes {
+            self.stats.record_rejected_budget();
+            debug!(
+                target: "neo",
+                size_bytes,
+                max_bytes = self.config.max_bytes,
+                "cache insert rejected: byte budget still exhausted after eviction"
+            );
+            return;
+        }
+
         // Insert new entry
-        let entry = CacheEntry::new(value, size_bytes);
+        let entry = CacheEntry::new(value, size_bytes, generation);
         let key_for_bloom = key.clone();
         let is_new = self.push_cache_entry(&mut data, key, entry);
 
@@ -482,26 +576,69 @@ where
     }
 
     /// Puts multiple values into the cache (for pre-fetching).
-    pub fn put_batch(&self, items: Vec<(K, V, usize)>) {
+    ///
+    /// Pre-fetched values are speculative: they may fill misses, but they must
+    /// never replace an entry that is already resident. The decision is taken
+    /// before any eviction, because an entry evicted to make room for the batch
+    /// would otherwise be repopulated with a stale pre-fetched value.
+    pub fn put_batch(&self, items: Vec<(K, V, usize)>) -> PrefetchAdmission {
+        self.put_batch_with_generation(items, self.generation())
+    }
+
+    /// Puts pre-fetched values that were read at `source_generation`.
+    ///
+    /// Resident entries written after `source_generation` are fresher than the
+    /// batch and are left untouched. The returned [`PrefetchAdmission`] reports
+    /// how the batch was partitioned so the caller can publish prefetch metrics.
+    pub fn put_batch_with_generation(
+        &self,
+        items: Vec<(K, V, usize)>,
+        source_generation: u64,
+    ) -> PrefetchAdmission {
+        let mut report = PrefetchAdmission::default();
         if items.is_empty() {
-            return;
+            return report;
         }
 
+        let count = items.len();
         let total_bytes: usize = items.iter().map(|(_, _, size)| size).sum();
 
         let mut data = self.data.write();
-        let mut final_sizes = HashMap::with_capacity(items.len());
-        for (key, _, size_bytes) in &items {
-            final_sizes.insert(key.clone(), *size_bytes);
-        }
 
-        for key in final_sizes.keys() {
-            if data.peek(key).is_some() {
-                let _ = data.get_mut(key);
+        // Partition the batch before touching the cache: keys already present are
+        // protected for the whole operation and oversized values are dropped
+        // instead of triggering evictions.
+        let mut accepted: Vec<(K, V, usize)> = Vec::with_capacity(count);
+        let mut accepted_bytes = 0usize;
+        for (key, value, size_bytes) in items {
+            if let Some(existing) = data.get_mut(&key) {
+                if existing.generation > source_generation {
+                    report.stale_skips += 1;
+                    self.stats.record_prefetch_stale_skip();
+                } else {
+                    // A resident entry that is not fresher is still resident:
+                    // speculative rows never overwrite it either way.
+                    report.rejected += 1;
+                }
+                continue;
             }
+            if !self.admit_entry_size(size_bytes) {
+                report.rejected += 1;
+                continue;
+            }
+            accepted_bytes = accepted_bytes.saturating_add(size_bytes);
+            accepted.push((key, value, size_bytes));
         }
 
-        while self.projected_bytes_after_batch(&data, &final_sizes) > self.config.max_bytes
+        // Only reclaim what the batch can actually consume; a batch larger than
+        // the whole budget must not evict everything and still be rejected.
+        let reclaim_target = accepted_bytes.min(self.config.max_bytes);
+        while self
+            .stats
+            .current_bytes
+            .load(Ordering::Relaxed)
+            .saturating_add(reclaim_target)
+            > self.config.max_bytes
             && !data.is_empty()
         {
             if !self.evict_lru(&mut data) {
@@ -509,21 +646,30 @@ where
             }
         }
 
-        let count = items.len();
-        let mut keys_for_bloom = Vec::with_capacity(count);
+        let mut keys_for_bloom = Vec::with_capacity(accepted.len());
 
-        for (key, value, size_bytes) in items {
-            // Prefetch results are speculative and may have been read before a
-            // newer value reached this cache. They may fill misses, but must
-            // never replace an existing (and potentially fresher) entry.
-            if data.peek(&key).is_some() {
+        for (key, value, size_bytes) in accepted {
+            // Never insert past the budget, even when eviction could not free
+            // enough room for this particular value.
+            if self
+                .stats
+                .current_bytes
+                .load(Ordering::Relaxed)
+                .saturating_add(size_bytes)
+                > self.config.max_bytes
+            {
+                self.stats.record_rejected_budget();
+                report.rejected += 1;
                 continue;
             }
-            let entry = CacheEntry::new(value, size_bytes);
+
+            let entry = CacheEntry::new(value, size_bytes, source_generation);
             let key_for_bloom = key.clone();
             if self.push_cache_entry(&mut data, key, entry) {
                 keys_for_bloom.push(key_for_bloom);
             }
+            report.admitted += 1;
+            report.bytes = report.bytes.saturating_add(size_bytes);
         }
 
         // Update bloom filter
@@ -536,7 +682,16 @@ where
         self.stats
             .record_prefetch_events(count, self.config.enable_stats);
 
-        debug!(target: "neo", count, total_bytes, "cache batch insert (prefetch)");
+        debug!(
+            target: "neo",
+            count,
+            total_bytes,
+            admitted = report.admitted,
+            stale_skips = report.stale_skips,
+            "cache batch insert (prefetch)"
+        );
+
+        report
     }
 
     /// Removes a value from the cache.
@@ -631,21 +786,38 @@ where
             .saturating_add(size_bytes)
     }
 
-    fn projected_bytes_after_batch(
-        &self,
-        data: &LruCache<K, CacheEntry<V>>,
-        final_sizes: &HashMap<K, usize>,
-    ) -> usize {
-        let current_bytes = self.stats.current_bytes.load(Ordering::Relaxed);
-        let old_bytes = final_sizes
-            .keys()
-            .filter_map(|key| data.peek(key).map(|entry| entry.size_bytes))
-            .sum::<usize>();
-        let new_bytes = final_sizes.values().sum::<usize>();
+    /// Returns the current freshness generation of the cache.
+    pub fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
+    }
 
-        current_bytes
-            .saturating_sub(old_bytes)
-            .saturating_add(new_bytes)
+    /// Advances the freshness generation and returns the new value.
+    fn next_generation(&self) -> u64 {
+        self.generation.fetch_add(1, Ordering::AcqRel) + 1
+    }
+
+    /// Returns the largest single entry the byte budget accepts.
+    fn max_entry_bytes(&self) -> usize {
+        self.config.max_bytes / MAX_ENTRY_BUDGET_DIVISOR
+    }
+
+    /// Returns true when a single entry may enter the cache at all.
+    ///
+    /// Rejecting oversized values up front keeps a single cold value from
+    /// evicting the working set it could never replace.
+    fn admit_entry_size(&self, size_bytes: usize) -> bool {
+        if size_bytes <= self.max_entry_bytes() {
+            return true;
+        }
+
+        self.stats.record_rejected_oversized();
+        debug!(
+            target: "neo",
+            size_bytes,
+            max_entry_bytes = self.max_entry_bytes(),
+            "cache insert rejected: entry exceeds the per-entry byte budget"
+        );
+        false
     }
 
     /// Evicts the least recently used entry.

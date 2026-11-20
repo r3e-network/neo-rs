@@ -20,6 +20,34 @@ use neo_vm::VmError;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
+/// Implements [`Interoperable`] for a token-management state type that exposes
+/// `from_stack_value`/`to_stack_value`.
+///
+/// The three states differ only in the context their conversions name in the
+/// error message, so the bridging flow is stated once and the name stays at the
+/// call site.
+macro_rules! impl_state_interoperable {
+    ($ty:ty, $context:literal) => {
+        impl Interoperable for $ty {
+            fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), VmError> {
+                let stack_value = stack_item_to_stack_value(stack_item, $context)
+                    .map_err(|error| VmError::invalid_operation_msg(error.to_string()))?;
+                self.from_stack_value(stack_value)
+                    .map_err(|error| VmError::invalid_operation_msg(error.to_string()))
+            }
+
+            fn to_stack_item(&self) -> Result<StackItem, VmError> {
+                stack_value_to_stack_item(self.to_stack_value(), $context)
+                    .map_err(|error| VmError::invalid_operation_msg(error.to_string()))
+            }
+
+            fn clone_box(&self) -> Box<dyn Interoperable> {
+                Box::new(self.clone())
+            }
+        }
+    };
+}
+
 /// Type of token (fungible or non-fungible).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType {
@@ -65,23 +93,7 @@ impl Default for TokenState {
     }
 }
 
-impl Interoperable for TokenState {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), VmError> {
-        let sv = stack_item_to_stack_value(stack_item, "TokenState")
-            .map_err(|e| VmError::invalid_operation_msg(e.to_string()))?;
-        self.from_stack_value(sv)
-            .map_err(|e| VmError::invalid_operation_msg(e.to_string()))
-    }
-
-    fn to_stack_item(&self) -> Result<StackItem, VmError> {
-        stack_value_to_stack_item(self.to_stack_value(), "TokenState")
-            .map_err(|e| VmError::invalid_operation_msg(e.to_string()))
-    }
-
-    fn clone_box(&self) -> Box<dyn Interoperable> {
-        Box::new(self.clone())
-    }
-}
+impl_state_interoperable!(TokenState, "TokenState");
 
 impl TokenState {
     /// Populates the state from a `Struct` stack value produced by the contract.
@@ -162,23 +174,7 @@ impl AccountState {
     }
 }
 
-impl Interoperable for AccountState {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), VmError> {
-        let sv = stack_item_to_stack_value(stack_item, "AccountState")
-            .map_err(|e| VmError::invalid_operation_msg(e.to_string()))?;
-        self.from_stack_value(sv)
-            .map_err(|e| VmError::invalid_operation_msg(e.to_string()))
-    }
-
-    fn to_stack_item(&self) -> Result<StackItem, VmError> {
-        stack_value_to_stack_item(self.to_stack_value(), "AccountState")
-            .map_err(|e| VmError::invalid_operation_msg(e.to_string()))
-    }
-
-    fn clone_box(&self) -> Box<dyn Interoperable> {
-        Box::new(self.clone())
-    }
-}
+impl_state_interoperable!(AccountState, "AccountState");
 
 impl AccountState {
     /// Populates the balance from a `Struct` stack value produced by the contract.
@@ -216,23 +212,7 @@ impl NFTState {
     }
 }
 
-impl Interoperable for NFTState {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), VmError> {
-        let sv = stack_item_to_stack_value(stack_item, "NFTState")
-            .map_err(|e| VmError::invalid_operation_msg(e.to_string()))?;
-        self.from_stack_value(sv)
-            .map_err(|e| VmError::invalid_operation_msg(e.to_string()))
-    }
-
-    fn to_stack_item(&self) -> Result<StackItem, VmError> {
-        stack_value_to_stack_item(self.to_stack_value(), "NFTState")
-            .map_err(|e| VmError::invalid_operation_msg(e.to_string()))
-    }
-
-    fn clone_box(&self) -> Box<dyn Interoperable> {
-        Box::new(self.clone())
-    }
-}
+impl_state_interoperable!(NFTState, "NFTState");
 
 impl NFTState {
     /// Populates the state from a `Struct` stack value produced by the contract.
@@ -257,14 +237,12 @@ impl NFTState {
                 self.properties = properties_array
                     .iter()
                     .filter_map(|prop| {
-                        if let StackValue::Struct(prop_items) = prop {
-                            if prop_items.len() >= 2 {
-                                let key = stack_value_to_bytes(&prop_items[0]).ok()?;
-                                let value = stack_value_to_bytes(&prop_items[1]).ok()?;
-                                Some((key, value))
-                            } else {
-                                None
-                            }
+                        if let StackValue::Struct(prop_items) = prop
+                            && prop_items.len() >= 2
+                        {
+                            let key = stack_value_to_bytes(&prop_items[0]).ok()?;
+                            let value = stack_value_to_bytes(&prop_items[1]).ok()?;
+                            Some((key, value))
                         } else {
                             None
                         }

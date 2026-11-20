@@ -11,9 +11,24 @@ use super::{
 use async_trait::async_trait;
 use neo_crypto::Crypto;
 use serde::{Deserialize, Serialize};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Current remote signer wire protocol version.
 pub const REMOTE_SIGNER_PROTOCOL_VERSION: u16 = 1;
+
+/// The wall clock as Unix milliseconds, clamped to the `i64` range.
+///
+/// Both halves of the protocol stamp requests and compare freshness windows
+/// with this value, so they must read the clock the same way: a clock before
+/// the epoch reads as `0`, and a millisecond count beyond `i64` reads as
+/// `i64::MAX` instead of wrapping into the past.
+pub fn now_unix_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .min(i64::MAX as u128) as i64
+}
 
 /// Challenge generated independently for one key attestation session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

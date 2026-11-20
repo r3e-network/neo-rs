@@ -10,6 +10,7 @@ use neo_protocol::ProtocolSettings;
 use neo_rpc::application_logs::ApplicationLogsSettings;
 use neo_rpc::tokens_tracker::TokensTrackerSettings;
 use neo_state_service::StateServiceSettings;
+use neo_storage::persistence::data_cache::PrefetchConfig;
 use neo_storage::persistence::storage::{CompressionAlgorithm, StorageConfig};
 use neo_system::oracle_service::OracleServiceSettings;
 use serde_json::{Value, json};
@@ -166,6 +167,49 @@ impl NodeConfig {
             config.read_only = read_only;
         }
         config
+    }
+
+    /// Builds the speculative prefetch configuration from `[storage.prefetch]`.
+    ///
+    /// An absent or `enabled = false` section yields [`PrefetchConfig::default`],
+    /// which is inert: the store performs exactly the reads it performed before
+    /// the feature existed. Explicitly enabling it keeps every ceiling inside the
+    /// storage crate's hard limits, so no operator value can request an unbounded
+    /// scan.
+    pub fn storage_prefetch(&self) -> PrefetchConfig {
+        let section = &self.storage.prefetch;
+        let mut config = PrefetchConfig::default();
+        if let Some(enabled) = section.enabled {
+            config.enabled = enabled;
+        }
+        if let Some(count) = section.count {
+            config.count = count;
+        }
+        if let Some(threshold) = section.confidence_threshold {
+            config.confidence_threshold = threshold.min(100);
+        }
+        if let Some(observations) = section.min_observations {
+            config.min_observations = observations;
+        }
+        let limits = &section.limits;
+        if let Some(max_scan_keys) = limits.max_scan_keys {
+            config.limits.max_scan_keys = max_scan_keys;
+        }
+        if let Some(max_admit_keys) = limits.max_admit_keys {
+            config.limits.max_admit_keys = max_admit_keys;
+        }
+        if let Some(max_admit_bytes) = limits.max_admit_bytes {
+            config.limits.max_admit_bytes = max_admit_bytes;
+        }
+        config.sanitized()
+    }
+
+    /// Reports whether `[storage.prefetch]` asks for a scan that can actually run.
+    ///
+    /// A section that is switched on while a ceiling is zero would silently do
+    /// nothing; startup uses this to warn instead of pretending prefetching works.
+    pub fn storage_prefetch_is_effective(&self) -> bool {
+        self.storage_prefetch().is_active()
     }
 
     /// Returns ApplicationLogs settings if enabled via node or plugin config.

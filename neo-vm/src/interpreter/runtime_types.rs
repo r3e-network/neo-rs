@@ -898,7 +898,9 @@ pub(crate) fn into_abi_value(value: StackValue) -> AbiStackValue {
             }
         }
     }
-    built.pop().expect("into_abi_value builds exactly one value")
+    built
+        .pop()
+        .expect("into_abi_value builds exactly one value")
 }
 
 pub(crate) fn structurally_equal(left: &StackValue, right: &StackValue) -> bool {
@@ -1212,7 +1214,10 @@ mod tests {
                 assert!(!nesting_exceeds(&value, MAX_COMPOUND_NESTING_DEPTH));
                 assert!(nesting_exceeds(&value, MAX_COMPOUND_NESTING_DEPTH - 1));
                 assert!(contains_compound_id(&value, 0));
-                assert_eq!(find_affected_indices(0, core::slice::from_ref(&value)), vec![0]);
+                assert_eq!(
+                    find_affected_indices(0, core::slice::from_ref(&value)),
+                    vec![0]
+                );
 
                 let copy = value.clone();
                 assert_eq!(copy, value);
@@ -1263,13 +1268,7 @@ mod tests {
         let value = ids.array(vec![StackValue::Integer(1), StackValue::Integer(2)]);
         let slots = vec![value.clone(), value, StackValue::Null];
         assert_eq!(
-            counted_items(
-                [
-                    &[][..],
-                    slots.as_slice(),
-                ],
-                MAX_COMPOUND_NESTING_DEPTH
-            ),
+            counted_items([&[][..], slots.as_slice(),], MAX_COMPOUND_NESTING_DEPTH),
             3 + 2
         );
     }

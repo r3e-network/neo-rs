@@ -1,7 +1,6 @@
 // Copyright (C) 2015-2025 The Neo Project.
 // Licensed under the MIT License. See LICENSE file for details.
 
-use super::validate_length;
 use hex::{decode as hex_decode, encode as hex_encode};
 use neo_crypto::{ECCurve, ECPoint};
 use neo_io::serializable::helper::{
@@ -9,7 +8,7 @@ use neo_io::serializable::helper::{
     get_var_size_serializable_slice, serialize_array, serialize_array_with,
 };
 use neo_io::witness_rule::{WitnessCondition, WitnessRule, WitnessRuleAction};
-use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable, ValidateLength};
 use neo_primitives::{UINT160_SIZE, UInt160, WitnessScope};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -233,15 +232,13 @@ impl Serializable for Signer {
         writer.write_serializable(&self.account)?;
         writer.write_u8(self.scopes.bits())?;
         if self.scopes.contains(WitnessScope::CUSTOM_CONTRACTS) {
-            validate_length(
-                self.allowed_contracts.len(),
-                MAX_SUBITEMS,
-                "Allowed contracts",
-            )?;
+            self.allowed_contracts
+                .validate_max_length(MAX_SUBITEMS, "Allowed contracts")?;
             serialize_array(&self.allowed_contracts, writer)?;
         }
         if self.scopes.contains(WitnessScope::CUSTOM_GROUPS) {
-            validate_length(self.allowed_groups.len(), MAX_SUBITEMS, "Allowed groups")?;
+            self.allowed_groups
+                .validate_max_length(MAX_SUBITEMS, "Allowed groups")?;
             serialize_array_with(&self.allowed_groups, writer, |group, writer| {
                 let encoded = group
                     .encode_point(true)
@@ -253,7 +250,7 @@ impl Serializable for Signer {
             })?;
         }
         if self.scopes.contains(WitnessScope::WITNESS_RULES) {
-            validate_length(self.rules.len(), MAX_SUBITEMS, "Rules")?;
+            self.rules.validate_max_length(MAX_SUBITEMS, "Rules")?;
             serialize_array(&self.rules, writer)?;
         }
         Ok(())

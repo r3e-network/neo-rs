@@ -9,6 +9,7 @@
 //! reached through `super::` (i.e. `crate::native::`).
 
 use super::{NativeContract, NativeMethod, PolicyContract};
+use crate::native::helpers::encode_bigint;
 use neo_io::{MemoryReader, Serializable};
 use neo_primitives::UInt160;
 use neo_smart_contract::application_engine::ApplicationEngine;
@@ -116,22 +117,13 @@ impl ContractManagement {
     }
 
     #[inline]
-    fn encode_storage_bigint(value: BigInt) -> Vec<u8> {
-        let mut bytes = value.to_signed_bytes_le();
-        if bytes.is_empty() {
-            bytes.push(0);
-        }
-        bytes
-    }
-
-    #[inline]
     fn encode_storage_i32(value: i32) -> Vec<u8> {
-        Self::encode_storage_bigint(BigInt::from(value))
+        encode_bigint(&BigInt::from(value))
     }
 
     #[inline]
     fn encode_storage_i64(value: i64) -> Vec<u8> {
-        Self::encode_storage_bigint(BigInt::from(value))
+        encode_bigint(&BigInt::from(value))
     }
 
     #[inline]

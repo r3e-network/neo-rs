@@ -14,8 +14,7 @@ pub(in crate::service) fn compute_next_consensus_address(validators: &[Validator
     }
 
     let n = validators.len();
-    let f = (n - 1) / 3;
-    let m = n - f;
+    let m = crate::context::required_signatures(n);
 
     let mut keys: Vec<ECPoint> = validators.iter().map(|v| v.public_key.clone()).collect();
     keys.sort();

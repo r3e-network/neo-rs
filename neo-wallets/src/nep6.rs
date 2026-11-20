@@ -248,9 +248,7 @@ impl Nep6Wallet {
             // Handles created from this wallet share its unlock flag, so the
             // accounts stored here (and every handle later produced from them)
             // can all be revoked by a single `lock` call.
-            account
-                .inner
-                .set_unlock_state(Arc::clone(&unlock_state));
+            account.inner.set_unlock_state(Arc::clone(&unlock_state));
             // Opening with a password authenticates and unlocks this wallet
             // session. Keep the decrypted key in the account instead of
             // validating it and immediately discarding it: dumpprivkey,
@@ -292,14 +290,12 @@ impl Nep6Wallet {
             .accounts
             .read()
             .map_err(|_| WalletError::WalletLocked)?;
-        let mut account_files = Vec::with_capacity(accounts.len());
-        for account in accounts.values() {
-            account_files.push(account_to_file(
-                account,
-                self.protocol_settings.address_version,
-                password,
-            )?);
-        }
+        let account_files = accounts
+            .values()
+            .map(|account| {
+                account_to_file(account, self.protocol_settings.address_version, password)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Nep6WalletFile {
             name: self.name.clone(),
             version: self.version.to_string(),
@@ -755,7 +751,9 @@ fn persisted_nep2_key(
     let Some(password) = password else {
         return Err(WalletError::MissingPassword);
     };
-    let key = inner.key_for_persistence().ok_or(WalletError::AccountLocked)?;
+    let key = inner
+        .key_for_persistence()
+        .ok_or(WalletError::AccountLocked)?;
     Ok(Some(key.to_nep2(password, version)?))
 }
 
@@ -869,7 +867,10 @@ mod tests {
 
         // Every secret-revealing path fails closed on the handle obtained before
         // the wallet was locked...
-        assert!(matches!(handle.export_wif(), Err(WalletError::WalletLocked)));
+        assert!(matches!(
+            handle.export_wif(),
+            Err(WalletError::WalletLocked)
+        ));
         assert!(matches!(
             handle.create_witness(b"message"),
             Err(WalletError::WalletLocked)
@@ -889,10 +890,8 @@ mod tests {
     /// save/load round trip keeps its key material.
     #[test]
     fn save_encrypts_raw_keys_before_persisting() {
-        let path = std::env::temp_dir().join(format!(
-            "neo-wallets-nep6-raw-{}.json",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("neo-wallets-nep6-raw-{}.json", std::process::id()));
         let path_str = path.to_string_lossy().to_string();
 
         let wallet = Nep6Wallet::create(Some("raw".into()), Some(path_str.clone()), settings());
@@ -909,7 +908,9 @@ mod tests {
         wallet.save().unwrap();
 
         let reopened = Nep6Wallet::open(&path_str, "pw", settings()).unwrap();
-        let reloaded = reopened.get_account(&hash).expect("account survives reload");
+        let reloaded = reopened
+            .get_account(&hash)
+            .expect("account survives reload");
         assert!(reloaded.has_key());
         assert_eq!(reloaded.export_wif().unwrap(), key.to_wif());
         assert!(Nep6Wallet::open(&path_str, "wrong", settings()).is_err());

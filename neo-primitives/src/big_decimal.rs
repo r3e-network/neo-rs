@@ -275,7 +275,7 @@ impl fmt::Display for BigDecimal {
 
         let remainder_str = remainder.to_string();
         let padding = self.decimals as usize - remainder_str.len();
-        let remainder_str = format!("{}{}", "0".repeat(padding), remainder_str);
+        let remainder_str = format!("{}{remainder_str}", "0".repeat(padding));
 
         // Trim trailing zeros
         let remainder_str = remainder_str.trim_end_matches('0');

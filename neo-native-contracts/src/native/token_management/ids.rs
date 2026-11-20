@@ -14,6 +14,7 @@
 
 use super::{ID, PREFIX_NFT_UNIQUE_ID_SEED, TokenManagement};
 use crate::native::NativeContract;
+use crate::native::helpers::encode_bigint;
 use neo_crypto::Crypto;
 use neo_primitives::UInt160;
 use neo_smart_contract::application_engine::ApplicationEngine;
@@ -37,17 +38,15 @@ impl TokenManagement {
         };
 
         let new_seed = seed + 1;
-        let seed_bytes = Self::encode_bigint(&new_seed);
+        let seed_bytes = encode_bigint(&new_seed);
         engine.put_storage_item(&context, &seed_key, &seed_bytes)?;
 
-        let block_hash = match engine.persisting_block() {
-            Some(block) => block.clone().hash(),
-            None => {
-                return Err(CoreError::native_contract(
-                    "TokenManagement.getNextNFTUniqueId: no persisting block",
-                ));
-            }
+        let Some(block) = engine.persisting_block() else {
+            return Err(CoreError::native_contract(
+                "TokenManagement.getNextNFTUniqueId: no persisting block",
+            ));
         };
+        let block_hash = block.clone().hash();
 
         let mut buffer = Vec::with_capacity(32 + seed_bytes.len());
         buffer.extend_from_slice(&block_hash.as_bytes());
@@ -55,14 +54,6 @@ impl TokenManagement {
         let hash = Crypto::hash160(&buffer);
         let unique_id = UInt160::from_bytes(&hash).unwrap_or_default();
         Ok(unique_id)
-    }
-
-    fn encode_bigint(value: &BigInt) -> Vec<u8> {
-        let mut bytes = value.to_signed_bytes_le();
-        if bytes.is_empty() {
-            bytes.push(0);
-        }
-        bytes
     }
 
     /// Derives a deterministic NFT asset identifier as `HASH160(owner || name)`.

@@ -66,7 +66,7 @@ use std::time::Duration;
 // Use extracted modules
 use super::actors::TransactionRouterHandle;
 use super::context::NeoSystemContext;
-use super::helpers::{initialise_plugins, to_core_error};
+use super::helpers::{hydration_error, initialise_plugins, to_core_error};
 use super::mempool::attach_mempool_callbacks;
 use super::registry::ServiceRegistry;
 use super::relay::{RELAY_CACHE_CAPACITY, RelayExtensibleCache};
@@ -88,6 +88,7 @@ use neo_primitives::{ExtensionsUtility, LogLevel};
 use neo_protocol::hardfork::Hardfork;
 pub use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_smart_contract::error::{CoreError, CoreResult};
+use neo_storage::persistence::data_cache::{DataCacheConfig, PrefetchConfig};
 use neo_storage::persistence::{
     StoreCache, StoreFactory, store::Store, store_provider::StoreProvider,
 };
@@ -142,9 +143,18 @@ pub struct NeoSystem {
     state_commit_handlers: Option<Arc<crate::state_service::StateServiceCommitHandlers>>,
     context: Arc<NeoSystemContext>,
     execution_mode: AtomicU8,
+    /// Opt-in speculative parallel transaction execution for block persistence.
+    ///
+    /// Disabled by default: the canonical serial transaction loop stays the
+    /// behaviour every existing deployment observes.
+    parallel_execution: AtomicBool,
     pub(crate) execution_stats: Arc<super::ExecutionStats>,
     native_method_cache: Arc<Mutex<neo_smart_contract::application_engine::NativeContractsCache>>,
     pub(crate) self_ref: Mutex<Weak<NeoSystem>>,
+    /// Set once a persistence call failed after process-local state may already
+    /// have advanced ahead of durable storage. A poisoned instance is
+    /// permanently unusable and must be discarded.
+    persistence_poisoned: AtomicBool,
 }
 
 impl NeoSystem {
@@ -156,22 +166,45 @@ impl NeoSystem {
 
     /// Returns the execution engine selected for normal block persistence.
     pub fn execution_mode(&self) -> super::ExecutionMode {
-        match self.execution_mode.load(Ordering::Relaxed) {
-            1 => super::ExecutionMode::Auto,
-            2 => super::ExecutionMode::Verify,
-            _ => super::ExecutionMode::Canonical,
-        }
+        super::ExecutionMode::from_code(self.execution_mode.load(Ordering::Relaxed))
     }
 
     /// Selects the execution engine for subsequent normal block persistence.
     /// Explicit per-call mode APIs are unaffected.
     pub fn set_execution_mode(&self, mode: super::ExecutionMode) {
-        let value = match mode {
-            super::ExecutionMode::Canonical => 0,
-            super::ExecutionMode::Auto => 1,
-            super::ExecutionMode::Verify => 2,
+        self.execution_mode.store(mode.code(), Ordering::Relaxed);
+    }
+
+    /// Returns whether speculative parallel transaction execution is enabled.
+    pub fn is_parallel_execution_enabled(&self) -> bool {
+        self.parallel_execution.load(Ordering::Relaxed)
+    }
+
+    /// Enables or disables speculative parallel transaction execution.
+    ///
+    /// The scheduler only reorders *execution*; commit order, receipts,
+    /// notifications and faults stay bit-identical to the serial loop, so this
+    /// switch cannot change a consensus result. It is off by default and
+    /// explicit per-call execution-mode APIs are unaffected.
+    pub fn set_parallel_execution(&self, enabled: bool) {
+        self.parallel_execution.store(enabled, Ordering::Relaxed);
+    }
+
+    /// Enables observation-only persistence profiling.
+    ///
+    /// Profiling only reads clocks around work the pipeline performs anyway; it
+    /// never selects nodes, changes commit order, or alters a result. When this
+    /// system owns state handlers their state-root timing sink is attached as
+    /// well, so the MPT stage timings reach [`Self::execution_stats`] and the
+    /// telemetry surface instead of staying at zero.
+    pub fn set_execution_profiling(&self, enabled: bool) {
+        let stats = self.execution_stats();
+        stats.set_profiling(enabled);
+
+        let Some(handlers) = self.state_commit_handlers() else {
+            return;
         };
-        self.execution_mode.store(value, Ordering::Relaxed);
+        super::persistence::install_state_root_profile_sink(&handlers, &stats, enabled);
     }
 
     /// Returns process-local execution counters for observability.
@@ -192,6 +225,32 @@ impl NeoSystem {
     /// Returns the current best block index tracked by the system.
     pub fn current_block_index(&self) -> u32 {
         self.context.current_block_index()
+    }
+
+    /// Returns whether a failed persistence call permanently poisoned this instance.
+    ///
+    /// Process-local tip, state-root and callback state may be ahead of durable
+    /// storage once a batch commit fails, so a poisoned instance must never persist
+    /// again; discard it and reopen storage instead.
+    pub fn is_persistence_poisoned(&self) -> bool {
+        self.persistence_poisoned.load(Ordering::Acquire)
+    }
+
+    /// Marks this instance unusable for further persistence after a partial failure.
+    pub(crate) fn poison_persistence(&self) {
+        self.persistence_poisoned.store(true, Ordering::Release);
+    }
+
+    /// Rejects persistence on an instance that already suffered a partial failure.
+    pub(crate) fn ensure_persistence_live(&self) -> Result<(), String> {
+        if self.is_persistence_poisoned() {
+            return Err(
+                "neo-system persistence is poisoned after an earlier failure advanced \
+                 process-local state; discard this instance and reopen storage"
+                    .to_string(),
+            );
+        }
+        Ok(())
     }
 }
 
@@ -234,6 +293,30 @@ impl NeoSystem {
         )
     }
 
+    /// Creates a NeoSystem with an explicit speculative prefetch configuration.
+    ///
+    /// This is the only constructor that can turn storage prefetching on: every
+    /// other entry point keeps the disabled default, so a node that does not use
+    /// this call reads byte-for-byte the same storage it did before the feature
+    /// existed. Genesis is persisted before the function returns.
+    pub fn new_with_state_service_and_storage_prefetch(
+        settings: ProtocolSettings,
+        storage_provider: Option<Arc<dyn StoreProvider>>,
+        storage_path: Option<String>,
+        state_service_settings: Option<crate::state_service::StateServiceSettings>,
+        storage_prefetch: PrefetchConfig,
+    ) -> CoreResult<Arc<Self>> {
+        Self::open_with_genesis_policy_and_hydration(
+            settings,
+            storage_provider,
+            storage_path,
+            state_service_settings,
+            true,
+            LedgerHydration::Complete,
+            storage_prefetch,
+        )
+    }
+
     /// Creates a NeoSystem without persisting genesis.
     ///
     /// Register committing handlers, then call [`Self::persist_genesis_if_absent`].
@@ -251,6 +334,29 @@ impl NeoSystem {
             storage_path,
             state_service_settings,
             false,
+        )
+    }
+
+    /// Creates a NeoSystem that defers genesis and opts into speculative prefetch.
+    ///
+    /// The node host uses this entry point when `[storage.prefetch] enabled` is
+    /// set, because genesis must still be persisted after plugins register. Every
+    /// other constructor keeps prefetching disabled.
+    pub fn new_with_state_service_deferring_genesis_and_storage_prefetch(
+        settings: ProtocolSettings,
+        storage_provider: Option<Arc<dyn StoreProvider>>,
+        storage_path: Option<String>,
+        state_service_settings: Option<crate::state_service::StateServiceSettings>,
+        storage_prefetch: PrefetchConfig,
+    ) -> CoreResult<Arc<Self>> {
+        Self::open_with_genesis_policy_and_hydration(
+            settings,
+            storage_provider,
+            storage_path,
+            state_service_settings,
+            false,
+            LedgerHydration::Complete,
+            storage_prefetch,
         )
     }
 
@@ -272,6 +378,7 @@ impl NeoSystem {
             state_service_settings,
             false,
             LedgerHydration::CheckpointTip,
+            PrefetchConfig::default(),
         )
     }
 
@@ -289,6 +396,7 @@ impl NeoSystem {
             state_service_settings,
             persist_genesis,
             LedgerHydration::Complete,
+            PrefetchConfig::default(),
         )
     }
 
@@ -299,6 +407,7 @@ impl NeoSystem {
         state_service_settings: Option<crate::state_service::StateServiceSettings>,
         persist_genesis: bool,
         hydration: LedgerHydration,
+        storage_prefetch: PrefetchConfig,
     ) -> CoreResult<Arc<Self>> {
         #[cfg(test)]
         let _test_guard = TEST_SYSTEM_MUTEX.lock();
@@ -306,7 +415,9 @@ impl NeoSystem {
         let actor_system = ActorSystem::new("neo").map_err(to_core_error)?;
         let settings_arc = Arc::new(settings.clone());
         let genesis_payload = neo_ledger::create_genesis_block(&settings);
-        let genesis_block = Arc::new(super::converters::convert_payload_block(&genesis_payload));
+        let genesis_block = Arc::new(neo_protocol::execution::conversions::convert_payload_block(
+            &genesis_payload,
+        ));
 
         let service_registry = Arc::new(ServiceRegistry::new());
         let wallet_changed_handlers = Arc::new(RwLock::new(Vec::new()));
@@ -319,8 +430,14 @@ impl NeoSystem {
                 CoreError::invalid_operation("default memory store provider is not registered")
             })?,
         };
-        let (store, store_cache_for_hydration) =
-            super::storage::init_store(&store_provider, storage_path.as_deref())?;
+        let (store, store_cache_for_hydration) = super::storage::init_store_with_config(
+            &store_provider,
+            storage_path.as_deref(),
+            DataCacheConfig {
+                prefetch: storage_prefetch,
+                ..DataCacheConfig::default()
+            },
+        )?;
 
         let user_agent = format!("/neo-rs:{}/", env!("CARGO_PKG_VERSION"));
         let local_node_state = Arc::new(LocalNode::new(settings_arc.clone(), 10333, user_agent));
@@ -329,14 +446,16 @@ impl NeoSystem {
         let header_cache = Arc::new(HeaderCache::new());
         match hydration {
             LedgerHydration::Complete => {
-                super::storage::hydrate_ledger(&store_cache_for_hydration, &ledger, &header_cache)?;
+                neo_ledger::hydrate_ledger(&store_cache_for_hydration, &ledger, &header_cache)
+                    .map_err(hydration_error)?;
             }
             LedgerHydration::CheckpointTip => {
-                super::storage::hydrate_ledger_tip_for_checkpoint_replay(
+                neo_ledger::hydrate_ledger_tip_for_checkpoint_replay(
                     &store_cache_for_hydration,
                     &ledger,
                     &header_cache,
-                )?;
+                )
+                .map_err(hydration_error)?;
             }
         }
         let native_services = neo_native_contracts::native::composition::default_native_services();
@@ -414,6 +533,7 @@ impl NeoSystem {
             current_wallet: Arc::new(RwLock::new(None)),
             store_provider: store_provider.clone(),
             store: store.clone(),
+            store_prefetch: storage_prefetch,
             genesis_block: genesis_block.clone(),
             ledger: ledger.clone(),
             state_service_enabled,
@@ -478,9 +598,11 @@ impl NeoSystem {
             state_commit_handlers,
             context,
             execution_mode: AtomicU8::new(0),
+            parallel_execution: AtomicBool::new(false),
             execution_stats: Arc::new(super::ExecutionStats::default()),
             native_method_cache: Arc::new(Mutex::new(Default::default())),
             self_ref: Mutex::new(Weak::new()),
+            persistence_poisoned: AtomicBool::new(false),
         });
 
         system.context.set_system(Arc::downgrade(&system));

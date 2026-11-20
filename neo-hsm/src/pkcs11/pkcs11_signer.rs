@@ -68,26 +68,25 @@ impl Pkcs11Signer {
     /// * `slot` - Slot index to use
     pub fn new(library_path: &Path, slot: u64) -> HsmResult<Self> {
         let ctx = Pkcs11::new(library_path)
-            .map_err(|e| HsmError::Pkcs11Error(format!("Failed to load library: {}", e)))?;
+            .map_err(|e| HsmError::Pkcs11Error(format!("Failed to load library: {e}")))?;
 
         ctx.initialize(CInitializeArgs::OsThreads)
-            .map_err(|e| HsmError::Pkcs11Error(format!("Failed to initialize: {}", e)))?;
+            .map_err(|e| HsmError::Pkcs11Error(format!("Failed to initialize: {e}")))?;
 
         let slots = ctx
             .get_slots_with_token()
-            .map_err(|e| HsmError::Pkcs11Error(format!("Failed to get slots: {}", e)))?;
+            .map_err(|e| HsmError::Pkcs11Error(format!("Failed to get slots: {e}")))?;
 
         let slot_obj = slots.get(slot as usize).ok_or_else(|| {
             HsmError::DeviceNotFound(format!(
-                "Slot {} not found. {} slot(s) available.",
-                slot,
+                "Slot {slot} not found. {} slot(s) available.",
                 slots.len()
             ))
         })?;
 
         let token_info = ctx
             .get_token_info(*slot_obj)
-            .map_err(|e| HsmError::Pkcs11Error(format!("Failed to get token info: {}", e)))?;
+            .map_err(|e| HsmError::Pkcs11Error(format!("Failed to get token info: {e}")))?;
 
         let device_info = HsmDeviceInfo {
             device_type: HsmDeviceType::Pkcs11,
@@ -349,7 +348,7 @@ impl HsmSigner for Pkcs11Signer {
             .ctx
             .0
             .open_rw_session(slot)
-            .map_err(|e| HsmError::Pkcs11Error(format!("Failed to open session: {}", e)))?;
+            .map_err(|e| HsmError::Pkcs11Error(format!("Failed to open session: {e}")))?;
 
         let auth_pin = AuthPin::new(pin.to_string());
         session
@@ -361,7 +360,7 @@ impl HsmSigner for Pkcs11Signer {
                 } else if err_str.contains("PIN_LOCKED") || err_str.contains("CKR_PIN_LOCKED") {
                     HsmError::PinLocked
                 } else {
-                    HsmError::Pkcs11Error(format!("Login failed: {}", e))
+                    HsmError::Pkcs11Error(format!("Login failed: {e}"))
                 }
             })?;
 

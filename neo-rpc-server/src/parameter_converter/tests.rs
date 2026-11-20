@@ -595,13 +595,13 @@ fn signers_accept_flat_entry_with_witness() {
     assert_eq!(parsed.witnesses().len(), 1);
     let witness = &parsed.witnesses()[0];
     assert_eq!(
-        witness.invocation_script,
+        witness.invocation_script(),
         BASE64_STANDARD
             .decode("SGVsbG8K")
             .expect("decode invocation")
     );
     assert_eq!(
-        witness.verification_script,
+        witness.verification_script(),
         BASE64_STANDARD
             .decode("V29ybGQK")
             .expect("decode verification")

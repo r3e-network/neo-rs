@@ -463,10 +463,7 @@ async fn send_response_signature_signs_the_canonical_submission_message() {
     message.extend_from_slice(&request_id.to_le_bytes());
     message.extend_from_slice(&tx_sign);
     let expected_operation_id = format!(
-        "oracle-submission:{}:{}:{}:{}",
-        TEST_NETWORK,
-        request_id,
-        account,
+        "oracle-submission:{TEST_NETWORK}:{request_id}:{account}:{}",
         hex::encode(Crypto::sha256(&message)),
     );
 

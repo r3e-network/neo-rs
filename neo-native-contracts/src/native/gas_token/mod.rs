@@ -17,7 +17,7 @@ use super::policy_contract::PolicyContract;
 use super::security_fixes::{
     PermissionValidator, ReentrancyGuardType, SafeArithmetic, SecurityContext, StateValidator,
 };
-use crate::native::helpers::serialize_stack_value_native;
+use crate::native::helpers::{encode_bigint, serialize_stack_value_native};
 use neo_primitives::UInt160;
 use neo_protocol::payloads::{Transaction, TransactionAttribute, TransactionAttributeType};
 use neo_smart_contract::application_engine::ApplicationEngine;
@@ -97,8 +97,8 @@ impl GasToken {
                 "transfer expects from, to, amount, data".to_string(),
             ));
         }
-        let from = self.read_account(&args[0])?;
-        let to = self.read_account(&args[1])?;
+        let from = Self::ft_read_account(&args[0])?;
+        let to = Self::ft_read_account(&args[1])?;
         let amount = Self::decode_amount(&args[2]);
         let data_bytes = args[3].clone();
         let data_item = if data_bytes.is_empty() {
@@ -274,15 +274,6 @@ impl GasToken {
         Ok(vec![1])
     }
 
-    fn read_account(&self, data: &[u8]) -> CoreResult<UInt160> {
-        if data.len() != 20 {
-            return Err(CoreError::native_contract(
-                "Account argument must be 20 bytes".to_string(),
-            ));
-        }
-        UInt160::from_bytes(data).map_err(|err| CoreError::native_contract(err.to_string()))
-    }
-
     fn total_supply_key() -> StorageKey {
         StorageKey::create(Self::ID, PREFIX_TOTAL_SUPPLY)
     }
@@ -315,14 +306,6 @@ impl GasToken {
         }
 
         AccountState::with_balance(item.to_bigint())
-    }
-
-    fn encode_amount(value: &BigInt) -> Vec<u8> {
-        let mut bytes = value.to_signed_bytes_le();
-        if bytes.is_empty() {
-            bytes.push(0);
-        }
-        bytes
     }
 
     fn notary_fee_deduction(
@@ -458,7 +441,7 @@ impl GasToken {
         if updated.is_zero() {
             engine.delete_storage_item(context, &key)?;
         } else {
-            let bytes = Self::encode_amount(&updated);
+            let bytes = encode_bigint(&updated);
             engine.put_storage_item(context, &key, &bytes)?;
         }
         Ok(updated)
@@ -471,23 +454,8 @@ impl GasToken {
         to: Option<&UInt160>,
         amount: &BigInt,
     ) -> CoreResult<()> {
-        // Use StackItem types matching C# FungibleToken.PostTransferAsync
-        let from_item = from.map_or_else(StackItem::null, |addr| {
-            StackItem::from_byte_string(addr.to_bytes())
-        });
-        let to_item = to.map_or_else(StackItem::null, |addr| {
-            StackItem::from_byte_string(addr.to_bytes())
-        });
-        let amount_item = StackItem::from_int(amount.clone());
-
-        // Use send_notification with explicit contract hash (like C# engine.SendNotification)
-        engine
-            .send_notification(
-                self.hash(),
-                "Transfer".to_string(),
-                vec![from_item, to_item, amount_item],
-            )
-            .native_err()
+        // Notification shape is owned by `FungibleToken::ft_emit_transfer`.
+        self.ft_emit_transfer(engine, from, to, amount)
     }
 
     /// Mints new GAS to the specified account.

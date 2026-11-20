@@ -4,8 +4,8 @@
 
 use super::{
     CallFlags, DEFAULT_GAS_LIMIT, EvaluationStack, ExecutionContext, ExecutionEngine,
-    ExecutionEngineLimits, InteropService, JumpTable, ReferenceCounter, StackItem, VMState,
-    VmError,
+    ExecutionEngineLimits, InteropService, JumpTable, ReferenceCounter, StackAllocator,
+    StackAllocatorLimits, StackAllocatorStats, StackItem, VMState, VmError,
 };
 
 impl ExecutionEngine {
@@ -39,6 +39,7 @@ impl ExecutionEngine {
             call_flags: CallFlags::ALL,
             invocation_stack: Vec::new(),
             result_stack,
+            stack_allocator: StackAllocator::default(),
             reference_counter,
             uncaught_exception: None,
             unhandled_vm_exception: false,
@@ -172,6 +173,40 @@ impl ExecutionEngine {
     #[inline]
     pub fn result_stack_mut(&mut self) -> &mut EvaluationStack {
         &mut self.result_stack
+    }
+
+    /// Returns the evaluation-stack backing-buffer allocator.
+    #[inline]
+    #[must_use]
+    pub const fn stack_allocator(&self) -> &StackAllocator {
+        &self.stack_allocator
+    }
+
+    /// Returns the retained-memory and reuse counters of the stack allocator.
+    ///
+    /// `acquired` counts contexts that started on a recycled allocation and
+    /// `recycled` counts allocations taken back from a dead context; together
+    /// they are the reuse evidence for a whole execution.
+    #[inline]
+    #[must_use]
+    pub fn stack_allocator_stats(&self) -> StackAllocatorStats {
+        self.stack_allocator.stats()
+    }
+
+    /// Returns the bounds applied to retained evaluation-stack buffers.
+    #[inline]
+    #[must_use]
+    pub fn stack_allocator_limits(&self) -> StackAllocatorLimits {
+        self.stack_allocator.limits()
+    }
+
+    /// Replaces the bounds applied to retained evaluation-stack buffers and
+    /// drops every retained buffer that no longer fits.
+    ///
+    /// Must not be called mid-execution.
+    #[inline]
+    pub fn set_stack_allocator_limits(&mut self, limits: StackAllocatorLimits) {
+        self.stack_allocator.set_limits(limits);
     }
 
     /// Returns the uncaught exception, if any.

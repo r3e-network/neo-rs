@@ -3,8 +3,14 @@
 //! No software signer is accepted as an HSM replacement. Missing features,
 //! missing devices, authentication failures, and key discovery failures all
 //! abort node wallet initialization instead of falling back to host keys.
+//!
+//! Phase 9 (F15): operator input (PINs, physical unlock confirmations) is no
+//! longer read here. Authentication takes a [`CredentialProvider`], so CLI
+//! adapters pass [`ConsoleCredentialProvider`] while library consumers inject
+//! their own credential source.
 
-use crate::{HsmConfig, HsmDeviceInfo, HsmDeviceType, HsmError, HsmKeyInfo, HsmSigner, prompt_pin};
+use crate::credentials::{ConsoleCredentialProvider, CredentialProvider};
+use crate::{HsmConfig, HsmDeviceInfo, HsmDeviceType, HsmError, HsmKeyInfo, HsmSigner};
 use anyhow::{Context, Result, anyhow, bail};
 use std::future::Future;
 use std::sync::Arc;
@@ -34,6 +40,11 @@ impl HsmRuntime {
 
 /// Initializes an HSM from a validated configuration.
 ///
+/// Operator input is read exclusively through `credentials`; nothing in this
+/// module touches a terminal. Pass [`ConsoleCredentialProvider`] for the
+/// historical interactive behavior, or a custom [`CredentialProvider`] to
+/// supply credentials from elsewhere.
+///
 /// Phase 3 S6b: the CLI mapping (`initialize_hsm(NodeCli)`) stays in neo-node;
 /// this crate owns the hardware-only initialization policy.
 // With both hardware backends disabled every match arm bails (fail-closed),
@@ -42,7 +53,11 @@ impl HsmRuntime {
     not(any(feature = "hsm-ledger", feature = "hsm-pkcs11")),
     allow(unreachable_code, unused_variables)
 )]
-pub async fn initialize_with_config(config: HsmConfig, address_version: u8) -> Result<HsmRuntime> {
+pub async fn initialize_with_config(
+    config: HsmConfig,
+    address_version: u8,
+    credentials: &dyn CredentialProvider,
+) -> Result<HsmRuntime> {
     if config.max_pin_attempts == 0 {
         bail!("HSM max_pin_attempts must be greater than zero");
     }
@@ -94,7 +109,7 @@ pub async fn initialize_with_config(config: HsmConfig, address_version: u8) -> R
         }
     };
 
-    authenticate(&*signer, &config).await?;
+    authenticate(&*signer, &config, credentials).await?;
     if !signer.is_ready() {
         bail!("HSM authentication completed without a ready device");
     }
@@ -138,15 +153,28 @@ pub async fn initialize_with_config(config: HsmConfig, address_version: u8) -> R
     })
 }
 
-async fn authenticate(signer: &dyn HsmSigner, config: &HsmConfig) -> Result<()> {
+/// Convenience wrapper for the default interactive (terminal) credentials.
+///
+/// Node CLI adapters may call this; anything that needs a different credential
+/// source should call [`initialize_with_config`] with its own provider.
+pub async fn initialize_with_config_interactive(
+    config: HsmConfig,
+    address_version: u8,
+) -> Result<HsmRuntime> {
+    initialize_with_config(config, address_version, &ConsoleCredentialProvider).await
+}
+
+async fn authenticate(
+    signer: &dyn HsmSigner,
+    config: &HsmConfig,
+    credentials: &dyn CredentialProvider,
+) -> Result<()> {
     match config.device_type {
         HsmDeviceType::Ledger => {
             if !config.skip_pin {
-                println!("Unlock the Ledger device and open the Neo app, then press Enter.");
-                let mut input = String::new();
-                std::io::stdin()
-                    .read_line(&mut input)
-                    .context("failed to read Ledger confirmation")?;
+                credentials
+                    .confirm_device_unlock("Ledger")
+                    .context("failed to confirm Ledger unlock")?;
             }
             signer
                 .unlock("")
@@ -158,7 +186,9 @@ async fn authenticate(signer: &dyn HsmSigner, config: &HsmConfig) -> Result<()> 
             let device_name = format!("{} {}", device.manufacturer, device.model);
             let mut last_error = None;
             for attempt in 1..=config.max_pin_attempts {
-                let pin = prompt_pin(&device_name).context("failed to read PKCS#11 PIN")?;
+                let pin = credentials
+                    .request_pin(&device_name)
+                    .context("failed to acquire PKCS#11 PIN")?;
                 match signer.unlock(pin.as_str()).await {
                     Ok(()) => return Ok(()),
                     Err(HsmError::InvalidPin) if attempt < config.max_pin_attempts => {
@@ -221,7 +251,7 @@ mod tests {
         )
         .with_skip_pin(true);
 
-        let error = initialize_with_config(config, 0x35)
+        let error = initialize_with_config(config, 0x35, &ConsoleCredentialProvider)
             .await
             .err()
             .expect("PIN bypass must fail closed");
@@ -231,7 +261,7 @@ mod tests {
     #[cfg(not(feature = "hsm-ledger"))]
     #[tokio::test]
     async fn ledger_feature_is_required_without_software_fallback() {
-        let error = initialize_with_config(HsmConfig::ledger(0), 0x35)
+        let error = initialize_with_config(HsmConfig::ledger(0), 0x35, &ConsoleCredentialProvider)
             .await
             .err()
             .expect("missing Ledger feature must fail closed");

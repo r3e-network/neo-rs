@@ -4,29 +4,22 @@
 
 use crate::StackItemType;
 use crate::error::{VmError, VmResult};
-use crate::next_stack_item_id;
 use crate::reference_counter::{StackReferenceRelease, SubItems};
 use crate::stack_item::StackItem;
+use crate::stack_item::compound::CompoundInner;
 use parking_lot::Mutex;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+/// Diagnostic reported when a struct is mutated after being frozen.
+const READ_ONLY: &str = "The struct is readonly, can not modify.";
+/// Diagnostic reported when an item is popped from an empty struct.
+const EMPTY: &str = "Struct is empty";
+
 /// Represents a struct of stack items in the VM.
 #[derive(Debug, Clone)]
 pub struct Struct {
-    inner: Arc<Mutex<StructInner>>,
-}
-
-#[derive(Debug)]
-struct StructInner {
-    /// The items in the struct.
-    items: Vec<StackItem>,
-    /// Unique identifier mirroring reference equality semantics.
-    id: usize,
-    /// Number of stack references held on this struct (C# `CompoundType.StackReferences`).
-    stack_references: usize,
-    /// Indicates whether the struct is read-only.
-    is_read_only: bool,
+    inner: Arc<Mutex<CompoundInner>>,
 }
 
 impl Struct {
@@ -37,12 +30,7 @@ impl Struct {
     #[must_use]
     pub fn new(items: Vec<StackItem>) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(StructInner {
-                items,
-                id: next_stack_item_id(),
-                stack_references: 0,
-                is_read_only: false,
-            })),
+            inner: Arc::new(Mutex::new(CompoundInner::new(items))),
         }
     }
 
@@ -67,28 +55,17 @@ impl Struct {
     /// Adds `count` stack references. Returns the sub items when this call
     /// made the struct stack referenced.
     pub(crate) fn add_stack_references(&self, count: usize) -> Option<SubItems> {
-        let mut inner = self.inner.lock();
-        inner.stack_references += count;
-        (inner.stack_references == count).then(|| SubItems::collect(&inner.items))
+        self.inner.lock().add_stack_references(count)
     }
 
     /// Removes one stack reference, if the struct is stack referenced.
     pub(crate) fn remove_stack_reference(&self) -> StackReferenceRelease {
-        let mut inner = self.inner.lock();
-        if inner.stack_references == 0 {
-            return StackReferenceRelease::NotReferenced;
-        }
-        inner.stack_references -= 1;
-        if inner.stack_references == 0 {
-            StackReferenceRelease::Unreferenced(SubItems::collect(&inner.items))
-        } else {
-            StackReferenceRelease::StillReferenced
-        }
+        self.inner.lock().remove_stack_reference()
     }
 
     /// Takes a snapshot of the sub items (C# `SubItems`).
     pub(crate) fn sub_items(&self) -> SubItems {
-        SubItems::collect(&self.inner.lock().items)
+        self.inner.lock().sub_items()
     }
 
     /// Returns whether the struct is marked as read-only.
@@ -118,58 +95,31 @@ impl Struct {
     pub fn get(&self, index: usize) -> VmResult<StackItem> {
         self.inner
             .lock()
-            .items
             .get(index)
-            .cloned()
             .ok_or_else(|| VmError::invalid_operation_msg(format!("Index out of range: {index}")))
     }
 
     /// Sets the item at the specified index.
     pub fn set(&self, index: usize, item: StackItem) -> VmResult<()> {
         // The replaced item is dropped after the lock is released.
-        let _replaced = {
-            let mut inner = self.inner.lock();
-            if index >= inner.items.len() {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "Index out of range: {index}"
-                )));
-            }
-
-            Self::ensure_mutable(&inner)?;
-            std::mem::replace(&mut inner.items[index], item)
-        };
+        let replaced = self.inner.lock().set(index, item, READ_ONLY)?;
+        drop(replaced);
         Ok(())
     }
 
     /// Adds an item to the end of the struct.
     pub fn push(&self, item: StackItem) -> VmResult<()> {
-        let mut inner = self.inner.lock();
-        Self::ensure_mutable(&inner)?;
-        inner.items.push(item);
-        Ok(())
+        self.inner.lock().push(item, READ_ONLY)
     }
 
     /// Removes and returns the last item in the struct.
     pub fn pop(&self) -> VmResult<StackItem> {
-        let mut inner = self.inner.lock();
-        Self::ensure_mutable(&inner)?;
-        inner
-            .items
-            .pop()
-            .ok_or_else(|| VmError::invalid_operation_msg("Struct is empty"))
+        self.inner.lock().pop(EMPTY, READ_ONLY)
     }
 
     /// Removes the item at the specified index.
     pub fn remove(&self, index: usize) -> VmResult<StackItem> {
-        let mut inner = self.inner.lock();
-        if index >= inner.items.len() {
-            return Err(VmError::invalid_operation_msg(format!(
-                "Index out of range: {index}"
-            )));
-        }
-
-        Self::ensure_mutable(&inner)?;
-        Ok(inner.items.remove(index))
+        self.inner.lock().remove(index, READ_ONLY)
     }
 
     /// Gets the number of items in the struct.
@@ -187,11 +137,8 @@ impl Struct {
     /// Removes all items from the struct.
     pub fn clear(&self) -> VmResult<()> {
         // The removed items are dropped after the lock is released.
-        let _removed = {
-            let mut inner = self.inner.lock();
-            Self::ensure_mutable(&inner)?;
-            std::mem::take(&mut inner.items)
-        };
+        let removed = self.inner.lock().clear(READ_ONLY)?;
+        drop(removed);
         Ok(())
     }
 
@@ -301,7 +248,9 @@ impl Struct {
 
             if let Some(inner) = nested {
                 let target = Self::new(Vec::new());
-                frames[last].target.push(StackItem::Struct(target.clone()))?;
+                frames[last]
+                    .target
+                    .push(StackItem::Struct(target.clone()))?;
                 frames.push(Frame {
                     source_id: inner.id(),
                     target,
@@ -315,13 +264,7 @@ impl Struct {
 
     /// One-lock snapshot of the fields the `Debug` renderer prints.
     pub(crate) fn debug_snapshot(&self) -> (Vec<StackItem>, usize, usize, bool) {
-        let inner = self.inner.lock();
-        (
-            inner.items.clone(),
-            inner.id,
-            inner.stack_references,
-            inner.is_read_only,
-        )
+        self.inner.lock().debug_snapshot()
     }
 
     /// Gets the type of the stack item.
@@ -332,20 +275,7 @@ impl Struct {
 
     /// Reverses the order of items in the struct.
     pub fn reverse_items(&self) -> VmResult<()> {
-        let mut inner = self.inner.lock();
-        Self::ensure_mutable(&inner)?;
-        inner.items.reverse();
-        Ok(())
-    }
-
-    fn ensure_mutable(inner: &StructInner) -> VmResult<()> {
-        if inner.is_read_only {
-            Err(VmError::invalid_operation_msg(
-                "The struct is readonly, can not modify.".to_string(),
-            ))
-        } else {
-            Ok(())
-        }
+        self.inner.lock().reverse(READ_ONLY)
     }
 }
 

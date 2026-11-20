@@ -244,3 +244,176 @@ fn read_cache_version_tracking() {
     // Should have the latest version
     assert_eq!(cache.get(&key).unwrap().value_bytes()[0], 0x03);
 }
+
+/// Creates a cache configuration with a tight byte budget and no bloom filter,
+/// so `contains` reflects only the LRU contents.
+fn budgeted_config(max_bytes: usize) -> ReadCacheConfig {
+    ReadCacheConfig {
+        max_entries: 100,
+        max_bytes,
+        enable_prefetch: true,
+        prefetch_count: 4,
+        prefetch_threshold: 1,
+        ttl: None,
+        enable_stats: true,
+        enable_bloom_filter: false,
+        bloom_filter_capacity: 100,
+        bloom_filter_fpr: 0.01,
+    }
+}
+
+fn budgeted_cache(max_bytes: usize) -> ReadCache<StorageKey, StorageItem> {
+    ReadCache::new(budgeted_config(max_bytes))
+}
+
+#[test]
+fn read_cache_rejects_entry_larger_than_budget_without_evicting() {
+    let cache = budgeted_cache(100);
+
+    let resident = StorageKey::new(20, vec![0x01]);
+    cache.put(resident.clone(), StorageItem::from_bytes(vec![0xAA]), 10);
+
+    // Half of the whole budget: admitting it would evict the working set first.
+    let oversized = StorageKey::new(20, vec![0x02]);
+    cache.put(oversized.clone(), StorageItem::from_bytes(vec![0xBB]), 50);
+
+    // Larger than the entire budget: it can never be resident.
+    let impossible = StorageKey::new(20, vec![0x05]);
+    cache.put(impossible.clone(), StorageItem::from_bytes(vec![0xEE]), 500);
+
+    let stats = cache.stats();
+    assert_eq!(stats.rejected_oversized, 2);
+    assert_eq!(stats.current_entries, 1);
+    assert_eq!(stats.current_bytes, 10);
+    assert!(
+        cache.contains(&resident),
+        "a rejected insert must not evict resident entries"
+    );
+    assert!(!cache.contains(&oversized));
+    assert!(!cache.contains(&impossible));
+
+    // The per-entry ceiling is a quarter of the budget and is inclusive.
+    let at_ceiling = StorageKey::new(20, vec![0x03]);
+    cache.put(at_ceiling.clone(), StorageItem::from_bytes(vec![0xCC]), 25);
+    assert!(cache.contains(&at_ceiling));
+    assert_eq!(cache.stats().rejected_oversized, 2);
+
+    // One byte over the ceiling is refused even though the budget could hold it.
+    let over_ceiling = StorageKey::new(20, vec![0x04]);
+    cache.put(over_ceiling, StorageItem::from_bytes(vec![0xDD]), 26);
+    assert_eq!(cache.stats().rejected_oversized, 3);
+    assert_eq!(cache.stats().current_bytes, 35);
+}
+
+#[test]
+fn read_cache_batch_skips_entries_that_no_longer_fit() {
+    let cache = budgeted_cache(100);
+
+    // Five 25-byte values under a 100-byte budget: only four can be admitted.
+    let batch: Vec<_> = (0..5)
+        .map(|i| {
+            (
+                StorageKey::new(21, vec![i]),
+                StorageItem::from_bytes(vec![i]),
+                25,
+            )
+        })
+        .collect();
+
+    cache.put_batch(batch);
+
+    let stats = cache.stats();
+    assert_eq!(stats.current_entries, 4);
+    assert_eq!(stats.current_bytes, 100);
+    assert_eq!(stats.rejected_budget, 1);
+    assert!(stats.current_bytes <= 100);
+}
+
+#[test]
+fn read_cache_prefetch_does_not_replace_fresher_entry() {
+    let cache = budgeted_cache(100);
+    let key = StorageKey::new(22, vec![0x01]);
+
+    cache.put(key.clone(), StorageItem::from_bytes(vec![0xF1]), 10);
+    let fresh_generation = cache.generation();
+    assert_eq!(cache.get(&key).unwrap().value_bytes()[0], 0xF1);
+
+    // A pre-fetch read that started before the fresh value reached the cache.
+    cache.put_batch_with_generation(
+        vec![(key.clone(), StorageItem::from_bytes(vec![0x01]), 10)],
+        fresh_generation - 1,
+    );
+
+    assert_eq!(
+        cache.get(&key).unwrap().value_bytes()[0],
+        0xF1,
+        "a stale pre-fetch must not replace a fresher entry"
+    );
+    assert_eq!(cache.stats().prefetch_stale_skips, 1);
+    assert_eq!(cache.stats().current_bytes, 10);
+}
+
+#[test]
+fn read_cache_prefetch_does_not_reinsert_an_evicted_entry() {
+    let cache = budgeted_cache(100);
+    let fresh_key = StorageKey::new(23, vec![0x01]);
+
+    cache.put(fresh_key.clone(), StorageItem::from_bytes(vec![0xF1]), 10);
+
+    // The batch carries a stale copy of the resident key plus enough new values
+    // to force the eviction of everything, including that resident key.
+    let mut batch = vec![(fresh_key.clone(), StorageItem::from_bytes(vec![0x01]), 10)];
+    batch.extend((0..4).map(|i| {
+        (
+            StorageKey::new(23, vec![0x10 + i]),
+            StorageItem::from_bytes(vec![i]),
+            25,
+        )
+    }));
+
+    cache.put_batch(batch);
+
+    // The entry may be evicted to make room, but the stale pre-fetched copy must
+    // never take its place.
+    if let Some(item) = cache.get(&fresh_key) {
+        assert_eq!(
+            item.value_bytes()[0],
+            0xF1,
+            "an evicted entry must not be repopulated from stale pre-fetched data"
+        );
+    }
+
+    let stats = cache.stats();
+    assert_eq!(stats.current_entries, 4);
+    assert!(stats.current_bytes <= 100);
+}
+
+#[test]
+fn read_cache_byte_budget_holds_under_mixed_traffic() {
+    let cache = budgeted_cache(100);
+
+    for i in 0..40u8 {
+        let key = StorageKey::new(24, vec![i]);
+        let value = StorageItem::from_bytes(vec![i; 4]);
+
+        match i % 3 {
+            0 => {
+                cache.put(key.clone(), value.clone(), 20);
+                cache.put_batch(vec![(key, value, 20)]);
+            }
+            1 => {
+                cache.put(key, value, 60);
+            }
+            _ => {
+                cache.put_batch(vec![(key, value, 24)]);
+            }
+        }
+
+        let stats = cache.stats();
+        assert!(
+            stats.current_bytes <= 100,
+            "iteration {i} left {} bytes cached for a 100 byte budget",
+            stats.current_bytes
+        );
+    }
+}

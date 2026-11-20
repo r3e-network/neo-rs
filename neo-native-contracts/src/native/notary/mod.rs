@@ -74,17 +74,12 @@ impl Notary {
     pub const ID: i32 = -10;
 
     /// Creates a new Notary contract instance.
+    ///
+    /// Hash: `0xc1e14f19c3e60d0b9244d06dd7ba9b113135ec3b`, the official Neo N3
+    /// Notary contract hash computed from
+    /// `Helper.GetContractHash(UInt160.Zero, 0, "Notary")`.
     pub fn new() -> Self {
-        // Notary contract hash: 0xc1e14f19c3e60d0b9244d06dd7ba9b113135ec3b
-        // This is the official Neo N3 Notary contract hash computed from:
-        // Helper.GetContractHash(UInt160.Zero, 0, "Notary")
-        let hash = super::static_contract_hash!("0xc1e14f19c3e60d0b9244d06dd7ba9b113135ec3b");
-
-        Self {
-            id: Self::ID,
-            hash,
-            methods: super::static_native_methods!(Notary::native_methods()),
-        }
+        super::stateless_native_contract!(Notary, "0xc1e14f19c3e60d0b9244d06dd7ba9b113135ec3b")
     }
 
     /// Gets storage key for a deposit.
@@ -380,12 +375,10 @@ impl Notary {
         let snapshot = engine.snapshot_cache();
         let key = Self::deposit_key(&account);
 
-        let current_deposit = match snapshot.as_ref().try_get(&key) {
-            Some(item) => deserialize_deposit(&item.value_bytes())?,
-            None => {
-                return Ok(vec![0]);
-            }
+        let Some(item) = snapshot.as_ref().try_get(&key) else {
+            return Ok(vec![0]);
         };
+        let current_deposit = deserialize_deposit(&item.value_bytes())?;
 
         // Can only extend, not reduce lock period
         if till <= current_deposit.till {
@@ -431,12 +424,10 @@ impl Notary {
         let snapshot = engine.snapshot_cache();
         let key = Self::deposit_key(&from);
 
-        let deposit = match snapshot.as_ref().try_get(&key) {
-            Some(item) => deserialize_deposit(&item.value_bytes())?,
-            None => {
-                return Ok(vec![0]);
-            }
+        let Some(item) = snapshot.as_ref().try_get(&key) else {
+            return Ok(vec![0]);
         };
+        let deposit = deserialize_deposit(&item.value_bytes())?;
 
         // Check if deposit has expired
         let ledger = LedgerContract::new();

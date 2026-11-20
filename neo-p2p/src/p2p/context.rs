@@ -14,11 +14,9 @@ use crate::p2p::payloads::{
 };
 use async_trait::async_trait;
 use neo_actors::{ActorRef, ActorRuntimeResult, EventStreamHandle};
-use neo_ledger::{BlockchainHandle, HeaderCache, LedgerContext};
+use neo_ledger::BlockchainHandle;
 use neo_primitives::contains_transaction_type::ContainsTransactionType;
 use neo_primitives::{UInt160, UInt256};
-use neo_storage::persistence::StoreCache;
-use std::sync::Arc;
 
 /// Read-only system facilities plus actor handles required by the P2P layer.
 ///
@@ -27,15 +25,6 @@ use std::sync::Arc;
 /// clones. The trait is object-safe so actors can hold `Arc<dyn P2PContext>`.
 #[async_trait]
 pub trait P2PContext: Send + Sync + std::fmt::Debug {
-    /// Returns a snapshot of the current store cache for read operations.
-    fn store_cache(&self) -> StoreCache;
-
-    /// Returns the ledger context (canonical chain state).
-    fn ledger(&self) -> Arc<LedgerContext>;
-
-    /// Returns the shared header cache.
-    fn header_cache(&self) -> Arc<HeaderCache>;
-
     /// Returns the actor event stream handle for persistence subscriptions.
     fn event_stream(&self) -> EventStreamHandle;
 
@@ -53,6 +42,27 @@ pub trait P2PContext: Send + Sync + std::fmt::Debug {
 
     /// Returns the current persisted block index (height).
     fn current_block_index(&self) -> u32;
+
+    /// Returns the highest header index persisted to the underlying store.
+    fn highest_header_index(&self) -> u32;
+
+    /// Returns the highest header index held by the in-memory header cache.
+    ///
+    /// `None` while the cache is still empty; callers combine this with
+    /// [`Self::highest_header_index`] so a cold cache never rewinds the header
+    /// request window.
+    fn header_tip_index(&self) -> Option<u32>;
+
+    /// Returns true when `hash` identifies an already-persisted block.
+    fn contains_block(&self, hash: &UInt256) -> bool;
+
+    /// Returns true when `hash` identifies a transaction already persisted in
+    /// the ledger.
+    ///
+    /// Memory-pool presence is deliberately *not* reported: an announcement for
+    /// a pooled transaction is still worth answering with `GetData`, and the
+    /// task manager performs its own known-hash deduplication.
+    fn contains_ledger_transaction(&self, hash: &UInt256) -> bool;
 
     /// Returns the stored execution block for `hash`, if present.
     fn try_get_block(&self, hash: &UInt256) -> Option<neo_ledger::Block>;

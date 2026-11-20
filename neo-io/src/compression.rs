@@ -62,8 +62,7 @@ pub fn decompress_lz4(data: &[u8], max_size: usize) -> CompressionResult<Vec<u8>
 
     if decompressed.len() != declared_size {
         return Err(IoError::invalid_data(format!(
-            "declared size {} does not match decompressed size {}",
-            declared_size,
+            "declared size {declared_size} does not match decompressed size {}",
             decompressed.len()
         )));
     }

@@ -136,8 +136,7 @@ impl Helper {
         let max = Self::MAX_PUBLIC_KEYS_PER_MULTISIG;
         if !(1..=max).contains(&m) || public_keys.len() > max || m > public_keys.len() {
             return Err(CoreError::invalid_operation(format!(
-                "Invalid multi-sig parameters: m={}, n={}",
-                m,
+                "Invalid multi-sig parameters: m={m}, n={}",
                 public_keys.len()
             )));
         }
@@ -180,8 +179,11 @@ impl Helper {
         Self::try_multi_sig_redeem_script(m, public_keys).expect("Invalid multi-sig parameters")
     }
 
-    /// Gets the CheckSig syscall hash
-    fn check_sig_hash() -> [u8; 4] {
+    /// Gets the 4-byte interop hash of `System.Crypto.CheckSig`.
+    ///
+    /// This is the canonical CheckSig syscall hash; wallet and HSM script
+    /// builders delegate here instead of recomputing `SHA256(name)` themselves.
+    pub fn check_sig_hash() -> [u8; 4] {
         Self::syscall_hash("System.Crypto.CheckSig")
     }
 

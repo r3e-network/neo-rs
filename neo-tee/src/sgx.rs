@@ -113,8 +113,8 @@ pub(crate) fn verify_runtime_evidence(
         return Err(TeeError::enclave_init_error(
             EnclaveInitError::HardwareUnavailable,
             format!(
-                "SGX quote ISV SVN {} is below required minimum {}",
-                parsed_quote.isv_svn, min_isv_svn
+                "SGX quote ISV SVN {} is below required minimum {min_isv_svn}",
+                parsed_quote.isv_svn
             ),
         ));
     }
@@ -220,9 +220,8 @@ fn load_quote_bytes(sealed_data_path: &Path) -> TeeResult<Vec<u8>> {
         TeeError::enclave_init_error(
             EnclaveInitError::HardwareUnavailable,
             format!(
-                "failed to read SGX quote from {}: {}",
-                quote_path.display(),
-                e
+                "failed to read SGX quote from {}: {e}",
+                quote_path.display()
             ),
         )
     })?;
@@ -263,9 +262,8 @@ fn load_sealing_key(sealed_data_path: &Path) -> TeeResult<[u8; 32]> {
         TeeError::enclave_init_error(
             EnclaveInitError::HardwareUnavailable,
             format!(
-                "failed to read SGX sealing key from {}: {}",
-                key_path.display(),
-                e
+                "failed to read SGX sealing key from {}: {e}",
+                key_path.display()
             ),
         )
     })?;
@@ -334,7 +332,7 @@ fn verify_quote_with_dcap(quote: &[u8]) -> TeeResult<DcapVerificationOutcome> {
         lib.get(b"sgx_qv_verify_quote\0").map_err(|e| {
             TeeError::enclave_init_error(
                 EnclaveInitError::HardwareUnavailable,
-                format!("failed to resolve sgx_qv_verify_quote symbol: {}", e),
+                format!("failed to resolve sgx_qv_verify_quote symbol: {e}"),
             )
         })?
     };
@@ -385,10 +383,7 @@ fn load_quoteverify_library() -> TeeResult<Library> {
         let lib = unsafe { Library::new(&custom_path) }.map_err(|e| {
             TeeError::enclave_init_error(
                 EnclaveInitError::HardwareUnavailable,
-                format!(
-                    "failed to load SGX quote verification library from {}: {}",
-                    custom_path, e
-                ),
+                format!("failed to load SGX quote verification library from {custom_path}: {e}"),
             )
         })?;
         return Ok(lib);

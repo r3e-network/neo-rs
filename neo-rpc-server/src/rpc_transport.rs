@@ -120,7 +120,7 @@ pub(crate) fn apply_tcp_keepalive(stream: &TcpStream, keepalive: Option<Duration
     let sock_ref = SockRef::from(stream);
     let config = TcpKeepalive::new().with_time(keepalive);
     if let Err(err) = sock_ref.set_tcp_keepalive(&config) {
-        warn!("error setting TCP keepalive: {}", err);
+        warn!("error setting TCP keepalive: {err}");
     }
 }
 

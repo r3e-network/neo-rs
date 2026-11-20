@@ -49,8 +49,8 @@ impl LedgerSigner {
                     "Ledger timeout must be between 1 and i32::MAX milliseconds".to_string(),
                 )
             })?;
-        let hid_api = HidApi::new()
-            .map_err(|e| HsmError::InitFailed(format!("Failed to init HID: {}", e)))?;
+        let hid_api =
+            HidApi::new().map_err(|e| HsmError::InitFailed(format!("Failed to init HID: {e}")))?;
 
         let device_info = Self::find_ledger_device(&hid_api, device_index)?;
 
@@ -79,8 +79,7 @@ impl LedgerSigner {
 
         let device = devices.get(index as usize).ok_or_else(|| {
             HsmError::DeviceNotFound(format!(
-                "Ledger device index {} not found. {} device(s) available.",
-                index,
+                "Ledger device index {index} not found. {} device(s) available.",
                 devices.len()
             ))
         })?;
@@ -138,7 +137,7 @@ impl LedgerSigner {
 
         let device = device_info
             .open_device(&self.hid_api)
-            .map_err(|e| HsmError::DeviceError(format!("Failed to open device: {}", e)))?;
+            .map_err(|e| HsmError::DeviceError(format!("Failed to open device: {e}")))?;
 
         // Build APDU
         let mut apdu = vec![cla, ins, p1, p2];
@@ -169,7 +168,7 @@ impl LedgerSigner {
 
             device
                 .write(&report)
-                .map_err(|e| HsmError::DeviceError(format!("Write failed: {}", e)))?;
+                .map_err(|e| HsmError::DeviceError(format!("Write failed: {e}")))?;
             sequence = sequence.wrapping_add(1);
         }
 
@@ -181,7 +180,7 @@ impl LedgerSigner {
         loop {
             let read_len = device
                 .read_timeout(&mut buf, self.timeout_ms)
-                .map_err(|e| HsmError::DeviceError(format!("Read failed: {}", e)))?;
+                .map_err(|e| HsmError::DeviceError(format!("Read failed: {e}")))?;
 
             // Platform-dependent layouts: some hidapi backends deliver the
             // report-id slot, others start directly with the channel bytes.
@@ -205,8 +204,7 @@ impl LedgerSigner {
             let seq = ((frame[3] as u16) << 8) | frame[4] as u16;
             if seq != expected_sequence {
                 return Err(HsmError::DeviceError(format!(
-                    "Unexpected response sequence {} (expected {})",
-                    seq, expected_sequence
+                    "Unexpected response sequence {seq} (expected {expected_sequence})"
                 )));
             }
 
@@ -250,7 +248,7 @@ impl LedgerSigner {
             0x6982 => Err(HsmError::PinLocked),
             0x6700 => Err(HsmError::LedgerError("Invalid data length".to_string())),
             0x6E00 => Err(HsmError::LedgerError("Neo app not open".to_string())),
-            _ => Err(HsmError::LedgerError(format!("Status: 0x{:04X}", sw))),
+            _ => Err(HsmError::LedgerError(format!("Status: 0x{sw:04X}"))),
         }
     }
 

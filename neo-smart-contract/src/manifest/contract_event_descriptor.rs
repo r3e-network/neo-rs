@@ -111,29 +111,11 @@ impl ContractEventDescriptor {
     }
 }
 
-impl Interoperable for ContractEventDescriptor {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), neo_vm::VmError> {
-        let sv = StackValue::try_from(stack_item).map_err(|error| {
-            neo_vm::VmError::invalid_operation_msg(format!(
-                "Failed to convert ContractEventDescriptor StackItem to StackValue: {error}"
-            ))
-        })?;
-        self.from_stack_value(sv)
-            .map_err(|e| neo_vm::VmError::invalid_operation_msg(e.to_string()))
-    }
-
-    fn to_stack_item(&self) -> Result<StackItem, neo_vm::VmError> {
-        StackItem::try_from(self.to_stack_value()).map_err(|error| {
-            neo_vm::VmError::invalid_operation_msg(format!(
-                "Failed to convert ContractEventDescriptor StackValue to StackItem: {error}"
-            ))
-        })
-    }
-
-    fn clone_box(&self) -> Box<dyn Interoperable> {
-        Box::new(self.clone())
-    }
-}
+impl_interoperable!(
+    ContractEventDescriptor,
+    "Failed to convert ContractEventDescriptor StackItem to StackValue: {error}",
+    "Failed to convert ContractEventDescriptor StackValue to StackItem: {error}"
+);
 
 #[cfg(test)]
 mod tests {

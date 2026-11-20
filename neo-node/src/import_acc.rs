@@ -86,8 +86,7 @@ fn indexed_resume_position(
         .context("ACC offset index length overflow")?;
     if index_metadata.len() != expected_index_len {
         bail!(
-            "invalid ACC offset index length: expected {}, got {}",
-            expected_index_len,
+            "invalid ACC offset index length: expected {expected_index_len}, got {}",
             index_metadata.len()
         );
     }
@@ -175,6 +174,24 @@ fn import_flush_interval_from_env() -> u64 {
         .unwrap_or(10_000)
 }
 
+/// Returns whether a one-time full-range compaction must run before importing.
+///
+/// Resuming an import on a database written by a build that suppressed
+/// background compaction leaves a large level-0 backlog behind. Draining it
+/// once up front is much cheaper than paying the read amplification on every
+/// subsequent block, so it is available as an explicit opt-in maintenance step.
+fn import_compact_on_start_from_env() -> bool {
+    std::env::var("NEO_IMPORT_COMPACT_ON_START")
+        .ok()
+        .map(|raw| {
+            let value = raw.trim();
+            value.eq_ignore_ascii_case("1")
+                || value.eq_ignore_ascii_case("true")
+                || value.eq_ignore_ascii_case("yes")
+        })
+        .unwrap_or(false)
+}
+
 fn read_local_view_height(system: &Arc<NeoSystem>) -> Option<u32> {
     let mut current_block_key = Vec::with_capacity(5);
     current_block_key.extend_from_slice(&(-4i32).to_le_bytes());
@@ -210,7 +227,7 @@ fn read_disk_view_height_and_hash(
     let store = provider
         .get_store("")
         .map_err(|err| anyhow::anyhow!(err.to_string()))
-        .with_context(|| format!("failed to open read-only store at {}", path))?;
+        .with_context(|| format!("failed to open read-only store at {path}"))?;
 
     let mut current_block_key = Vec::with_capacity(5);
     current_block_key.extend_from_slice(&(-4i32).to_le_bytes());
@@ -291,16 +308,13 @@ fn flush_and_verify_checkpoint(
 
     if persisted_height < expected_height {
         bail!(
-            "flush verification failed ({reason}): expected persisted height >= {}, got {} ({verification_source} view)",
-            expected_height,
-            persisted_height
+            "flush verification failed ({reason}): expected persisted height >= {expected_height}, got {persisted_height} ({verification_source} view)"
         );
     }
 
     if !current_hash_written {
         bail!(
-            "flush verification failed ({reason}): block hash for height {} is missing after flush",
-            expected_height
+            "flush verification failed ({reason}): block hash for height {expected_height} is missing after flush"
         );
     }
 
@@ -311,9 +325,7 @@ fn flush_and_verify_checkpoint(
         && state_root_index < u64::from(expected_height)
     {
         bail!(
-            "flush verification failed ({reason}): state service local root index {} is behind expected height {}",
-            state_root_index,
-            expected_height
+            "flush verification failed ({reason}): state service local root index {state_root_index} is behind expected height {expected_height}"
         );
     }
 
@@ -382,6 +394,27 @@ pub fn import_acc_file(
     if !was_fast_sync {
         system.context().enable_fast_sync_mode();
     }
+
+    // Optional one-time maintenance: drain a level-0 backlog inherited from a
+    // previous run before switching the store to WAL-less writes.
+    if import_compact_on_start_from_env() {
+        let level_files_before = system.store().level_file_counts();
+        let compact_started_at = Instant::now();
+        info!(
+            target: "neo",
+            level_files = ?level_files_before,
+            "starting pre-import full-range compaction"
+        );
+        system.store().compact_all();
+        info!(
+            target: "neo",
+            level_files_before = ?level_files_before,
+            level_files_after = ?system.store().level_file_counts(),
+            elapsed_ms = compact_started_at.elapsed().as_millis(),
+            "pre-import full-range compaction completed"
+        );
+    }
+
     system.store().enable_fast_sync_mode();
 
     info!(
@@ -422,22 +455,22 @@ pub fn import_acc_file(
         for i in first_item..declared_count {
             reader
                 .read_exact(&mut size_buf)
-                .with_context(|| format!("failed to read block size at item {}", i))?;
+                .with_context(|| format!("failed to read block size at item {i}"))?;
             let block_size = u32::from_le_bytes(size_buf) as usize;
             if block_size == 0 {
-                bail!("encountered zero-sized block payload at item {}", i);
+                bail!("encountered zero-sized block payload at item {i}");
             }
 
             let Some(declared_index) = declared_start.checked_add(i) else {
-                bail!("declared block index overflow at item {}", i);
+                bail!("declared block index overflow at item {i}");
             };
 
             if declared_index <= current_height {
                 let skip_len = i64::try_from(block_size)
-                    .with_context(|| format!("block size too large to skip at item {}", i))?;
+                    .with_context(|| format!("block size too large to skip at item {i}"))?;
                 reader
                     .seek(SeekFrom::Current(skip_len))
-                    .with_context(|| format!("failed to seek past block payload at item {}", i))?;
+                    .with_context(|| format!("failed to seek past block payload at item {i}"))?;
                 skipped += 1;
                 if skipped.is_multiple_of(100_000) {
                     info!(
@@ -453,35 +486,29 @@ pub fn import_acc_file(
             payload.resize(block_size, 0u8);
             reader
                 .read_exact(&mut payload[..block_size])
-                .with_context(|| format!("failed to read block payload at item {}", i))?;
+                .with_context(|| format!("failed to read block payload at item {i}"))?;
 
             let mut block_reader = MemoryReader::new(&payload[..block_size]);
             let block = <Block as Serializable>::deserialize(&mut block_reader)
-                .with_context(|| format!("failed to deserialize block payload at item {}", i))?;
+                .with_context(|| format!("failed to deserialize block payload at item {i}"))?;
             let block_index = block.index();
 
             if block_index != declared_index {
                 bail!(
-                    "import block index mismatch at item {}: declared {}, decoded {}",
-                    i,
-                    declared_index,
-                    block_index
+                    "import block index mismatch at item {i}: declared {declared_index}, decoded {block_index}"
                 );
             }
 
             let expected = current_height.saturating_add(1);
             if block_index != expected {
                 bail!(
-                    "import sequence gap at item {}: expected block {}, got {}",
-                    i,
-                    expected,
-                    block_index
+                    "import sequence gap at item {i}: expected block {expected}, got {block_index}"
                 );
             }
 
             system
                 .persist_block_without_runtime_cache(block)
-                .with_context(|| format!("failed to persist imported block {}", block_index))?;
+                .with_context(|| format!("failed to persist imported block {block_index}"))?;
             current_height = block_index;
             imported += 1;
 
@@ -533,6 +560,13 @@ pub fn import_acc_file(
                     .ok()
                     .flatten()
                     .is_some();
+                // Level-0 file count is the cheapest signal that background
+                // compaction is keeping up with the import write rate.
+                let level_files = system.store().level_file_counts();
+                let l0_files = level_files
+                    .iter()
+                    .find_map(|(level, count)| (*level == 0).then_some(*count))
+                    .unwrap_or(0);
                 info!(
                     target: "neo",
                     imported,
@@ -541,6 +575,8 @@ pub fn import_acc_file(
                     local_view_height,
                     current_hash_written,
                     rate_blocks_per_sec = rate,
+                    l0_files,
+                    level_files = ?level_files,
                     "acc import progress"
                 );
                 last_progress_log_at = Instant::now();

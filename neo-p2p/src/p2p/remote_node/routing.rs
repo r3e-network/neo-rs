@@ -78,7 +78,9 @@ impl RemoteNode {
                     return Ok(());
                 }
                 let payload = AddrPayload::create(addresses);
-                self.enqueue_message(NetworkMessage::new(ProtocolMessage::Addr(payload)))
+                // `getaddr` reply: address gossip is only batchable when this
+                // node announces it on its own schedule, never as an answer.
+                self.enqueue_immediate(NetworkMessage::new(ProtocolMessage::Addr(payload)))
                     .await
             }
             _ => Ok(()),

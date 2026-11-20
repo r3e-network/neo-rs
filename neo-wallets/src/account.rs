@@ -9,8 +9,8 @@
 //!   `Contract`. It carries just enough (verification script + parameter names +
 //!   deployed flag) for wallet account bookkeeping and NEP-6 (de)serialization.
 //!   Reconciling this with the canonical contract type is a task 89 alignment item.
-//! * [`Witness`] — a concrete witness (invocation + verification script) that
-//!   implements the `neo_primitives::Witness` trait.
+//! * [`Witness`] — re-exported from `neo_protocol::witness`, so wallet accounts build
+//!   the same canonical witness payload the rest of the node verifies.
 //!
 //! # Signing adaptation
 //!
@@ -38,6 +38,7 @@
 
 use crate::helper::Helper;
 use crate::key_pair::KeyPair;
+use crate::signing::witness_from_signature;
 use crate::wallet::{WalletError, WalletResult};
 use async_trait::async_trait;
 use neo_primitives::UInt160;
@@ -52,6 +53,7 @@ pub use neo_protocol::witness::Witness;
 pub use neo_smart_contract::contract::Contract;
 
 /// `PUSHDATA1` opcode byte (matches `neo_vm::OpCode::PUSHDATA1`).
+#[cfg(test)]
 const OP_PUSHDATA1: u8 = 0x0C;
 
 /// Common interface shared by all wallet-backed accounts.
@@ -491,12 +493,7 @@ impl WalletAccount for StandardWalletAccount {
             key.get_verification_script()
         };
 
-        let mut invocation = Vec::with_capacity(signature.len() + 2);
-        invocation.push(OP_PUSHDATA1);
-        invocation.push(signature.len() as u8);
-        invocation.extend_from_slice(&signature);
-
-        Ok(Witness::new_with_scripts(invocation, verification_script))
+        witness_from_signature(&signature, &verification_script)
     }
 }
 
@@ -552,11 +549,11 @@ mod tests {
         let expected_script = key.get_verification_script();
         let account = StandardWalletAccount::new_with_key(key, None, settings(), None);
         let witness = account.create_witness(b"sign-me").unwrap();
-        assert_eq!(witness.verification_script, expected_script);
+        assert_eq!(witness.verification_script(), expected_script);
         // invocation = PUSHDATA1 <64> <signature>
-        assert_eq!(witness.invocation_script[0], OP_PUSHDATA1);
-        assert_eq!(witness.invocation_script[1], 64);
-        assert_eq!(witness.invocation_script.len(), 66);
+        assert_eq!(witness.invocation_script()[0], OP_PUSHDATA1);
+        assert_eq!(witness.invocation_script()[1], 64);
+        assert_eq!(witness.invocation_script().len(), 66);
     }
 
     #[test]
@@ -576,10 +573,10 @@ mod tests {
         // Byte-level contract with the ledger verifier: 66-byte invocation
         // (PUSHDATA1 + length + 64-byte signature) and 40-byte verification
         // script (PUSHDATA1 + 33-byte key + SYSCALL + 4-byte interop hash).
-        assert_eq!(witness.invocation_script.len(), 66);
-        assert_eq!(witness.invocation_script[0], OP_PUSHDATA1);
-        assert_eq!(witness.invocation_script[1], 64);
-        assert_eq!(witness.verification_script.len(), 40);
+        assert_eq!(witness.invocation_script().len(), 66);
+        assert_eq!(witness.invocation_script()[0], OP_PUSHDATA1);
+        assert_eq!(witness.invocation_script()[1], 64);
+        assert_eq!(witness.verification_script().len(), 40);
     }
 
     #[test]

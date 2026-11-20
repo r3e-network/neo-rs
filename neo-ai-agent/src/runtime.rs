@@ -1,5 +1,6 @@
 //! Capability-limited diagnostics runtime with reverse-injected host capabilities.
 
+use crate::store_files::{unix_time_ms, valid_hash};
 use crate::{
     ActionBinding, ActionState, AdmitOutcome, AnthropicProvider, AuditEventKind, AuditInput,
     AuditLog, AuthorizerMetadata, DiagnosisValidator, DiagnosticAgent, DiagnosticsSection,
@@ -60,6 +61,12 @@ pub struct ExecutionObservation {
     pub observed_at_unix_ms: u64,
 }
 
+/// Bounded review-quarantine policy for this runtime.
+///
+/// Mirrors `neo-mempool`'s node-local quarantine policy, but this crate is
+/// deliberately free of workspace-internal dependencies and keys its evidence by
+/// a hex transaction hash, so it keeps its own bounded DTO instead of importing
+/// the mempool and its ledger/storage/VM dependency graph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QuarantineConfig {
     pub automatic_enabled: bool,
@@ -68,6 +75,7 @@ pub struct QuarantineConfig {
     pub selection_scan_budget: usize,
 }
 
+/// Evidence-side mirror of the mempool's quarantine record, keyed by a hex hash.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QuarantineMetadata {
     pub transaction_hash: String,
@@ -1136,15 +1144,8 @@ impl AiAgentRuntime {
             .chain
             .block_hash_at(height)
             .map(|hash| hash.canonical)?;
-        let now = unix_time_ms().max(1);
-        let fingerprint = Sha256::digest(candidate.id.as_bytes()).iter().fold(
-            String::new(),
-            |mut output, byte| {
-                use std::fmt::Write as _;
-                write!(output, "{byte:02x}").expect("formatting hex into a String cannot fail");
-                output
-            },
-        );
+        let now = unix_time_ms();
+        let fingerprint = hex::encode(Sha256::digest(candidate.id.as_bytes()).as_slice());
         let operation_id =
             OperationId::new(format!("probe-candidate-{}", &fingerprint[..24])).ok()?;
         let run_id = RunId::new(format!("probe-run-{}", &fingerprint[24..40])).ok()?;
@@ -1162,7 +1163,7 @@ impl AiAgentRuntime {
                 .min(spec.maximum_budget.max_output_bytes),
             max_observations: spec.maximum_budget.max_observations,
         };
-        if !valid_sha256(&config.worker_binary_hash) {
+        if !valid_hash(&config.worker_binary_hash) {
             return None;
         }
         ProbeJob::new(
@@ -1295,7 +1296,7 @@ impl AiAgentRuntime {
             return Err(OperationalDecision::InvalidEvidence);
         }
         let fields = record.item.fields();
-        if !valid_sha256(
+        if !valid_hash(
             fields
                 .get("context_hash")
                 .and_then(Value::as_str)
@@ -1524,13 +1525,7 @@ impl AiAgentRuntime {
             "rule_version": rule_version,
         });
         let bytes = serde_json::to_vec(&material).map_err(|_| ())?;
-        let hash = Sha256::digest(bytes)
-            .iter()
-            .fold(String::new(), |mut output, byte| {
-                use std::fmt::Write as _;
-                write!(output, "{byte:02x}").expect("formatting hex into a String cannot fail");
-                output
-            });
+        let hash = hex::encode(Sha256::digest(bytes).as_slice());
         let operation_id = OperationId::new(format!("action-{}", &hash[..40])).map_err(|_| ())?;
         ActionBinding::new(
             operation_id,
@@ -1578,7 +1573,7 @@ impl AiAgentRuntime {
             .get("snapshot_root")
             .and_then(Value::as_str)
             .ok_or(OperationalDecision::InvalidEvidence)?;
-        if !valid_sha256(context_hash)
+        if !valid_hash(context_hash)
             || snapshot_height != record.observed_height
             || snapshot_height != record.tip_height
             || record.tip_hash.as_deref() != Some(snapshot_root)
@@ -2222,18 +2217,4 @@ fn decision_code(decision: OperationalDecision) -> &'static str {
         OperationalDecision::ConsensusRestartDisabled => "consensus_restart_disabled",
         OperationalDecision::UnpersistedCommit => "unpersisted_commit",
     }
-}
-
-fn valid_sha256(hash: &str) -> bool {
-    hash.len() == 64 && hash != "00".repeat(32) && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
-}
-
-#[doc(hidden)]
-pub fn unix_time_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .try_into()
-        .unwrap_or(u64::MAX)
 }

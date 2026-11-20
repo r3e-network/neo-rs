@@ -82,9 +82,8 @@ impl NodeSignerRuntime {
             return Ok(());
         }
         bail!(
-            "unified signer policy '{}' has no key authorized for purpose {:?}",
-            self.policy_version,
-            purpose
+            "unified signer policy '{}' has no key authorized for purpose {purpose:?}",
+            self.policy_version
         )
     }
 

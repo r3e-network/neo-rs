@@ -219,8 +219,7 @@ impl ECPoint {
         let expected_size = curve.compressed_size();
         if data.len() != expected_size {
             return Err(CryptoError::invalid_point(format!(
-                "Invalid point size: expected {}, got {}",
-                expected_size,
+                "Invalid point size: expected {expected_size}, got {}",
                 data.len()
             )));
         }

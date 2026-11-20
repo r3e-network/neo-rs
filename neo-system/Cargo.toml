@@ -74,6 +74,10 @@ indexmap = { workspace = true }
 lru = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }
+# Task 45 (Phase 7B): the speculative transaction scheduler runs independent
+# transactions on the Rayon pool, the same primitive already used for parallel
+# transaction hashing in `neo-ledger`.
+rayon = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true, features = ["codec", "rt"] }

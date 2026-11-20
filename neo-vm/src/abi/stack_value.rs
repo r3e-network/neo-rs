@@ -127,18 +127,7 @@ impl StackItemType {
     #[inline]
     #[must_use]
     pub const fn to_byte(self) -> u8 {
-        match self {
-            Self::Any => NEOVM_STACK_ITEM_TYPE_ANY,
-            Self::Pointer => NEOVM_STACK_ITEM_TYPE_POINTER,
-            Self::Boolean => NEOVM_STACK_ITEM_TYPE_BOOLEAN,
-            Self::Integer => NEOVM_STACK_ITEM_TYPE_INTEGER,
-            Self::ByteString => NEOVM_STACK_ITEM_TYPE_BYTESTRING,
-            Self::Buffer => NEOVM_STACK_ITEM_TYPE_BUFFER,
-            Self::Array => NEOVM_STACK_ITEM_TYPE_ARRAY,
-            Self::Struct => NEOVM_STACK_ITEM_TYPE_STRUCT,
-            Self::Map => NEOVM_STACK_ITEM_TYPE_MAP,
-            Self::InteropInterface => NEOVM_STACK_ITEM_TYPE_INTEROP_INTERFACE,
-        }
+        self as u8
     }
 
     /// Returns the canonical NeoVM stack item type name.

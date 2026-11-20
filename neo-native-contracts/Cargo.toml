@@ -13,6 +13,16 @@ categories.workspace = true
 readme.workspace = true
 description = "Native contract definitions and metadata for neo-rs"
 
+[features]
+default = []
+# Phase 9 (F17): strictly opt-in. `native::token_management` is not a C#
+# neo v3.10.1 native contract, is not registered in
+# `native::composition::standard_registry`, and its `hash()` is not derived from
+# the protocol formula. It stays out of every default build so the compiled
+# surface matches the protocol; consumers that use it must enable
+# `neo-native-contracts/experimental` themselves.
+experimental = []
+
 [dependencies]
 # Internal crates (registered in workspace.dependencies)
 neo-crypto = { workspace = true }

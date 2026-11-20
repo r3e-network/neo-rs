@@ -7,7 +7,6 @@ use async_trait::async_trait;
 use neo_actors::{ActorPath, ActorRuntimeResult, EventStreamHandle};
 use neo_ledger::{BlockchainHandle, HeaderCache, LedgerContext};
 use neo_primitives::{UInt160, contains_transaction_type::ContainsTransactionType};
-use neo_storage::persistence::{StoreCache, providers::MemoryStore};
 use std::sync::Weak;
 use tokio::sync::mpsc;
 
@@ -40,7 +39,6 @@ fn block_hash(block: &Block) -> UInt256 {
 /// cycle would compile two distinct `neo-p2p` instances, so the trait the
 /// system implements would not be this crate's `P2PContext`.
 struct TestContext {
-    store: Arc<MemoryStore>,
     ledger: Arc<LedgerContext>,
     header_cache: Arc<HeaderCache>,
 }
@@ -54,7 +52,6 @@ impl std::fmt::Debug for TestContext {
 impl TestContext {
     fn shared() -> Arc<dyn P2PContext> {
         Arc::new(Self {
-            store: Arc::new(MemoryStore::new()),
             ledger: Arc::new(LedgerContext::default()),
             header_cache: Arc::new(HeaderCache::new()),
         })
@@ -63,16 +60,20 @@ impl TestContext {
 
 #[async_trait]
 impl P2PContext for TestContext {
-    fn store_cache(&self) -> StoreCache {
-        StoreCache::new_from_store(self.store.clone(), false)
+    fn highest_header_index(&self) -> u32 {
+        self.ledger.highest_header_index()
     }
 
-    fn ledger(&self) -> Arc<LedgerContext> {
-        self.ledger.clone()
+    fn header_tip_index(&self) -> Option<u32> {
+        self.header_cache.last().map(|header| header.index())
     }
 
-    fn header_cache(&self) -> Arc<HeaderCache> {
-        self.header_cache.clone()
+    fn contains_block(&self, _hash: &UInt256) -> bool {
+        false
+    }
+
+    fn contains_ledger_transaction(&self, _hash: &UInt256) -> bool {
+        false
     }
 
     fn event_stream(&self) -> EventStreamHandle {

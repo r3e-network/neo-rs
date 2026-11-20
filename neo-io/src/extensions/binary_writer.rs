@@ -47,18 +47,16 @@ impl BinaryWriterExtensions for BinaryWriter {
     fn write_fixed_string(&mut self, value: &str, length: usize) -> IoResult<()> {
         if value.len() > length {
             return Err(IoError::invalid_data(format!(
-                "String length {} exceeds fixed size {}",
-                value.len(),
-                length
+                "String length {} exceeds fixed size {length}",
+                value.len()
             )));
         }
 
         let bytes = value.as_bytes();
         if bytes.len() > length {
             return Err(IoError::invalid_data(format!(
-                "UTF-8 byte length {} exceeds fixed size {}",
-                bytes.len(),
-                length
+                "UTF-8 byte length {} exceeds fixed size {length}",
+                bytes.len()
             )));
         }
 

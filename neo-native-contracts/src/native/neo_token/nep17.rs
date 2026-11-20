@@ -6,34 +6,16 @@
 // `crate::native::security_fixes`. Body preserved verbatim.
 
 use super::*;
+use crate::native::helpers::encode_bigint;
 use crate::native::security_fixes::{
     PermissionValidator, ReentrancyGuardType, SafeArithmetic, SecurityContext, StateValidator,
 };
 
 /// NEP-17 and governance method implementations
 impl NeoToken {
-    /// Encodes a BigInt amount to bytes (C# compatible format)
-    pub(super) fn encode_amount(value: &BigInt) -> Vec<u8> {
-        let mut bytes = value.to_signed_bytes_le();
-        if bytes.is_empty() {
-            bytes.push(0);
-        }
-        bytes
-    }
-
     /// Decodes bytes to a BigInt amount
     pub(super) fn decode_amount(data: &[u8]) -> BigInt {
         BigInt::from_signed_bytes_le(data)
-    }
-
-    /// Reads an account UInt160 from argument bytes
-    pub(super) fn read_account(&self, data: &[u8]) -> CoreResult<UInt160> {
-        if data.len() != 20 {
-            return Err(CoreError::native_contract(
-                "Account argument must be 20 bytes".to_string(),
-            ));
-        }
-        UInt160::from_bytes(data).map_err(|err| CoreError::native_contract(err.to_string()))
     }
 
     /// Reads an ECPoint public key from argument bytes
@@ -61,8 +43,8 @@ impl NeoToken {
             ));
         }
 
-        let from = self.read_account(&args[0])?;
-        let to = self.read_account(&args[1])?;
+        let from = Self::ft_read_account(&args[0])?;
+        let to = Self::ft_read_account(&args[1])?;
         let amount = Self::decode_amount(&args[2]);
         let data_bytes = args[3].clone();
         // C# parity: data is parameter type Any — System.Contract.CallNative
@@ -259,10 +241,10 @@ impl NeoToken {
         _account: &UInt160,
         state: &mut NeoAccountState,
     ) -> CoreResult<Option<BigInt>> {
-        let persisting_index = match engine.persisting_block() {
-            Some(block) => block.index(),
-            None => return Ok(None),
+        let Some(block) = engine.persisting_block() else {
+            return Ok(None);
         };
+        let persisting_index = block.index();
 
         let snapshot = engine.snapshot_cache();
         let reward = self.calculate_bonus(snapshot.as_ref(), state, persisting_index)?;
@@ -308,11 +290,7 @@ impl NeoToken {
             .map_or_else(BigInt::zero, |item| item.to_bigint());
         let updated_voters = current_voters + amount;
         let voters_suffix = voters_key.suffix().to_vec();
-        engine.put_storage_item(
-            context,
-            &voters_suffix,
-            &Self::encode_amount(&updated_voters),
-        )?;
+        engine.put_storage_item(context, &voters_suffix, &encode_bigint(&updated_voters))?;
 
         // Update candidate votes.
         let mut candidate = self

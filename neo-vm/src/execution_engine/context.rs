@@ -60,6 +60,11 @@ impl ExecutionEngine {
     }
 
     /// Removes a context from the invocation stack.
+    ///
+    /// The removed context is returned to the caller and keeps its evaluation
+    /// stack contents, so its backing allocation is not recycled here. Contexts
+    /// that are disposed of instead (`RET`, `THROW`) do hand their allocation
+    /// back to the engine's allocator.
     pub fn remove_context(&mut self, context_index: usize) -> VmResult<ExecutionContext> {
         // Get the context
         if context_index >= self.invocation_stack.len() {
@@ -80,6 +85,10 @@ impl ExecutionEngine {
     }
 
     /// Creates a new context with the specified script.
+    ///
+    /// The new context starts on a recycled evaluation-stack allocation when
+    /// the engine's [`StackAllocator`](crate::memory::StackAllocator) has one,
+    /// and allocates otherwise.
     #[must_use]
     pub fn create_context(
         &self,
@@ -87,9 +96,33 @@ impl ExecutionEngine {
         rvcount: i32,
         initial_position: usize,
     ) -> ExecutionContext {
-        let mut context = ExecutionContext::new(script, rvcount, &self.reference_counter);
+        let stack_buffer = self.stack_allocator.acquire();
+        let mut context = ExecutionContext::new_with_stack_buffer(
+            script,
+            rvcount,
+            &self.reference_counter,
+            stack_buffer,
+        );
         context.set_instruction_pointer(initial_position);
         context
+    }
+
+    /// Hands a dead context's evaluation-stack backing allocation back to the
+    /// allocator when the context is its exclusive owner.
+    ///
+    /// Returns `true` when the allocation was retained for reuse. The context
+    /// must be leaving the VM for good: its evaluation stack is left without
+    /// storage, and the entries it held are released when the returned buffer
+    /// is cleared, exactly as dropping the context would have released them.
+    ///
+    /// A context whose stack is still aliased - which is the case for every
+    /// context created by `CALL`, because it shares the caller's stack - is left
+    /// untouched, so a surviving alias can never observe a recycled allocation.
+    pub(crate) fn recycle_context_stack(&self, context: &mut ExecutionContext) -> bool {
+        let Some(buffer) = context.take_exclusive_evaluation_buffer() else {
+            return false;
+        };
+        self.stack_allocator.recycle(buffer).is_ok()
     }
 
     /// Loads a script and creates a new context.

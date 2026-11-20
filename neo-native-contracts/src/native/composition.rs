@@ -41,12 +41,19 @@ pub fn standard_native_services(
 
 /// Standard native services wired with the shared verifying-hash resolver.
 ///
-/// This is the canonical construction used by every verification/wallet engine
-/// that needs the full standard native registry. It mirrors
-/// `neo_native_contracts::native::composition::default_native_services`,
-/// but binds the resolver to `neo_protocol::payloads` types so this crate stays
-/// independent of `neo-core`'s own payload definitions. A single shared
-/// instance is reused by all native-contract tests instead of per-call stubs.
+/// This is **the canonical production composition** used by every
+/// verification/wallet engine that needs the full standard native registry. It
+/// carries the real snapshot-backed [`StandardNativeStateReader`] and the
+/// [`StandardWitnessHashResolver`], so contract state lookups, block height,
+/// policy checks and witness resolution behave exactly as on chain. A single
+/// shared instance is reused by all native-contract tests instead of per-call
+/// stubs.
+///
+/// It is re-exported as `neo_native_contracts::default_native_services` for
+/// convenience. Do not substitute the no-op builder
+/// `neo_native_contracts::minimal_native_services_from_registry` here: it has
+/// no state reader and resolves no witnesses, which silently breaks oracle
+/// response verification and every other witness-dependent engine.
 pub fn default_native_services() -> EngineNativeServices {
     standard_native_services(Arc::new(StandardWitnessHashResolver))
 }
@@ -70,10 +77,10 @@ impl WitnessHashResolver for StandardWitnessHashResolver {
             return transaction.signer_accounts();
         }
         if let Some(block) = verifiable.as_any().downcast_ref::<Block>() {
-            return header_script_hashes(&block.header, snapshot);
+            return header_verifying_script_hashes(&block.header, snapshot);
         }
         if let Some(header) = verifiable.as_any().downcast_ref::<Header>() {
-            return header_script_hashes(header, snapshot);
+            return header_verifying_script_hashes(header, snapshot);
         }
         if let Some(extensible) = verifiable.as_any().downcast_ref::<Extensible>() {
             return vec![extensible.sender];
@@ -85,8 +92,12 @@ impl WitnessHashResolver for StandardWitnessHashResolver {
 /// Resolves the verifying script hashes for a payload header: the genesis
 /// header (zero previous hash) verifies against its own witness script hash,
 /// while later headers verify against the previous block's `next_consensus`.
-/// This matches the ledger-owned resolver semantics preserved from `neo-core`.
-fn header_script_hashes(header: &Header, snapshot: &DataCache) -> Vec<UInt160> {
+///
+/// This is the canonical header verifying-hash policy: block and header
+/// verification, the [`StandardWitnessHashResolver`] and the ledger's
+/// witness-hash resolver all delegate here, so consensus-critical witness
+/// selection exists in exactly one place.
+pub fn header_verifying_script_hashes(header: &Header, snapshot: &DataCache) -> Vec<UInt160> {
     if *header.prev_hash() == UInt256::default() {
         return vec![header.witness.script_hash()];
     }
@@ -116,6 +127,14 @@ pub struct StandardNativeStateReader;
 impl NativeStateReader for StandardNativeStateReader {
     fn contract(&self, snapshot: &DataCache, hash: &UInt160) -> CoreResult<Option<ContractState>> {
         ContractManagement::get_contract_from_snapshot(snapshot, hash)
+    }
+
+    fn contract_update_counter(
+        &self,
+        snapshot: &DataCache,
+        hash: &UInt160,
+    ) -> CoreResult<Option<u16>> {
+        ContractManagement::get_contract_update_counter_from_snapshot(snapshot, hash)
     }
 
     fn current_index(&self, snapshot: &DataCache) -> CoreResult<u32> {
@@ -168,4 +187,38 @@ fn shared_stateless_native_contracts() -> &'static [Arc<dyn NativeContract>] {
             Arc::new(TreasuryContract::new()),
         ]
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The genesis header has no previous block, so it must verify against its
+    // own witness rather than a ledger lookup.
+    #[test]
+    fn genesis_header_verifies_against_its_own_witness() {
+        let snapshot = DataCache::new(true);
+        let header = Header::new();
+        assert_eq!(
+            header_verifying_script_hashes(&header, &snapshot),
+            vec![header.witness.script_hash()]
+        );
+    }
+
+    // Guards the oracle-verification regression: engines that must observe chain
+    // state have to be built from the production composition, whose policy hash
+    // is the real contract hash, not from the no-op test builder.
+    #[test]
+    fn production_composition_wires_the_real_policy_contract() {
+        let services = default_native_services();
+        assert_eq!(services.policy_hash, PolicyContract::new().hash());
+        assert_ne!(services.policy_hash, UInt160::zero());
+    }
+
+    #[test]
+    fn minimal_composition_is_distinguishable_from_production() {
+        let services = crate::minimal_native_services_from_registry(standard_registry());
+        assert_eq!(services.policy_hash, UInt160::zero());
+        assert_ne!(services.policy_hash, default_native_services().policy_hash);
+    }
 }

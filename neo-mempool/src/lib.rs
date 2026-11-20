@@ -11,6 +11,7 @@
 //! - Consumes `neo_primitives::{VerifyResult, TransactionRemovalReason}` as
 //!   single-source-of-truth protocol enums.
 
+pub mod admission;
 pub mod memory_pool;
 pub mod new_transaction_event_args;
 pub mod pool_item;
@@ -19,6 +20,9 @@ pub mod transaction_removed_event_args;
 pub mod transaction_router;
 
 // Re-export primary types at crate root for ergonomic consumption.
+pub use admission::{
+    AdmissionChainPort, ChainQuery, ChainQueryError, ChainQueryResult, admit_transaction,
+};
 pub use memory_pool::MemoryPool;
 pub use memory_pool::{
     QuarantineConfig, QuarantineError, QuarantineExpiryReview, QuarantineMetadata,
@@ -27,11 +31,14 @@ pub use new_transaction_event_args::NewTransactionEventArgs;
 pub use pool_item::PoolItem;
 pub use services::{LockedMempoolService, MempoolService};
 pub use transaction_removed_event_args::TransactionRemovedEventArgs;
-pub use transaction_router::{PreverifyCompleted, TransactionRouter};
+pub use transaction_router::TransactionRouter;
 
 // Consume protocol enums from their single source of truth.
 pub use neo_primitives::TransactionRemovalReason;
 pub use neo_primitives::VerifyResult;
 
+// Re-export the preverify-completed event from its authoritative location: the
+// router produces it, the blockchain actor consumes it, one definition.
+pub use neo_ledger::PreverifyCompleted;
 // Re-export TransactionVerificationContext from its authoritative location.
 pub use neo_ledger::validation::TransactionVerificationContext;

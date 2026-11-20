@@ -158,6 +158,7 @@ impl ExecutionEngine {
             while self.invocation_stack.len() > idx + 1 {
                 if let Some(mut ctx) = self.invocation_stack.pop() {
                     self.unload_context(&mut ctx)?;
+                    self.recycle_context_stack(&mut ctx);
                 }
             }
 
@@ -173,6 +174,7 @@ impl ExecutionEngine {
             {
                 if let Some(mut ctx) = self.invocation_stack.pop() {
                     self.unload_context(&mut ctx)?;
+                    self.recycle_context_stack(&mut ctx);
                 }
                 continue;
             }
@@ -242,6 +244,7 @@ impl ExecutionEngine {
 
             if let Some(mut ctx) = self.invocation_stack.pop() {
                 self.unload_context(&mut ctx)?;
+                self.recycle_context_stack(&mut ctx);
             }
         }
 

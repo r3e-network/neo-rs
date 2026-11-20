@@ -13,11 +13,17 @@ use neo_storage::persistence::DataCache;
 use neo_vm::BinarySerializer;
 use neo_vm::StackItem;
 use neo_vm::StackValue;
+use num_bigint::BigInt;
 
 pub use neo_smart_contract::application_engine::NativeChainQueries;
 
 /// Parses a `UInt160` from a raw byte argument, returning a descriptive
 /// native-contract error when the bytes are invalid.
+///
+/// Phase 9 (F17): `native::token_management` is the only consumer and is itself
+/// behind the `experimental` feature, so this helper follows it there instead of
+/// lingering as dead code in default builds.
+#[cfg(feature = "experimental")]
 pub(crate) fn parse_uint160_arg(arg: &[u8], label: &str) -> CoreResult<UInt160> {
     UInt160::from_bytes(arg).map_err(|_| CoreError::native_contract(format!("Invalid {label}")))
 }
@@ -51,6 +57,23 @@ pub(crate) fn serialize_stack_value_native(value: &StackValue) -> CoreResult<Vec
     use neo_vm::ExecutionEngineLimits;
     BinarySerializer::serialize_stack_value(value, &ExecutionEngineLimits::default())
         .map_err(CoreError::native_contract)
+}
+
+/// Encodes an integer the way the native contracts store and return it.
+///
+/// The encoding is little-endian two's-complement, with zero normalized to a
+/// single `0x00` byte instead of an empty slice. Token amounts, stored integer
+/// settings and ABI return values all use that exact byte sequence, so it has a
+/// single owner here rather than a restatement per contract.
+///
+/// `PolicyContract` keeps its own encoder: policy parameters are written in a
+/// padded minimal form that encodes zero as an empty slice.
+pub(crate) fn encode_bigint(value: &BigInt) -> Vec<u8> {
+    let mut bytes = value.to_signed_bytes_le();
+    if bytes.is_empty() {
+        bytes.push(0);
+    }
+    bytes
 }
 
 /// Facade exposing helper methods with the same names/semantics used by the C# port

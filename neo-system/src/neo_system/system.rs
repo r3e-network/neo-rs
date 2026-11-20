@@ -47,6 +47,22 @@ impl ReadinessStatus {
         self.healthy = self.healthy && rpc_ready && storage_ready;
         self
     }
+
+    /// Layers optional RPC-service and storage readiness onto this snapshot.
+    ///
+    /// An absent service name means "not probed" and counts as ready; an absent
+    /// storage flag likewise defaults to ready. `has_named_service` lets the two
+    /// readiness callers (`NeoSystem` and `NeoSystemContext`) supply their own
+    /// registry lookup while sharing this composition.
+    pub fn with_service_checks(
+        self,
+        rpc_service_name: Option<&str>,
+        storage_ready: Option<bool>,
+        has_named_service: impl Fn(&str) -> bool,
+    ) -> Self {
+        let rpc_ready = rpc_service_name.is_none_or(has_named_service);
+        self.with_services(rpc_ready, storage_ready.unwrap_or(true))
+    }
 }
 
 // Readiness helpers for the main `NeoSystem`.
@@ -76,10 +92,11 @@ impl super::core::NeoSystem {
         rpc_service_name: Option<&str>,
         storage_ready: Option<bool>,
     ) -> ReadinessStatus {
-        let status = self.readiness(max_header_lag);
-        let rpc_ready = rpc_service_name.is_none_or(|name| self.has_named_service(name));
-        let storage_ready = storage_ready.unwrap_or(true);
-        status.with_services(rpc_ready, storage_ready)
+        self.readiness(max_header_lag).with_service_checks(
+            rpc_service_name,
+            storage_ready,
+            |name| self.has_named_service(name),
+        )
     }
 
     /// Convenience wrapper that uses the configured RPC service name for this network.

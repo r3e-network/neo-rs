@@ -1,14 +1,16 @@
 use crate::OperationalAction;
 use crate::evidence::EvidenceAuthority;
 use crate::probe::{OperationId, ProbeAuthorizerMetadata};
+use crate::store_files::{
+    RotatedActiveFile, StoreFileError, discover_generations, hash_json_value,
+    repair_unterminated_tail, rotate_active_file, unix_time_ms, valid_hash,
+};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 pub const ACTION_LOG_SCHEMA_VERSION: u16 = 1;
@@ -190,7 +192,7 @@ impl DurableActionBinding {
     }
 
     pub fn binding_hash(&self) -> Result<String, DurableActionError> {
-        hash_value(self)
+        hash_json_value(self)
     }
 }
 
@@ -332,7 +334,7 @@ impl DurableActionLog {
         {
             std::fs::create_dir_all(parent).map_err(|_| DurableActionError::Unavailable)?;
         }
-        repair_unterminated_tail(&path)?;
+        repair_unterminated_tail::<DurableActionError>(&path)?;
         // Chronological order: oldest retained generation first, active file last.
         let mut files: Vec<PathBuf> = discover_generations(&path).into_iter().rev().collect();
         let active_bytes = if path.exists() {
@@ -726,45 +728,30 @@ fn verify_entries(
 
 /// Rotates the active file to `<path>.1` and re-creates it with a linking checkpoint.
 fn rotate(state: &mut DurableActionLogState) -> Result<(), DurableActionError> {
-    state
-        .file
-        .sync_all()
-        .map_err(|_| DurableActionError::Unavailable)?;
-    // Close the active handle so the rename is portable across platforms.
-    let closed = std::mem::replace(&mut state.file, null_device_file()?);
-    drop(closed);
-    // Drop generations beyond the retention count (e.g. after the policy shrank).
-    let mut stale = state.options.generations + 1;
-    loop {
-        let candidate = generation_path(&state.path, stale);
-        if !candidate.exists() {
-            break;
-        }
-        std::fs::remove_file(&candidate).map_err(|_| DurableActionError::Unavailable)?;
-        stale += 1;
-    }
-    // Drop the oldest retained generation and shift the remaining ones down.
-    let oldest = generation_path(&state.path, state.options.generations);
-    if oldest.exists() {
-        std::fs::remove_file(&oldest).map_err(|_| DurableActionError::Unavailable)?;
-    }
-    for generation in (2..=state.options.generations).rev() {
-        let from = generation_path(&state.path, generation - 1);
-        if from.exists() {
-            std::fs::rename(&from, generation_path(&state.path, generation))
-                .map_err(|_| DurableActionError::Unavailable)?;
-        }
-    }
-    std::fs::rename(&state.path, generation_path(&state.path, 1))
-        .map_err(|_| DurableActionError::Unavailable)?;
-    state.file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&state.path)
-        .map_err(|_| DurableActionError::Unavailable)?;
-    state.file_bytes = 0;
-    state.file_entries = 0;
+    rotate_active_file(state)?;
     write_rotation_checkpoint(state)
+}
+
+impl RotatedActiveFile for DurableActionLogState {
+    type Error = DurableActionError;
+
+    fn active_path(&self) -> &Path {
+        &self.path
+    }
+
+    fn active_file(&mut self) -> &mut File {
+        &mut self.file
+    }
+
+    fn retained_generations(&self) -> u32 {
+        self.options.generations
+    }
+
+    fn reset_active_file(&mut self, file: File) {
+        self.file = file;
+        self.file_bytes = 0;
+        self.file_entries = 0;
+    }
 }
 
 /// Appends the checkpoint that links a fresh active file to the retained tail.
@@ -794,38 +781,6 @@ fn write_rotation_checkpoint(state: &mut DurableActionLogState) -> Result<(), Du
     state.total_entries = sequence + 1;
     state.tail_hash.clone_from(&entry.entry_hash);
     Ok(())
-}
-
-/// Path of a rotated generation, where generation 1 is the most recent archive.
-fn generation_path(path: &Path, generation: u32) -> PathBuf {
-    let mut name = path.as_os_str().to_os_string();
-    name.push(format!(".{generation}"));
-    PathBuf::from(name)
-}
-
-/// Discovers retained generations (`.1` newest first) with a defensive scan cap.
-fn discover_generations(path: &Path) -> Vec<PathBuf> {
-    const MAX_GENERATION_SCAN: u32 = 10_000;
-    let mut generations = Vec::new();
-    for generation in 1..=MAX_GENERATION_SCAN {
-        let candidate = generation_path(path, generation);
-        if !candidate.exists() {
-            break;
-        }
-        generations.push(candidate);
-    }
-    generations
-}
-
-fn null_device_file() -> Result<File, DurableActionError> {
-    #[cfg(windows)]
-    let path = "NUL";
-    #[cfg(not(windows))]
-    let path = "/dev/null";
-    OpenOptions::new()
-        .write(true)
-        .open(path)
-        .map_err(|_| DurableActionError::Unavailable)
 }
 
 fn valid_replayed_transition(
@@ -893,13 +848,13 @@ fn calculate_entry_hash(entry: &ActionJournalEntry) -> Result<String, DurableAct
         previous_hash: &'a str,
     }
     match (&entry.rotation, &entry.snapshot) {
-        (Some(rotation), None) => hash_value(&RotationHashMaterial {
+        (Some(rotation), None) => hash_json_value(&RotationHashMaterial {
             schema_version: entry.schema_version,
             sequence: entry.sequence,
             rotation,
             previous_hash: &entry.previous_hash,
         }),
-        (None, Some(snapshot)) => hash_value(&RecordHashMaterial {
+        (None, Some(snapshot)) => hash_json_value(&RecordHashMaterial {
             schema_version: entry.schema_version,
             sequence: entry.sequence,
             snapshot,
@@ -907,50 +862,6 @@ fn calculate_entry_hash(entry: &ActionJournalEntry) -> Result<String, DurableAct
         }),
         _ => Err(DurableActionError::Serialization),
     }
-}
-
-fn hash_value(value: &impl Serialize) -> Result<String, DurableActionError> {
-    let encoded = serde_json::to_vec(value).map_err(|_| DurableActionError::Serialization)?;
-    let digest = Sha256::digest(encoded);
-    Ok(digest.iter().fold(String::new(), |mut output, byte| {
-        use std::fmt::Write as _;
-        write!(output, "{byte:02x}").expect("formatting hex into a String cannot fail");
-        output
-    }))
-}
-
-fn valid_hash(hash: &str) -> bool {
-    hash.len() == 64 && hash != "00".repeat(32) && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
-}
-
-fn repair_unterminated_tail(path: &Path) -> Result<(), DurableActionError> {
-    if !path.exists() {
-        return Ok(());
-    }
-    let bytes = std::fs::read(path).map_err(|_| DurableActionError::Unavailable)?;
-    if bytes.is_empty() || bytes.ends_with(b"\n") {
-        return Ok(());
-    }
-    let valid_length = bytes
-        .iter()
-        .rposition(|byte| *byte == b'\n')
-        .map_or(0, |position| position + 1);
-    let file = OpenOptions::new()
-        .write(true)
-        .open(path)
-        .map_err(|_| DurableActionError::Unavailable)?;
-    file.set_len(valid_length as u64)
-        .and_then(|()| file.sync_data())
-        .map_err(|_| DurableActionError::Unavailable)
-}
-
-fn unix_time_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(1, |duration| {
-            u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
-        })
-        .max(1)
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -981,9 +892,20 @@ pub enum DurableActionError {
     BrokenJournal(u64),
 }
 
+impl StoreFileError for DurableActionError {
+    fn unavailable() -> Self {
+        Self::Unavailable
+    }
+
+    fn serialization() -> Self {
+        Self::Serialization
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::store_files::generation_path;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static PATH_SEQUENCE: AtomicU64 = AtomicU64::new(0);

@@ -68,6 +68,48 @@ impl AsyncWrite for ShortVectoredWriter {
     }
 }
 
+/// Writer that always fails, used to prove batch write errors propagate.
+struct FailingWriter;
+
+impl AsyncWrite for FailingWriter {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        _buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        Poll::Ready(Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe)))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+}
+
+/// Writer that accepts no bytes without reporting an error (stalled peer).
+struct ZeroWriter;
+
+impl AsyncWrite for ZeroWriter {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        _buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        Poll::Ready(Ok(0))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+}
+
 async fn silent_pair() -> Option<(TcpStream, TcpStream)> {
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => listener,
@@ -566,4 +608,44 @@ async fn public_write_helpers_preserve_disabled_buffering_and_vectored_fallback(
     assert_eq!(writer.written, b"oldnewabcd");
     assert_eq!(writer.vectored_calls, 0);
     assert!(buffer.is_empty());
+}
+
+#[tokio::test]
+async fn vectored_batch_write_surfaces_writer_errors() {
+    let cfg = FrameConfig {
+        use_vectored_io: true,
+        ..FrameConfig::default()
+    };
+    let mut writer = FailingWriter;
+
+    let result = write_frame_vectored(&mut writer, &cfg, &[&b"aa"[..], &b"bb"[..]]).await;
+
+    assert!(matches!(
+        result,
+        Err(NetworkError::ConnectionError(message))
+            if message.contains("vectored")
+    ));
+}
+
+#[tokio::test]
+async fn vectored_batch_write_rejects_a_writer_that_makes_no_progress() {
+    let cfg = FrameConfig {
+        use_vectored_io: true,
+        ..FrameConfig::default()
+    };
+    let mut writer = ZeroWriter;
+
+    // A stalled peer must surface as a write error instead of spinning.
+    let result = tokio::time::timeout(
+        Duration::from_secs(1),
+        write_frame_vectored(&mut writer, &cfg, &[&b"aa"[..], &b"bb"[..]]),
+    )
+    .await
+    .expect("zero-byte write must not hang");
+
+    assert!(matches!(
+        result,
+        Err(NetworkError::ConnectionError(message))
+            if message.contains("wrote zero bytes")
+    ));
 }

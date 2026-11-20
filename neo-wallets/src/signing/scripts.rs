@@ -4,6 +4,7 @@
 //! TEE wallet adapters).
 
 use crate::{WalletError, WalletResult};
+use neo_protocol::witness::Witness;
 use neo_vm::ScriptBuilder;
 
 /// Builds the invocation script pushing a 64-byte signature (PUSHDATA1).
@@ -17,6 +18,20 @@ pub fn signature_invocation(signature: &[u8]) -> WalletResult<Vec<u8>> {
     let mut builder = ScriptBuilder::new();
     builder.emit_push(signature);
     Ok(builder.to_array())
+}
+
+/// Builds a single-signature witness from a 64-byte signature and its verification script.
+///
+/// The standard account, the HSM adapter and the TEE adapter all assemble the
+/// same witness, so the bytes are produced here next to [`signature_invocation`].
+pub fn witness_from_signature(
+    signature: &[u8],
+    verification_script: &[u8],
+) -> WalletResult<Witness> {
+    Ok(Witness::new_with_scripts(
+        signature_invocation(signature)?,
+        verification_script.to_vec(),
+    ))
 }
 
 #[cfg(test)]

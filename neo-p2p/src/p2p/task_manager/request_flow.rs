@@ -11,7 +11,6 @@ use crate::p2p::payloads::{
     inv_payload::{InvPayload, MAX_HASHES_COUNT},
 };
 use neo_actors::ActorRef;
-use neo_native_contracts::LedgerContract;
 use std::sync::Arc;
 use tracing::{trace, warn};
 
@@ -36,20 +35,16 @@ impl TaskManager {
             return;
         }
 
-        let system = match &self.system {
-            Some(context) => Arc::clone(context),
-            None => return,
+        let Some(context) = &self.system else {
+            return;
         };
+        let system = Arc::clone(context);
 
         let actor = entry.actor.clone();
         let session = &mut entry.session;
 
-        let store_cache = system.store_cache();
-        let ledger_contract = LedgerContract::new();
-
-        let current_height = ledger_contract
-            .current_index(&store_cache)
-            .unwrap_or(0)
+        let current_height = system
+            .current_block_index()
             .max(self.last_seen_persisted_index);
 
         trace!(
@@ -66,10 +61,7 @@ impl TaskManager {
         if !session.available_tasks.is_empty() {
             let available_plan = plan_available_inventory_tasks(
                 session.available_tasks.iter().copied(),
-                |hash| {
-                    self.known_hashes.contains(hash)
-                        || ledger_contract.contains_block(&store_cache, hash)
-                },
+                |hash| self.known_hashes.contains(hash) || system.contains_block(hash),
                 &self.global_inv_tasks,
             );
             let AvailableInventoryPlan {
@@ -104,17 +96,8 @@ impl TaskManager {
             }
         }
 
-        let current_height = ledger_contract
-            .current_index(&store_cache)
-            .unwrap_or(0)
-            .max(self.last_seen_persisted_index);
-
-        let ledger = system.ledger();
-        let header_cache = system.header_cache();
-        let header_height = effective_header_height(
-            header_cache.last().map(|header| header.index()),
-            ledger.highest_header_index(),
-        );
+        let header_height =
+            effective_header_height(system.header_tip_index(), system.highest_header_index());
         let header_request_start = header_height.saturating_add(1);
         let header_task_count = self.global_inv_tasks.count(&HEADER_TASK_HASH);
         let header_request = plan_header_request(
@@ -254,24 +237,16 @@ impl TaskManager {
             return;
         }
 
-        let system = match &self.system {
-            Some(context) => Arc::clone(context),
-            None => return,
+        let Some(context) = &self.system else {
+            return;
         };
+        let system = Arc::clone(context);
 
-        let store_cache = system.store_cache();
-        let ledger_contract = LedgerContract::new();
-        let current_height = ledger_contract
-            .current_index(&store_cache)
-            .unwrap_or(0)
+        let current_height = system
+            .current_block_index()
             .max(self.last_seen_persisted_index);
-        let ledger = system.ledger();
-        let header_cache = system.header_cache();
-        let header_height = effective_header_height(
-            header_cache.last().map(|header| header.index()),
-            ledger.highest_header_index(),
-        );
-        drop(store_cache);
+        let header_height =
+            effective_header_height(system.header_tip_index(), system.highest_header_index());
 
         let inventory_type = payload.inventory_type;
         let hashes = payload.hashes.clone();

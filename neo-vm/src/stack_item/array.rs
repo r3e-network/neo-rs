@@ -3,29 +3,22 @@
 //! This module provides the Array stack item implementation used in the Neo VM.
 
 use crate::StackItemType;
-use crate::error::{VmError, VmResult};
-use crate::next_stack_item_id;
+use crate::error::VmResult;
 use crate::reference_counter::{StackReferenceRelease, SubItems};
 use crate::stack_item::StackItem;
+use crate::stack_item::compound::CompoundInner;
 use parking_lot::Mutex;
 use std::sync::Arc;
+
+/// Diagnostic reported when an array is mutated after being frozen.
+const READ_ONLY: &str = "The array is readonly, can not modify.";
+/// Diagnostic reported when an item is popped from an empty array.
+const EMPTY: &str = "Array is empty";
 
 /// Represents an array of stack items in the VM.
 #[derive(Debug, Clone)]
 pub struct Array {
-    inner: Arc<Mutex<ArrayInner>>,
-}
-
-#[derive(Debug)]
-struct ArrayInner {
-    /// The items in the array.
-    items: Vec<StackItem>,
-    /// Number of stack references held on this array (C# `CompoundType.StackReferences`).
-    stack_references: usize,
-    /// Unique identifier to mimic reference equality semantics.
-    id: usize,
-    /// Indicates whether the array is read-only.
-    is_read_only: bool,
+    inner: Arc<Mutex<CompoundInner>>,
 }
 
 impl Array {
@@ -36,12 +29,7 @@ impl Array {
     #[must_use]
     pub fn new(items: Vec<StackItem>) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(ArrayInner {
-                items,
-                stack_references: 0,
-                id: next_stack_item_id(),
-                is_read_only: false,
-            })),
+            inner: Arc::new(Mutex::new(CompoundInner::new(items))),
         }
     }
 
@@ -60,28 +48,17 @@ impl Array {
     /// Adds `count` stack references. Returns the sub items when this call
     /// made the array stack referenced.
     pub(crate) fn add_stack_references(&self, count: usize) -> Option<SubItems> {
-        let mut inner = self.inner.lock();
-        inner.stack_references += count;
-        (inner.stack_references == count).then(|| SubItems::collect(&inner.items))
+        self.inner.lock().add_stack_references(count)
     }
 
     /// Removes one stack reference, if the array is stack referenced.
     pub(crate) fn remove_stack_reference(&self) -> StackReferenceRelease {
-        let mut inner = self.inner.lock();
-        if inner.stack_references == 0 {
-            return StackReferenceRelease::NotReferenced;
-        }
-        inner.stack_references -= 1;
-        if inner.stack_references == 0 {
-            StackReferenceRelease::Unreferenced(SubItems::collect(&inner.items))
-        } else {
-            StackReferenceRelease::StillReferenced
-        }
+        self.inner.lock().remove_stack_reference()
     }
 
     /// Takes a snapshot of the sub items (C# `SubItems`).
     pub(crate) fn sub_items(&self) -> SubItems {
-        SubItems::collect(&self.inner.lock().items)
+        self.inner.lock().sub_items()
     }
 
     /// Returns the unique identifier for this array.
@@ -116,42 +93,25 @@ impl Array {
     /// Gets the item at the specified index.
     #[must_use]
     pub fn get(&self, index: usize) -> Option<StackItem> {
-        self.inner.lock().items.get(index).cloned()
+        self.inner.lock().get(index)
     }
 
     /// Sets the item at the specified index.
     pub fn set(&self, index: usize, item: StackItem) -> VmResult<()> {
         // The replaced item is dropped after the lock is released.
-        let _replaced = {
-            let mut inner = self.inner.lock();
-            if index >= inner.items.len() {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "Index out of range: {index}"
-                )));
-            }
-
-            Self::ensure_mutable(&inner)?;
-            std::mem::replace(&mut inner.items[index], item)
-        };
+        let replaced = self.inner.lock().set(index, item, READ_ONLY)?;
+        drop(replaced);
         Ok(())
     }
 
     /// Adds an item to the end of the array.
     pub fn push(&self, item: StackItem) -> VmResult<()> {
-        let mut inner = self.inner.lock();
-        Self::ensure_mutable(&inner)?;
-        inner.items.push(item);
-        Ok(())
+        self.inner.lock().push(item, READ_ONLY)
     }
 
     /// Removes and returns the last item in the array.
     pub fn pop(&self) -> VmResult<StackItem> {
-        let mut inner = self.inner.lock();
-        Self::ensure_mutable(&inner)?;
-        inner
-            .items
-            .pop()
-            .ok_or_else(|| VmError::invalid_operation_msg("Array is empty"))
+        self.inner.lock().pop(EMPTY, READ_ONLY)
     }
 
     /// Gets the number of items in the array.
@@ -169,11 +129,8 @@ impl Array {
     /// Removes all items from the array.
     pub fn clear(&self) -> VmResult<()> {
         // The removed items are dropped after the lock is released.
-        let _removed = {
-            let mut inner = self.inner.lock();
-            Self::ensure_mutable(&inner)?;
-            std::mem::take(&mut inner.items)
-        };
+        let removed = self.inner.lock().clear(READ_ONLY)?;
+        drop(removed);
         Ok(())
     }
 
@@ -198,29 +155,12 @@ impl Array {
 
     /// Inserts an item at the specified index.
     pub fn insert(&self, index: usize, item: StackItem) -> VmResult<()> {
-        let mut inner = self.inner.lock();
-        if index > inner.items.len() {
-            return Err(VmError::invalid_operation_msg(format!(
-                "Index out of range: {index}"
-            )));
-        }
-
-        Self::ensure_mutable(&inner)?;
-        inner.items.insert(index, item);
-        Ok(())
+        self.inner.lock().insert(index, item, READ_ONLY)
     }
 
     /// Removes the item at the specified index.
     pub fn remove(&self, index: usize) -> VmResult<StackItem> {
-        let mut inner = self.inner.lock();
-        if index >= inner.items.len() {
-            return Err(VmError::invalid_operation_msg(format!(
-                "Index out of range: {index}"
-            )));
-        }
-
-        Self::ensure_mutable(&inner)?;
-        Ok(inner.items.remove(index))
+        self.inner.lock().remove(index, READ_ONLY)
     }
 
     /// Returns an iterator over the items.
@@ -248,32 +188,13 @@ impl Array {
 
     /// Reverses the order of items in the array.
     pub fn reverse_items(&self) -> VmResult<()> {
-        let mut inner = self.inner.lock();
-        Self::ensure_mutable(&inner)?;
-        inner.items.reverse();
-        Ok(())
+        self.inner.lock().reverse(READ_ONLY)
     }
 
     /// One-lock snapshot of the fields the `Debug` renderer prints, as
     /// `(items, id, stack_references, is_read_only)`.
     pub(crate) fn debug_snapshot(&self) -> (Vec<StackItem>, usize, usize, bool) {
-        let inner = self.inner.lock();
-        (
-            inner.items.clone(),
-            inner.id,
-            inner.stack_references,
-            inner.is_read_only,
-        )
-    }
-
-    fn ensure_mutable(inner: &ArrayInner) -> VmResult<()> {
-        if inner.is_read_only {
-            Err(VmError::invalid_operation_msg(
-                "The array is readonly, can not modify.".to_string(),
-            ))
-        } else {
-            Ok(())
-        }
+        self.inner.lock().debug_snapshot()
     }
 }
 

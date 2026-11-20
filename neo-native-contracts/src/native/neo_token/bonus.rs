@@ -173,6 +173,7 @@ impl NeoToken {
 mod tests {
     use super::*;
     use crate::native::NativeContract;
+    use crate::native::helpers::encode_bigint;
     use neo_primitives::TriggerType;
     use neo_primitives::UInt256;
     use neo_smart_contract::application_engine::ApplicationEngine;
@@ -489,7 +490,7 @@ mod tests {
         let latest_gas_per_vote = BigInt::from(100_000_000_000i64);
         snapshot.add(
             reward_key,
-            StorageItem::from_bytes(NeoToken::encode_amount(&latest_gas_per_vote)),
+            StorageItem::from_bytes(encode_bigint(&latest_gas_per_vote)),
         );
 
         let state = NeoAccountState {
@@ -586,7 +587,7 @@ mod tests {
         );
     }
 
-    /// Test that encode_amount and to_bigint roundtrip correctly for the
+    /// Test that encode_bigint and to_bigint roundtrip correctly for the
     /// gas-per-block storage path. This verifies there's no encoding mismatch
     /// between what set_gas_per_block writes and what get_sorted_gas_records reads.
     #[test]
@@ -600,7 +601,7 @@ mod tests {
         ];
 
         for val in &values {
-            let encoded = NeoToken::encode_amount(val);
+            let encoded = encode_bigint(val);
             let decoded = BigInt::from_signed_bytes_le(&encoded);
             assert_eq!(&decoded, val, "roundtrip failed for {val}");
 

@@ -16,15 +16,19 @@
 //!
 //! # Features
 //!
-//! No feature is enabled by default, and a default build fails closed:
-//! [`TeeEnclave::initialize`] refuses to derive a sealing key.
+//! `integration` is enabled by default; every SGX-related feature is off, so a
+//! default build fails closed: [`TeeEnclave::initialize`] refuses to derive a
+//! sealing key.
 //!
+//! - `integration` (default): the node runtime assembly (`runtime`) and the
+//!   wallet adapter (`wallet_adapter`), plus the integration-only crate edges
+//!   (`neo-wallets`, `neo-protocol`, `neo-smart-contract`) they need. Without
+//!   it the crate is core TEE only: sealing, attestation and fair ordering.
 //! - `tee-sgx`: Enable real Intel SGX hardware support
 //! - `attestation`: Enable remote attestation (requires `tee-sgx`)
 //! - `tee-sgx-sim`: Compile the software (simulated) sealing key into a build
 //!   without `tee-sgx`. Test-only: enable it from `[dev-dependencies]`, never
 //!   from `[dependencies]`, because any host process can recompute the key.
-//! - `integration`: Node runtime and wallet adapter modules
 //!
 //! # Architecture
 //!
@@ -59,8 +63,8 @@ pub mod error;
 pub(crate) mod fs_acl;
 pub mod mempool;
 // Phase 3 S6c: node tee_integration runtime + tee_wallet adapter sank here,
-// gated behind the default-off `integration` feature to preserve the pre-move
-// default build surface (these were `cfg(feature = "tee")` in neo-node).
+// gated behind the `integration` feature (default on since Phase 9, F14) along
+// with the wallet/protocol/contract edges those modules alone need.
 #[cfg(feature = "integration")]
 pub mod runtime;
 #[cfg(feature = "tee-sgx")]

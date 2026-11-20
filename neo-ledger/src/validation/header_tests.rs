@@ -32,8 +32,8 @@ fn sample_settings() -> ProtocolSettings {
 
 fn insert_trimmed_block(store_cache: &mut StoreCache, header: &Header, block_hash: UInt256) {
     let ledger_witness = Witness::new_with_scripts(
-        header.witness.invocation_script.clone(),
-        header.witness.verification_script.clone(),
+        header.witness.invocation_script().to_vec(),
+        header.witness.verification_script().to_vec(),
     );
     let ledger_header = BlockHeader::new(
         header.version(),

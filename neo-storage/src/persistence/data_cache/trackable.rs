@@ -1,3 +1,4 @@
+use crate::persistence::data_cache::prefetch::PrefetchConfig;
 use crate::persistence::read_cache::ReadCacheConfig;
 use crate::types::{StorageItem, StorageKey};
 use std::collections::HashMap;
@@ -30,12 +31,12 @@ pub struct DataCacheConfig {
     pub enable_read_cache: bool,
     /// Read cache configuration
     pub read_cache_config: ReadCacheConfig,
-    /// Enable intelligent prefetching based on access patterns
-    pub enable_prefetching: bool,
-    /// Number of items to prefetch when pattern detected
-    pub prefetch_count: usize,
-    /// Minimum confidence threshold for prefetching (0-100)
-    pub prefetch_confidence_threshold: u8,
+    /// Enable the sharded hot-key cache for committed storage reads
+    pub enable_hot_key_cache: bool,
+    /// Total entry bound of the hot-key cache (spread over a fixed shard count)
+    pub hot_key_cache_capacity: usize,
+    /// Speculative prefetch configuration (disabled unless explicitly enabled)
+    pub prefetch: PrefetchConfig,
 }
 
 impl Default for DataCacheConfig {
@@ -45,9 +46,10 @@ impl Default for DataCacheConfig {
             track_reads_in_write_cache: true,
             enable_read_cache: true,
             read_cache_config: ReadCacheConfig::default(),
-            enable_prefetching: true,
-            prefetch_count: 10,
-            prefetch_confidence_threshold: 30,
+            enable_hot_key_cache: true,
+            hot_key_cache_capacity:
+                crate::persistence::hot_key_cache::DEFAULT_HOT_KEY_CACHE_CAPACITY,
+            prefetch: PrefetchConfig::default(),
         }
     }
 }

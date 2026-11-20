@@ -16,13 +16,13 @@ impl SerializablePayload for Transaction {
     fn invocation_script(&self, index: usize) -> &[u8] {
         self.witnesses
             .get(index)
-            .map(|w| w.invocation_script.as_slice())
+            .map(|w| w.invocation_script())
             .unwrap_or_default()
     }
     fn verification_script(&self, index: usize) -> &[u8] {
         self.witnesses
             .get(index)
-            .map(|w| w.verification_script.as_slice())
+            .map(|w| w.verification_script())
             .unwrap_or_default()
     }
 }

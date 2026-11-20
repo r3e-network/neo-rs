@@ -9,8 +9,23 @@ pub mod neo_cli;
 pub mod neo_go;
 
 use anyhow::{Result, bail};
+use neo_protocol::ProtocolSettings;
 use std::path::Path;
 use tracing::info;
+
+/// Detect the network name from protocol settings.
+///
+/// Shared by the neo-cli and neo-go migrators so both report the same
+/// `mainnet` / `testnet` / `custom-<magic>` naming in [`MigrationResult`].
+fn detect_network_name(settings: &ProtocolSettings) -> String {
+    if settings.network == ProtocolSettings::mainnet().network {
+        "mainnet".to_string()
+    } else if settings.network == ProtocolSettings::testnet().network {
+        "testnet".to_string()
+    } else {
+        format!("custom-{}", settings.network)
+    }
+}
 
 /// Supported Neo node implementations for migration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

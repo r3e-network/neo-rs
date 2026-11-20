@@ -82,7 +82,10 @@ impl<T: Interoperable + Clone> DerefMut for InteroperableList<T> {
     }
 }
 
-impl<T: Interoperable + Clone + Default + 'static> Interoperable for InteroperableList<T> {
+impl<T> Interoperable for InteroperableList<T>
+where
+    T: Interoperable + Clone + Default + 'static,
+{
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), neo_vm::VmError> {
         self.items.clear();
 

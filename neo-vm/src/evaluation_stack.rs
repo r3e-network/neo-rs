@@ -28,6 +28,44 @@ impl EvaluationStack {
         }
     }
 
+    /// Creates an evaluation stack that uses a recycled backing allocation.
+    ///
+    /// `buffer` must be empty; a non-empty buffer would carry entries that the
+    /// reference counter has never seen. It is cleared defensively so the
+    /// invariant cannot be violated by a caller.
+    #[inline]
+    #[must_use]
+    pub(crate) fn with_backing_buffer(
+        reference_counter: ReferenceCounter,
+        mut buffer: Vec<StackItem>,
+    ) -> Self {
+        buffer.clear();
+        Self {
+            stack: buffer,
+            reference_counter,
+        }
+    }
+
+    /// Detaches and returns the backing allocation, leaving the stack with no
+    /// storage at all.
+    ///
+    /// This is only sound for a stack that is about to disappear: the entries
+    /// move out with the vector and are released when the caller drops it,
+    /// which is exactly what dropping the whole stack would have done. The
+    /// reference counter is deliberately not touched, so an unloaded context
+    /// keeps the same reference accounting as before.
+    #[inline]
+    pub(crate) fn take_backing_buffer(&mut self) -> Vec<StackItem> {
+        std::mem::take(&mut self.stack)
+    }
+
+    /// Returns the allocated element capacity of the backing buffer.
+    #[inline]
+    #[must_use]
+    pub fn capacity(&self) -> usize {
+        self.stack.capacity()
+    }
+
     /// Returns the reference counter for this evaluation stack.
     #[inline]
     #[must_use]

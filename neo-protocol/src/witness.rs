@@ -25,15 +25,29 @@ const MAX_INVOCATION_SCRIPT: usize = 1024;
 const MAX_VERIFICATION_SCRIPT: usize = 1024;
 
 /// Represents a witness of a verifiable object.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// The scripts are private so that the cached [`Witness::script_hash`] cannot go
+/// stale: mutating the verification script must always go through
+/// [`Witness::set_verification_script`], which drops the cached hash.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Witness {
     /// Arguments for the verification script.
-    pub invocation_script: Vec<u8>,
+    invocation_script: Vec<u8>,
     /// Verification contract script, empty for deployed contracts.
-    pub verification_script: Vec<u8>,
+    verification_script: Vec<u8>,
     #[serde(skip)]
     script_hash: OnceLock<UInt160>,
 }
+
+/// Equality compares only the scripts; the derived cache is not observable state.
+impl PartialEq for Witness {
+    fn eq(&self, other: &Self) -> bool {
+        self.invocation_script == other.invocation_script
+            && self.verification_script == other.verification_script
+    }
+}
+
+impl Eq for Witness {}
 
 impl Witness {
     /// Creates an empty witness.
@@ -68,7 +82,20 @@ impl Witness {
         &self.verification_script
     }
 
-    /// Returns RIPEMD160(SHA256(verification_script)), cached as before.
+    /// Replaces the invocation script.
+    ///
+    /// The cached script hash covers only the verification script, so it stays valid.
+    pub fn set_invocation_script(&mut self, script: Vec<u8>) {
+        self.invocation_script = script;
+    }
+
+    /// Replaces the verification script and invalidates the cached script hash.
+    pub fn set_verification_script(&mut self, script: Vec<u8>) {
+        self.verification_script = script;
+        self.script_hash = OnceLock::new();
+    }
+
+    /// Returns RIPEMD160(SHA256(verification_script)), cached until the script changes.
     pub fn script_hash(&self) -> UInt160 {
         *self
             .script_hash
@@ -110,15 +137,6 @@ impl Default for Witness {
     }
 }
 
-impl neo_primitives::Witness for Witness {
-    fn invocation_script(&self) -> &[u8] {
-        &self.invocation_script
-    }
-    fn verification_script(&self) -> &[u8] {
-        &self.verification_script
-    }
-}
-
 impl Serializable for Witness {
     fn size(&self) -> usize {
         self.size()
@@ -156,21 +174,21 @@ mod tests {
     #[test]
     fn test_witness_new() {
         let witness = Witness::new();
-        assert!(witness.invocation_script.is_empty());
-        assert!(witness.verification_script.is_empty());
+        assert!(witness.invocation_script().is_empty());
+        assert!(witness.verification_script().is_empty());
         assert!(witness.script_hash.get().is_none());
     }
     #[test]
     fn test_witness_empty() {
         let witness = Witness::empty();
-        assert!(witness.invocation_script.is_empty());
-        assert!(witness.verification_script.is_empty());
+        assert!(witness.invocation_script().is_empty());
+        assert!(witness.verification_script().is_empty());
     }
     #[test]
     fn test_witness_new_with_scripts() {
         let witness = Witness::new_with_scripts(vec![1, 2, 3], vec![4, 5, 6]);
-        assert_eq!(witness.invocation_script, vec![1, 2, 3]);
-        assert_eq!(witness.verification_script, vec![4, 5, 6]);
+        assert_eq!(witness.invocation_script(), [1, 2, 3]);
+        assert_eq!(witness.verification_script(), [4, 5, 6]);
     }
     #[test]
     fn test_witness_size() {
@@ -188,8 +206,8 @@ mod tests {
             assert_eq!(witness.size(), writer.as_bytes().len());
             assert_eq!(
                 witness.size(),
-                get_var_size_bytes(&witness.invocation_script)
-                    + get_var_size_bytes(&witness.verification_script)
+                get_var_size_bytes(witness.invocation_script())
+                    + get_var_size_bytes(witness.verification_script())
             );
         }
     }
@@ -197,8 +215,8 @@ mod tests {
     fn test_witness_clone() {
         let original = Witness::new_with_scripts(vec![1, 2, 3], vec![4, 5, 6]);
         let cloned = original.clone_witness();
-        assert_eq!(original.invocation_script, cloned.invocation_script);
-        assert_eq!(original.verification_script, cloned.verification_script);
+        assert_eq!(original.invocation_script(), cloned.invocation_script());
+        assert_eq!(original.verification_script(), cloned.verification_script());
     }
     #[test]
     fn test_witness_serialization() {
@@ -208,15 +226,36 @@ mod tests {
         let bytes = writer.to_bytes();
         let mut reader = neo_io::MemoryReader::new(&bytes);
         let decoded = <Witness as Serializable>::deserialize(&mut reader).unwrap();
-        assert_eq!(witness.invocation_script, decoded.invocation_script);
-        assert_eq!(witness.verification_script, decoded.verification_script);
+        assert_eq!(witness.invocation_script(), decoded.invocation_script());
+        assert_eq!(witness.verification_script(), decoded.verification_script());
     }
     #[test]
-    fn historical_public_script_mutation_does_not_reset_cached_hash() {
+    fn set_verification_script_invalidates_cached_hash() {
         let mut witness = Witness::new_with_scripts(vec![], vec![1]);
         let original_hash = witness.script_hash();
-        witness.verification_script = vec![2];
-        assert_eq!(witness.script_hash(), original_hash);
-        assert_eq!(witness.clone_witness().script_hash(), original_hash);
+        assert_eq!(original_hash, UInt160::from(Crypto::hash160(&[1])));
+        witness.set_verification_script(vec![2]);
+        assert_eq!(witness.verification_script(), [2]);
+        assert_eq!(witness.script_hash(), UInt160::from(Crypto::hash160(&[2])));
+        assert_ne!(witness.script_hash(), original_hash);
+        assert_eq!(witness.clone_witness().script_hash(), witness.script_hash());
+    }
+    #[test]
+    fn set_invocation_script_keeps_the_verification_script_hash() {
+        let mut witness = Witness::new_with_scripts(vec![1], vec![2]);
+        let hash = witness.script_hash();
+        witness.set_invocation_script(vec![3, 4]);
+        assert_eq!(witness.invocation_script(), [3, 4]);
+        assert_eq!(witness.script_hash(), hash);
+    }
+    #[test]
+    fn equality_ignores_the_cached_hash() {
+        let cold = Witness::new_with_scripts(vec![1], vec![2]);
+        let warm = Witness::new_with_scripts(vec![1], vec![2]);
+        let _ = warm.script_hash();
+        assert_eq!(cold, warm);
+        let mut changed = warm.clone();
+        changed.set_verification_script(vec![3]);
+        assert_ne!(cold, changed);
     }
 }

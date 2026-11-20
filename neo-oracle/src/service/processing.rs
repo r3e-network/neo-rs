@@ -72,10 +72,7 @@ where
 
                 let should_process = {
                     let queue = self.pending_queue.lock();
-                    match queue.get(&request_id) {
-                        Some(task) => task.tx.is_none(),
-                        None => true,
-                    }
+                    queue.get(&request_id).is_none_or(|task| task.tx.is_none())
                 };
 
                 if should_process {
@@ -230,7 +227,7 @@ where
             );
             return (
                 OracleResponseCode::Error,
-                format!("URL too long: {} > {}", url.len(), MAX_URL_LENGTH),
+                format!("URL too long: {} > {MAX_URL_LENGTH}", url.len()),
             );
         }
 
@@ -436,10 +433,8 @@ where
 
             for (account, oracle_pub) in accounts {
                 let tx_operation = format!(
-                    "oracle-tx:{}:{}:{}:{}",
+                    "oracle-tx:{}:{pending_id}:{account}:{}",
                     self.settings.network,
-                    pending_id,
-                    account,
                     response_tx.hash(),
                 );
                 let tx_sign = self
@@ -459,10 +454,8 @@ where
                     )
                     .await?;
                 let backup_operation = format!(
-                    "oracle-tx:{}:{}:{}:{}",
+                    "oracle-tx:{}:{pending_id}:{account}:{}",
                     self.settings.network,
-                    pending_id,
-                    account,
                     backup_tx.hash(),
                 );
                 let backup_sign = self

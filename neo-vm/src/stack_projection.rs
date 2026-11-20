@@ -74,6 +74,16 @@ pub fn witness_rule_to_stack_value(rule: &WitnessRule) -> StackValue {
     ])
 }
 
+/// Converts the witness condition projection to a VM stack item.
+pub fn witness_condition_to_stack_item(condition: &WitnessCondition) -> StackItem {
+    stack_value_to_item(witness_condition_to_stack_value(condition))
+}
+
+/// Converts the witness rule projection to a VM stack item.
+pub fn witness_rule_to_stack_item(rule: &WitnessRule) -> StackItem {
+    stack_value_to_item(witness_rule_to_stack_value(rule))
+}
+
 impl ToStackValue for WitnessCondition {
     fn to_stack_value(&self) -> StackValue {
         witness_condition_to_stack_value(self)
@@ -138,6 +148,7 @@ mod tests {
                 ]),
             ])
         );
+        assert_eq!(rule.to_stack_value(), witness_rule_to_stack_value(&rule));
     }
 
     #[test]
@@ -151,5 +162,135 @@ mod tests {
 
         let expected = StackItem::try_from(rule.to_stack_value()).unwrap();
         assert_eq!(rule.to_stack_item(), expected);
+        assert_eq!(witness_rule_to_stack_item(&rule), expected);
+    }
+
+    #[test]
+    fn witness_condition_projection_preserves_all_condition_layouts() {
+        let hash = UInt160::from_bytes(&[0x22; UINT160_SIZE]).unwrap();
+        let group = vec![0x03; 33];
+        let boolean =
+            StackValue::Array(vec![StackValue::Integer(0x00), StackValue::Boolean(false)]);
+        let cases = [
+            (WitnessCondition::Boolean { value: false }, boolean.clone()),
+            (
+                WitnessCondition::Not {
+                    condition: Box::new(WitnessCondition::Boolean { value: false }),
+                },
+                StackValue::Array(vec![StackValue::Integer(0x01), boolean.clone()]),
+            ),
+            (
+                WitnessCondition::And {
+                    conditions: vec![WitnessCondition::Boolean { value: false }],
+                },
+                StackValue::Array(vec![
+                    StackValue::Integer(0x02),
+                    StackValue::Array(vec![boolean.clone()]),
+                ]),
+            ),
+            (
+                WitnessCondition::Or {
+                    conditions: vec![WitnessCondition::Boolean { value: false }],
+                },
+                StackValue::Array(vec![
+                    StackValue::Integer(0x03),
+                    StackValue::Array(vec![boolean]),
+                ]),
+            ),
+            (
+                WitnessCondition::ScriptHash { hash },
+                StackValue::Array(vec![
+                    StackValue::Integer(0x18),
+                    StackValue::ByteString(hash.to_bytes()),
+                ]),
+            ),
+            (
+                WitnessCondition::Group {
+                    group: group.clone(),
+                },
+                StackValue::Array(vec![
+                    StackValue::Integer(0x19),
+                    StackValue::ByteString(group.clone()),
+                ]),
+            ),
+            (
+                WitnessCondition::CalledByEntry,
+                StackValue::Array(vec![StackValue::Integer(0x20)]),
+            ),
+            (
+                WitnessCondition::CalledByContract { hash },
+                StackValue::Array(vec![
+                    StackValue::Integer(0x28),
+                    StackValue::ByteString(hash.to_bytes()),
+                ]),
+            ),
+            (
+                WitnessCondition::CalledByGroup {
+                    group: group.clone(),
+                },
+                StackValue::Array(vec![
+                    StackValue::Integer(0x29),
+                    StackValue::ByteString(group),
+                ]),
+            ),
+        ];
+        for (condition, expected) in cases {
+            assert_eq!(witness_condition_to_stack_value(&condition), expected);
+            assert_eq!(condition.to_stack_value(), expected);
+            let item = StackItem::try_from(expected.clone()).unwrap();
+            assert_eq!(witness_condition_to_stack_item(&condition), item);
+            assert_eq!(condition.to_stack_item(), item);
+            for action in [WitnessRuleAction::Deny, WitnessRuleAction::Allow] {
+                let rule = WitnessRule::new(action, condition.clone());
+                assert_eq!(
+                    witness_rule_to_stack_value(&rule),
+                    StackValue::Array(vec![
+                        StackValue::Integer(i64::from(action.to_byte())),
+                        expected.clone(),
+                    ])
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn witness_condition_projection_preserves_nested_expression_order() {
+        let condition = WitnessCondition::Or {
+            conditions: vec![
+                WitnessCondition::Not {
+                    condition: Box::new(WitnessCondition::Boolean { value: true }),
+                },
+                WitnessCondition::And {
+                    conditions: vec![
+                        WitnessCondition::CalledByEntry,
+                        WitnessCondition::Boolean { value: false },
+                    ],
+                },
+            ],
+        };
+        let expected = StackValue::Array(vec![
+            StackValue::Integer(0x03),
+            StackValue::Array(vec![
+                StackValue::Array(vec![
+                    StackValue::Integer(0x01),
+                    StackValue::Array(vec![StackValue::Integer(0x00), StackValue::Boolean(true)]),
+                ]),
+                StackValue::Array(vec![
+                    StackValue::Integer(0x02),
+                    StackValue::Array(vec![
+                        StackValue::Array(vec![StackValue::Integer(0x20)]),
+                        StackValue::Array(vec![
+                            StackValue::Integer(0x00),
+                            StackValue::Boolean(false),
+                        ]),
+                    ]),
+                ]),
+            ]),
+        ]);
+        assert_eq!(witness_condition_to_stack_value(&condition), expected);
+        assert_eq!(
+            witness_condition_to_stack_item(&condition),
+            StackItem::try_from(expected).unwrap()
+        );
     }
 }

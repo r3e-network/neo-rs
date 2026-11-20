@@ -75,6 +75,31 @@ impl NativeContract for Notary {
     }
 
     fn on_persist(&self, engine: &mut ApplicationEngine) -> Result<()> {
+        // Every branch below is gated on a `NotaryAssisted` attribute, so a block
+        // whose transactions carry none (including an empty block) can only reach
+        // the zero-fee return at the bottom. Decide that first, while the block is
+        // still borrowed, so the block clone, the snapshot handle and the
+        // chain-query carrier are never created.
+        //
+        // Notary OnPersist has no height- or hardfork-dependent branch: fees are
+        // driven purely by block transactions and the deposit deduction runs
+        // inside the same attribute guard, so this early return cannot skip a
+        // per-height transition. `get_notary_nodes` is only consulted once a
+        // notary-carrying transaction is present, so skipping it here is
+        // side-effect free.
+        let requires_notary_work = match engine.persisting_block() {
+            Some(block) => block.transactions.iter().any(|tx| {
+                tx.get_attribute(TransactionAttributeType::NotaryAssisted)
+                    .is_some()
+            }),
+            // Preserve the previous missing-block error instead of turning it
+            // into a silent success.
+            None => return Err(Error::native_contract("No persisting block available")),
+        };
+        if !requires_notary_work {
+            return Ok(());
+        }
+
         let block = engine.get_persisting_block()?;
 
         let snapshot = engine.snapshot_cache();

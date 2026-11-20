@@ -4,18 +4,19 @@
 // Migrated from
 // `neo-core/src/smart_contract/native/contract_management/native_impl.rs`.
 // `crate::protocol_settings::ProtocolSettings` → `neo_protocol::ProtocolSettings`;
-// the serializer, `Interoperable`, and `StorageContext` all move to `neo_vm`;
-// manifest types move to `neo_smart_contract::manifest`;
+// the serializer and `Interoperable` move to `neo_vm`, `StorageContext` moves to
+// `neo_smart_contract::storage_context`; manifest types move to
+// `neo_smart_contract::manifest`;
 // `crate::impl_default_via_new!` → `neo_storage::impl_default_via_new!`.
 //
 
 use super::*;
 use neo_protocol::ProtocolSettings;
 use neo_smart_contract::manifest::ContractEventDescriptor;
+use neo_smart_contract::storage_context::StorageContext;
 use neo_vm::BinarySerializer;
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::Interoperable;
-use neo_vm::StorageContext;
 use std::sync::OnceLock;
 
 fn contract_query_cache_enabled() -> bool {

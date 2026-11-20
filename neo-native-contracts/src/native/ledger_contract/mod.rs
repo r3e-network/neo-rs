@@ -38,16 +38,14 @@ impl LedgerContract {
     /// Native contract identifier for LedgerContract (-4).
     pub const ID: i32 = -4;
 
-    /// Creates a new LedgerContract instance
+    /// Creates a new LedgerContract instance.
+    ///
+    /// Hash: `0xda65b600f7124ce6c79950c1772a36403104f2be`.
     pub fn new() -> Self {
-        // LedgerContract hash: 0xda65b600f7124ce6c79950c1772a36403104f2be
-        let hash = super::static_contract_hash!("0xda65b600f7124ce6c79950c1772a36403104f2be");
-
-        Self {
-            id: Self::ID,
-            hash,
-            methods: super::static_native_methods!(LedgerContract::native_methods()),
-        }
+        super::stateless_native_contract!(
+            LedgerContract,
+            "0xda65b600f7124ce6c79950c1772a36403104f2be"
+        )
     }
 }
 

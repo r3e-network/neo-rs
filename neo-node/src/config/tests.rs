@@ -57,6 +57,59 @@ fn rejects_unknown_tables() {
 }
 
 #[test]
+fn execution_profiling_is_opt_in_and_matches_the_legacy_alias() {
+    let default = NodeConfig::default();
+    assert_eq!(default.execution.mode, "canonical");
+    assert!(!default.execution.profiling);
+
+    let parsed = toml::from_str::<NodeConfig>(
+        r#"
+        [execution]
+        Mode = "verify"
+        Profiling = true
+    "#,
+    )
+    .expect("profiling alias parses");
+    assert_eq!(parsed.execution.mode, "verify");
+    assert!(parsed.execution.profiling);
+
+    let canonical = toml::from_str::<NodeConfig>(
+        r#"
+        [execution]
+        profiling = true
+    "#,
+    )
+    .expect("lowercase key parses");
+    assert!(canonical.execution.profiling);
+    assert_eq!(canonical.execution.mode, "canonical");
+}
+
+#[test]
+fn parallel_execution_is_off_by_default_and_matches_the_legacy_alias() {
+    let default = NodeConfig::default();
+    assert!(!default.execution.parallel_enabled);
+
+    let alias = toml::from_str::<NodeConfig>(
+        r#"
+        [execution]
+        ParallelEnabled = true
+    "#,
+    )
+    .expect("parallel alias parses");
+    assert!(alias.execution.parallel_enabled);
+
+    let canonical = toml::from_str::<NodeConfig>(
+        r#"
+        [execution]
+        parallel_enabled = true
+    "#,
+    )
+    .expect("lowercase key parses");
+    assert!(canonical.execution.parallel_enabled);
+    assert!(!canonical.execution.profiling);
+}
+
+#[test]
 fn blockchain_block_time_is_milliseconds() {
     let mut config = NodeConfig::default();
     config.blockchain.block_time = Some(15_000);
@@ -143,4 +196,196 @@ fn bundled_testnet_config_parses() {
 fn bundled_production_config_parses() {
     toml::from_str::<NodeConfig>(include_str!("../../../neo_production_node.toml"))
         .expect("production template should parse");
+}
+
+// --- [storage.prefetch] ---------------------------------------------------
+
+/// A node config with no `[storage.prefetch]` table must keep prefetching off.
+#[test]
+fn storage_prefetch_absent_is_disabled() {
+    let cfg: NodeConfig = toml::from_str(
+        r#"
+        [network]
+        network_type = "MainNet"
+
+        [storage]
+        path = "Data_Test"
+        "#,
+    )
+    .expect("config without a prefetch table should parse");
+
+    let prefetch = cfg.storage_prefetch();
+    assert!(!prefetch.enabled, "prefetch must default to off");
+    assert!(!prefetch.is_active(), "disabled prefetch must be inert");
+    assert!(
+        !cfg.storage_prefetch_is_effective(),
+        "absent section must not report an effective configuration"
+    );
+    assert_eq!(
+        prefetch,
+        neo_storage::persistence::data_cache::PrefetchConfig::default()
+    );
+}
+
+/// Explicitly disabling the section behaves exactly like leaving it out.
+#[test]
+fn storage_prefetch_explicitly_disabled_is_inert() {
+    let cfg: NodeConfig = toml::from_str(
+        r#"
+        [storage]
+        path = "Data_Test"
+
+        [storage.prefetch]
+        enabled = false
+        count = 16
+        confidence_threshold = 90
+        "#,
+    )
+    .expect("disabled prefetch table should parse");
+
+    let prefetch = cfg.storage_prefetch();
+    assert!(!prefetch.enabled);
+    assert!(!prefetch.is_active());
+    // The tuning values are still readable so an operator can stage a rollout.
+    assert_eq!(prefetch.count, 16);
+    assert_eq!(prefetch.confidence_threshold, 90);
+}
+
+/// The production opt-in form parses into the storage configuration verbatim.
+#[test]
+fn storage_prefetch_section_parses_production_values() {
+    let cfg: NodeConfig = toml::from_str(
+        r#"
+        [storage]
+        path = "Data_Test"
+
+        [storage.prefetch]
+        enabled = true
+        count = 12
+        confidence_threshold = 75
+        min_observations = 6
+
+        [storage.prefetch.limits]
+        max_scan_keys = 96
+        max_admit_keys = 10
+        max_admit_bytes = 131072
+        "#,
+    )
+    .expect("opt-in prefetch table should parse");
+
+    let prefetch = cfg.storage_prefetch();
+    assert!(prefetch.enabled);
+    assert!(prefetch.is_active());
+    assert!(cfg.storage_prefetch_is_effective());
+    assert_eq!(prefetch.count, 12);
+    assert_eq!(prefetch.confidence_threshold, 75);
+    assert_eq!(prefetch.min_observations, 6);
+    assert_eq!(prefetch.limits.max_scan_keys, 96);
+    assert_eq!(prefetch.limits.max_admit_keys, 10);
+    assert_eq!(prefetch.limits.max_admit_bytes, 131_072);
+}
+
+/// Unset keys inside an enabled section fall back to the documented defaults.
+#[test]
+fn storage_prefetch_enabled_without_tuning_uses_defaults() {
+    let cfg: NodeConfig = toml::from_str(
+        r#"
+        [storage.prefetch]
+        enabled = true
+        "#,
+    )
+    .expect("minimal prefetch table should parse");
+
+    let prefetch = cfg.storage_prefetch();
+    let defaults = neo_storage::persistence::data_cache::PrefetchConfig::default();
+    assert!(prefetch.enabled);
+    assert!(prefetch.is_active());
+    assert_eq!(prefetch.count, defaults.count);
+    assert_eq!(prefetch.confidence_threshold, defaults.confidence_threshold);
+    assert_eq!(prefetch.min_observations, defaults.min_observations);
+    assert_eq!(prefetch.limits, defaults.limits);
+}
+
+/// Operator ceilings are clamped into the storage crate's hard bounds.
+#[test]
+fn storage_prefetch_limits_are_clamped() {
+    use neo_storage::persistence::data_cache::PrefetchLimits;
+
+    let cfg: NodeConfig = toml::from_str(
+        r#"
+        [storage.prefetch]
+        enabled = true
+
+        [storage.prefetch.limits]
+        max_scan_keys = 1000000
+        max_admit_keys = 1000000
+        max_admit_bytes = 1000000000
+        "#,
+    )
+    .expect("oversized prefetch limits should still parse");
+
+    let prefetch = cfg.storage_prefetch();
+    assert_eq!(
+        prefetch.limits.max_scan_keys,
+        PrefetchLimits::CEILING_SCAN_KEYS
+    );
+    assert_eq!(
+        prefetch.limits.max_admit_keys,
+        PrefetchLimits::CEILING_ADMIT_KEYS
+    );
+    assert_eq!(
+        prefetch.limits.max_admit_bytes,
+        PrefetchLimits::CEILING_ADMIT_BYTES
+    );
+}
+
+/// A zero ceiling switches the feature off instead of enabling an empty scan.
+#[test]
+fn storage_prefetch_zero_ceiling_is_not_active() {
+    let cfg: NodeConfig = toml::from_str(
+        r#"
+        [storage.prefetch]
+        enabled = true
+        count = 0
+        "#,
+    )
+    .expect("zero count should parse");
+
+    assert!(cfg.storage_prefetch().enabled);
+    assert!(!cfg.storage_prefetch_is_effective());
+}
+
+/// Unknown keys inside the prefetch table are rejected, like every other section.
+#[test]
+fn storage_prefetch_rejects_unknown_fields() {
+    let err = toml::from_str::<NodeConfig>(
+        r#"
+        [storage.prefetch]
+        enabled = true
+        magic = 1
+        "#,
+    )
+    .expect_err("unknown prefetch field should be rejected");
+    let msg = err.to_string().to_ascii_lowercase();
+    assert!(msg.contains("unknown"), "unexpected error message: {msg}");
+}
+
+/// The bundled templates must keep parsing and must not switch prefetch on.
+#[test]
+fn bundled_configs_keep_prefetch_disabled() {
+    for (name, contents) in [
+        ("mainnet", include_str!("../../../neo_mainnet_node.toml")),
+        ("testnet", include_str!("../../../neo_testnet_node.toml")),
+        (
+            "production",
+            include_str!("../../../neo_production_node.toml"),
+        ),
+    ] {
+        let cfg: NodeConfig = toml::from_str(contents)
+            .unwrap_or_else(|err| panic!("{name} config should parse: {err}"));
+        assert!(
+            !cfg.storage_prefetch().enabled,
+            "{name} template must ship with prefetch disabled"
+        );
+    }
 }

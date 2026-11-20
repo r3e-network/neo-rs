@@ -88,10 +88,10 @@ impl HardforkManager {
 
     /// Checks whether a registered hardfork is active at the specified block height.
     pub fn is_enabled(&self, hardfork: Hardfork, block_height: u32) -> bool {
-        match self.hardforks.get(&hardfork) {
-            Some(&hardfork_height) => block_height >= hardfork_height,
-            None => false, // If hardfork isn't specified in configuration, return false
-        }
+        // If the hardfork isn't specified in configuration, it is never enabled.
+        self.hardforks
+            .get(&hardfork)
+            .is_some_and(|&hardfork_height| block_height >= hardfork_height)
     }
 
     /// Gets all explicitly configured hardforks.

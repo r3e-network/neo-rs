@@ -12,6 +12,7 @@
 //   crate::hardfork::Hardfork                   -> neo_protocol::Hardfork
 
 use super::*;
+use crate::native::helpers::encode_bigint;
 use crate::native::security_fixes::{SafeArithmetic, StateValidator};
 use neo_smart_contract::error::ToNativeError;
 use neo_smart_contract::impl_native_contract;
@@ -79,14 +80,14 @@ impl NativeContract for NeoToken {
         let initial_gas = BigInt::from(5i64 * Self::DATOSHI_FACTOR);
         engine.set_storage(
             gas_key,
-            StorageItem::from_bytes(Self::encode_amount(&initial_gas)),
+            StorageItem::from_bytes(encode_bigint(&initial_gas)),
         )?;
 
         let register_key = StorageKey::create(Self::ID, Self::PREFIX_REGISTER_PRICE);
         let register_price = BigInt::from(Self::DEFAULT_REGISTER_PRICE);
         engine.set_storage(
             register_key,
-            StorageItem::from_bytes(Self::encode_amount(&register_price)),
+            StorageItem::from_bytes(encode_bigint(&register_price)),
         )?;
 
         let validators = engine.protocol_settings().standby_validators();
@@ -108,7 +109,7 @@ impl NativeContract for NeoToken {
             let total_supply = BigInt::from(Self::TOTAL_SUPPLY);
             engine.set_storage(
                 total_supply_key,
-                StorageItem::from_bytes(Self::encode_amount(&total_supply)),
+                StorageItem::from_bytes(encode_bigint(&total_supply)),
             )?;
 
             // Mainnet genesis OnPersist emits this mint. The recipient is the
@@ -305,21 +306,14 @@ impl NativeContract for NeoToken {
                 // Validate the reward amount
                 StateValidator::validate_account_state(&updated, 0, u32::MAX)?;
 
-                engine.put_storage_item(
-                    &context,
-                    reward_key.suffix(),
-                    &Self::encode_amount(&updated),
-                )?;
+                engine.put_storage_item(&context, reward_key.suffix(), &encode_bigint(&updated))?;
             }
         }
 
         if profiling {
             eprintln!(
-                "neo-post-persist-profile height={} committee_ns={} gas_ns={} mint_ns={} voter_ns={}",
+                "neo-post-persist-profile height={} committee_ns={committee_ns} gas_ns={gas_ns} mint_ns={mint_ns} voter_ns={}",
                 block.index(),
-                committee_ns,
-                gas_ns,
-                mint_ns,
                 elapsed_ns(voter_started)
             );
         }

@@ -1,8 +1,5 @@
-use neo_native_contracts::{
-    LedgerContract, NativeHelpers, PolicyContract, Role, RoleManagement,
-    oracle_contract::OracleContract,
-};
-use neo_primitives::{UInt160, WitnessScope};
+use neo_native_contracts::{LedgerContract, NativeHelpers, oracle_contract::OracleContract};
+use neo_primitives::UInt160;
 use neo_protocol::payloads::{OracleResponse, Transaction, TransactionAttribute, get_fixed_script};
 use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_smart_contract::helper::Helper;
@@ -55,20 +52,17 @@ pub fn verify_attribute(
     }
 }
 
+/// Delegates to the canonical attribute-fee policy in `neo-native-contracts`.
+///
+/// Fee estimation and validation must agree on what an attribute costs, so the
+/// scaling rules live with the `PolicyContract` owner and this entry point only
+/// forwards to them.
 pub fn attribute_network_fee(
     attribute: &TransactionAttribute,
     snapshot: &DataCache,
     transaction: &Transaction,
 ) -> i64 {
-    let policy = PolicyContract::new();
-    let base_fee = policy
-        .get_attribute_fee_snapshot(snapshot, attribute.type_id())
-        .unwrap_or(PolicyContract::DEFAULT_ATTRIBUTE_FEE as i64);
-    match attribute {
-        TransactionAttribute::Conflicts(_) => transaction.signers().len() as i64 * base_fee,
-        TransactionAttribute::NotaryAssisted(attribute) => (attribute.nkeys as i64 + 1) * base_fee,
-        _ => base_fee,
-    }
+    neo_native_contracts::attribute_network_fee(attribute, snapshot, transaction)
 }
 
 /// Returns the fixed script required by oracle response transactions.
@@ -80,48 +74,16 @@ pub fn oracle_fixed_script() -> Vec<u8> {
     get_fixed_script()
 }
 
+/// Delegates to the canonical oracle-response verifier in `neo-native-contracts`.
+///
+/// The `Oracle.verify` native method and ledger attribute validation must accept
+/// exactly the same responses, so the algorithm has a single owner
+/// (`OracleContract::verify_oracle_response`) and this entry point only forwards
+/// to it.
 fn verify_oracle_response(
     attribute: &OracleResponse,
     snapshot: &DataCache,
     transaction: &Transaction,
 ) -> bool {
-    if transaction
-        .signers()
-        .iter()
-        .any(|signer| signer.scopes != WitnessScope::NONE)
-    {
-        return false;
-    }
-    if transaction.script() != oracle_fixed_script() {
-        return false;
-    }
-    let oracle = OracleContract::new();
-    let Ok(Some(request)) = oracle.get_request(snapshot, attribute.id) else {
-        return false;
-    };
-    let Some(total_fee) = transaction
-        .network_fee()
-        .checked_add(transaction.system_fee())
-    else {
-        return false;
-    };
-    if total_fee != request.gas_for_response {
-        return false;
-    }
-    let Ok(current_index) = LedgerContract::new().current_index(snapshot) else {
-        return false;
-    };
-    let designated = match RoleManagement::new().get_designated_by_role_at(
-        snapshot,
-        Role::Oracle,
-        current_index.saturating_add(1),
-    ) {
-        Ok(nodes) if !nodes.is_empty() => nodes,
-        _ => return false,
-    };
-    let oracle_account = NativeHelpers::get_bft_address(&designated);
-    transaction
-        .signers()
-        .iter()
-        .any(|signer| signer.account == oracle_account)
+    OracleContract::verify_oracle_response(attribute, snapshot, transaction)
 }

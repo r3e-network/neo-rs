@@ -1,14 +1,20 @@
 //! Interop service registry aligned with Neo's C# implementation.
 //!
-//! The interop service is responsible for mapping syscall names to descriptors,
-//! computing their hashes, and dispatching execution either to built-in handlers
-//! or to the host environment (e.g. `ApplicationEngine`).
+//! The interop service maps syscall names to descriptors, computes their
+//! hashes, and dispatches execution either to a VM-side callback or to the host
+//! environment (e.g. `ApplicationEngine`).
+//!
+//! The VM owns this *machinery* only. Neo host-service metadata — canonical
+//! names, GAS base prices and required [`CallFlags`] — is owned by the layer
+//! that implements the service (`ApplicationEngine` in `neo-smart-contract`)
+//! and reaches the VM exclusively through [`InteropService::register`].
+//! There is no VM-side built-in syscall table, so the implementation that
+//! enforces a permission and the metadata that declares it cannot disagree.
 
 use crate::Instruction;
 use crate::error::{VmError, VmResult};
 use crate::execution_context::ExecutionContext;
 use crate::execution_engine::ExecutionEngine;
-use crate::syscalls;
 use neo_primitives::CallFlags;
 use std::collections::HashMap;
 use std::str;
@@ -21,10 +27,14 @@ pub type InteropCallback = fn(&mut ExecutionEngine) -> VmResult<()>;
 ///
 /// Dispatch copies this out before invoking the handler so a nested syscall
 /// still sees the installed [`InteropService`].
+#[derive(Clone, Copy)]
 pub(crate) struct DynamicDispatch {
     pub handler: Option<InteropCallback>,
     pub required_call_flags: CallFlags,
-    pub name: String,
+    /// `true` when the descriptor carries no VM-side callback, so the installed
+    /// [`InteropHost`] owns both the implementation and the enforcement of the
+    /// registered price and call flags.
+    pub host_owned: bool,
 }
 
 /// Descriptor for a syscall registered with the interop service. Mirrors the shape of
@@ -147,15 +157,15 @@ pub struct InteropService {
 }
 
 impl InteropService {
-    /// Creates a new, empty interop service. Descriptors must be registered explicitly
-    /// by the host (mirroring the static registration that happens in C#).
+    /// Creates a new, empty interop service.
     ///
-    /// This also initializes the built-in syscall registry for optimized dispatch.
+    /// Descriptors must be registered explicitly by the host (mirroring the
+    /// static registration that happens in C#). The VM deliberately ships no
+    /// built-in Neo syscall table: names, prices and required call flags are
+    /// owned by the registering layer (`ApplicationEngine` for Neo host
+    /// services), so there is exactly one authority per engine.
     #[must_use]
     pub fn new() -> Self {
-        // Initialize the built-in syscall registry on first use
-        syscalls::init();
-
         Self {
             descriptors: Arc::new(HashMap::new()),
         }
@@ -221,64 +231,58 @@ impl InteropService {
         self.descriptors.get(&hash).map(|entry| DynamicDispatch {
             handler: entry.descriptor.handler,
             required_call_flags: entry.descriptor.required_call_flags,
-            name: entry.descriptor.name.clone(),
+            host_owned: entry.descriptor.handler.is_none(),
         })
+    }
+
+    /// Returns the canonical name registered for `hash`, if one exists.
+    ///
+    /// Diagnostics only: the dispatch hot path copies the `Copy` fields from
+    /// [`DynamicDispatch`] and never formats a name.
+    pub(crate) fn syscall_name(&self, hash: u32) -> Option<&str> {
+        self.descriptors
+            .get(&hash)
+            .map(|entry| entry.descriptor.name.as_str())
     }
 
     /// Invokes a syscall by its 32-bit hash identifier.
     ///
-    /// # Performance optimization
-    ///
-    /// This method uses a two-tier lookup strategy:
-    /// 1. **Fast path**: O(1) cuckoo hash lookup for built-in syscalls (<150ns guaranteed)
-    /// 2. **Slow path**: HashMap lookup for dynamically registered syscalls
-    ///
-    /// The fast path handles ~95% of production syscalls with constant-time guarantees,
-    /// eliminating HashMap overhead and cache misses.
+    /// Dispatch is entirely registration driven. The VM owns no Neo syscall
+    /// names, prices or permission bits; it only routes a hash to the
+    /// descriptor the host registered for this engine.
     pub fn invoke_by_hash(&mut self, engine: &mut ExecutionEngine, hash: u32) -> VmResult<()> {
-        // FAST PATH: built-in syscalls are dispatched to the host.
-        //
-        // Do not validate call flags or gas against the static registry here:
-        // the authoritative, per-engine (and hardfork-dependent) metadata is
-        // registered by the host in `ApplicationEngine::register_host_service`.
-        // The static table is only a name/hash index. Duplicating policy there
-        // has caused real divergences (e.g. CreateStandardAccount was marked
-        // ReadStates-only, and storage reads required WriteStates).
-        if syscalls::get_syscall_entry_by_u32(hash).is_some()
-            && let Some(result) = engine.invoke_host_syscall(hash)
-        {
-            return result;
-        }
-
-        // SLOW PATH: Not a built-in syscall, check dynamically registered descriptors
-        let (handler, required_call_flags, name) = {
-            let entry = self.descriptors.get(&hash).ok_or_else(|| {
-                VmError::invalid_operation_msg(format!("Syscall 0x{hash:08x} not registered"))
-            })?;
-
-            (
-                entry.descriptor.handler,
-                entry.descriptor.required_call_flags,
-                entry.descriptor.name.clone(),
-            )
+        let Some(prepared) = self.dynamic_dispatch(hash) else {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Syscall 0x{hash:08x} not registered"
+            )));
         };
 
-        if !engine.has_call_flags(required_call_flags) {
+        // Host-owned services are priced and permission-checked by the host
+        // from the very descriptor registered above (`ApplicationEngine`
+        // enforces both in `invoke_syscall`), so the VM must not keep a second
+        // copy of that policy.
+        if prepared.host_owned {
+            return match engine.invoke_host_syscall(hash) {
+                Some(result) => result,
+                None => Err(VmError::invalid_operation_msg(format!(
+                    "Syscall {} requires an interop host",
+                    self.syscall_name(hash).unwrap_or("<unregistered>")
+                ))),
+            };
+        }
+
+        if !engine.has_call_flags(prepared.required_call_flags) {
             return Err(VmError::invalid_operation_msg(format!(
-                "Missing required call flags: {required_call_flags:?}"
+                "Missing required call flags: {:?}",
+                prepared.required_call_flags
             )));
         }
 
-        if let Some(callback) = handler {
-            return callback(engine);
-        }
-
-        if let Some(result) = engine.invoke_host_syscall(hash) {
-            result
-        } else {
-            Err(VmError::invalid_operation_msg(format!(
-                "Syscall {name} requires an interop host"
-            )))
+        match prepared.handler {
+            Some(callback) => callback(engine),
+            None => Err(VmError::invalid_operation_msg(format!(
+                "Syscall 0x{hash:08x} has no handler"
+            ))),
         }
     }
 

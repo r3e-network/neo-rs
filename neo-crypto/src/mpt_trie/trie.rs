@@ -1,18 +1,19 @@
 use super::MptCache;
-use super::cache::{GlobalNodeCache, MptStoreSnapshot};
+use super::cache::{GlobalNodeCache, MptStoreSnapshot, NODE_KEY_PREFIX, node_key};
 use super::error::{MptError, MptResult};
 use super::node::{BRANCH_CHILD_COUNT, BRANCH_VALUE_INDEX, MAX_KEY_LENGTH, MAX_VALUE_LENGTH, Node};
 use super::node_type::NodeType;
 use super::profile::{MptProfile, MptProfileStage, MptProfileTimer};
+use super::proof_cache::{
+    CommittedRoot, ProofBundle, ProofCache, ProofCacheKey, ProofCacheNamespace,
+    speculative_root_error,
+};
 use crate::Crypto;
-use neo_primitives::UINT256_SIZE;
 use neo_primitives::UInt256;
 use parking_lot::Mutex;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-
-const CACHE_PREFIX: u8 = 0xf0;
 
 /// Merkle Patricia Trie backed by an [`MptStoreSnapshot`].
 pub struct Trie<S>
@@ -31,7 +32,7 @@ where
 {
     /// Creates a new trie instance using the supplied store snapshot and optional root hash.
     pub fn new(store: Arc<S>, root: Option<UInt256>, full_state: bool) -> Self {
-        let mut cache = MptCache::with_global_cache(store, CACHE_PREFIX, full_state);
+        let mut cache = MptCache::with_global_cache(store, NODE_KEY_PREFIX, full_state);
         cache.set_full_state(full_state);
         let root_node = root.map_or_else(Node::new, Node::new_hash);
         Self {
@@ -60,7 +61,7 @@ where
         full_state: bool,
         node_cache: Option<Arc<GlobalNodeCache>>,
     ) -> Self {
-        let mut cache = MptCache::with_node_cache(store, CACHE_PREFIX, node_cache);
+        let mut cache = MptCache::with_node_cache(store, NODE_KEY_PREFIX, node_cache);
         cache.set_full_state(full_state);
         Self {
             cache,
@@ -256,15 +257,79 @@ where
         Ok(results)
     }
 
+    /// Returns the committed-root marker for this trie, or `None` while the
+    /// in-memory root is still mutable.
+    ///
+    /// A dirty root means uncommitted updates are pending, so a proof built
+    /// against it would describe state that may never be persisted. Callers
+    /// that already hold a persisted root record can bypass this check with
+    /// [`CommittedRoot::from_committed`].
+    #[must_use]
+    pub fn committed_root(&self) -> Option<CommittedRoot> {
+        if self.root.is_dirty() {
+            return None;
+        }
+        self.root_hash().map(CommittedRoot::from_committed)
+    }
+
     /// Builds a Merkle proof for the supplied key.
     pub fn try_get_proof(&mut self, key: &[u8]) -> MptResult<Option<HashSet<Vec<u8>>>> {
         let path = Self::ensure_lookup_key(key)?;
-        let mut proof = HashSet::new();
-        if Self::get_proof_node(&mut self.cache, &mut self.root, &path, &mut proof)? {
-            Ok(Some(proof))
+        let mut nodes = Vec::new();
+        if Self::get_proof_node(&mut self.cache, &mut self.root, &path, &mut nodes)? {
+            Ok(Some(nodes.into_iter().collect()))
         } else {
             Ok(None)
         }
+    }
+
+    /// Builds a Merkle proof for `key` under a committed root, reusing the
+    /// cached bundle when one exists.
+    ///
+    /// `committed` must name the finalized root this trie is pinned to and
+    /// `namespace` must identify the node store backing it. Both are part of
+    /// the cache key, so proofs for distinct roots, distinct stores or distinct
+    /// keys can never be confused.
+    ///
+    /// # Errors
+    ///
+    /// Rejects a mutable (`dirty`) root, an empty trie and a marker that does
+    /// not match the trie's own root hash, so a speculative root can never be
+    /// cached. A key that is absent from the trie yields `Ok(None)` and is not
+    /// cached.
+    pub fn get_proof_cached(
+        &mut self,
+        cache: &ProofCache,
+        committed: CommittedRoot,
+        namespace: ProofCacheNamespace,
+        key: &[u8],
+    ) -> MptResult<Option<Arc<ProofBundle>>> {
+        if self.root.is_dirty() {
+            return Err(speculative_root_error(
+                "trie root has uncommitted updates and is not immutable",
+            ));
+        }
+        let root_hash = self
+            .root_hash()
+            .ok_or_else(|| speculative_root_error("trie is empty and has no root"))?;
+        if root_hash != committed.hash() {
+            return Err(speculative_root_error(format_args!(
+                "committed root {} does not match trie root {root_hash}",
+                committed.hash()
+            )));
+        }
+        // Validate the key before inserting anything, so malformed requests can
+        // never occupy a cache slot.
+        let path = Self::ensure_lookup_key(key)?;
+        let cache_key = ProofCacheKey::new(committed, namespace, key);
+        cache.get_or_construct(&cache_key, || {
+            let mut nodes = Vec::new();
+            if Self::get_proof_node(&mut self.cache, &mut self.root, &path, &mut nodes)? {
+                Ok(Some(nodes))
+            } else {
+                Ok(None)
+            }
+        })
     }
 
     /// Verifies a Merkle proof captured from `try_get_proof` against the provided root hash.
@@ -304,7 +369,7 @@ where
             let hash = UInt256::from_bytes(&hash_bytes).map_err(MptError::from)?;
             let mut stored = data.clone();
             stored.push(1);
-            store.put(Self::cache_key(&hash), stored)?;
+            store.put(node_key(&hash), stored)?;
         }
 
         let mut trie = Trie::new(store, Some(root), false);
@@ -809,12 +874,12 @@ where
         cache: &mut MptCache<S>,
         node: &mut Node,
         path: &[u8],
-        proof: &mut HashSet<Vec<u8>>,
+        proof: &mut Vec<Vec<u8>>,
     ) -> MptResult<bool> {
         match node.node_type {
             NodeType::LeafNode => {
                 if path.is_empty() {
-                    proof.insert(node.to_array_without_reference()?);
+                    proof.push(node.to_array_without_reference()?);
                     Ok(true)
                 } else {
                     Ok(false)
@@ -829,7 +894,7 @@ where
                 Self::get_proof_node(cache, node, path, proof)
             }
             NodeType::BranchNode => {
-                proof.insert(node.to_array_without_reference()?);
+                proof.push(node.to_array_without_reference()?);
                 if path.is_empty() {
                     let child = node
                         .get_child_mut(BRANCH_VALUE_INDEX)
@@ -845,7 +910,7 @@ where
             }
             NodeType::ExtensionNode => {
                 if path.starts_with(&node.key) {
-                    proof.insert(node.to_array_without_reference()?);
+                    proof.push(node.to_array_without_reference()?);
                     let consumed = node.key.len();
                     let next = node
                         .get_next_mut()
@@ -1080,13 +1145,6 @@ where
             key.push(hi | lo);
         }
         Ok(key)
-    }
-
-    fn cache_key(hash: &UInt256) -> Vec<u8> {
-        let mut buffer = Vec::with_capacity(1 + UINT256_SIZE);
-        buffer.push(CACHE_PREFIX);
-        buffer.extend_from_slice(&hash.to_bytes());
-        buffer
     }
 
     /// Optimized common prefix length calculation.

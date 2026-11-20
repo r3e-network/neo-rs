@@ -431,6 +431,10 @@ pub fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
         }
     }
     engine.unload_context(&mut context)?;
+    // The context is gone for good: recycle its evaluation-stack allocation
+    // when nothing else aliases it. A context that shared the caller's stack
+    // (CALL) reports no exclusive ownership and is left untouched.
+    engine.recycle_context_stack(&mut context);
 
     if engine.invocation_stack().is_empty() {
         engine.set_state(VMState::HALT);

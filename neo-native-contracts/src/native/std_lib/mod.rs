@@ -28,16 +28,13 @@ impl StdLib {
     const ID: i32 = -2;
 
     /// Creates a new StdLib contract.
+    ///
+    /// Hash: `0xacce6fd80d44e1796aa0c2c625e9e4e0ce39efc0`.
     pub fn new() -> Self {
-        // StdLib contract hash: 0xacce6fd80d44e1796aa0c2c625e9e4e0ce39efc0
-        let hash =
-            crate::native::static_contract_hash!("0xacce6fd80d44e1796aa0c2c625e9e4e0ce39efc0");
-
-        Self {
-            id: Self::ID,
-            hash,
-            methods: crate::native::static_native_methods!(StdLib::native_methods()),
-        }
+        crate::native::stateless_native_contract!(
+            StdLib,
+            "0xacce6fd80d44e1796aa0c2c625e9e4e0ce39efc0"
+        )
     }
 
     /// Invokes a method on the StdLib contract.

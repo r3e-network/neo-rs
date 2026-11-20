@@ -59,13 +59,14 @@ pub mod evidence;
 pub mod participant;
 pub mod profile;
 pub mod receipt;
+pub mod transaction_loop;
 
 #[cfg(test)]
 mod block_processing_tests;
 
 pub use engine_port::{
     ApplicationEnginePort, EngineFactory, NativeCacheHandle, NativeEnginePort,
-    SeededNativeContracts,
+    SeededNativeContracts, SpeculativeExecution,
 };
 pub use error::{LedgerError, LedgerResult};
 pub use evidence::{
@@ -74,15 +75,16 @@ pub use evidence::{
 pub use participant::{CommitContext, CommitParticipant, StageContext};
 pub use profile::{PersistenceProfiler, PersistenceStage};
 pub use receipt::{ExecutionReceipt, PersistReceipt};
+pub use transaction_loop::{
+    TransactionLoopContext, TransactionLoopOutcome, TransactionLoopStrategy, execute_serially,
+};
 
 use profile::StageTimer;
 
 use evidence::FaultObservationBuffer;
-use neo_primitives::Verifiable;
 use neo_protocol::execution::Block;
 use neo_smart_contract::application_engine::LedgerTransactionStates;
 use neo_storage::persistence::DataCache;
-use neo_vm::VmState;
 use std::sync::Arc;
 
 /// Options selecting the persistence mode for one [`persist_block`] invocation.
@@ -207,6 +209,37 @@ pub fn persist_block_profiled(
     options: &PersistOptions,
     profiler: Option<&dyn PersistenceProfiler>,
 ) -> LedgerResult<PersistReceipt> {
+    persist_block_with_loop_strategy(
+        block,
+        store,
+        engines,
+        runtime_cache,
+        evidence,
+        participants,
+        options,
+        profiler,
+        None,
+    )
+}
+
+/// Runs the canonical pipeline with an alternative step 10 implementation.
+///
+/// `strategy: None` keeps [`execute_serially`] — the canonical serial loop, which is
+/// what [`persist_block`] and [`persist_block_profiled`] always use. A supplied
+/// strategy only replaces *where* the transactions execute; the surrounding fourteen
+/// steps, including the store commit and the participant ordering, are untouched.
+#[allow(clippy::too_many_arguments)]
+pub fn persist_block_with_loop_strategy(
+    block: Block,
+    store: &dyn SnapshotStore,
+    engines: &dyn EngineFactory,
+    runtime_cache: &dyn RuntimeCacheSink,
+    evidence: &dyn EvidenceSink,
+    participants: &[Arc<dyn CommitParticipant>],
+    options: &PersistOptions,
+    profiler: Option<&dyn PersistenceProfiler>,
+    strategy: Option<&dyn TransactionLoopStrategy>,
+) -> LedgerResult<PersistReceipt> {
     // Step 1 — resolve options and detailed-execution gating.
     let fast_sync = options.fast_sync;
     let detailed = !fast_sync || participants.iter().any(|p| p.run_during_fast_sync());
@@ -215,8 +248,8 @@ pub fn persist_block_profiled(
     let block_hash = block.hash();
     let block_height = block.index();
     let persisting_block = Arc::new(block);
-    let mut fault_buffer =
-        FaultObservationBuffer::for_available_capacity(evidence.available_capacity());
+    let fault_capacity = evidence.available_capacity();
+    let mut fault_buffer = FaultObservationBuffer::for_available_capacity(fault_capacity);
 
     // Steps 3/4 — open the store write transaction and derive the base overlay snapshot.
     let transaction = {
@@ -273,68 +306,33 @@ pub fn persist_block_profiled(
     // Step 9 — take the ledger transaction state token from the OnPersist engine.
     let mut tx_states: LedgerTransactionStates = on_persist.take_transaction_states();
 
-    // Step 10 — per-transaction application loop over one shared child overlay.
+    // Step 10 — per-transaction application loop.
+    //
+    // The canonical serial loop over one shared child overlay is [`execute_serially`];
+    // a caller-supplied strategy may replace it. Either way the outcome is folded back
+    // in block order so steps 11-15 see exactly what the serial loop would have produced.
     {
         let _stage = StageTimer::new(profiler, PersistenceStage::TransactionLoop);
-        if !persisting_block.transactions.is_empty() {
-            let tx_overlay = Arc::new(base_snapshot.clone_cache());
-            for (tx, tx_hash) in persisting_block.transactions.iter().zip(transaction_hashes) {
-                // VM execution for the transaction
-                let container: Arc<dyn Verifiable> = Arc::new(tx.clone());
-                let mut app = engines.open_application(
-                    container,
-                    Arc::clone(&tx_overlay),
-                    Arc::clone(&persisting_block),
-                    tx.system_fee(),
-                    &seeded,
-                    &native_cache,
-                )?;
-                app.set_transaction_states(tx_states);
-                app.load_script(tx.script().to_vec())?;
-                let vm_state = {
-                    let _stage = StageTimer::new(profiler, PersistenceStage::TransactionVm);
-                    app.execute_allow_fault()
-                };
-                app.verify_execution()?;
-
-                if detailed {
-                    receipts.push(app.execution_receipt());
-                } else {
-                    // Record the VM state unconditionally even without a detailed receipt.
-                    app.record_transaction_vm_state(&tx_hash, vm_state);
-                }
-                tx_states = app.take_transaction_states();
-
-                match vm_state {
-                    // Step 10a — HALT: merge the child overlay into the base snapshot.
-                    VmState::HALT => base_snapshot.merge_from_child(&tx_overlay),
-                    // Step 10b — FAULT: reset the overlay and stage a bounded observation.
-                    VmState::FAULT => {
-                        tx_overlay.reset();
-                        let category = if app.fault_exception().is_some() {
-                            FaultCategory::CaughtVmException
-                        } else {
-                            FaultCategory::VmFault
-                        };
-                        fault_buffer.push(FaultObservation {
-                            transaction_hash: tx_hash,
-                            block_height,
-                            block_hash,
-                            vm_state: VmState::FAULT,
-                            category,
-                            gas_consumed: app.fee_consumed(),
-                        });
-                    }
-                    // Step 10c — any other VM state aborts before any commit side effect.
-                    other => {
-                        return Err(LedgerError::UnexpectedVmState {
-                            transaction_hash: tx_hash,
-                            vm_state: other,
-                        });
-                    }
-                }
-            }
+        let context = TransactionLoopContext {
+            block: &persisting_block,
+            transaction_hashes: &transaction_hashes,
+            base_snapshot: &base_snapshot,
+            seeded: &seeded,
+            native_cache: &native_cache,
+            detailed,
+            fault_capacity,
+            profiler,
+        };
+        let outcome = match strategy {
+            Some(strategy) => strategy.execute(engines, &context, tx_states)?,
+            None => execute_serially(engines, &context, tx_states)?,
+        };
+        tx_states = outcome.transaction_states;
+        receipts.extend(outcome.receipts);
+        for observation in outcome.faults {
+            fault_buffer.push(observation);
         }
+        fault_buffer.dropped = fault_buffer.dropped.saturating_add(outcome.dropped_faults);
     }
 
     // Step 11 — PostPersist native execution over the merged base snapshot.
@@ -490,9 +488,10 @@ mod tests {
     //! `neo-system` adapter (task-102 Part I) and are *not* duplicated here.
 
     use super::*;
-    use neo_primitives::{TriggerType, UInt256};
+    use neo_primitives::{TriggerType, UInt256, Verifiable};
     use neo_protocol::payloads::Transaction;
     use neo_smart_contract::application_engine::{LedgerTransactionStates, NativeContractsCache};
+    use neo_vm::VmState;
     use parking_lot::Mutex;
     use std::collections::{HashMap, VecDeque};
     use std::sync::atomic::{AtomicUsize, Ordering};

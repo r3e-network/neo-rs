@@ -45,15 +45,13 @@ impl RoleManagement {
     const CPU_FEE: i64 = 1 << 15;
 
     /// Creates a new RoleManagement contract.
+    ///
+    /// Hash: `0x49cf4e5378ffcd4dec034fd98a174c5491e395e2`.
     pub fn new() -> Self {
-        // RoleManagement contract hash: 0x49cf4e5378ffcd4dec034fd98a174c5491e395e2
-        let hash = super::static_contract_hash!("0x49cf4e5378ffcd4dec034fd98a174c5491e395e2");
-
-        Self {
-            id: Self::ID,
-            hash,
-            methods: super::static_native_methods!(RoleManagement::native_methods()),
-        }
+        super::stateless_native_contract!(
+            RoleManagement,
+            "0x49cf4e5378ffcd4dec034fd98a174c5491e395e2"
+        )
     }
 
     fn invoke_method(
@@ -80,8 +78,7 @@ impl RoleManagement {
             .map_err(|err| Error::native_contract(err.to_string()))?;
         if index > current_index.saturating_add(1) {
             return Err(Error::native_contract(format!(
-                "Index {} exceeds current index + 1 ({})",
-                index,
+                "Index {index} exceeds current index + 1 ({})",
                 current_index.saturating_add(1)
             )));
         }

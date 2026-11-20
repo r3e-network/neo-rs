@@ -33,12 +33,7 @@ impl VmState {
     #[inline]
     #[must_use]
     pub const fn to_byte(self) -> u8 {
-        match self {
-            Self::None => 0,
-            Self::Halt => 1 << 0,
-            Self::Fault => 1 << 1,
-            Self::Break => 1 << 2,
-        }
+        self as u8
     }
 
     /// Decodes a persisted C# Neo.VM state byte.

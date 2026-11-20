@@ -415,10 +415,8 @@ impl TeeMempool {
         }
 
         debug!(
-            "Added transaction {} with sequence {} to batch {}",
-            hex::encode(&tx_hash[..8]),
-            sequence,
-            batch_id
+            "Added transaction {} with sequence {sequence} to batch {batch_id}",
+            hex::encode(&tx_hash[..8])
         );
 
         Ok(sequence)

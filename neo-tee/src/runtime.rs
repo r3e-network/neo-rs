@@ -2,8 +2,8 @@
 //!
 //! Phase 3 S6c: sank from neo-node's `tee_integration` module. The RPC-facing
 //! `PrivacySubmitter` adapter stays in the assembly layer so this crate remains
-//! rpc-free. Gated behind the `integration` feature (default off) to preserve
-//! the pre-move default build surface.
+//! rpc-free. Gated behind the `integration` feature (default on since Phase 9,
+//! F14), which also activates the wallet/protocol/contract edges it needs.
 
 use crate::{
     attestation::AttestationService,
@@ -352,9 +352,8 @@ impl TeeRuntime {
                         Err(io_err) if io_err.kind() == ErrorKind::NotFound => {}
                         Err(io_err) => {
                             return Err(crate::TeeError::Other(format!(
-                                "failed to remove stale startup self-check wallet {}: {}",
-                                wallet_path.display(),
-                                io_err
+                                "failed to remove stale startup self-check wallet {}: {io_err}",
+                                wallet_path.display()
                             )));
                         }
                     }
@@ -382,9 +381,8 @@ impl TeeRuntime {
                     Err(io_err) if io_err.kind() == ErrorKind::NotFound => {}
                     Err(io_err) => {
                         return Err(crate::TeeError::Other(format!(
-                            "failed to remove stale startup self-check wallet {}: {}",
-                            wallet_path.display(),
-                            io_err
+                            "failed to remove stale startup self-check wallet {}: {io_err}",
+                            wallet_path.display()
                         )));
                     }
                 }

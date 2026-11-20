@@ -204,19 +204,8 @@ pub mod script;
 /// Script builder for programmatically constructing VM scripts.
 pub mod script_builder;
 
-/// JSON-RPC envelope rendering for VM stack items.
-pub mod rpc_json;
-
 /// Slot storage for locals, arguments, and static fields.
 pub mod slot;
-
-/// StorageContext for smart contract storage operations.
-pub mod storage_context;
-
-/// Read/Write Set Tracker for parallel execution conflict detection.
-/// The implementation is exposed through the runtime module.
-/// Syscall registry - static dispatch table with zero allocations.
-pub mod syscalls;
 
 /// Native VM stack item engine.
 ///
@@ -280,7 +269,7 @@ pub use interpreter::{
     interpret_with_stack_and_syscalls_at_with_result_limit, interpret_with_syscalls,
     last_interpreter_ip, last_result_limit, last_result_stack_len, last_result_stage,
 };
-pub use runtime::rw_set_tracker::RwSetTracker;
+pub use runtime::rw_set_tracker::{RwKey, RwSetTracker};
 pub use runtime::{RuntimeStack, VmContext};
 pub use vm::{
     DEFAULT_MAX_INVOCATION_DEPTH, DEFAULT_MAX_STACK_DEPTH, ExceptionHandlingContext,
@@ -304,26 +293,19 @@ pub use execution_context::ExecutionContext;
 pub use execution_engine::ExecutionEngine;
 pub use interop_service::InteropService;
 
-// Syscall registry - publicly accessible for static lookups
 pub use interoperable::Interoperable;
 pub use json_serializer::JsonSerializer;
 pub use jump_table::JumpTable;
 pub use notify_event_args::NotifyEventArgs;
 pub use reference_counter::ReferenceCounter;
-pub use rpc_json::{
-    stack_item_rpc_json, stack_item_rpc_json_deferred_size_check, stack_items_rpc_json_per_item,
-};
 pub use script::Script;
 pub use script_builder::ScriptBuilder;
 pub use slot::Slot;
 pub use stack_item::{StackItem, StackItemExt};
-pub use stack_projection::{ToStackItem, ToStackValue};
-pub use storage_context::StorageContext;
-pub use syscalls::{
-    GasCost, NUM_BUILTINS, SyscallEntry, SyscallHash, get_syscall_entry,
-    init as init_syscall_registry, verify_registry_completeness,
+pub use stack_projection::{
+    ToStackItem, ToStackValue, witness_condition_to_stack_item, witness_condition_to_stack_value,
+    witness_rule_to_stack_item, witness_rule_to_stack_value,
 };
-// pub use rw_set_tracker::RwSetTracker;  // REMOVED - use crate::runtime::rw_set_tracker::RwSetTracker instead
 
 // ============================================================================
 // I/O Abstraction
@@ -333,11 +315,16 @@ pub use syscalls::{
 pub use neo_io_crate as io;
 
 // ============================================================================
-// Fast Path Execution Optimization
+// Fast Path Execution Vocabulary
 // ============================================================================
 
-/// Fast path execution optimization for common transaction patterns.
+/// Fast path execution vocabulary shared with the application engine.
 ///
-/// Provides 10-50x performance improvement for simple NEP-17 transfers by
-/// bypassing the VM interpreter entirely. See module documentation for details.
+/// The VM owns the fast-path error type and a generic, semantics-free bytecode
+/// cursor. Application-level fast-path routing (NEP-17 transfer parsing,
+/// transaction classification, block-script recognition) lives in
+/// `neo-smart-contract`, together with `StorageContext` and the JSON-RPC stack
+/// envelope, because those are application-host and RPC concerns rather than
+/// VM concerns. The VM declares no dependency on those crates, so no re-export
+/// shim exists here.
 pub mod fast_path;

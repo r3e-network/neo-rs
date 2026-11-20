@@ -11,6 +11,8 @@
 
 /// Account state for native tokens.
 pub mod account_state;
+/// Canonical transaction-attribute network-fee policy.
+pub mod attribute_fee;
 /// Standard native service composition.
 pub mod composition;
 /// Contract management native contract.
@@ -59,6 +61,10 @@ pub mod std_lib;
 /// Not a C# neo v3.10.1 native contract and NOT registered in
 /// [`composition::standard_registry`]; kept only as standalone
 /// library code. Its `hash()` is not derived from the protocol formula.
+///
+/// Phase 9 (F17): strictly opt-in behind the `experimental` feature, so a
+/// default build exposes no non-protocol native contract at all.
+#[cfg(feature = "experimental")]
 pub mod token_management;
 /// Transaction state for ledger.
 pub mod transaction_state;
@@ -69,6 +75,7 @@ pub mod trimmed_block;
 
 pub use self::oracle_request::OracleRequest;
 pub use account_state::AccountState;
+pub use attribute_fee::attribute_network_fee;
 pub use contract_management::ContractManagement;
 pub use crypto_lib::CryptoLib;
 pub use fungible_token::{DefaultTokenAccountState, FungibleToken, TokenAccountState};
@@ -89,6 +96,9 @@ pub use security_fixes::{
     StateValidator,
 };
 pub use std_lib::StdLib;
+/// Phase 9 (F17): the token-management contract and its state vocabulary only
+/// exist in `experimental` builds.
+#[cfg(feature = "experimental")]
 pub use token_management::{TokenState, TokenType};
 pub use transaction_state::TransactionState;
 pub use treasury::TreasuryContract;
@@ -128,6 +138,29 @@ macro_rules! static_contract_hash {
     }};
 }
 pub(crate) use static_contract_hash;
+
+/// Builds the state of a stateless native contract.
+///
+/// A stateless native contract is identified by exactly three things: its id,
+/// its well-known contract hash and its method table. Restating that struct
+/// literal in every contract let one of the three drift, so it is composed here
+/// from the two building blocks above. `$ty` must name the concrete type for
+/// the same reason [`static_native_methods`] requires it; `$hash` is the
+/// contract's mainnet hash literal.
+macro_rules! stateless_native_contract {
+    ($ty:ty, $hash:literal) => {
+        Self {
+            id: Self::ID,
+            hash: $crate::native::static_contract_hash!($hash),
+            methods: $crate::native::static_native_methods!(<$ty>::native_methods()),
+        }
+    };
+}
+pub(crate) use stateless_native_contract;
+
+/// Differential tests for the empty-block OnPersist/PostPersist early returns.
+#[cfg(test)]
+mod persist_hook_tests;
 
 #[cfg(test)]
 #[allow(dead_code)]

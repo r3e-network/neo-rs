@@ -19,6 +19,7 @@
 use super::NativeContract;
 use super::method_macros::neo_native_methods;
 use super::native_contract::NativeMethod;
+use crate::native::helpers::encode_bigint;
 use neo_primitives::UInt160;
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::error::CoreError as Error;
@@ -31,6 +32,39 @@ pub const PREFIX_TOTAL_SUPPLY: u8 = 11;
 
 /// Prefix for storing account states in storage.
 pub const PREFIX_ACCOUNT: u8 = 20;
+
+/// Emits the `Transfer` notification for a token contract.
+///
+/// Single definition of the notification shape `[from, to, amount]`: absent
+/// addresses become `null` items and the contract hash is explicit, matching C#
+/// `FungibleToken.PostTransferAsync`. NEP-17 tokens reach it through
+/// [`FungibleToken::ft_emit_transfer`]; the token-management NFT ledger calls it
+/// directly because it is not itself a fungible token.
+pub(crate) fn emit_transfer_notification(
+    engine: &mut ApplicationEngine,
+    contract_hash: UInt160,
+    from: Option<&UInt160>,
+    to: Option<&UInt160>,
+    amount: &BigInt,
+) -> Result<()> {
+    let from_item = from.map_or_else(StackItem::null, |addr| {
+        StackItem::from_byte_string(addr.to_bytes())
+    });
+    let to_item = to.map_or_else(StackItem::null, |addr| {
+        StackItem::from_byte_string(addr.to_bytes())
+    });
+    let amount_item = StackItem::from_int(amount.clone());
+
+    engine
+        .send_notification(
+            contract_hash,
+            "Transfer".to_string(),
+            vec![from_item, to_item, amount_item],
+        )
+        .map_err(Error::native_contract)?;
+
+    Ok(())
+}
 
 /// Base trait for fungible tokens compatible with NEP-17.
 ///
@@ -68,15 +102,15 @@ pub trait FungibleToken: NativeContract {
     }
 
     /// Encodes a `BigInt` amount to little-endian signed bytes (C# compatible).
+    ///
+    /// Kept as a trait method so implementations name the amount encoding
+    /// through the trait; the byte sequence itself is owned by
+    /// [`encode_bigint`].
     fn ft_encode_amount(value: &BigInt) -> Vec<u8>
     where
         Self: Sized,
     {
-        let mut bytes = value.to_signed_bytes_le();
-        if bytes.is_empty() {
-            bytes.push(0);
-        }
-        bytes
+        encode_bigint(value)
     }
 
     /// Decodes little-endian signed bytes to a `BigInt`.
@@ -163,23 +197,7 @@ pub trait FungibleToken: NativeContract {
         to: Option<&UInt160>,
         amount: &BigInt,
     ) -> Result<()> {
-        let from_item = from.map_or_else(StackItem::null, |addr| {
-            StackItem::from_byte_string(addr.to_bytes())
-        });
-        let to_item = to.map_or_else(StackItem::null, |addr| {
-            StackItem::from_byte_string(addr.to_bytes())
-        });
-        let amount_item = StackItem::from_int(amount.clone());
-
-        engine
-            .send_notification(
-                self.hash(),
-                "Transfer".to_string(),
-                vec![from_item, to_item, amount_item],
-            )
-            .map_err(Error::native_contract)?;
-
-        Ok(())
+        emit_transfer_notification(engine, self.hash(), from, to, amount)
     }
 
     /// Validates basic transfer parameters (non-negative amount).

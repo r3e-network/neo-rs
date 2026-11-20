@@ -42,15 +42,15 @@ impl Decoder for NeoMessageCodec {
 
         if payload_length > self.max_payload_size as u64 {
             return Err(NetworkError::InvalidMessage(format!(
-                "Payload length {} exceeds maximum {}",
-                payload_length, self.max_payload_size
+                "Payload length {payload_length} exceeds maximum {}",
+                self.max_payload_size
             )));
         }
 
         let payload_length = usize::try_from(payload_length).map_err(|_| {
             NetworkError::InvalidMessage(format!(
-                "Payload length {} exceeds maximum {}",
-                payload_length, self.max_payload_size
+                "Payload length {payload_length} exceeds maximum {}",
+                self.max_payload_size
             ))
         })?;
         let frame_len = FRAME_HEADER_LEN
@@ -71,10 +71,10 @@ impl Decoder for NeoMessageCodec {
     }
 }
 
-impl<'a> Encoder<&'a [u8]> for NeoMessageCodec {
+impl Encoder<&[u8]> for NeoMessageCodec {
     type Error = NetworkError;
 
-    fn encode(&mut self, item: &'a [u8], dst: &mut BytesMut) -> NetworkResult<()> {
+    fn encode(&mut self, item: &[u8], dst: &mut BytesMut) -> NetworkResult<()> {
         dst.reserve(item.len());
         dst.put_slice(item);
         Ok(())

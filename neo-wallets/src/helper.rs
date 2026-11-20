@@ -12,7 +12,6 @@
 use crate::key_pair::KeyPair;
 use crate::transfer_output::TransferOutput;
 use crate::wallet::{Wallet, WalletError};
-use neo_crypto::Crypto;
 use neo_io::serializable::helper::{
     get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
 };
@@ -38,13 +37,6 @@ use num_bigint::{BigInt, Sign};
 use rand::RngCore;
 use rand::rngs::OsRng;
 use std::sync::Arc;
-
-/// `PUSHDATA1` opcode byte (matches `neo_vm::OpCode::PUSHDATA1`).
-const OP_PUSHDATA1: u8 = 0x0C;
-/// `SYSCALL` opcode byte (matches `neo_vm::OpCode::SYSCALL`).
-const OP_SYSCALL: u8 = 0x41;
-/// Interop service name used by single-signature verification scripts.
-const CHECK_SIG_NAME: &str = "System.Crypto.CheckSig";
 
 const SIGNATURE_INVOCATION_SCRIPT_LENGTH: usize = 2 + 64;
 
@@ -91,25 +83,21 @@ impl Helper {
     ///
     /// Layout: `PUSHDATA1 <len> <pubkey> SYSCALL <checkSigHash>` (40 bytes for a
     /// 33-byte compressed public key). Matches C# `Contract.CreateSignatureRedeemScript`.
+    ///
+    /// The layout is owned by `neo-smart-contract`; this stays a thin
+    /// wallet-facing delegate so the two crates cannot drift apart.
     #[must_use]
     pub fn signature_redeem_script(public_key: &[u8]) -> Vec<u8> {
-        let mut script = Vec::with_capacity(public_key.len() + 6);
-        script.push(OP_PUSHDATA1);
-        script.push(public_key.len() as u8);
-        script.extend_from_slice(public_key);
-        script.push(OP_SYSCALL);
-        script.extend_from_slice(&Self::check_sig_hash());
-        script
+        ContractHelper::signature_redeem_script(public_key)
     }
 
     /// Returns the 4-byte interop hash of `System.Crypto.CheckSig`.
     ///
-    /// The Neo interop hash is the first four bytes of `SHA256(name)`; this is
-    /// exactly what `neo_vm::interop_hash(name).to_le_bytes()` yields.
+    /// Delegates to `neo-smart-contract`, which derives it from
+    /// `neo_vm::interop_hash`, the single source of the interop hash.
     #[must_use]
     pub fn check_sig_hash() -> [u8; 4] {
-        let hash = Crypto::sha256(CHECK_SIG_NAME.as_bytes());
-        [hash[0], hash[1], hash[2], hash[3]]
+        ContractHelper::check_sig_hash()
     }
 
     /// XOR operation on two equal-length byte arrays (C# `XOR`).
@@ -551,10 +539,10 @@ fn calculate_network_fee_impl(
         if witness_script.is_none()
             && let Some(witness) = tx.witnesses().get(index)
         {
-            if witness.verification_script.is_empty() {
-                invocation_script = Some(witness.invocation_script.clone());
+            if witness.verification_script().is_empty() {
+                invocation_script = Some(witness.invocation_script().to_vec());
             } else {
-                witness_script = Some(witness.verification_script.clone());
+                witness_script = Some(witness.verification_script().to_vec());
             }
         }
 
@@ -704,34 +692,14 @@ fn calculate_network_fee_impl(
 
     network_fee = network_fee.saturating_add(size.saturating_mul(fee_per_byte));
     for attribute in tx.attributes() {
-        network_fee = network_fee.saturating_add(attribute_network_fee(attribute, snapshot, tx));
+        // The attribute-fee policy is owned by `neo-native-contracts`, so fee
+        // estimation charges exactly what `neo-ledger` validation enforces.
+        network_fee = network_fee.saturating_add(neo_native_contracts::attribute_network_fee(
+            attribute, snapshot, tx,
+        ));
     }
 
     Ok(network_fee)
-}
-
-/// Computes the network fee contributed by a single transaction attribute.
-///
-/// Reproduces `neo-core`'s `TransactionAttribute::calculate_network_fee`: the
-/// policy base fee for the attribute type, scaled by the signer count for
-/// `Conflicts` and by `nkeys + 1` for `NotaryAssisted`. Implemented locally
-/// because `neo-protocol`'s attribute types cannot depend on the policy
-/// contract without introducing a crate cycle.
-fn attribute_network_fee(
-    attribute: &TransactionAttribute,
-    snapshot: &DataCache,
-    tx: &Transaction,
-) -> i64 {
-    let policy = PolicyContract::new();
-    let base_fee = policy
-        .get_attribute_fee_snapshot(snapshot, attribute.type_id())
-        .unwrap_or(PolicyContract::DEFAULT_ATTRIBUTE_FEE as i64);
-
-    match attribute {
-        TransactionAttribute::Conflicts(_) => tx.signers().len() as i64 * base_fee,
-        TransactionAttribute::NotaryAssisted(attr) => (attr.nkeys as i64 + 1) * base_fee,
-        _ => base_fee,
-    }
 }
 
 /// Finds paying accounts for a required amount (C# `FindPayingAccounts`).
@@ -919,10 +887,10 @@ mod tests {
         let pubkey = [0x02u8; 33];
         let script = Helper::signature_redeem_script(&pubkey);
         assert_eq!(script.len(), 40);
-        assert_eq!(script[0], OP_PUSHDATA1);
+        assert_eq!(script[0], OpCode::PUSHDATA1.byte());
         assert_eq!(script[1], 33);
         assert_eq!(&script[2..35], &pubkey[..]);
-        assert_eq!(script[35], OP_SYSCALL);
+        assert_eq!(script[35], OpCode::SYSCALL.byte());
         assert_eq!(&script[36..40], &Helper::check_sig_hash());
     }
 

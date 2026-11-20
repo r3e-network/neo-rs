@@ -1,63 +1,37 @@
-//! OracleRequest - matches C# Neo.SmartContract.Native.OracleRequest exactly
+//! OracleRequest stack projection for the oracle native contract.
 //!
-//! Migrated from `neo-core/src/smart_contract/native/oracle_request.rs`.
-//! Import adaptation: `crate::error::CoreError` becomes
-//! `neo_smart_contract::error::CoreError`; `crate::{UInt160, UInt256}` becomes
-//! `neo_primitives::{UInt160, UInt256}`. `neo_vm::StackValue` is unchanged.
+//! The request record itself is owned by `neo-protocol`
+//! ([`neo_protocol::OracleRequest`]) and re-exported here so existing native
+//! contract paths (`crate::native::oracle_request::OracleRequest`) keep
+//! resolving. The native-contract-specific stack projection stays in this
+//! crate: the contract stores requests as an `Array(7)` and must be able to
+//! convert between that shape and the shared record.
 
-use neo_primitives::{UInt160, UInt256};
+pub use neo_protocol::OracleRequest;
+
 use neo_smart_contract::error::CoreError;
 use neo_vm::StackValue;
 
-/// Oracle request state (matches C# OracleRequest)
-#[derive(Clone, Debug)]
-pub struct OracleRequest {
-    /// The original transaction hash
-    pub original_tx_id: UInt256,
+/// Stack projection of an [`OracleRequest`] into the oracle native contract's
+/// `Array(7)` storage shape.
+///
+/// Implemented here rather than on the shared protocol record so that
+/// `neo-protocol` stays free of native-contract serialization concerns.
+pub trait OracleRequestStackProjection {
+    /// Converts the request into a `neo-vm-rs` stack value.
+    fn to_stack_value(&self) -> StackValue;
 
-    /// The gas for callback
-    pub gas_for_response: i64,
-
-    /// The URL to fetch
-    pub url: String,
-
-    /// The filter expression
-    pub filter: Option<String>,
-
-    /// The callback contract hash
-    pub callback_contract: UInt160,
-
-    /// The callback method name
-    pub callback_method: String,
-
-    /// User data to pass to callback
-    pub user_data: Vec<u8>,
+    /// Updates the request from a `neo-vm-rs` stack value.
+    ///
+    /// The name deliberately mirrors [`Self::to_stack_value`] so the pair reads
+    /// as one projection, and the `&mut self` receiver is the in-place update
+    /// the Oracle contract performs on its stored request.
+    #[allow(clippy::wrong_self_convention)]
+    fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError>;
 }
 
-impl OracleRequest {
-    /// Creates a new oracle request
-    pub fn new(
-        original_tx_id: UInt256,
-        gas_for_response: i64,
-        url: String,
-        filter: Option<String>,
-        callback_contract: UInt160,
-        callback_method: String,
-        user_data: Vec<u8>,
-    ) -> Self {
-        Self {
-            original_tx_id,
-            gas_for_response,
-            url,
-            filter,
-            callback_contract,
-            callback_method,
-            user_data,
-        }
-    }
-
-    /// Converts to a neo-vm-rs stack value.
-    pub fn to_stack_value(&self) -> StackValue {
+impl OracleRequestStackProjection for OracleRequest {
+    fn to_stack_value(&self) -> StackValue {
         StackValue::Array(vec![
             StackValue::ByteString(self.original_tx_id.to_bytes()),
             StackValue::Integer(self.gas_for_response),
@@ -72,8 +46,7 @@ impl OracleRequest {
         ])
     }
 
-    /// Updates this oracle request from a neo-vm-rs stack value.
-    pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
+    fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
         if let StackValue::Array(items) = stack_value {
             if items.len() < 7 {
                 return Ok(());
@@ -81,7 +54,7 @@ impl OracleRequest {
 
             if let Some(bytes) = items[0].to_byte_string_bytes()
                 && bytes.len() == 32
-                && let Ok(hash) = UInt256::from_bytes(&bytes)
+                && let Ok(hash) = neo_primitives::UInt256::from_bytes(&bytes)
             {
                 self.original_tx_id = hash;
             }
@@ -109,7 +82,7 @@ impl OracleRequest {
 
             if let Some(bytes) = items[4].to_byte_string_bytes()
                 && bytes.len() == 20
-                && let Ok(hash) = UInt160::from_bytes(&bytes)
+                && let Ok(hash) = neo_primitives::UInt160::from_bytes(&bytes)
             {
                 self.callback_contract = hash;
             }
@@ -132,7 +105,7 @@ impl OracleRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_vm::StackValue;
+    use neo_primitives::{UInt160, UInt256};
 
     fn sample_request(filter: Option<&str>) -> OracleRequest {
         OracleRequest::new(
@@ -193,5 +166,15 @@ mod tests {
         );
         assert_eq!(request.callback_method, "updated");
         assert_eq!(request.user_data, vec![7, 6]);
+    }
+
+    #[test]
+    fn request_record_is_the_protocol_definition() {
+        // Type identity: the native re-export and the protocol record must be
+        // the same type, not structurally identical copies.
+        fn assert_same<T>(_: std::marker::PhantomData<T>) {}
+        let _: Option<neo_protocol::OracleRequest> = None;
+        let _: Option<OracleRequest> = None;
+        assert_same::<OracleRequest>(std::marker::PhantomData);
     }
 }

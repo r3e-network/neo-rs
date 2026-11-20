@@ -145,7 +145,7 @@ impl Transaction {
         match self.try_get_hash_data() {
             Ok(data) => data,
             Err(e) => {
-                tracing::error!("Failed to serialize transaction unsigned data: {:?}", e);
+                tracing::error!("Failed to serialize transaction unsigned data: {e:?}");
                 Vec::new()
             }
         }
@@ -161,7 +161,7 @@ impl Transaction {
         match self.try_to_bytes() {
             Ok(data) => data,
             Err(e) => {
-                tracing::error!("Transaction serialization failed: {:?}", e);
+                tracing::error!("Transaction serialization failed: {e:?}");
                 Vec::new()
             }
         }

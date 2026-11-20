@@ -13,24 +13,12 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::sync::LazyLock;
 use std::time::Duration;
 
-/// Policy for handling unhandled exceptions in the RPC server
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub enum UnhandledExceptionPolicy {
-    /// Ignore exceptions and continue processing
-    #[default]
-    Ignore,
-    /// Log exceptions
-    Log,
-    /// Stop the plugin/service
-    StopPlugin,
-    /// Stop the node
-    StopNode,
-    /// Continue after logging
-    Continue,
-    /// Terminate the process
-    Terminate,
-}
+/// Policy for handling unhandled exceptions in the RPC server.
+///
+/// Owned by `neo-primitives` so every plugin-style service shares one policy
+/// vocabulary; it is re-exported here because the RPC server settings surface
+/// is where operators configure it.
+pub use neo_primitives::UnhandledExceptionPolicy;
 
 /// Represents a single RPC server configuration block (`RpcServersSettings`).
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -508,7 +496,7 @@ impl RpcServerSettings {
             let exception_policy = plugin_configuration
                 .get("UnhandledExceptionPolicy")
                 .and_then(|policy| serde_json::from_value(policy.clone()).ok())
-                .unwrap_or_default();
+                .unwrap_or(UnhandledExceptionPolicy::Ignore);
             Self {
                 servers: if servers.is_empty() {
                     vec![RpcServerConfig::default()]
