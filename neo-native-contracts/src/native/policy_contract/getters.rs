@@ -1,10 +1,10 @@
-//
-// getters.rs - Getter methods for PolicyContract
-//
-// Migrated from `neo-core/src/smart_contract/native/policy_contract/getters.rs`.
-//
-// Import adaptation:
-// - `crate::smart_contract::application_engine::FEE_FACTOR` → `neo_smart_contract::application_engine::FEE_FACTOR`
+//!
+//! getters.rs - Getter methods for PolicyContract
+//!
+//! Migrated from `neo-core/src/smart_contract/native/policy_contract/getters.rs`.
+//!
+//! Import adaptation:
+//! - `crate::smart_contract::application_engine::FEE_FACTOR` → `neo_smart_contract::application_engine::FEE_FACTOR`
 
 use super::*;
 

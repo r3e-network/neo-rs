@@ -9,7 +9,7 @@ use neo_crypto::mpt_trie::{MptResult, MptStoreSnapshot, Trie};
 use neo_primitives::UInt256;
 use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_storage::persistence::store::Store;
-use neo_storage::persistence::{DataCache, SeekDirection, StoreCache};
+use neo_storage::persistence::{PersistenceDataCache, SeekDirection, StoreCache};
 use neo_storage::types::StorageKey;
 use neo_wallets::signing::TrustedSignerClient;
 use parking_lot::Mutex;
@@ -95,7 +95,7 @@ pub trait StateRootSource {
     fn protocol_settings(&self) -> &ProtocolSettings;
 
     /// Returns a storage snapshot used to resolve state-validator designations.
-    fn verification_snapshot(&self) -> DataCache;
+    fn verification_snapshot(&self) -> PersistenceDataCache;
 }
 
 /// Production [`StateRootSource`] backed by the node's primary store.
@@ -141,7 +141,7 @@ impl StateRootSource for StoreStateRootSource {
         &self.settings
     }
 
-    fn verification_snapshot(&self) -> DataCache {
+    fn verification_snapshot(&self) -> PersistenceDataCache {
         StoreCache::new_from_store(self.store.clone(), true)
             .data_cache()
             .clone_cache()

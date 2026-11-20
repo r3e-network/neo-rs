@@ -73,7 +73,7 @@ mod tests {
             &self,
             _system: &dyn Any,
             _block: &neo_protocol::execution::Block,
-            _snapshot: &neo_storage::persistence::DataCache,
+            _snapshot: &neo_storage::persistence::PersistenceDataCache,
             _application_executed_list: &[neo_protocol::execution::ApplicationExecuted],
         ) {
         }
@@ -82,7 +82,7 @@ mod tests {
             &self,
             _system: &dyn Any,
             _block: &neo_protocol::execution::Block,
-            _snapshot: &neo_storage::persistence::DataCache,
+            _snapshot: &neo_storage::persistence::PersistenceDataCache,
             _application_executed_list: &[neo_protocol::execution::ApplicationExecuted],
         ) -> CoreResult<()> {
             if !self.failed.swap(true, Ordering::SeqCst) {

@@ -50,7 +50,7 @@ use neo_protocol::payloads::{
 use neo_protocol::witness::Witness;
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_storage::TrackState;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use std::sync::Arc;
 
 /// Builds a single-witness payload block at `index` with `transactions`.
@@ -71,7 +71,7 @@ fn block_with(index: u32, transactions: Vec<Transaction>) -> Block {
 fn engine_for(
     block: Block,
     trigger: TriggerType,
-    snapshot: Arc<DataCache>,
+    snapshot: Arc<PersistenceDataCache>,
     settings: &ProtocolSettings,
 ) -> ApplicationEngine {
     ApplicationEngine::new(
@@ -89,7 +89,7 @@ fn engine_for(
 
 /// Every tracked storage effect of a hook, sorted by key so two runs compare
 /// byte-for-byte regardless of hash-map iteration order.
-fn storage_fingerprint(snapshot: &DataCache) -> Vec<(Vec<u8>, TrackState, Vec<u8>)> {
+fn storage_fingerprint(snapshot: &PersistenceDataCache) -> Vec<(Vec<u8>, TrackState, Vec<u8>)> {
     let mut tracked: Vec<_> = snapshot
         .tracked_items()
         .into_iter()
@@ -196,7 +196,7 @@ fn run_gas_token_on_persist(
     block: Block,
     settings: &ProtocolSettings,
 ) -> (Result<(), neo_smart_contract::error::CoreError>, bool, bool) {
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let before = storage_fingerprint(&snapshot);
     let mut engine = engine_for(
         block,
@@ -261,7 +261,7 @@ fn gas_token_on_persist_does_not_short_circuit_fee_bearing_blocks() {
 #[test]
 fn gas_token_on_persist_without_a_persisting_block_still_errors() {
     let settings = ProtocolSettings::testnet();
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let mut engine = ApplicationEngine::new(
         TriggerType::OnPersist,
         None,
@@ -288,7 +288,7 @@ fn run_notary_on_persist(
     block: Block,
     settings: &ProtocolSettings,
 ) -> (Result<(), neo_smart_contract::error::CoreError>, bool) {
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let before = storage_fingerprint(&snapshot);
     let mut engine = engine_for(
         block,
@@ -352,7 +352,7 @@ fn notary_on_persist_still_handles_notary_assisted_transactions() {
 #[test]
 fn notary_on_persist_without_a_persisting_block_still_errors() {
     let settings = ProtocolSettings::testnet();
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let mut engine = ApplicationEngine::new(
         TriggerType::OnPersist,
         None,
@@ -379,7 +379,7 @@ fn notary_on_persist_without_a_persisting_block_still_errors() {
 fn ledger_on_persist_still_records_every_empty_block() {
     let settings = ProtocolSettings::testnet();
     for height in covered_heights(&settings) {
-        let snapshot = Arc::new(DataCache::new(false));
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
         let mut engine = engine_for(
             block_with(height, Vec::new()),
             TriggerType::OnPersist,
@@ -406,7 +406,7 @@ fn neo_token_on_persist_still_refreshes_the_committee_on_refresh_heights() {
     let committee = u32::try_from(settings.committee_members_count()).expect("committee size");
 
     for height in covered_heights(&settings) {
-        let snapshot = Arc::new(DataCache::new(false));
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
         let mut engine = engine_for(
             block_with(height, Vec::new()),
             TriggerType::OnPersist,

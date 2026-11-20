@@ -29,7 +29,7 @@ const MAX_VERIFICATION_SCRIPT: usize = 1024;
 /// The scripts are private so that the cached [`Witness::script_hash`] cannot go
 /// stale: mutating the verification script must always go through
 /// [`Witness::set_verification_script`], which drops the cached hash.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Witness {
     /// Arguments for the verification script.
     invocation_script: Vec<u8>,

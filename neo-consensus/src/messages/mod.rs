@@ -18,27 +18,6 @@ pub use recovery::{
 use crate::context::CommitPersistencePermit;
 use crate::{ConsensusMessageType, ConsensusResult};
 
-/// Common trait for all consensus messages
-pub trait ConsensusMessage: Send + Sync {
-    /// Returns the message type
-    fn message_type(&self) -> ConsensusMessageType;
-
-    /// Returns the block index this message is for
-    fn block_index(&self) -> u32;
-
-    /// Returns the validator index of the sender
-    fn validator_index(&self) -> u8;
-
-    /// Returns the view number
-    fn view_number(&self) -> u8;
-
-    /// Serializes the message to bytes
-    fn serialize(&self) -> Vec<u8>;
-
-    /// Validates the message
-    fn validate(&self) -> ConsensusResult<()>;
-}
-
 /// Envelope wrapping any consensus message with metadata
 #[derive(Debug, Clone)]
 pub struct ConsensusPayload {

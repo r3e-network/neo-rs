@@ -20,13 +20,15 @@ use super::{
     HashOrIndex, LedgerContract, LedgerTransactionStates, PersistedTransactionState,
     storage::max_traceable_blocks_from_snapshot,
 };
+use crate::native::NativeContract;
 use crate::native::policy_contract::PolicyContract;
-use crate::native::{NativeContract, NativeMethod};
 use neo_primitives::{UInt160, UInt256};
 use neo_protocol::Hardfork;
 use neo_protocol::payloads::transaction_attribute::TransactionAttribute;
 use neo_smart_contract::application_engine::ApplicationEngine;
+use neo_smart_contract::error::CoreResult;
 use neo_smart_contract::error::{CoreError as Error, CoreResult as Result};
+use neo_smart_contract::impl_native_contract;
 use neo_smart_contract::protocol_projection::{signer_to_stack_item, transaction_to_stack_item};
 use neo_storage::persistence::read_only_store::ReadOnlyStoreGeneric;
 use neo_storage::{StorageItem, StorageKey};
@@ -37,24 +39,9 @@ use neo_vm::StackItem;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
-impl NativeContract for LedgerContract {
-    fn id(&self) -> i32 {
-        self.id
-    }
-
-    fn name(&self) -> &str {
-        "LedgerContract"
-    }
-
-    fn hash(&self) -> UInt160 {
-        self.hash
-    }
-
-    fn methods(&self) -> &[NativeMethod] {
-        self.methods
-    }
-
-    fn invoke(
+impl LedgerContract {
+    /// Dispatches a native method invocation against this contract.
+    pub fn invoke_method(
         &self,
         engine: &mut ApplicationEngine,
         method: &str,
@@ -62,16 +49,20 @@ impl NativeContract for LedgerContract {
     ) -> Result<Vec<u8>> {
         self.dispatch_method(engine, method, args)
     }
+}
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+impl NativeContract for LedgerContract {
+    impl_native_contract!(hash, "LedgerContract", methods);
+
+    fn id(&self) -> i32 {
+        self.id
     }
 
-    fn initialize(&self, _engine: &mut ApplicationEngine) -> Result<()> {
+    fn initialize(&self, _engine: &mut ApplicationEngine) -> CoreResult<()> {
         Ok(())
     }
 
-    fn on_persist(&self, engine: &mut ApplicationEngine) -> Result<()> {
+    fn on_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         let snapshot = engine.snapshot_cache();
         let block = engine
             .persisting_block()
@@ -116,7 +107,7 @@ impl NativeContract for LedgerContract {
         Ok(())
     }
 
-    fn post_persist(&self, engine: &mut ApplicationEngine) -> Result<()> {
+    fn post_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         let snapshot = engine.snapshot_cache();
         let block = engine
             .persisting_block()
@@ -142,10 +133,10 @@ mod tests {
     use super::*;
     use neo_primitives::TriggerType;
     use neo_protocol::ProtocolSettings;
-    use neo_storage::persistence::DataCache;
+    use neo_storage::persistence::PersistenceDataCache;
     use std::sync::Arc;
 
-    fn application_engine(snapshot: Arc<DataCache>) -> ApplicationEngine {
+    fn application_engine(snapshot: Arc<PersistenceDataCache>) -> ApplicationEngine {
         ApplicationEngine::new(
             TriggerType::Application,
             None,
@@ -162,7 +153,7 @@ mod tests {
     #[test]
     fn dispatch_method_covers_declared_metadata_names() {
         let ledger = LedgerContract::new();
-        let mut engine = application_engine(Arc::new(DataCache::new(false)));
+        let mut engine = application_engine(Arc::new(PersistenceDataCache::new(false)));
         let mut names = std::collections::BTreeSet::new();
 
         for method in ledger.methods() {
@@ -386,7 +377,7 @@ impl LedgerContract {
         &self,
         engine: &ApplicationEngine,
     ) -> Result<(
-        std::sync::Arc<neo_storage::persistence::DataCache>,
+        std::sync::Arc<neo_storage::persistence::PersistenceDataCache>,
         u32,
         u32,
     )> {

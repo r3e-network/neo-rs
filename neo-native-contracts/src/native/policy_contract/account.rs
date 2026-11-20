@@ -1,12 +1,12 @@
-//
-// account.rs - Account blocking methods for PolicyContract
-//
-// Migrated from `neo-core/src/smart_contract/native/policy_contract/account.rs`.
-//
-// Import adaptation:
-// - `crate::smart_contract::native::neo_token::NeoToken` → `crate::native::neo_token::NeoToken`
-// - `crate::smart_contract::native::contract_management::ContractManagement` → `crate::native::contract_management::ContractManagement`
-// - `crate::smart_contract::native::TreasuryContract` → `crate::native::TreasuryContract`
+//!
+//! account.rs - Account blocking methods for PolicyContract
+//!
+//! Migrated from `neo-core/src/smart_contract/native/policy_contract/account.rs`.
+//!
+//! Import adaptation:
+//! - `crate::smart_contract::native::neo_token::NeoToken` → `crate::native::neo_token::NeoToken`
+//! - `crate::smart_contract::native::contract_management::ContractManagement` → `crate::native::contract_management::ContractManagement`
+//! - `crate::smart_contract::native::TreasuryContract` → `crate::native::TreasuryContract`
 
 use super::*;
 

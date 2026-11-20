@@ -11,7 +11,7 @@ use neo_vm::StackValue;
 use num_bigint::BigInt;
 
 /// Notary deposit state (matches C# Deposit in Notary).
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Deposit {
     /// The amount of GAS deposited.
     pub amount: BigInt,

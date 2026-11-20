@@ -1,9 +1,9 @@
-//
-// nep17.rs - NEP-17 fungible token standard implementation
-//
-// Migrated from `neo-core/src/smart_contract/native/neo_token/nep17.rs`.
-// Import adaptation: `crate::smart_contract::native::security_fixes` ->
-// `crate::native::security_fixes`. Body preserved verbatim.
+//!
+//! nep17.rs - NEP-17 fungible token standard implementation
+//!
+//! Migrated from `neo-core/src/smart_contract/native/neo_token/nep17.rs`.
+//! Import adaptation: `crate::smart_contract::native::security_fixes` ->
+//! `crate::native::security_fixes`. Body preserved verbatim.
 
 use super::*;
 use crate::native::helpers::encode_bigint;

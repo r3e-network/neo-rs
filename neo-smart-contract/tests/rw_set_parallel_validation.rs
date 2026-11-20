@@ -18,7 +18,7 @@ use neo_smart_contract::application_engine::{
 };
 use neo_smart_contract::storage_context::StorageContext;
 use neo_smart_contract::{ContractState, CoreResult};
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm::{OpCode, RwKey, RwSetTracker, ScriptBuilder, VmState};
 
@@ -31,23 +31,23 @@ struct NoopStateReader;
 impl NativeStateReader for NoopStateReader {
     fn contract(
         &self,
-        _snapshot: &DataCache,
+        _snapshot: &PersistenceDataCache,
         _hash: &UInt160,
     ) -> CoreResult<Option<ContractState>> {
         Ok(None)
     }
 
-    fn current_index(&self, _snapshot: &DataCache) -> CoreResult<u32> {
+    fn current_index(&self, _snapshot: &PersistenceDataCache) -> CoreResult<u32> {
         Ok(0)
     }
 
-    fn is_blocked(&self, _snapshot: &DataCache, _hash: &UInt160) -> CoreResult<bool> {
+    fn is_blocked(&self, _snapshot: &PersistenceDataCache, _hash: &UInt160) -> CoreResult<bool> {
         Ok(false)
     }
 
     fn whitelisted_fee(
         &self,
-        _snapshot: &DataCache,
+        _snapshot: &PersistenceDataCache,
         _hash: &UInt160,
         _method: &str,
         _param_count: u32,
@@ -57,7 +57,7 @@ impl NativeStateReader for NoopStateReader {
 
     fn oracle_original_signers(
         &self,
-        _snapshot: &DataCache,
+        _snapshot: &PersistenceDataCache,
         _id: u64,
     ) -> CoreResult<Option<Vec<Signer>>> {
         Ok(None)
@@ -68,7 +68,11 @@ impl NativeStateReader for NoopStateReader {
 struct NoopResolver;
 
 impl WitnessHashResolver for NoopResolver {
-    fn resolve(&self, _verifiable: &dyn Verifiable, _snapshot: &DataCache) -> Vec<UInt160> {
+    fn resolve(
+        &self,
+        _verifiable: &dyn Verifiable,
+        _snapshot: &PersistenceDataCache,
+    ) -> Vec<UInt160> {
         Vec::new()
     }
 }
@@ -85,8 +89,8 @@ fn native_services() -> EngineNativeServices {
 }
 
 /// The shared base state every speculative transaction starts from.
-fn base_snapshot(balance: i64) -> Arc<DataCache> {
-    let snapshot = DataCache::new(false);
+fn base_snapshot(balance: i64) -> Arc<PersistenceDataCache> {
+    let snapshot = PersistenceDataCache::new(false);
     for (suffix, value) in [
         (b"balance".as_slice(), balance.to_le_bytes().to_vec()),
         (b"p/a".as_slice(), b"1".to_vec()),
@@ -166,7 +170,7 @@ fn read_then_write_script(read: &[u8], write: &[u8], value: &[u8]) -> Vec<u8> {
 
 /// An untracked engine over its own overlay of `base`.
 fn untracked_engine(
-    base: &Arc<DataCache>,
+    base: &Arc<PersistenceDataCache>,
     container: Option<Arc<dyn Verifiable>>,
 ) -> ApplicationEngine {
     ApplicationEngine::new(
@@ -184,7 +188,7 @@ fn untracked_engine(
 
 /// Runs `script` as one speculative transaction and returns its read-write set.
 fn execute_tx(
-    base: &Arc<DataCache>,
+    base: &Arc<PersistenceDataCache>,
     generation: u64,
     container: Option<Arc<dyn Verifiable>>,
     script: Vec<u8>,
@@ -199,7 +203,7 @@ fn execute_tx(
     engine.take_rw_set().expect("recorded read-write set")
 }
 
-fn execute(base: &Arc<DataCache>, script: Vec<u8>) -> RwSetTracker {
+fn execute(base: &Arc<PersistenceDataCache>, script: Vec<u8>) -> RwSetTracker {
     execute_tx(base, 0, None, script)
 }
 

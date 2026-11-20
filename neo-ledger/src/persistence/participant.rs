@@ -24,7 +24,7 @@
 
 use super::receipt::ExecutionReceipt;
 use neo_protocol::execution::Block;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 
 /// Pre-commit staging view handed to a participant during step 12.
 ///
@@ -36,7 +36,7 @@ pub struct StageContext<'a> {
     /// The canonical block being persisted.
     pub block: &'a Block,
     /// Base overlay snapshot carrying the block's merged state changes.
-    pub snapshot: &'a DataCache,
+    pub snapshot: &'a PersistenceDataCache,
     /// Ordered pure execution receipts (OnPersist, per-transaction, PostPersist).
     pub receipts: &'a [ExecutionReceipt],
     /// Whether the pipeline is running in fast-sync mode.

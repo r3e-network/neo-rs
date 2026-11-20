@@ -1,12 +1,12 @@
-//
-// query.rs - Query methods for ContractManagement
-//
-// Migrated from `neo-core/src/smart_contract/native/contract_management/query.rs`.
-// `crate::persistence::*` → `neo_storage::persistence::*`,
-// `crate::smart_contract::StorageItem` → `neo_storage::StorageItem`,
-// `crate::smart_contract::find_options::FindOptions` → `neo_primitives::FindOptions`,
-// `crate::smart_contract::iterators::*` → `neo_smart_contract::iterators::*`.
-//
+//!
+//! query.rs - Query methods for ContractManagement
+//!
+//! Migrated from `neo-core/src/smart_contract/native/contract_management/query.rs`.
+//! `crate::persistence::*` → `neo_storage::persistence::*`,
+//! `crate::smart_contract::StorageItem` → `neo_storage::StorageItem`,
+//! `crate::smart_contract::find_options::FindOptions` → `neo_primitives::FindOptions`,
+//! `crate::smart_contract::iterators::*` → `neo_smart_contract::iterators::*`.
+//!
 
 use super::*;
 use neo_primitives::FindOptions;
@@ -25,7 +25,7 @@ impl ContractManagement {
 
     /// Gets a contract by hash using the provided snapshot cache (matches C# snapshot lookup).
     pub fn get_contract_from_snapshot(
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         hash: &UInt160,
     ) -> Result<Option<ContractState>> {
         let storage_key = StorageKey::new(Self::ID, Self::contract_storage_key(hash));
@@ -50,7 +50,7 @@ impl ContractManagement {
     /// address a deserialized-record cache without paying for NEF checksum
     /// verification and manifest parsing on every lookup.
     pub fn get_contract_update_counter_from_snapshot(
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         hash: &UInt160,
     ) -> Result<Option<u16>> {
         let storage_key = StorageKey::new(Self::ID, Self::contract_storage_key(hash));
@@ -66,7 +66,7 @@ impl ContractManagement {
 
     /// Gets a contract by ID directly from the snapshot (single key lookup).
     pub fn get_contract_by_id_from_snapshot(
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         id: i32,
     ) -> Result<Option<ContractState>> {
         let storage_key = StorageKey::new(Self::ID, Self::contract_id_storage_key(id));
@@ -163,7 +163,7 @@ impl ContractManagement {
     /// falling back to the in-memory cache.
     pub fn has_method_from_snapshot(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         hash: &UInt160,
         method: &str,
         parameter_count: i32,
@@ -228,13 +228,13 @@ impl ContractManagement {
     }
 
     /// Checks whether a contract exists in the provided snapshot cache.
-    pub fn is_contract(snapshot: &DataCache, hash: &UInt160) -> Result<bool> {
+    pub fn is_contract(snapshot: &PersistenceDataCache, hash: &UInt160) -> Result<bool> {
         let key = StorageKey::new(Self::ID, Self::contract_storage_key(hash));
         Ok(snapshot.contains(&key))
     }
 
     /// Lists all non-native contracts from the snapshot cache.
-    pub fn list_contracts(snapshot: &DataCache) -> Result<Vec<ContractState>> {
+    pub fn list_contracts(snapshot: &PersistenceDataCache) -> Result<Vec<ContractState>> {
         let prefix = StorageKey::new(Self::ID, vec![PREFIX_CONTRACT]);
         let mut contracts = Vec::<ContractState>::new();
         for (_, item) in snapshot.find(Some(&prefix), SeekDirection::Forward) {
@@ -252,7 +252,7 @@ impl ContractManagement {
     ///
     /// This fails fast when storage is corrupted (for example, duplicate non-native IDs
     /// mapped to different contract hashes), preventing late runtime faults during block sync.
-    pub fn validate_snapshot_integrity(snapshot: &DataCache) -> Result<()> {
+    pub fn validate_snapshot_integrity(snapshot: &PersistenceDataCache) -> Result<()> {
         let contracts = Self::list_contracts(snapshot)?;
         let mut ids = HashMap::<i32, UInt160>::with_capacity(contracts.len());
 
@@ -281,7 +281,10 @@ impl ContractManagement {
 
     /// Gets the minimum deployment fee from the provided snapshot cache,
     /// falling back to the in-memory setting.
-    pub fn get_minimum_deployment_fee_from_snapshot(&self, snapshot: &DataCache) -> Result<i64> {
+    pub fn get_minimum_deployment_fee_from_snapshot(
+        &self,
+        snapshot: &PersistenceDataCache,
+    ) -> Result<i64> {
         let key = StorageKey::new(Self::ID, Self::minimum_deployment_fee_key());
         if let Some(item) = snapshot.get(&key) {
             let value = item.value_bytes();

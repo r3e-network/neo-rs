@@ -31,7 +31,7 @@ use neo_protocol::signer::Signer;
 use neo_protocol::transaction::HEADER_SIZE;
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::helper::Helper as ContractHelper;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_vm::{OpCode, ScriptBuilder, VmState};
 use num_bigint::{BigInt, Sign};
 use rand::RngCore;
@@ -128,7 +128,7 @@ impl Helper {
     /// Returns a human readable error when a witness cannot be priced.
     pub fn calculate_network_fee_with_wallet(
         tx: &Transaction,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         settings: &ProtocolSettings,
         wallet: Option<&dyn Wallet>,
         max_execution_cost: i64,
@@ -160,7 +160,7 @@ impl Helper {
     /// Returns a human readable error when a witness cannot be priced.
     pub fn calculate_network_fee(
         tx: &Transaction,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         settings: &ProtocolSettings,
         account_script: Option<Box<AccountScriptResolver<'_>>>,
         max_execution_cost: i64,
@@ -183,7 +183,7 @@ impl Helper {
     #[allow(clippy::too_many_arguments)]
     pub fn make_transfer_transaction(
         wallet: &dyn Wallet,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         outputs: &[TransferOutput],
         from: Option<UInt160>,
         cosigners: Option<&[Signer]>,
@@ -392,7 +392,7 @@ impl Helper {
     #[allow(clippy::too_many_arguments)]
     pub fn make_transaction(
         wallet: &dyn Wallet,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         script: &[u8],
         sender: Option<UInt160>,
         cosigners: Option<&[Signer]>,
@@ -500,7 +500,7 @@ impl Helper {
 
 fn calculate_network_fee_impl(
     tx: &Transaction,
-    snapshot: &DataCache,
+    snapshot: &PersistenceDataCache,
     settings: &ProtocolSettings,
     account_script: Option<&AccountScriptResolver<'_>>,
     max_execution_cost: i64,

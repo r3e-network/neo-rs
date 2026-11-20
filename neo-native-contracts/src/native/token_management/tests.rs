@@ -10,7 +10,7 @@
 
 use super::*;
 use neo_primitives::TriggerType;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_vm::StackValue;
 use std::sync::Arc;
 
@@ -24,7 +24,7 @@ fn make_engine() -> ApplicationEngine {
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         None,
-        Arc::new(DataCache::new(false)),
+        Arc::new(PersistenceDataCache::new(false)),
         None,
         ProtocolSettings::default(),
         400_000_000,
@@ -200,20 +200,20 @@ fn nft_state_reads_stack_value() {
 }
 
 #[test]
-fn test_token_state_default() {
+fn token_state_default() {
     let state = TokenState::default();
     assert_eq!(state.token_type, TokenType::Fungible);
     assert_eq!(state.total_supply, BigInt::from(0));
 }
 
 #[test]
-fn test_account_state_new() {
+fn account_state_new() {
     let state = AccountState::new();
     assert_eq!(state.balance, BigInt::from(0));
 }
 
 #[test]
-fn test_nft_state_new() {
+fn nft_state_new() {
     let nft = NFTState::new();
     assert!(nft.properties.is_empty());
 }

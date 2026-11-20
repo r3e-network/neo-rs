@@ -29,7 +29,7 @@ use neo_primitives::UInt256;
 use thiserror::Error;
 
 /// Errors that can occur during consensus operations.
-#[derive(Error, Debug)]
+#[derive(Debug, Error)]
 pub enum ConsensusError {
     /// Invalid view number.
     #[error("Invalid view: expected {expected}, got {actual}")]
@@ -111,7 +111,7 @@ pub enum ConsensusError {
 
     /// State error.
     #[error("State error: {message}")]
-    StateError {
+    State {
         /// Error message.
         message: String,
     },
@@ -140,7 +140,7 @@ pub enum ConsensusError {
 
     /// Channel send error (stringly-typed fallback).
     #[error("Channel send error: {0}")]
-    ChannelError(String),
+    Channel(String),
 
     /// Channel send error with preserved source.
     #[error("Channel send error")]
@@ -148,11 +148,11 @@ pub enum ConsensusError {
 
     /// Persistence error.
     #[error("Persistence error: {0}")]
-    PersistenceError(String),
+    Persistence(String),
 
     /// IO error.
     #[error("IO error: {0}")]
-    IoError(#[from] std::io::Error),
+    Io(#[from] std::io::Error),
 
     /// Serialization error (stringly-typed fallback).
     #[error("Serialization error: {0}")]
@@ -189,7 +189,7 @@ impl ConsensusError {
 
     /// Create a state error.
     pub fn state_error<S: Into<String>>(message: S) -> Self {
-        Self::StateError {
+        Self::State {
             message: message.into(),
         }
     }

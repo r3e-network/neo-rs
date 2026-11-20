@@ -1091,24 +1091,24 @@ mod tests {
     impl NativeStateReader for NoopStateReader {
         fn contract(
             &self,
-            _snapshot: &DataCache,
+            _snapshot: &PersistenceDataCache,
             _hash: &UInt160,
         ) -> crate::error::CoreResult<Option<ContractState>> {
             Ok(None)
         }
-        fn current_index(&self, _snapshot: &DataCache) -> crate::error::CoreResult<u32> {
+        fn current_index(&self, _snapshot: &PersistenceDataCache) -> crate::error::CoreResult<u32> {
             Ok(0)
         }
         fn is_blocked(
             &self,
-            _snapshot: &DataCache,
+            _snapshot: &PersistenceDataCache,
             _hash: &UInt160,
         ) -> crate::error::CoreResult<bool> {
             Ok(false)
         }
         fn whitelisted_fee(
             &self,
-            _snapshot: &DataCache,
+            _snapshot: &PersistenceDataCache,
             _hash: &UInt160,
             _method: &str,
             _param_count: u32,
@@ -1117,7 +1117,7 @@ mod tests {
         }
         fn oracle_original_signers(
             &self,
-            _snapshot: &DataCache,
+            _snapshot: &PersistenceDataCache,
             _id: u64,
         ) -> crate::error::CoreResult<Option<Vec<neo_protocol::signer::Signer>>> {
             Ok(None)
@@ -1129,7 +1129,7 @@ mod tests {
         fn resolve(
             &self,
             _verifiable: &dyn neo_primitives::Verifiable,
-            _snapshot: &DataCache,
+            _snapshot: &PersistenceDataCache,
         ) -> Vec<UInt160> {
             Vec::new()
         }
@@ -1140,7 +1140,7 @@ mod tests {
         let mut engine = ApplicationEngine::new(
             TriggerType::Application,
             None,
-            Arc::new(DataCache::new(false)),
+            Arc::new(PersistenceDataCache::new(false)),
             None,
             ProtocolSettings::default(),
             TEST_MODE_GAS,

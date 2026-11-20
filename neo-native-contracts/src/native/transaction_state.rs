@@ -7,7 +7,7 @@ use neo_vm::{StackValue, VmState as VMState};
 use tracing::warn;
 
 /// State of a transaction in the ledger (matches C# TransactionState).
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct TransactionState {
     /// The block index containing the transaction.
     pub block_index: u32,

@@ -13,7 +13,7 @@ use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_protocol::signing_data;
 use neo_smart_contract::error::{CoreError, CoreResult};
 use neo_smart_contract::helper::Helper;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 
 pub fn transaction_sign_data(transaction: &Transaction, network: u32) -> CoreResult<Vec<u8>> {
     signing_data::get_sign_data_vec(transaction, network)
@@ -23,7 +23,7 @@ pub fn transaction_sign_data(transaction: &Transaction, network: u32) -> CoreRes
 pub fn verify_transaction(
     transaction: &Transaction,
     settings: &ProtocolSettings,
-    snapshot: &DataCache,
+    snapshot: &PersistenceDataCache,
     context: Option<&TransactionVerificationContext>,
     conflicts_list: &[Transaction],
 ) -> VerifyResult {
@@ -37,7 +37,7 @@ pub fn verify_transaction(
 pub fn verify_transaction_state_dependent(
     transaction: &Transaction,
     settings: &ProtocolSettings,
-    snapshot: &DataCache,
+    snapshot: &PersistenceDataCache,
     context: Option<&TransactionVerificationContext>,
     conflicts_list: &[Transaction],
 ) -> VerifyResult {
@@ -55,7 +55,7 @@ pub fn verify_transaction_state_dependent(
 pub fn verify_transaction_state_dependent_at_height(
     transaction: &Transaction,
     settings: &ProtocolSettings,
-    snapshot: &DataCache,
+    snapshot: &PersistenceDataCache,
     current_height: u32,
     context: Option<&TransactionVerificationContext>,
     conflicts_list: &[Transaction],
@@ -231,7 +231,7 @@ mod tests {
     fn verify_state_dependent_rejects_unserializable_sign_data() {
         let tx = transaction_with_oversized_script();
         let settings = ProtocolSettings::default_settings();
-        let snapshot = DataCache::new(true);
+        let snapshot = PersistenceDataCache::new(true);
         assert_eq!(
             verify_transaction_state_dependent_at_height(&tx, &settings, &snapshot, 1, None, &[]),
             VerifyResult::Invalid,

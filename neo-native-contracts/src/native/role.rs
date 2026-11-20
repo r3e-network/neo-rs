@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 protocol_enum_repr! {
     all;
     /// Represents roles in the Neo network (matches C# Role enum)
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
     pub Role {
         /// State validator role
         StateValidator = 4,

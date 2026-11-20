@@ -16,7 +16,7 @@ use neo_primitives::Verifiable;
 use neo_primitives::log_level::LogLevel;
 use neo_protocol::execution::Block;
 use neo_smart_contract::application_engine::ApplicationEngine;
-use neo_storage::persistence::{DataCache, SeekDirection, Store, StoreSnapshot};
+use neo_storage::persistence::{PersistenceDataCache, SeekDirection, Store, StoreSnapshot};
 use neo_system::NeoSystem;
 use neo_vm::OpCode;
 use neo_vm::ScriptBuilder;
@@ -93,7 +93,7 @@ pub trait Tracker: Send + Sync {
         &mut self,
         system: &NeoSystem,
         block: &Block,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         executed_list: &[ApplicationExecuted],
     );
 
@@ -275,7 +275,7 @@ impl TrackerBase {
     /// caller, as does the reporting of a `None`.
     pub fn call_contract(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         current_block: Option<&Block>,
         asset: UInt160,
         gas_limit: i64,
@@ -396,7 +396,7 @@ impl TrackerBase {
     /// `visit` receives the record, the transaction that emitted it (absent for
     /// block-level notifications) and the running notification index.
     pub fn for_each_transfer(
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         executed_list: &[ApplicationExecuted],
         standard: &str,
         expected_state_items: usize,

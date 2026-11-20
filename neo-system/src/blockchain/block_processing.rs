@@ -404,7 +404,7 @@ impl Blockchain {
     async fn ensure_extensible_witness_whitelist(
         &self,
         settings: &ProtocolSettings,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
     ) {
         let needs_rebuild = self._extensible_witness_white_list.read().await.is_empty();
         if !needs_rebuild {
@@ -420,7 +420,7 @@ impl Blockchain {
 
     fn build_extensible_witness_whitelist(
         settings: &ProtocolSettings,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
     ) -> std::collections::HashSet<UInt160> {
         use neo_native_contracts::helpers::NativeHelpers;
         use neo_native_contracts::{NeoToken, Role, RoleManagement};

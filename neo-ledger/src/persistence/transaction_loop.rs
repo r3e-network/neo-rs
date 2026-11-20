@@ -27,7 +27,7 @@ use super::receipt::ExecutionReceipt;
 use neo_primitives::{UInt256, Verifiable};
 use neo_protocol::execution::Block;
 use neo_smart_contract::application_engine::LedgerTransactionStates;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_vm::VmState;
 use std::sync::Arc;
 
@@ -44,7 +44,7 @@ pub struct TransactionLoopContext<'a> {
     /// Pre-computed transaction hashes, one per transaction, in block order.
     pub transaction_hashes: &'a [UInt256],
     /// Base overlay that accumulates the block's committed state (step 4).
-    pub base_snapshot: &'a Arc<DataCache>,
+    pub base_snapshot: &'a Arc<PersistenceDataCache>,
     /// Native-only contract states seeded by `OnPersist` (step 8).
     pub seeded: &'a SeededNativeContracts,
     /// Shared native-contracts cache threaded from `OnPersist` (step 8).

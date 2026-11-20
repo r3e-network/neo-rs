@@ -1,14 +1,14 @@
-//
-// setters.rs - Setter methods for PolicyContract
-//
-// Migrated from `neo-core/src/smart_contract/native/policy_contract/setters.rs`.
-//
-// Import adaptation:
-// - `crate::smart_contract::native::security_fixes::{...}` → `crate::native::security_fixes::{...}`
-// - `crate::smart_contract::application_engine::FEE_FACTOR` → `neo_smart_contract::application_engine::FEE_FACTOR`
-// - `crate::smart_contract::native::contract_management::ContractManagement` → `crate::native::contract_management::ContractManagement`
-// - `crate::smart_contract::ContractState` → `neo_smart_contract::contract_state::ContractState`
-// - `crate::persistence::seek_direction::SeekDirection` → `neo_storage::persistence::seek_direction::SeekDirection`
+//!
+//! setters.rs - Setter methods for PolicyContract
+//!
+//! Migrated from `neo-core/src/smart_contract/native/policy_contract/setters.rs`.
+//!
+//! Import adaptation:
+//! - `crate::smart_contract::native::security_fixes::{...}` → `crate::native::security_fixes::{...}`
+//! - `crate::smart_contract::application_engine::FEE_FACTOR` → `neo_smart_contract::application_engine::FEE_FACTOR`
+//! - `crate::smart_contract::native::contract_management::ContractManagement` → `crate::native::contract_management::ContractManagement`
+//! - `crate::smart_contract::ContractState` → `neo_smart_contract::contract_state::ContractState`
+//! - `crate::persistence::seek_direction::SeekDirection` → `neo_storage::persistence::seek_direction::SeekDirection`
 
 use super::*;
 use crate::native::security_fixes::{PermissionValidator, ReentrancyGuardType, SecurityContext};

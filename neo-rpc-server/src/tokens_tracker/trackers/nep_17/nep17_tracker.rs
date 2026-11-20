@@ -10,7 +10,7 @@ use neo_ledger::ApplicationExecuted;
 use neo_primitives::UInt160;
 use neo_primitives::log_level::LogLevel;
 use neo_protocol::execution::Block;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_system::NeoSystem;
 use num_traits::Zero;
 use std::collections::HashSet;
@@ -108,7 +108,11 @@ impl Nep17Tracker {
         *transfer_index += 1;
     }
 
-    fn save_nep17_balance(&mut self, record: &BalanceChangeRecord, snapshot: &DataCache) {
+    fn save_nep17_balance(
+        &mut self,
+        record: &BalanceChangeRecord,
+        snapshot: &PersistenceDataCache,
+    ) {
         let key = Nep17BalanceKey::new(record.user, record.asset);
 
         let Some(engine) = self.base.call_contract(
@@ -167,7 +171,7 @@ impl Tracker for Nep17Tracker {
         &mut self,
         _system: &NeoSystem,
         block: &Block,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         executed_list: &[ApplicationExecuted],
     ) {
         self.current_block = Some(block.clone());

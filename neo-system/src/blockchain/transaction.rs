@@ -30,7 +30,7 @@ impl<'a> PersistedChain<'a> {
 }
 
 impl AdmissionChainPort for PersistedChain<'_> {
-    fn snapshot(&self) -> &DataCache {
+    fn snapshot(&self) -> &PersistenceDataCache {
         self.store_cache.data_cache()
     }
 

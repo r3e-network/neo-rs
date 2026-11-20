@@ -750,7 +750,7 @@ mod tests {
                 &self,
                 _system: &dyn std::any::Any,
                 _block: &neo_protocol::execution::Block,
-                _snapshot: &neo_storage::persistence::DataCache,
+                _snapshot: &neo_storage::persistence::PersistenceDataCache,
                 _application_executed_list: &[ApplicationExecuted],
             ) {
             }
@@ -759,7 +759,7 @@ mod tests {
                 &self,
                 _system: &dyn std::any::Any,
                 block: &neo_protocol::execution::Block,
-                _snapshot: &neo_storage::persistence::DataCache,
+                _snapshot: &neo_storage::persistence::PersistenceDataCache,
                 _application_executed_list: &[ApplicationExecuted],
             ) -> neo_system::events::handlers::CoreResult<()> {
                 if block.index() == 2 {

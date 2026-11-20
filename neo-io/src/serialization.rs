@@ -306,7 +306,7 @@ mod tests {
 
     #[test]
     fn binary_and_json_bytes_preserve_field_order() {
-        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        #[derive(Debug, PartialEq, Serialize, Deserialize)]
         struct Record {
             version: u32,
             label: String,

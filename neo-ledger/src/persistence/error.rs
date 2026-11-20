@@ -10,19 +10,23 @@
 //!   through the error surface.
 //! * [`LedgerError::StoreCommit`] carries the canonical store commit prefix
 //!   (`"failed to commit store cache for block {index}: {message}"`).
+//!
+//! The `#[error(...)]` attributes below are the single source of truth for those
+//! literals; changing them changes the contractual `Display` output.
 
 use neo_primitives::UInt256;
 use neo_vm::VmState;
-use std::fmt;
+use thiserror::Error;
 
 /// Result alias for the ledger persistence operation.
 pub type LedgerResult<T> = Result<T, LedgerError>;
 
 /// Errors raised by the canonical block-persistence pipeline.
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum LedgerError {
     /// A transaction engine settled on a VM state other than `HALT` or `FAULT`
     /// (step 10c). This aborts persistence before any commit side effect.
+    #[error("unexpected transaction VM state {vm_state:?} for hash {transaction_hash}")]
     UnexpectedVmState {
         /// Hash of the offending transaction.
         transaction_hash: UInt256,
@@ -31,12 +35,14 @@ pub enum LedgerError {
     },
     /// An engine factory or a native/application engine port failed while opening
     /// or running an engine (steps 6, 10, 11).
+    #[error("{message}")]
     Engine {
         /// Engine-owned failure message.
         message: String,
     },
     /// A transaction hash could not be computed during pre-hashing or the
     /// per-transaction loop (steps 5, 10).
+    #[error("{message}")]
     TransactionHash {
         /// Hashing failure message.
         message: String,
@@ -45,6 +51,7 @@ pub enum LedgerError {
     ///
     /// `Display` reproduces `message` verbatim so the participant's own error text
     /// (the injected participant message) survives the lift into `LedgerError`.
+    #[error("{message}")]
     ParticipantCommit {
         /// Participant-owned failure message, embedded verbatim in `Display`.
         message: String,
@@ -52,6 +59,7 @@ pub enum LedgerError {
     /// The canonical store commit failed (step 13).
     ///
     /// `Display` carries the store commit prefix followed by the underlying message.
+    #[error("failed to commit store cache for block {index}: {message}")]
     StoreCommit {
         /// Height of the block whose store commit failed.
         index: u32,
@@ -60,6 +68,7 @@ pub enum LedgerError {
     },
     /// The runtime cache / tip update failed after a successful store commit
     /// (step 14). Staged participants are discarded in reverse order.
+    #[error("failed to update runtime block cache for block {index}: {message}")]
     RuntimeCache {
         /// Height of the block whose runtime cache update failed.
         index: u32,
@@ -74,6 +83,7 @@ pub enum LedgerError {
     /// possible or attempted, and a caller must not treat the block as uncommitted
     /// (retrying it would replay an already-committed height). The local runtime
     /// view is stale until the process reloads or the cache is repaired.
+    #[error("block {index} was durably committed but the runtime cache update failed: {message}")]
     PostCommitCacheFailure {
         /// Height of the durably committed block whose cache update failed.
         index: u32,
@@ -81,50 +91,9 @@ pub enum LedgerError {
         message: String,
     },
     /// Fast-path execution validation failed, triggering fallback to full VM.
+    #[error("fast-path validation failed: {message}")]
     FastPathError {
         /// Validation failure message.
         message: String,
     },
 }
-
-impl fmt::Display for LedgerError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LedgerError::UnexpectedVmState {
-                transaction_hash,
-                vm_state,
-            } => write!(
-                f,
-                "unexpected transaction VM state {vm_state:?} for hash {transaction_hash}"
-            ),
-            LedgerError::Engine { message } => f.write_str(message),
-            LedgerError::TransactionHash { message } => f.write_str(message),
-            // Contractual: the injected participant message is reproduced verbatim.
-            LedgerError::ParticipantCommit { message } => f.write_str(message),
-            // Contractual: the canonical store commit prefix is preserved.
-            LedgerError::StoreCommit { index, message } => {
-                write!(
-                    f,
-                    "failed to commit store cache for block {index}: {message}"
-                )
-            }
-            LedgerError::RuntimeCache { index, message } => {
-                write!(
-                    f,
-                    "failed to update runtime block cache for block {index}: {message}"
-                )
-            }
-            LedgerError::PostCommitCacheFailure { index, message } => {
-                write!(
-                    f,
-                    "block {index} was durably committed but the runtime cache update failed: {message}"
-                )
-            }
-            LedgerError::FastPathError { message } => {
-                write!(f, "fast-path validation failed: {message}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for LedgerError {}

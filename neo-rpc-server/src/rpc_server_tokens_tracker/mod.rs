@@ -20,7 +20,6 @@ use std::sync::Arc;
 
 mod helpers;
 #[cfg(test)]
-#[path = "tests.rs"]
 mod tests;
 
 use helpers::*;

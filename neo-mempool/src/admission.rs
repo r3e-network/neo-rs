@@ -22,7 +22,7 @@ use crate::memory_pool::MemoryPool;
 use neo_primitives::{UInt160, UInt256, VerifyResult};
 use neo_protocol::payloads::Transaction;
 use neo_protocol::protocol_settings::ProtocolSettings;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use std::fmt;
 
 /// Result alias for an [`AdmissionChainPort`] query.
@@ -96,7 +96,7 @@ pub trait AdmissionChainPort {
     /// It is the same snapshot the queries below answer from, so a transaction
     /// cannot be admitted against one view of the chain and verified against
     /// another.
-    fn snapshot(&self) -> &DataCache;
+    fn snapshot(&self) -> &PersistenceDataCache;
 
     /// Height of the persisted chain tip, used for diagnostics.
     fn chain_height(&self) -> u32;
@@ -226,7 +226,7 @@ mod tests {
 
     /// Chain port stub whose answers the test dictates.
     struct FakeChain {
-        snapshot: DataCache,
+        snapshot: PersistenceDataCache,
         height: u32,
         max_traceable_blocks: u32,
         committed: HashSet<UInt256>,
@@ -236,7 +236,7 @@ mod tests {
     }
 
     impl FakeChain {
-        fn new(snapshot: DataCache) -> Self {
+        fn new(snapshot: PersistenceDataCache) -> Self {
             Self {
                 snapshot,
                 height: 1,
@@ -250,7 +250,7 @@ mod tests {
     }
 
     impl AdmissionChainPort for FakeChain {
-        fn snapshot(&self) -> &DataCache {
+        fn snapshot(&self) -> &PersistenceDataCache {
             &self.snapshot
         }
 
@@ -289,8 +289,8 @@ mod tests {
         }
     }
 
-    fn funded_snapshot(account: UInt160, amount: i64) -> DataCache {
-        let snapshot = DataCache::new(false);
+    fn funded_snapshot(account: UInt160, amount: i64) -> PersistenceDataCache {
+        let snapshot = PersistenceDataCache::new(false);
         let key = StorageKey::create_with_uint160(GasToken::new().id(), PREFIX_ACCOUNT, &account);
         let state = AccountState::with_balance(BigInt::from(amount));
         let bytes = BinarySerializer::serialize_stack_value(

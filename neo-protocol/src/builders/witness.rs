@@ -2,6 +2,13 @@
 // Licensed under the MIT License. See LICENSE file for details.
 
 //! Fluent builder for protocol [`Witness`] payloads.
+//!
+//! # Builder conventions
+//!
+//! - Infallible setters consume and return `Self` (`pub fn set_x(mut self, ...) -> Self`).
+//! - Fallible setters take `&mut self` and return `IoResult<&mut Self>`: the builder
+//!   cannot be consumed before the caller observes the error.
+//! - `build()` consumes the builder.
 
 use super::ScriptBuilder;
 use crate::payloads::Witness;
@@ -72,11 +79,11 @@ impl WitnessBuilder {
     }
 
     /// Builds the witness, returning an empty witness when no scripts were set.
-    pub fn build(&self) -> Witness {
+    pub fn build(self) -> Witness {
         if self.invocation.is_empty() && self.verification.is_empty() {
             Witness::new()
         } else {
-            Witness::new_with_scripts(self.invocation.clone(), self.verification.clone())
+            Witness::new_with_scripts(self.invocation, self.verification)
         }
     }
 }

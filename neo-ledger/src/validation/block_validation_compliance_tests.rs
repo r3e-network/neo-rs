@@ -4,7 +4,6 @@
 //! cover genesis, early transaction execution, a historical state-root repro,
 //! and the Faun/Gorgon activation blocks.
 
-#[cfg(test)]
 mod tests {
     use super::super::rules::{
         validate_block_size_raw, validate_merkle_root, validate_transaction_count_raw,

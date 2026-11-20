@@ -19,7 +19,7 @@ use crate::native::NativeContract;
 use neo_protocol::Hardfork;
 use neo_protocol::ProtocolSettings;
 use neo_smart_contract::application_engine::ApplicationEngine;
-use neo_smart_contract::error::CoreResult as Result;
+use neo_smart_contract::error::CoreResult;
 use neo_smart_contract::impl_native_contract;
 use neo_smart_contract::manifest::ContractEventDescriptor;
 use neo_storage::StorageItem;
@@ -45,7 +45,7 @@ impl NativeContract for OracleContract {
         vec![Hardfork::HfFaun]
     }
 
-    fn initialize(&self, engine: &mut ApplicationEngine) -> Result<()> {
+    fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         let snapshot = engine.snapshot_cache();
         let snapshot_ref = snapshot.as_ref();
 
@@ -69,7 +69,7 @@ impl NativeContract for OracleContract {
         Self::event_descriptors()
     }
 
-    fn post_persist(&self, engine: &mut ApplicationEngine) -> Result<()> {
+    fn post_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         let completed_response_ids = self.cleanup_persisted_responses(engine)?;
         self.reward_oracle_nodes(engine, &completed_response_ids)
     }

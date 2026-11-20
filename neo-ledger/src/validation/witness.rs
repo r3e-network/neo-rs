@@ -9,7 +9,7 @@ use neo_protocol::witness::{Witness, WitnessData};
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::error::{CoreError, CoreResult};
 use neo_smart_contract::helper::Helper;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_vm::VmState;
 use std::any::Any;
 use std::sync::Arc;
@@ -17,7 +17,7 @@ use std::sync::Arc;
 pub fn verify_witnesses<V: VerifiableExt>(
     verifiable: &V,
     settings: &ProtocolSettings,
-    snapshot: &DataCache,
+    snapshot: &PersistenceDataCache,
     max_gas: i64,
 ) -> bool {
     if max_gas < 0 {
@@ -49,7 +49,7 @@ pub fn verify_witnesses<V: VerifiableExt>(
 pub fn verify_witness<V: VerifiableExt>(
     verifiable: &V,
     settings: &ProtocolSettings,
-    snapshot: &DataCache,
+    snapshot: &PersistenceDataCache,
     hash: &UInt160,
     witness: &Witness,
     max_gas: i64,
@@ -181,7 +181,7 @@ impl Verifiable for VerifiableHashContainer {
 }
 
 impl VerifiableExt for VerifiableHashContainer {
-    fn script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
+    fn script_hashes_for_verifying(&self, _snapshot: &PersistenceDataCache) -> Vec<UInt160> {
         Vec::new()
     }
 }

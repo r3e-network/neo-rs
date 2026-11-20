@@ -1,0 +1,59 @@
+[network]
+magic = 30111026
+protocol_path = "D:/Git/neo-rs/.t30-live/nodes/neo-cli/protocol.json"
+
+[validator]
+data_path = "D:/Git/neo-rs/.t30-live/validator-data"
+audit_path = "D:/Git/neo-rs/.t30-live/validator-audit.jsonl"
+poll_interval_ms = 200
+rpc_timeout_ms = 5000
+max_catch_up_blocks = 32
+max_block_bytes = 16777216
+require_application_logs = true
+
+[neo_cli]
+path = "D:/Git/neo-rs/.t30-live/nodes/neo-cli/neo-cli-v3.10.2"
+rpc_url = "http://127.0.0.1:10332"
+proxy_listen = "127.0.0.1:20332"
+
+[neo_go]
+path = "D:/Git/neo-rs/.t30-live/nodes/neo-go"
+rpc_url = "http://127.0.0.1:10333"
+proxy_listen = "127.0.0.1:20333"
+
+[security]
+admin_listen = "127.0.0.1:20400"
+admin_token_sha256 = "e01a17b3ca9a4751c096fefab33e3c24319f846ee6750870e03e318c9888377a"
+read_token_sha256 = "b3c314195d990c5ee3bc84ccf600f24ddc299861d8baf6dd19ac38fe5e4f6287"
+proxy_token_sha256 = "d0141c131abaa0a1b46c0e74de888b39032036db5726c0cb27483829824776b5"
+max_request_body_bytes = 1048576
+max_response_body_bytes = 16777216
+allow_public_proxy = false
+allow_remote_upstreams = false
+allowed_methods = [
+  "getbestblockhash",
+  "getblock",
+  "getblockcount",
+  "getblockhash",
+  "getblockheader",
+  "getblockheadercount",
+  "getcontractstate",
+  "getnativecontracts",
+  "getstorage",
+  "findstorage",
+  "gettransaction",
+  "getrawtransaction",
+  "getrawmempool",
+  "getversion",
+  "getstateheight",
+  "getstateroot",
+  "getproof",
+  "verifyproof",
+  "getstate",
+  "findstates",
+  "getapplicationlog",
+  "invokefunction",
+  "invokescript",
+  "invokecontractverify",
+  "calculatenetworkfee"
+]

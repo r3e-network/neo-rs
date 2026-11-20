@@ -5,7 +5,7 @@ use neo_primitives::UInt160;
 use neo_protocol::ProtocolSettings;
 use neo_protocol::execution::Block;
 use neo_smart_contract::application_engine::ApplicationEngine;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use std::sync::Arc;
 
 fn make_test_settings() -> ProtocolSettings {
@@ -27,7 +27,7 @@ fn make_test_block(index: u32) -> Block {
     Block::new(header, vec![])
 }
 
-fn make_test_engine(snapshot: Arc<DataCache>) -> ApplicationEngine {
+fn make_test_engine(snapshot: Arc<PersistenceDataCache>) -> ApplicationEngine {
     let settings = make_test_settings();
     let block = make_test_block(0);
 
@@ -116,7 +116,7 @@ fn gas_token_has_required_methods() {
 #[test]
 fn gas_token_total_supply_method_exists() {
     let gas = GasToken::new();
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let mut engine = make_test_engine(snapshot);
 
     // Should not panic - method exists
@@ -127,7 +127,7 @@ fn gas_token_total_supply_method_exists() {
 #[test]
 fn gas_token_balance_of_unknown_account_returns_zero() {
     let gas = GasToken::new();
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let mut engine = make_test_engine(snapshot);
 
     let account = UInt160::zero();
@@ -140,7 +140,7 @@ fn gas_token_balance_of_unknown_account_returns_zero() {
 #[test]
 fn gas_token_rejects_unknown_method() {
     let gas = GasToken::new();
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let mut engine = make_test_engine(snapshot);
 
     let result = gas.invoke(&mut engine, "unknownMethod", &[]);

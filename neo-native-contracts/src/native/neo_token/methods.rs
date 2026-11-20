@@ -1,9 +1,9 @@
-//
-// methods.rs - NeoToken constructor and method registration
-//
-// Migrated from `neo-core/src/smart_contract/native/neo_token/methods.rs`.
-// Import adaptation: `crate::smart_contract::native::static_native_methods!` →
-// `crate::native::static_native_methods!`. `use super::*;` is preserved.
+//!
+//! methods.rs - NeoToken constructor and method registration
+//!
+//! Migrated from `neo-core/src/smart_contract/native/neo_token/methods.rs`.
+//! Import adaptation: `crate::smart_contract::native::static_native_methods!` →
+//! `crate::native::static_native_methods!`. `use super::*;` is preserved.
 
 use super::*;
 

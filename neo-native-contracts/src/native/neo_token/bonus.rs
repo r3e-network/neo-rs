@@ -1,14 +1,14 @@
-//
-// bonus.rs - GAS reward and bonus calculations
-//
-// Migrated from `neo-core/src/smart_contract/native/neo_token/bonus.rs`.
-// Main body uses only `super::*` (no crate:: paths). Test-module imports adapted:
-//   crate::UInt256                                 -> neo_primitives::UInt256
-//   crate::persistence::DataCache                  -> neo_storage::persistence::DataCache
-//   crate::smart_contract::application_engine::*   -> neo_smart_contract::application_engine::*
-//   crate::smart_contract::binary_serializer::*    -> neo_smart_contract::binary_serializer::*
-//   crate::smart_contract::native::NativeContract  -> crate::native::NativeContract
-//   crate::smart_contract::trigger_type::TriggerType -> neo_smart_contract::trigger_type::TriggerType
+//!
+//! bonus.rs - GAS reward and bonus calculations
+//!
+//! Migrated from `neo-core/src/smart_contract/native/neo_token/bonus.rs`.
+//! Main body uses only `super::*` (no crate:: paths). Test-module imports adapted:
+//!   crate::UInt256                                 -> neo_primitives::UInt256
+//!   crate::persistence::PersistenceDataCache                  -> neo_storage::persistence::PersistenceDataCache
+//!   crate::smart_contract::application_engine::*   -> neo_smart_contract::application_engine::*
+//!   crate::smart_contract::binary_serializer::*    -> neo_smart_contract::binary_serializer::*
+//!   crate::smart_contract::native::NativeContract  -> crate::native::NativeContract
+//!   crate::smart_contract::trigger_type::TriggerType -> neo_smart_contract::trigger_type::TriggerType
 
 use super::*;
 
@@ -178,20 +178,24 @@ mod tests {
     use neo_primitives::UInt256;
     use neo_smart_contract::application_engine::ApplicationEngine;
     use neo_smart_contract::binary_serializer::BinarySerializer;
-    use neo_storage::persistence::DataCache;
+    use neo_storage::persistence::PersistenceDataCache;
     use std::sync::Arc;
 
     const PREFIX_CURRENT_BLOCK: u8 = 12;
     const TEST_GAS_LIMIT: i64 = 400_000_000;
 
-    fn seed_ledger_current_index(snapshot: &DataCache, index: u32) {
+    fn seed_ledger_current_index(snapshot: &PersistenceDataCache, index: u32) {
         let key = StorageKey::create(LedgerContract::ID, PREFIX_CURRENT_BLOCK);
         let mut bytes = UInt256::zero().to_bytes().clone();
         bytes.extend_from_slice(&index.to_le_bytes());
         snapshot.add(key, StorageItem::from_bytes(bytes));
     }
 
-    fn seed_neo_account(snapshot: &DataCache, account: &UInt160, state: NeoAccountState) {
+    fn seed_neo_account(
+        snapshot: &PersistenceDataCache,
+        account: &UInt160,
+        state: NeoAccountState,
+    ) {
         let key = StorageKey::create_with_uint160(NeoToken::ID, PREFIX_ACCOUNT, account);
         let bytes = BinarySerializer::serialize_stack_value(
             &state.to_stack_value(),
@@ -201,7 +205,7 @@ mod tests {
         snapshot.add(key, StorageItem::from_bytes(bytes));
     }
 
-    fn seed_gas_per_block(snapshot: &DataCache, index: u32, value: BigInt) {
+    fn seed_gas_per_block(snapshot: &PersistenceDataCache, index: u32, value: BigInt) {
         let mut suffix = vec![NeoToken::PREFIX_GAS_PER_BLOCK];
         suffix.extend_from_slice(&index.to_be_bytes());
         let key = StorageKey::new(NeoToken::ID, suffix);
@@ -210,7 +214,7 @@ mod tests {
 
     #[test]
     fn unclaimed_gas_helper_allows_future_end_heights_like_csharp_calculate_bonus() {
-        let snapshot = DataCache::new(false);
+        let snapshot = PersistenceDataCache::new(false);
         let neo = NeoToken::new();
         let account = UInt160::zero();
 
@@ -236,7 +240,7 @@ mod tests {
 
     #[test]
     fn unclaimed_gas_contract_method_still_requires_expected_end_height() {
-        let snapshot = Arc::new(DataCache::new(false));
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
         let neo = NeoToken::new();
         let account = UInt160::zero();
 
@@ -296,7 +300,7 @@ mod tests {
     /// Both evaluate left-to-right with BigInt truncating division.
     #[test]
     fn neo_holder_reward_matches_csharp_for_small_balance() {
-        let snapshot = DataCache::new(false);
+        let snapshot = PersistenceDataCache::new(false);
         let neo = NeoToken::new();
 
         // balance = 1 NEO, gas_per_block = 500000000, start = 0, end = 100
@@ -327,7 +331,7 @@ mod tests {
     /// 150000000 / 100000000 = 1 (truncated from 1.5)
     #[test]
     fn neo_holder_reward_truncation_matches_csharp() {
-        let snapshot = DataCache::new(false);
+        let snapshot = PersistenceDataCache::new(false);
         let neo = NeoToken::new();
 
         seed_gas_per_block(&snapshot, 0, BigInt::from(500_000_000i64));
@@ -458,7 +462,7 @@ mod tests {
     /// calculate_bonus for an account with a vote.
     #[test]
     fn full_bonus_calculation_with_vote() {
-        let snapshot = DataCache::new(false);
+        let snapshot = PersistenceDataCache::new(false);
         let neo = NeoToken::new();
 
         // Setup: gas_per_block = 500000000 starting at block 0
@@ -524,7 +528,7 @@ mod tests {
     /// correct filtering and ordering.
     #[test]
     fn get_sorted_gas_records_filters_and_orders_correctly() {
-        let snapshot = DataCache::new(false);
+        let snapshot = PersistenceDataCache::new(false);
         let neo = NeoToken::new();
 
         // Insert records at blocks 0, 100, 200, 300
@@ -552,7 +556,7 @@ mod tests {
     /// This ensures the piecewise sum computation is correct.
     #[test]
     fn neo_holder_reward_with_gas_rate_change() {
-        let snapshot = DataCache::new(false);
+        let snapshot = PersistenceDataCache::new(false);
         let neo = NeoToken::new();
 
         // Block 0-99: 500000000 per block
@@ -617,7 +621,7 @@ mod tests {
     /// This tests the truncation boundary.
     #[test]
     fn holder_reward_single_neo_single_block_is_zero() {
-        let snapshot = DataCache::new(false);
+        let snapshot = PersistenceDataCache::new(false);
         let neo = NeoToken::new();
 
         seed_gas_per_block(&snapshot, 0, BigInt::from(500_000_000i64));
@@ -638,7 +642,7 @@ mod tests {
     /// Verify that 2 NEO for 1 block = 1 datoshi (exact boundary).
     #[test]
     fn holder_reward_two_neo_single_block() {
-        let snapshot = DataCache::new(false);
+        let snapshot = PersistenceDataCache::new(false);
         let neo = NeoToken::new();
 
         seed_gas_per_block(&snapshot, 0, BigInt::from(500_000_000i64));
@@ -663,7 +667,7 @@ mod tests {
     /// This uses integer values to detect any rounding divergence.
     #[test]
     fn holder_reward_over_56k_blocks_exact() {
-        let snapshot = DataCache::new(false);
+        let snapshot = PersistenceDataCache::new(false);
         let neo = NeoToken::new();
 
         seed_gas_per_block(&snapshot, 0, BigInt::from(500_000_000i64));
@@ -812,7 +816,7 @@ mod tests {
     /// handles this correctly by returning zero.
     #[test]
     fn no_gas_records_returns_zero_reward() {
-        let snapshot = DataCache::new(false);
+        let snapshot = PersistenceDataCache::new(false);
         let neo = NeoToken::new();
 
         // No gas-per-block records seeded

@@ -2,6 +2,12 @@
 // Licensed under the MIT License. See LICENSE file for details.
 
 //! Fluent builders for witness conditions and witness rules.
+//!
+//! # Builder convention
+//!
+//! These builders are configured through `FnOnce(&mut XBuilder)` closures, so
+//! their condition setters take `&mut self` and return `&mut Self`; `build()`
+//! consumes the builder.
 
 use crate::payloads::{WitnessCondition, WitnessRule, WitnessRuleAction};
 use neo_crypto::ECPoint;
@@ -66,17 +72,16 @@ macro_rules! impl_witness_condition_builder_methods {
 }
 
 /// Builder for witness conditions.
+#[derive(Default)]
 #[must_use]
 pub struct WitnessConditionBuilder {
     condition: Option<WitnessCondition>,
 }
 
-neo_primitives::impl_default_via_new!(WitnessConditionBuilder);
-
 impl WitnessConditionBuilder {
     /// Creates a new empty witness condition builder.
     pub fn new() -> Self {
-        Self { condition: None }
+        Self::default()
     }
 
     fn store_condition(&mut self, condition: WitnessCondition) -> &mut Self {
@@ -100,9 +105,8 @@ impl WitnessConditionBuilder {
     }
 
     /// Builds and returns the configured condition.
-    pub fn build(&self) -> WitnessCondition {
+    pub fn build(self) -> WitnessCondition {
         self.condition
-            .clone()
             .unwrap_or(WitnessCondition::Boolean { value: true })
     }
 }
@@ -135,30 +139,25 @@ impl WitnessRuleBuilder {
     }
 
     /// Builds and returns the configured witness rule.
-    pub fn build(&self) -> WitnessRule {
+    pub fn build(self) -> WitnessRule {
         WitnessRule::new(
             self.action,
-            self.condition
-                .clone()
-                .expect("Witness rule condition must be set"),
+            self.condition.expect("Witness rule condition must be set"),
         )
     }
 }
 
 /// Builder for `And` witness conditions.
+#[derive(Default)]
 #[must_use]
 pub struct AndConditionBuilder {
     conditions: Vec<WitnessCondition>,
 }
 
-neo_primitives::impl_default_via_new!(AndConditionBuilder);
-
 impl AndConditionBuilder {
     /// Creates a new empty AND condition builder.
     pub fn new() -> Self {
-        Self {
-            conditions: Vec::new(),
-        }
+        Self::default()
     }
 
     fn store_condition(&mut self, condition: WitnessCondition) -> &mut Self {
@@ -177,19 +176,16 @@ impl AndConditionBuilder {
 }
 
 /// Builder for `Or` witness conditions.
+#[derive(Default)]
 #[must_use]
 pub struct OrConditionBuilder {
     conditions: Vec<WitnessCondition>,
 }
 
-neo_primitives::impl_default_via_new!(OrConditionBuilder);
-
 impl OrConditionBuilder {
     /// Creates a new empty OR condition builder.
     pub fn new() -> Self {
-        Self {
-            conditions: Vec::new(),
-        }
+        Self::default()
     }
 
     fn store_condition(&mut self, condition: WitnessCondition) -> &mut Self {

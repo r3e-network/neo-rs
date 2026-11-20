@@ -1,16 +1,16 @@
-//
-// validation.rs - Validation methods for ContractManagement
-//
-// Migrated from
-// `neo-core/src/smart_contract/native/contract_management/validation.rs`.
-// Import adaptation:
-// - `crate::script_validation::ValidatedScript` -> `neo_vm::ValidatedScript`
-// - `crate::smart_contract::binary_serializer::BinarySerializer`
-//   -> `neo_vm::BinarySerializer`
-// - `crate::smart_contract::helper::Helper` -> `neo_smart_contract::helper::Helper`
-// - `crate::smart_contract::manifest::ContractAbi`
-//   -> `neo_smart_contract::manifest::ContractAbi`
-//
+//!
+//! validation.rs - Validation methods for ContractManagement
+//!
+//! Migrated from
+//! `neo-core/src/smart_contract/native/contract_management/validation.rs`.
+//! Import adaptation:
+//! - `crate::script_validation::ValidatedScript` -> `neo_vm::ValidatedScript`
+//! - `crate::smart_contract::binary_serializer::BinarySerializer`
+//!   -> `neo_vm::BinarySerializer`
+//! - `crate::smart_contract::helper::Helper` -> `neo_smart_contract::helper::Helper`
+//! - `crate::smart_contract::manifest::ContractAbi`
+//!   -> `neo_smart_contract::manifest::ContractAbi`
+//!
 
 use super::*;
 use neo_smart_contract::helper::Helper;

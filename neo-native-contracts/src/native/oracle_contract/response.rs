@@ -4,7 +4,7 @@
 //! Import adaptation: `crate::error::*` → `neo_smart_contract::error::*`;
 //! `crate::neo_vm::StackItem` → `neo_vm::StackItem`;
 //! `crate::network::p2p::payloads::*` → `neo_protocol::payloads::*`;
-//! `crate::persistence::DataCache` → `neo_storage::persistence::DataCache`;
+//! `crate::persistence::PersistenceDataCache` → `neo_storage::persistence::PersistenceDataCache`;
 //! `crate::smart_contract::application_engine::*` →
 //! `neo_smart_contract::application_engine::*`;
 //! `crate::smart_contract::binary_serializer::*` →
@@ -18,7 +18,7 @@ use neo_protocol::payloads::{
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::binary_serializer::BinarySerializer;
 use neo_smart_contract::error::{CoreError as Error, CoreResult as Result};
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_vm::StackItem;
 
 impl OracleContract {
@@ -64,7 +64,7 @@ impl OracleContract {
     fn process_response(
         &self,
         engine: &mut ApplicationEngine,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         response: TxOracleResponse,
     ) -> Result<Vec<u8>> {
         let TxOracleResponse { id, code, result } = response;

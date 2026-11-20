@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use neo_primitives::LogEventArgs;
 use neo_primitives::{UInt160, UInt256};
 use neo_protocol::signer::Signer;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_vm::NotifyEventArgs;
 use std::sync::Arc;
 
@@ -22,7 +22,11 @@ pub trait NativeChainQueries: Send + Sync {
 /// Snapshot-backed native state reads supplied by the composition layer.
 pub trait NativeStateReader: Send + Sync {
     /// Reads the actual deployed contract record from the supplied snapshot.
-    fn contract(&self, snapshot: &DataCache, hash: &UInt160) -> CoreResult<Option<ContractState>>;
+    fn contract(
+        &self,
+        snapshot: &PersistenceDataCache,
+        hash: &UInt160,
+    ) -> CoreResult<Option<ContractState>>;
     /// Reads only the `update_counter` of a deployed contract record.
     ///
     /// This exists so the engine can address its deserialized-record cache
@@ -32,19 +36,19 @@ pub trait NativeStateReader: Send + Sync {
     /// [`Self::contract`].
     fn contract_update_counter(
         &self,
-        _snapshot: &DataCache,
+        _snapshot: &PersistenceDataCache,
         _hash: &UInt160,
     ) -> CoreResult<Option<u16>> {
         Ok(None)
     }
     /// Reads the persisted ledger height.
-    fn current_index(&self, snapshot: &DataCache) -> CoreResult<u32>;
+    fn current_index(&self, snapshot: &PersistenceDataCache) -> CoreResult<u32>;
     /// Checks the actual policy blocked-account state.
-    fn is_blocked(&self, snapshot: &DataCache, hash: &UInt160) -> CoreResult<bool>;
+    fn is_blocked(&self, snapshot: &PersistenceDataCache, hash: &UInt160) -> CoreResult<bool>;
     /// Reads the Faun whitelist fee for a specific method signature.
     fn whitelisted_fee(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         hash: &UInt160,
         method: &str,
         param_count: u32,
@@ -52,7 +56,7 @@ pub trait NativeStateReader: Send + Sync {
     /// Resolves the original transaction signers of an oracle response.
     fn oracle_original_signers(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         id: u64,
     ) -> CoreResult<Option<Vec<Signer>>>;
 }
@@ -63,7 +67,7 @@ pub trait WitnessHashResolver: Send + Sync {
     fn resolve(
         &self,
         verifiable: &dyn neo_primitives::Verifiable,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
     ) -> Vec<UInt160>;
 }
 
@@ -179,32 +183,36 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct SnapshotReader {
-        snapshot: Arc<DataCache>,
+        snapshot: Arc<PersistenceDataCache>,
         height_reads: AtomicUsize,
     }
 
     impl NativeStateReader for SnapshotReader {
         fn contract(
             &self,
-            _snapshot: &DataCache,
+            _snapshot: &PersistenceDataCache,
             _hash: &UInt160,
         ) -> CoreResult<Option<ContractState>> {
             panic!("unexpected contract read during injected construction")
         }
 
-        fn current_index(&self, snapshot: &DataCache) -> CoreResult<u32> {
+        fn current_index(&self, snapshot: &PersistenceDataCache) -> CoreResult<u32> {
             assert!(std::ptr::eq(snapshot, self.snapshot.as_ref()));
             self.height_reads.fetch_add(1, Ordering::SeqCst);
             Ok(0)
         }
 
-        fn is_blocked(&self, _snapshot: &DataCache, _hash: &UInt160) -> CoreResult<bool> {
+        fn is_blocked(
+            &self,
+            _snapshot: &PersistenceDataCache,
+            _hash: &UInt160,
+        ) -> CoreResult<bool> {
             panic!("unexpected policy read during injected construction")
         }
 
         fn whitelisted_fee(
             &self,
-            _snapshot: &DataCache,
+            _snapshot: &PersistenceDataCache,
             _hash: &UInt160,
             _method: &str,
             _param_count: u32,
@@ -214,7 +222,7 @@ mod tests {
 
         fn oracle_original_signers(
             &self,
-            _snapshot: &DataCache,
+            _snapshot: &PersistenceDataCache,
             _id: u64,
         ) -> CoreResult<Option<Vec<Signer>>> {
             panic!("unexpected oracle read during injected construction")
@@ -242,13 +250,17 @@ mod tests {
     }
 
     struct SnapshotResolver {
-        snapshot: Mutex<Arc<DataCache>>,
+        snapshot: Mutex<Arc<PersistenceDataCache>>,
         hash: UInt160,
         calls: AtomicUsize,
     }
 
     impl WitnessHashResolver for SnapshotResolver {
-        fn resolve(&self, verifiable: &dyn Verifiable, snapshot: &DataCache) -> Vec<UInt160> {
+        fn resolve(
+            &self,
+            verifiable: &dyn Verifiable,
+            snapshot: &PersistenceDataCache,
+        ) -> Vec<UInt160> {
             assert!(std::ptr::eq(snapshot, self.snapshot.lock().as_ref()));
             assert!(verifiable.as_any().is::<HashContainer>());
             self.calls.fetch_add(1, Ordering::SeqCst);
@@ -324,7 +336,7 @@ mod tests {
         }
     }
 
-    fn ports(snapshot: &Arc<DataCache>) -> (Arc<SnapshotReader>, Arc<SnapshotResolver>) {
+    fn ports(snapshot: &Arc<PersistenceDataCache>) -> (Arc<SnapshotReader>, Arc<SnapshotResolver>) {
         (
             Arc::new(SnapshotReader {
                 snapshot: Arc::clone(snapshot),
@@ -351,7 +363,7 @@ mod tests {
 
     #[test]
     fn shared_constructor_consumes_registry_and_separate_snapshot_ports() {
-        let snapshot = Arc::new(DataCache::new(false));
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
         let (reader, resolver) = ports(&snapshot);
         let native = Arc::new(MetadataNative {
             hash: UInt160::from_bytes(&[0x41; 20]).expect("hash"),
@@ -417,7 +429,7 @@ mod tests {
 
     #[test]
     fn preloaded_constructor_retains_shared_states_cache_and_skips_registration() {
-        let snapshot = Arc::new(DataCache::new(false));
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
         let (reader, resolver) = ports(&snapshot);
         let native = Arc::new(MetadataNative {
             hash: UInt160::from_bytes(&[0x41; 20]).expect("hash"),
@@ -476,7 +488,7 @@ mod tests {
 
     #[test]
     fn event_observer_is_called_before_retention_and_can_be_detached() {
-        let snapshot = Arc::new(DataCache::new(false));
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
         let (reader, resolver) = ports(&snapshot);
         let mut engine = ApplicationEngine::new_with_shared_block(
             TriggerType::Application,
@@ -534,7 +546,7 @@ mod tests {
     }
 
     fn query_engine() -> ApplicationEngine {
-        let snapshot = Arc::new(DataCache::new(false));
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
         let (reader, resolver) = ports(&snapshot);
         ApplicationEngine::new_with_shared_block(
             TriggerType::Application,

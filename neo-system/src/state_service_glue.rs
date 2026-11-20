@@ -14,7 +14,7 @@ use crate::events::handlers::{CommittedHandler, CommittingHandler, CoreResult};
 use crate::neo_system::{NeoSystem, NeoSystemContext};
 use neo_state_service::commit_handlers::{StateServiceCommitHandlers, StateServiceError};
 use neo_state_service::{StateCommitContext, StateStoreService, ValidatedRootPersisted};
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use std::sync::Arc;
 
 /// Runtime adapter bridging `NeoSystemContext` to the state-service commit
@@ -69,7 +69,7 @@ impl CommittingHandler for StateServiceCommitHandlers {
         &self,
         system: &dyn std::any::Any,
         block: &neo_protocol::execution::Block,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         application_executed_list: &[neo_protocol::execution::ApplicationExecuted],
     ) {
         let context = resolve_commit_context(system);
@@ -86,7 +86,7 @@ impl CommittingHandler for StateServiceCommitHandlers {
         &self,
         system: &dyn std::any::Any,
         block: &neo_protocol::execution::Block,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         application_executed_list: &[neo_protocol::execution::ApplicationExecuted],
     ) -> CoreResult<()> {
         let context = resolve_commit_context(system);
@@ -104,7 +104,7 @@ impl CommittingHandler for StateServiceCommitHandlers {
         &self,
         system: &dyn std::any::Any,
         block: &neo_protocol::execution::Block,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
     ) -> CoreResult<()> {
         let context = resolve_commit_context(system);
         StateServiceCommitHandlers::blockchain_rollback_handler(

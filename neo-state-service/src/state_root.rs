@@ -12,7 +12,7 @@ use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_protocol::witness::Witness;
 use neo_smart_contract::contract::Contract;
 use neo_smart_contract::helper::Helper;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
@@ -132,7 +132,7 @@ impl StateRoot {
     /// - witness is present
     /// - verification script matches the expected BFT multi-sig contract
     /// - signatures satisfy the required threshold and are valid over `network || hash`
-    pub fn verify(&self, settings: &ProtocolSettings, snapshot: &DataCache) -> bool {
+    pub fn verify(&self, settings: &ProtocolSettings, snapshot: &PersistenceDataCache) -> bool {
         let Some(witness) = &self.witness else {
             return false;
         };

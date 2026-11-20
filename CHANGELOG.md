@@ -1,9 +1,41 @@
 # Changelog
 
-## [Unreleased]
+## [0.21.0] - 2026-11-20
+
+### Added
+- ACC import speed optimization pipeline (Phases 1-4)
+  - Import telemetry: window rates, empty/non-empty block counts, per-stage timing
+  - Empty-block batching: consecutive empty blocks merged into single physical write (2-4096 blocks/batch)
+  - ApplicationLogs cross-block commit coalescing: 13M commits reduced to ~1,300
+  - Independent RocksDB row_cache_size configuration
+  - Cache statistics API (block_cache, row_cache, index/filter/data block sizes)
+- State root sweep tool (`tools/state-root-diff`) for read-only correctness verification
+- Public state root key/value schema module (`neo-state-service/src/record_schema.rs`)
+- ACC import optimization report (`docs/acc-import-optimization-report.md`)
+
+### Changed
+- **BREAKING**: Renamed persistence `DataCache` to `PersistenceDataCache` for disambiguation
+- **BREAKING**: Removed unused `ConsensusMessage` trait (concrete message types unchanged)
+- **BREAKING**: Consensus error variants renamed: `StateError`→`State`, `ChannelError`→`Channel`, `PersistenceError`→`Persistence`, `IoError`→`Io`
+- Native contracts: unified to `impl_native_contract!` macro, static method tables, `CoreResult` return types
+- RPC models: added Serde derive with proper field renames to `RpcNep17Balance` and `RpcVersion`
+- Builder pattern: unified to consuming `build(self)` across `neo-protocol/src/builders/`
+- Error types: `LedgerError` and `StorageError` migrated to thiserror derive
+- Derive order standardized to `Debug, Clone, ..., Serialize, Deserialize` across workspace
+- Test organization: removed redundant cfg gates, unnecessary path attributes, standardized naming
+- Documentation: 22 native contract modules converted to `//!` doc comments
+- Constants: numeric grouping standardized to thousands separator, config PascalCase consolidated
+- Cleaned up ~675 GB of historical build caches and artifacts
+
+### Fixed
+- Checkpoint durability: two-stage watermark (committed vs durable), fallible `try_flush_durable()`
+- RocksDB compaction strategy: removed harmful `disable_auto_compactions` during import
+- NEP-17 fast path correctness verified across 13.1M mainnet blocks (0 state root mismatches)
 
 ### Removed
 - neo-vm: removed the unused `memory::arena_pool` module (`ArenaMemoryPool`, `ArenaAllocation`, `ArenaAwareExecutionEngine`) and the `bumpalo` dependency. Its safe API allowed use-after-reset and leaked arena-allocated heap buffers; nothing in the workspace used it.
+
+## [Unreleased]
 
 ## [0.20.0] - 2026-10-29
 

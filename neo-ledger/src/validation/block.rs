@@ -9,7 +9,7 @@ use neo_primitives::UInt256;
 use neo_protocol::execution::Block as ExecutionBlock;
 use neo_protocol::payloads::Block;
 use neo_protocol::protocol_settings::ProtocolSettings;
-use neo_storage::persistence::{DataCache, StoreCache};
+use neo_storage::persistence::{PersistenceDataCache, StoreCache};
 
 /// Checks that a block body is the one its header commits to, using the rules
 /// C# `Block.Deserialize` enforces on the wire: supported version, at most
@@ -104,7 +104,7 @@ pub fn verify_block_with_cache(
         && verify_header_with_cache(&block.header, settings, store_cache, header_cache)
 }
 
-pub fn calculate_block_network_fee(block: &Block, _snapshot: &DataCache) -> i64 {
+pub fn calculate_block_network_fee(block: &Block, _snapshot: &PersistenceDataCache) -> i64 {
     block
         .transactions
         .iter()

@@ -10,7 +10,7 @@ use tracing::trace;
 pub(crate) const DEFAULT_BACKGROUND_TASK_SHUTDOWN: Duration = Duration::from_secs(5);
 
 /// Tracks node-local background tasks and provides one cooperative shutdown signal.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct BackgroundTasks {
     cancellation: CancellationToken,
     tracker: TaskTracker,
@@ -19,10 +19,7 @@ pub(crate) struct BackgroundTasks {
 impl BackgroundTasks {
     /// Creates an empty task set.
     pub(crate) fn new() -> Self {
-        Self {
-            cancellation: CancellationToken::new(),
-            tracker: TaskTracker::new(),
-        }
+        Self::default()
     }
 
     /// Returns a clone of the shutdown token for a tracked task.
@@ -48,12 +45,6 @@ impl BackgroundTasks {
         tokio::time::timeout(timeout, self.tracker.wait())
             .await
             .is_ok()
-    }
-}
-
-impl Default for BackgroundTasks {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

@@ -23,7 +23,7 @@ fn sample_point(byte: u8) -> ECPoint {
 }
 
 fn seed_transaction_state(
-    snapshot: &neo_storage::persistence::DataCache,
+    snapshot: &neo_storage::persistence::PersistenceDataCache,
     tx_hash: &UInt256,
     tx: &Transaction,
     block_index: u32,

@@ -1,5 +1,7 @@
 //! Native contract definitions, metadata, and helper macros.
 
+#![warn(missing_docs)]
+
 /// Deterministic genesis block construction from protocol settings.
 pub mod genesis;
 /// Startup hydration policy for persisted native-contract metadata.
@@ -50,7 +52,7 @@ pub fn minimal_native_services_from_registry(
         EngineNativeServices, NativeStateReader, WitnessHashResolver,
     };
     use neo_smart_contract::{ContractState, CoreResult};
-    use neo_storage::persistence::DataCache;
+    use neo_storage::persistence::PersistenceDataCache;
     use std::sync::Arc;
 
     // Minimal no-op implementations for basic scenarios: no chain state is
@@ -59,20 +61,24 @@ pub fn minimal_native_services_from_registry(
     impl NativeStateReader for NoopStateReader {
         fn contract(
             &self,
-            _snapshot: &DataCache,
+            _snapshot: &PersistenceDataCache,
             _hash: &UInt160,
         ) -> CoreResult<Option<ContractState>> {
             Ok(None)
         }
-        fn current_index(&self, _snapshot: &DataCache) -> CoreResult<u32> {
+        fn current_index(&self, _snapshot: &PersistenceDataCache) -> CoreResult<u32> {
             Ok(0)
         }
-        fn is_blocked(&self, _snapshot: &DataCache, _hash: &UInt160) -> CoreResult<bool> {
+        fn is_blocked(
+            &self,
+            _snapshot: &PersistenceDataCache,
+            _hash: &UInt160,
+        ) -> CoreResult<bool> {
             Ok(false)
         }
         fn whitelisted_fee(
             &self,
-            _snapshot: &DataCache,
+            _snapshot: &PersistenceDataCache,
             _hash: &UInt160,
             _method: &str,
             _param_count: u32,
@@ -81,7 +87,7 @@ pub fn minimal_native_services_from_registry(
         }
         fn oracle_original_signers(
             &self,
-            _snapshot: &DataCache,
+            _snapshot: &PersistenceDataCache,
             _id: u64,
         ) -> CoreResult<Option<Vec<Signer>>> {
             Ok(None)
@@ -94,7 +100,7 @@ pub fn minimal_native_services_from_registry(
         fn resolve(
             &self,
             _verifiable: &dyn neo_primitives::Verifiable,
-            _snapshot: &DataCache,
+            _snapshot: &PersistenceDataCache,
         ) -> Vec<UInt160> {
             Vec::new()
         }

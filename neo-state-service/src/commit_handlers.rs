@@ -40,7 +40,7 @@ use neo_crypto::mpt_trie::{
     node_key,
 };
 use neo_primitives::UInt256;
-use neo_storage::persistence::{DataCache, SeekDirection, StoreCache};
+use neo_storage::persistence::{PersistenceDataCache, SeekDirection, StoreCache};
 use neo_storage::types::{StorageItem, StorageKey};
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -263,7 +263,7 @@ impl MptStoreSnapshot for TrieNodeStore {
 /// the persistent store. No independent cache write can survive a block abort.
 struct BlockTrieNodeStore {
     persisted: Arc<TrieNodeStore>,
-    snapshot: DataCache,
+    snapshot: PersistenceDataCache,
 }
 
 impl BlockTrieNodeStore {
@@ -536,14 +536,18 @@ impl StateServiceCommitHandlers {
     ///
     /// # Reference
     /// C# Neo StateService: StatePlugin.OnCommitting computes state root from snapshot
-    pub fn commit_block(&self, height: u32, snapshot: &DataCache) -> Result<(), StateServiceError> {
+    pub fn commit_block(
+        &self,
+        height: u32,
+        snapshot: &PersistenceDataCache,
+    ) -> Result<(), StateServiceError> {
         self.commit_block_with_parallelism(height, snapshot, true)
     }
 
     fn commit_block_with_parallelism(
         &self,
         height: u32,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         parallel_hash: bool,
     ) -> Result<(), StateServiceError> {
         if !self.state_root_enabled {
@@ -570,7 +574,7 @@ impl StateServiceCommitHandlers {
             .into_iter()
             .filter(|(key, _)| key.len() < 4 || key[..4] != (-4_i32).to_le_bytes())
             .collect::<Vec<_>>();
-        // DataCache uses a HashMap, so its iteration order randomly jumps around
+        // PersistenceDataCache uses a HashMap, so its iteration order randomly jumps around
         // the trie. Lexicographic storage-key order is also MPT nibble-path order:
         // adjacent updates can then reuse the path resolved by the previous put.
         // Keys are unique and MPT updates are order-independent for the final root.
@@ -627,7 +631,7 @@ impl StateServiceCommitHandlers {
     /// C# Neo StateService: GetLocalRootHash() - computes MPT root from snapshot
     fn compute_state_root(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         changes: &[(Vec<u8>, Option<Vec<u8>>)],
         profile: Option<Arc<MptProfile>>,
         parallel_hash: bool,
@@ -910,7 +914,7 @@ impl StateServiceCommitHandlers {
     fn stage_local_root_progress(
         &self,
         context: Option<&dyn StateCommitContext>,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
     ) -> Result<(), StateServiceError> {
         let Some(context) = context else {
             // Direct embedders without a system context retain the post-commit
@@ -1028,7 +1032,7 @@ impl StateServiceCommitHandlers {
         &self,
         context: Option<&dyn StateCommitContext>,
         block: &neo_protocol::execution::Block,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         _application_executed_list: &[neo_protocol::execution::ApplicationExecuted],
     ) {
         if !self.state_root_enabled {
@@ -1067,7 +1071,7 @@ impl StateServiceCommitHandlers {
         &self,
         context: Option<&dyn StateCommitContext>,
         block: &neo_protocol::execution::Block,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         _application_executed_list: &[neo_protocol::execution::ApplicationExecuted],
     ) -> Result<(), StateServiceError> {
         if !self.state_root_enabled {
@@ -1094,7 +1098,7 @@ impl StateServiceCommitHandlers {
         &self,
         context: Option<&dyn StateCommitContext>,
         block: &neo_protocol::execution::Block,
-        _snapshot: &DataCache,
+        _snapshot: &PersistenceDataCache,
     ) -> Result<(), StateServiceError> {
         self.discard_staged_local_root(context, block.index());
         self.rollback()
@@ -1155,8 +1159,8 @@ mod tests {
     use neo_storage::persistence::store::Store;
 
     /// Builds a block snapshot carrying the given storage changes.
-    fn snapshot_with_changes(changes: &[(i32, Vec<u8>, Vec<u8>)]) -> DataCache {
-        let snapshot = DataCache::new(false);
+    fn snapshot_with_changes(changes: &[(i32, Vec<u8>, Vec<u8>)]) -> PersistenceDataCache {
+        let snapshot = PersistenceDataCache::new(false);
         for (id, key, value) in changes {
             snapshot
                 .try_add(
@@ -1168,8 +1172,8 @@ mod tests {
         snapshot
     }
 
-    fn empty_snapshot() -> DataCache {
-        DataCache::new(false)
+    fn empty_snapshot() -> PersistenceDataCache {
+        PersistenceDataCache::new(false)
     }
 
     fn pending_root(handlers: &StateServiceCommitHandlers) -> UInt256 {
@@ -1182,9 +1186,13 @@ mod tests {
             .root_hash
     }
 
-    /// Mirrors DataCache::clone_cache().commit(): the child changes become
+    /// Mirrors PersistenceDataCache::clone_cache().commit(): the child changes become
     /// visible in the parent StoreCache before the committed callback runs.
-    fn finish_commit(handlers: &StateServiceCommitHandlers, index: u32, snapshot: &DataCache) {
+    fn finish_commit(
+        handlers: &StateServiceCommitHandlers,
+        index: u32,
+        snapshot: &PersistenceDataCache,
+    ) {
         handlers
             .store_cache
             .data_cache()
@@ -1254,7 +1262,7 @@ mod tests {
 
         let detached = BlockTrieNodeStore {
             persisted,
-            snapshot: DataCache::new(false),
+            snapshot: PersistenceDataCache::new(false),
         };
         assert_eq!(detached.try_get(mpt_key).unwrap(), Some(stored_value));
     }
@@ -1515,7 +1523,7 @@ mod tests {
         let root_one = handlers.current_root_hash().unwrap();
 
         // Block two deletes key-x (tracked change with no value).
-        let snapshot_two = DataCache::new(false);
+        let snapshot_two = PersistenceDataCache::new(false);
         snapshot_two
             .try_add(key_x.clone(), StorageItem::from_bytes(b"v1".to_vec()))
             .unwrap();

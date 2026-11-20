@@ -111,7 +111,7 @@ impl ApplicationEngine {
     pub fn new(
         trigger: TriggerType,
         script_container: Option<Arc<dyn Verifiable>>,
-        snapshot_cache: Arc<DataCache>,
+        snapshot_cache: Arc<PersistenceDataCache>,
         persisting_block: Option<Block>,
         protocol_settings: ProtocolSettings,
         gas_limit: i64,
@@ -133,7 +133,7 @@ impl ApplicationEngine {
     pub fn new_with_shared_block(
         trigger: TriggerType,
         script_container: Option<Arc<dyn Verifiable>>,
-        snapshot_cache: Arc<DataCache>,
+        snapshot_cache: Arc<PersistenceDataCache>,
         persisting_block: Option<Arc<Block>>,
         protocol_settings: ProtocolSettings,
         gas_limit: i64,
@@ -216,7 +216,7 @@ impl ApplicationEngine {
     pub fn new_with_preloaded_native(
         trigger: TriggerType,
         script_container: Option<Arc<dyn Verifiable>>,
-        snapshot_cache: Arc<DataCache>,
+        snapshot_cache: Arc<PersistenceDataCache>,
         persisting_block: Option<Arc<Block>>,
         protocol_settings: ProtocolSettings,
         gas_limit: i64,
@@ -251,7 +251,7 @@ impl ApplicationEngine {
     pub fn new_with_preloaded_native_shared(
         trigger: TriggerType,
         script_container: Option<Arc<dyn Verifiable>>,
-        snapshot_cache: Arc<DataCache>,
+        snapshot_cache: Arc<PersistenceDataCache>,
         persisting_block: Option<Arc<Block>>,
         protocol_settings: ProtocolSettings,
         gas_limit: i64,
@@ -730,11 +730,11 @@ impl ApplicationEngine {
         self.contracts.clone()
     }
     /// Returns a clone of the current snapshot cache.
-    pub fn snapshot_cache(&self) -> Arc<DataCache> {
+    pub fn snapshot_cache(&self) -> Arc<PersistenceDataCache> {
         Arc::clone(&self.snapshot_cache)
     }
     /// Returns the execution's original snapshot rather than a nested call snapshot.
-    pub fn original_snapshot_cache(&self) -> Arc<DataCache> {
+    pub fn original_snapshot_cache(&self) -> Arc<PersistenceDataCache> {
         Arc::clone(&self.original_snapshot_cache)
     }
     pub(super) fn policy_contract(&self) -> Option<Arc<dyn NativeContract>> {

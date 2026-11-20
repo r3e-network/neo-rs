@@ -169,8 +169,8 @@ impl PolicyContract {
     /// Maximum execution fee factor committee can set.
     pub const MAX_EXEC_FEE_FACTOR: u32 = 100;
 
-    /// Maximum attribute fee committee can set.
-    pub const MAX_ATTRIBUTE_FEE: u32 = 10_0000_0000;
+    /// Maximum attribute fee committee can set (1 GAS in datoshi).
+    pub const MAX_ATTRIBUTE_FEE: u32 = 1_000_000_000;
 
     /// Maximum storage price committee can set.
     pub const MAX_STORAGE_PRICE: u32 = 10_000_000;

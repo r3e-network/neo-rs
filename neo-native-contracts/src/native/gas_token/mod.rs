@@ -310,7 +310,7 @@ impl GasToken {
 
     fn notary_fee_deduction(
         policy: &PolicyContract,
-        snapshot: &neo_storage::persistence::DataCache,
+        snapshot: &neo_storage::persistence::PersistenceDataCache,
         tx: &Transaction,
     ) -> CoreResult<i64> {
         let Some(TransactionAttribute::NotaryAssisted(attr)) = tx

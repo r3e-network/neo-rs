@@ -1,7 +1,7 @@
 //! Verifiable trait for blockchain objects.
 //!
 //! This is the simplified base trait that lives in neo-primitives (Layer 0).
-//! Neo-core extends it with additional methods that depend on DataCache,
+//! Neo-core extends it with additional methods that depend on PersistenceDataCache,
 //! ProtocolSettings, and the smart contract execution engine.
 
 use crate::UInt256;
@@ -10,7 +10,7 @@ use crate::error::PrimitiveResult;
 /// Base trait for verifiable blockchain objects.
 ///
 /// Provides hash computation and witness access without depending on
-/// higher-layer types (DataCache, ProtocolSettings, ApplicationEngine).
+/// higher-layer types (PersistenceDataCache, ProtocolSettings, ApplicationEngine).
 ///
 /// # Implementors
 ///

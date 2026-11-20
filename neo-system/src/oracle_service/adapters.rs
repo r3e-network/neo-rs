@@ -7,7 +7,7 @@
 //! signer client and the transaction router. They live in neo-core because
 //! those facilities live here; the engine stays host-agnostic.
 //!
-//! - [`CoreSnapshot`]/[`CoreSnapshotFactory`]: wrap `DataCache` snapshot
+//! - [`CoreSnapshot`]/[`CoreSnapshotFactory`]: wrap `PersistenceDataCache` snapshot
 //!   creation and the native-contract state queries.
 //! - [`CoreOracleWallet`]: replicates the reference `select_oracle_accounts`.
 //! - [`CoreOracleSigner`]: replicates the reference frozen-sign-intent flow
@@ -42,7 +42,7 @@ use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::helper::Helper;
 use neo_smart_contract::{Contract, ContractMethodDescriptor, ContractState};
-use neo_storage::persistence::{DataCache, StoreCache};
+use neo_storage::persistence::{PersistenceDataCache, StoreCache};
 use neo_wallets::Wallet;
 use neo_wallets::signing::{
     FrozenSignIntent, ProtocolContext, SIGNING_SCHEMA_VERSION, SignPayload, SignPurpose,
@@ -51,14 +51,14 @@ use neo_wallets::signing::{
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-/// Ledger snapshot adapter wrapping a [`DataCache`] plus protocol settings.
+/// Ledger snapshot adapter wrapping a [`PersistenceDataCache`] plus protocol settings.
 pub(crate) struct CoreSnapshot {
-    data_cache: DataCache,
+    data_cache: PersistenceDataCache,
     settings: ProtocolSettings,
 }
 
 impl CoreSnapshot {
-    pub(crate) fn new(data_cache: DataCache, settings: ProtocolSettings) -> Self {
+    pub(crate) fn new(data_cache: PersistenceDataCache, settings: ProtocolSettings) -> Self {
         Self {
             data_cache,
             settings,
@@ -66,9 +66,9 @@ impl CoreSnapshot {
     }
 
     /// Returns the underlying ledger snapshot. Used by
-    /// [`CoreResponseTxBuilder`], which needs the raw `DataCache` for the
+    /// [`CoreResponseTxBuilder`], which needs the raw `PersistenceDataCache` for the
     /// `ApplicationEngine` and native contracts.
-    pub(crate) fn data_cache(&self) -> &DataCache {
+    pub(crate) fn data_cache(&self) -> &PersistenceDataCache {
         &self.data_cache
     }
 }
@@ -141,7 +141,7 @@ impl OracleSnapshot for CoreSnapshot {
 }
 
 /// Snapshot factory adapter: mirrors the reference `snapshot_cache` helper
-/// (`system.store().snapshot()` → `StoreCache::new_from_snapshot` → `DataCache`).
+/// (`system.store().snapshot()` → `StoreCache::new_from_snapshot` → `PersistenceDataCache`).
 pub(crate) struct CoreSnapshotFactory {
     system: Arc<NeoSystem>,
 }

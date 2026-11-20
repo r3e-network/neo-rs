@@ -4,7 +4,7 @@ use neo_native_contracts::{NativeContract, TreasuryContract};
 use neo_protocol::execution::Block;
 use neo_protocol::{Hardfork, ProtocolSettings};
 use neo_smart_contract::application_engine::ApplicationEngine;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use std::sync::Arc;
 
 fn make_test_settings() -> ProtocolSettings {
@@ -26,7 +26,7 @@ fn make_test_block(index: u32) -> Block {
     Block::new(header, vec![])
 }
 
-fn make_test_engine(snapshot: Arc<DataCache>) -> ApplicationEngine {
+fn make_test_engine(snapshot: Arc<PersistenceDataCache>) -> ApplicationEngine {
     let settings = make_test_settings();
     let block = make_test_block(0);
 
@@ -95,7 +95,7 @@ fn treasury_supports_nep_standards() {
 #[test]
 fn treasury_verify_method_exists() {
     let treasury = TreasuryContract::new();
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let mut engine = make_test_engine(snapshot);
 
     // Should not panic - method exists
@@ -106,7 +106,7 @@ fn treasury_verify_method_exists() {
 #[test]
 fn treasury_accepts_nep17_payment() {
     let treasury = TreasuryContract::new();
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let mut engine = make_test_engine(snapshot);
 
     let result = treasury.invoke(&mut engine, "onNEP17Payment", &[]);
@@ -118,7 +118,7 @@ fn treasury_accepts_nep17_payment() {
 #[test]
 fn treasury_accepts_nep11_payment() {
     let treasury = TreasuryContract::new();
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let mut engine = make_test_engine(snapshot);
 
     let result = treasury.invoke(&mut engine, "onNEP11Payment", &[]);
@@ -130,7 +130,7 @@ fn treasury_accepts_nep11_payment() {
 #[test]
 fn treasury_rejects_unknown_method() {
     let treasury = TreasuryContract::new();
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let mut engine = make_test_engine(snapshot);
 
     let result = treasury.invoke(&mut engine, "unknownMethod", &[]);

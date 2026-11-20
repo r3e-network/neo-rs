@@ -4,7 +4,7 @@ use neo_primitives::{ContractParameterType, TriggerType, UInt160};
 use neo_protocol::Hardfork;
 use neo_protocol::ProtocolSettings;
 use neo_smart_contract::application_engine::ApplicationEngine;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_vm::BinarySerializer;
 use num_bigint::BigInt;
 use std::collections::HashSet;
@@ -27,7 +27,7 @@ fn make_engine() -> ApplicationEngine {
     ApplicationEngine::new(
         TriggerType::Application,
         None,
-        Arc::new(DataCache::new(false)),
+        Arc::new(PersistenceDataCache::new(false)),
         None,
         ProtocolSettings::default(),
         400_000_000,
@@ -38,7 +38,7 @@ fn make_engine() -> ApplicationEngine {
 }
 
 #[test]
-fn test_method_metadata_snapshot() {
+fn method_metadata_snapshot() {
     let stdlib = create_stdlib();
     let expected: &[StdLibMethodMetadata] = &[
         (
@@ -300,7 +300,7 @@ fn test_method_metadata_snapshot() {
 }
 
 #[test]
-fn test_metadata_methods_all_dispatch() {
+fn metadata_methods_all_dispatch() {
     let stdlib = create_stdlib();
     let mut engine = make_engine();
     let mut seen = HashSet::new();
@@ -340,7 +340,7 @@ fn test_metadata_methods_all_dispatch() {
 }
 
 #[test]
-fn test_memory_compare() {
+fn memory_compare() {
     let stdlib = create_stdlib();
 
     // Equal arrays
@@ -379,7 +379,7 @@ fn test_memory_compare() {
 }
 
 #[test]
-fn test_memory_search_basic() {
+fn memory_search_basic() {
     let stdlib = create_stdlib();
 
     // Basic forward search
@@ -409,7 +409,7 @@ fn test_memory_search_basic() {
 }
 
 #[test]
-fn test_memory_search_with_start() {
+fn memory_search_with_start() {
     let stdlib = create_stdlib();
 
     let mem = vec![1, 2, 3, 4, 5, 4, 5, 6];
@@ -447,7 +447,7 @@ fn test_memory_search_with_start() {
 }
 
 #[test]
-fn test_memory_search_backward() {
+fn memory_search_backward() {
     let stdlib = create_stdlib();
 
     let mem = vec![1, 2, 3, 4, 5, 4, 5, 6];
@@ -488,7 +488,7 @@ fn test_memory_search_backward() {
 }
 
 #[test]
-fn test_string_split_basic() {
+fn string_split_basic() {
     let stdlib = create_stdlib();
     let engine = make_engine();
 
@@ -513,7 +513,7 @@ fn test_string_split_basic() {
 }
 
 #[test]
-fn test_string_split_with_empty_entries() {
+fn string_split_with_empty_entries() {
     let stdlib = create_stdlib();
     let engine = make_engine();
 
@@ -539,7 +539,7 @@ fn test_string_split_with_empty_entries() {
 }
 
 #[test]
-fn test_str_len_basic() {
+fn str_len_basic() {
     let stdlib = create_stdlib();
 
     // ASCII string
@@ -560,7 +560,7 @@ fn test_str_len_basic() {
 }
 
 #[test]
-fn test_str_len_unicode() {
+fn str_len_unicode() {
     let stdlib = create_stdlib();
 
     // Emoji (should count as 1 grapheme cluster)
@@ -597,7 +597,7 @@ fn test_str_len_unicode() {
 }
 
 #[test]
-fn test_atoi_itoa() {
+fn atoi_itoa() {
     let stdlib = create_stdlib();
 
     // Test itoa
@@ -638,7 +638,7 @@ fn test_atoi_itoa() {
 }
 
 #[test]
-fn test_base64_encode_decode() {
+fn base64_encode_decode() {
     let stdlib = create_stdlib();
 
     let data = b"Hello, World!".to_vec();
@@ -654,7 +654,7 @@ fn test_base64_encode_decode() {
 }
 
 #[test]
-fn test_json_serialize_deserialize() {
+fn json_serialize_deserialize() {
     let stdlib = create_stdlib();
     let engine = make_engine();
 
@@ -675,7 +675,7 @@ fn test_json_serialize_deserialize() {
 }
 
 #[test]
-fn test_json_deserialize_accepts_input_over_max_input_length() {
+fn json_deserialize_accepts_input_over_max_input_length() {
     let stdlib = create_stdlib();
     let engine = make_engine();
     let data = "x".repeat(3_334);

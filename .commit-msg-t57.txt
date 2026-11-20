@@ -1,0 +1,8 @@
+feat: ACC import speed optimization (Phases 1-4)
+
+- Phase 1: window rate, per-stage timing, checkpoint hardening, stop-height fix
+- Phase 2: empty-block batching via persist_consecutive_empty_blocks, ApplicationLogs unit isolation
+- Phase 3: ApplicationLogs cross-block commit coalescing (64 MiB cap)
+- Phase 4: independent row_cache_size config, cache stats API, L0 metadata pinning
+- Fix: ApplicationLogs watermark advances only after durable flush
+- Tool: read-only state-root-sweep for external correctness verification

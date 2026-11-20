@@ -20,7 +20,7 @@ pub mod write_batch_buffer;
 pub mod write_store;
 
 pub use commit_profile::{StoreCommitProfiler, StoreCommitStage};
-pub use data_cache::{DataCache, Trackable};
+pub use data_cache::{PersistenceDataCache, Trackable};
 pub use detached_snapshot::{
     DetachedSnapshot, DetachedSnapshotEntry, DetachedSnapshotError, DetachedSnapshotLimits,
     DisposableOverlay,

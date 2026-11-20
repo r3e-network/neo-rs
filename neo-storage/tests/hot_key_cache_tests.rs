@@ -1,11 +1,11 @@
-//! Focused tests for the `DataCache`-level hot-key cache.
+//! Focused tests for the `PersistenceDataCache`-level hot-key cache.
 //!
 //! The read cache and the hot-key cache both front the backing store, so these
 //! tests disable the read cache wherever the hot-key cache is the behaviour
 //! under test. Otherwise a read-cache hit would mask whether the hot-key layer
 //! actually served the value.
 
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_storage::persistence::data_cache::DataCacheConfig;
 use neo_storage::{StorageItem, StorageKey};
 use std::sync::Arc;
@@ -20,10 +20,13 @@ fn cache_config(enable_read_cache: bool) -> DataCacheConfig {
 
 /// Builds a cache whose backing store returns the raw key bytes as the value
 /// and counts every physical read.
-fn counting_cache(read_only: bool, config: DataCacheConfig) -> (DataCache, Arc<AtomicUsize>) {
+fn counting_cache(
+    read_only: bool,
+    config: DataCacheConfig,
+) -> (PersistenceDataCache, Arc<AtomicUsize>) {
     let reads = Arc::new(AtomicUsize::new(0));
     let store_reads = Arc::clone(&reads);
-    let cache = DataCache::new_with_config(
+    let cache = PersistenceDataCache::new_with_config(
         read_only,
         Some(Arc::new(move |key: &StorageKey| {
             store_reads.fetch_add(1, Ordering::Relaxed);

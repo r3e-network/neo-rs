@@ -5,7 +5,7 @@ use crate::{impl_protocol_enum_from_str, protocol_enum};
 protocol_enum! {
     all;
     /// The action to be taken if the current context meets with the rule.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
     pub WitnessRuleAction {
         /// Deny the witness if the condition is met.
         #[default]

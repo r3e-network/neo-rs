@@ -3,7 +3,7 @@
 use thiserror::Error;
 
 /// Errors that can occur when working with primitive types.
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum PrimitiveError {
     /// Invalid format error with detailed description.
     #[error("Invalid format: {message}")]

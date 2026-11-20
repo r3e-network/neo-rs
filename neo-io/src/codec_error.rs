@@ -3,7 +3,7 @@
 use thiserror::Error;
 
 /// A codec failure with its original operation-specific message.
-#[derive(Debug, Error, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum CodecError {
     /// Encoding or encoded-size estimation failed.
     #[error("{message}")]

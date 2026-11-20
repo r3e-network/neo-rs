@@ -17,7 +17,7 @@ use neo_protocol::payloads::transaction_attribute::TransactionAttribute;
 use neo_protocol::witness::Witness;
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::helper::Helper as ContractHelper;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_vm::OpCode;
 use neo_vm::ScriptBuilder;
 use neo_vm::VmState as VMState;
@@ -65,7 +65,7 @@ struct AssetDescriptor {
 
 impl AssetDescriptor {
     fn new(
-        cache: &DataCache,
+        cache: &PersistenceDataCache,
         settings: &Arc<neo_protocol::ProtocolSettings>,
         asset: UInt160,
     ) -> Result<Self, String> {
@@ -88,7 +88,7 @@ impl AssetDescriptor {
     }
 
     fn query_nep17_metadata(
-        cache: &DataCache,
+        cache: &PersistenceDataCache,
         settings: &Arc<neo_protocol::ProtocolSettings>,
         asset: &UInt160,
     ) -> Result<Self, String> {
@@ -188,11 +188,11 @@ const TRANSACTION_TYPE_NAME: &str = "Neo.Network.P2P.Payloads.Transaction";
 /// reactor. This is the server-side counterpart of the client's RPC port: both
 /// feed the same [`TransactionAuthorizer`].
 struct LedgerChainQuery {
-    snapshot: DataCache,
+    snapshot: PersistenceDataCache,
 }
 
 impl LedgerChainQuery {
-    fn new(snapshot: DataCache) -> Self {
+    fn new(snapshot: PersistenceDataCache) -> Self {
         Self { snapshot }
     }
 }
@@ -1067,7 +1067,7 @@ impl RpcServerWallet {
         server: &RpcServer,
         wallet: &Arc<dyn CoreWallet>,
         tx: Transaction,
-        snapshot_arc: Arc<DataCache>,
+        snapshot_arc: Arc<PersistenceDataCache>,
     ) -> Result<Value, RpcException> {
         Self::sign_and_relay_with_observers(server, wallet, tx, snapshot_arc, || {}, || {})
     }
@@ -1076,7 +1076,7 @@ impl RpcServerWallet {
         server: &RpcServer,
         wallet: &Arc<dyn CoreWallet>,
         tx: Transaction,
-        snapshot_arc: Arc<DataCache>,
+        snapshot_arc: Arc<PersistenceDataCache>,
         after_authorize: impl FnOnce(),
         before_relay: impl FnOnce(),
     ) -> Result<Value, RpcException> {
@@ -1143,7 +1143,7 @@ impl RpcServerWallet {
         server: &RpcServer,
         wallet: &Arc<dyn CoreWallet>,
         mut tx: Transaction,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
     ) -> Result<PreparedTransaction, RpcException> {
         let projected_size = Self::projected_signed_size(&tx, wallet);
         if projected_size > 1024 {
@@ -1181,7 +1181,7 @@ impl RpcServerWallet {
     fn authorizer_for(
         server: &RpcServer,
         tx: Transaction,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
     ) -> TransactionAuthorizer {
         let system = server.system();
         let settings = system.settings();
@@ -1192,7 +1192,7 @@ impl RpcServerWallet {
 
     /// Reads the policy valid-until window from the local ledger.
     fn max_valid_until_increment(
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         settings: &neo_protocol::ProtocolSettings,
     ) -> u32 {
         PolicyContract::new()
@@ -1207,7 +1207,7 @@ impl RpcServerWallet {
     /// and the sender's GAS balance are resolved through the ledger port.
     fn validate_with_chain(
         authorizer: &TransactionAuthorizer,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
     ) -> Result<(), RpcException> {
         authorizer
             .validate_structure()
@@ -1258,7 +1258,7 @@ impl RpcServerWallet {
     fn validate_transaction_before_signing(
         server: &RpcServer,
         tx: &Transaction,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
     ) -> Result<(), RpcException> {
         let authorizer = Self::authorizer_for(server, tx.clone(), snapshot);
         Self::validate_with_chain(&authorizer, snapshot)

@@ -151,7 +151,7 @@ pub struct PrefetchLimitsSection {
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct BlockchainSection {
-    /// Block time in milliseconds
+    /// Block time in milliseconds (ms)
     pub block_time: Option<u64>,
     /// Maximum transactions per block
     pub max_transactions_per_block: Option<u32>,

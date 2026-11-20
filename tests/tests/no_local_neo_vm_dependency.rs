@@ -9,7 +9,7 @@ use neo_protocol::ProtocolSettings;
 use neo_protocol::payloads::signer::Signer;
 use neo_protocol::payloads::transaction::Transaction;
 use neo_smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_vm::{
     ExceptionHandlingContext, ExceptionHandlingState, ExecutionEngine, ExecutionEngineLimits,
     OpCode, Script, ScriptBuilder, StackItem, StackValue, VmState as VMState,
@@ -84,7 +84,7 @@ fn application_engine_executes_syscall_free_scripts_through_neo_vm_rs() {
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         None,
-        Arc::new(DataCache::new(false)),
+        Arc::new(PersistenceDataCache::new(false)),
         None,
         ProtocolSettings::default(),
         TEST_MODE_GAS,
@@ -182,7 +182,7 @@ fn application_engine_routes_simple_runtime_syscalls_through_neo_vm_rs() {
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         None,
-        Arc::new(DataCache::new(false)),
+        Arc::new(PersistenceDataCache::new(false)),
         None,
         settings.clone(),
         TEST_MODE_GAS,
@@ -254,7 +254,7 @@ fn application_engine_routes_script_container_through_neo_vm_rs() {
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         Some(Arc::new(transaction)),
-        Arc::new(DataCache::new(false)),
+        Arc::new(PersistenceDataCache::new(false)),
         None,
         ProtocolSettings::default(),
         TEST_MODE_GAS,
@@ -302,7 +302,7 @@ fn application_engine_routes_runtime_log_through_neo_vm_rs() {
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         Some(Arc::new(transaction)),
-        Arc::new(DataCache::new(false)),
+        Arc::new(PersistenceDataCache::new(false)),
         None,
         ProtocolSettings::default(),
         TEST_MODE_GAS,
@@ -3074,7 +3074,7 @@ fn fuzz_manifest_and_source_use_direct_vm_authority() {
     let workspace = workspace_root();
     let manifest = read_source(workspace.join("fuzz/Cargo.toml"));
     let target = read_source(workspace.join("fuzz/fuzz_targets/fuzz_script_parse.rs"));
-    assert!(manifest.contains("neo-vm = { path = \"../neo-vm\", version = \"0.20.0\" }"));
+    assert!(manifest.contains("neo-vm = { path = \"../neo-vm\", version = \"0.21.0\" }"));
     assert!(manifest.contains("path = \"fuzz_targets/fuzz_script_parse.rs\""));
     assert!(target.contains("use neo_vm::validate_script;") && !target.contains("neo_core::"));
     let probe = read_source(workspace.join("neo-probe/Cargo.toml"));

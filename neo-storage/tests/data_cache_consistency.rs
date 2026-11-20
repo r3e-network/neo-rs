@@ -1,16 +1,16 @@
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_storage::persistence::data_cache::{DataCacheConfig, PrefetchConfig};
 use neo_storage::{StorageItem, StorageKey};
 use std::sync::Arc;
 
-fn cached_parent(key: &StorageKey, initial: &[u8]) -> DataCache {
+fn cached_parent(key: &StorageKey, initial: &[u8]) -> PersistenceDataCache {
     let initial = StorageItem::from_bytes(initial.to_vec());
     let store_get = {
         let key = key.clone();
         let initial = initial.clone();
         Arc::new(move |requested: &StorageKey| (requested == &key).then(|| initial.clone()))
     };
-    DataCache::new_with_config(
+    PersistenceDataCache::new_with_config(
         false,
         Some(store_get),
         None,

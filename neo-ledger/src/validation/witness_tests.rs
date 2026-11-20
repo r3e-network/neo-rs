@@ -13,7 +13,7 @@ use neo_smart_contract::contract_state::{ContractState, NefFile};
 use neo_smart_contract::manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
 };
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm::OpCode;
 
@@ -26,7 +26,7 @@ fn contract_hash(seed: u8) -> UInt160 {
     UInt160::from_bytes(&[seed; 20]).expect("hash")
 }
 
-fn store_contract(snapshot: &DataCache, hash: UInt160, contract: ContractState) {
+fn store_contract(snapshot: &PersistenceDataCache, hash: UInt160, contract: ContractState) {
     let mut writer = BinaryWriter::new();
     contract.serialize(&mut writer).expect("serialize contract");
     let mut key = Vec::with_capacity(1 + UInt160::LENGTH);
@@ -38,7 +38,7 @@ fn store_contract(snapshot: &DataCache, hash: UInt160, contract: ContractState) 
     );
 }
 
-fn store_trimmed_block(snapshot: &DataCache, trimmed: &TrimmedBlock) {
+fn store_trimmed_block(snapshot: &PersistenceDataCache, trimmed: &TrimmedBlock) {
     let mut writer = BinaryWriter::new();
     trimmed.serialize(&mut writer).expect("serialize trimmed");
     let mut key = Vec::with_capacity(1 + UInt256::LENGTH);
@@ -124,7 +124,7 @@ impl Verifiable for ManualWitness {
 }
 
 impl VerifiableExt for ManualWitness {
-    fn script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
+    fn script_hashes_for_verifying(&self, _snapshot: &PersistenceDataCache) -> Vec<UInt160> {
         self.hashes.clone()
     }
 }
@@ -140,7 +140,7 @@ impl WitnessData for ManualWitness {
 
 #[test]
 fn header_genesis_verification_hash_is_its_witness_script_hash() {
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let unrelated = make_trimmed_block(contract_hash(0x31));
     store_trimmed_block(&snapshot, &unrelated);
     let mut header = Header::new();
@@ -159,7 +159,7 @@ fn header_genesis_verification_hash_is_its_witness_script_hash() {
 
 #[test]
 fn header_verification_hash_uses_persisted_previous_consensus() {
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let previous = make_trimmed_block(contract_hash(0x41));
     let unrelated = make_trimmed_block(contract_hash(0x42));
     store_trimmed_block(&snapshot, &previous);
@@ -193,7 +193,7 @@ fn header_verification_hash_uses_persisted_previous_consensus() {
 
 #[test]
 fn header_verification_hashes_are_empty_when_previous_block_is_missing() {
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let unrelated = make_trimmed_block(contract_hash(0x51));
     store_trimmed_block(&snapshot, &unrelated);
     let mut header = Header::new();
@@ -212,7 +212,7 @@ fn header_verification_hashes_are_empty_when_previous_block_is_missing() {
 
 #[test]
 fn header_verification_hashes_are_empty_when_previous_block_decode_fails() {
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let mut header = Header::new();
     header.set_prev_hash(UInt256::from([0x61; 32]));
     header.set_next_consensus(contract_hash(0x62));
@@ -282,7 +282,7 @@ fn block_witness_data_borrows_and_mutates_only_the_header_witness() {
 #[test]
 fn verify_witnesses_fails_without_previous_header() {
     let settings = ProtocolSettings::default();
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let mut header = Header::new();
     header.set_prev_hash(UInt256::from([1u8; 32]));
     header.witness = Witness::empty();
@@ -292,7 +292,7 @@ fn verify_witnesses_fails_without_previous_header() {
 #[test]
 fn verify_witnesses_fails_when_contract_missing() {
     let settings = ProtocolSettings::default();
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let next_consensus = contract_hash(1);
     let trimmed = make_trimmed_block(next_consensus);
     store_trimmed_block(&snapshot, &trimmed);
@@ -305,7 +305,7 @@ fn verify_witnesses_fails_when_contract_missing() {
 #[test]
 fn verify_witnesses_fails_with_invalid_verify_method() {
     let settings = ProtocolSettings::default();
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let next_consensus = contract_hash(2);
     let trimmed = make_trimmed_block(next_consensus);
     store_trimmed_block(&snapshot, &trimmed);
@@ -325,7 +325,7 @@ fn verify_witnesses_fails_with_invalid_verify_method() {
 #[test]
 fn verify_witnesses_succeeds_with_verify_method() {
     let settings = ProtocolSettings::default();
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let next_consensus = contract_hash(3);
     let trimmed = make_trimmed_block(next_consensus);
     store_trimmed_block(&snapshot, &trimmed);
@@ -346,7 +346,7 @@ fn verify_witnesses_succeeds_with_verify_method() {
 #[test]
 fn verify_witnesses_succeeds_with_manual_verifiable() {
     let settings = ProtocolSettings::default();
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let contract_hash = contract_hash(4);
     let parameters = vec![
         ContractParameterDefinition::new("signature".to_string(), ContractParameterType::Signature)

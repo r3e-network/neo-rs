@@ -33,7 +33,7 @@ use neo_primitives::{UInt160, UInt256, Verifiable};
 use neo_protocol::execution::Block;
 use neo_smart_contract::application_engine::{LedgerTransactionStates, NativeContractsCache};
 use neo_smart_contract::contract_state::ContractState;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_vm::{RwSetTracker, VmState};
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -164,7 +164,7 @@ pub trait EngineFactory: Send + Sync {
     /// Opens the `OnPersist` native engine over the base snapshot (step 6).
     fn open_on_persist(
         &self,
-        snapshot: Arc<DataCache>,
+        snapshot: Arc<PersistenceDataCache>,
         block: Arc<Block>,
     ) -> Result<Box<dyn NativeEnginePort>, LedgerError>;
 
@@ -173,7 +173,7 @@ pub trait EngineFactory: Send + Sync {
     fn open_application(
         &self,
         container: Arc<dyn Verifiable>,
-        snapshot: Arc<DataCache>,
+        snapshot: Arc<PersistenceDataCache>,
         block: Arc<Block>,
         system_fee: i64,
         seeded: &SeededNativeContracts,
@@ -183,7 +183,7 @@ pub trait EngineFactory: Send + Sync {
     /// Opens the `PostPersist` native engine over the merged base snapshot (step 11).
     fn open_post_persist(
         &self,
-        snapshot: Arc<DataCache>,
+        snapshot: Arc<PersistenceDataCache>,
         block: Arc<Block>,
         seeded: &SeededNativeContracts,
         cache: &NativeCacheHandle,

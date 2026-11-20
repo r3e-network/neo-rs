@@ -22,7 +22,6 @@ mod gate;
 mod gate_tests;
 mod handlers;
 #[cfg(test)]
-#[path = "tests.rs"]
 mod tests;
 
 pub use cors::BasicAuth;

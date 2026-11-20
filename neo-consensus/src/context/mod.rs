@@ -76,7 +76,7 @@ pub const MAX_REJECTED_HASHES_PER_VALIDATOR_PER_BLOCK: usize = 1_000;
 pub const REJECTED_MESSAGE_TTL_MS: u64 = 10_000;
 
 /// Consensus state enumeration
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ConsensusState {
     /// Initial state, waiting to start
     #[default]
@@ -174,7 +174,7 @@ impl CommitPersistencePermit {
     /// Validates that the recovery record contains this exact Commit identity.
     pub fn validate(&self) -> ConsensusResult<()> {
         if self.signature.len() != 64 {
-            return Err(ConsensusError::PersistenceError(
+            return Err(ConsensusError::Persistence(
                 "commit persistence permit has an invalid signature length".to_string(),
             ));
         }
@@ -185,7 +185,7 @@ impl CommitPersistencePermit {
             && state.commits.get(&self.validator_index) == Some(&self.signature)
             && state.commit_view_numbers.get(&self.validator_index) == Some(&self.view_number);
         if !matches {
-            return Err(ConsensusError::PersistenceError(
+            return Err(ConsensusError::Persistence(
                 "commit persistence permit does not match its recovery record".to_string(),
             ));
         }
@@ -1029,7 +1029,7 @@ impl ConsensusContext {
             return Ok(None);
         }
         let Some(proposal_hash) = self.proposed_block_hash else {
-            return Err(ConsensusError::PersistenceError(
+            return Err(ConsensusError::Persistence(
                 "local Commit has no verified proposal hash".to_string(),
             ));
         };
@@ -1049,7 +1049,7 @@ impl ConsensusContext {
     pub fn seal_commit_persistence_permit(&mut self) -> ConsensusResult<()> {
         self.local_commit_persistence = self.current_commit_persistence_permit()?;
         if self.local_commit_persistence.is_none() {
-            return Err(ConsensusError::PersistenceError(
+            return Err(ConsensusError::Persistence(
                 "no current-view local Commit is available to seal".to_string(),
             ));
         }
@@ -1084,7 +1084,7 @@ impl ConsensusContext {
         Self::replace_file_durable(&temp_path, path)?;
         let persisted = fs::read(path)?;
         if persisted != encoded {
-            return Err(ConsensusError::PersistenceError(
+            return Err(ConsensusError::Persistence(
                 "durable recovery file verification failed".to_string(),
             ));
         }

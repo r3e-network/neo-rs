@@ -25,7 +25,7 @@
 //! # Type discipline
 //!
 //! This module names only `neo_ledger::persistence` participant types and `std`.
-//! It never names `DataCache`, `StoreSnapshot`, `ExecutionReceipt`,
+//! It never names `PersistenceDataCache`, `StoreSnapshot`, `ExecutionReceipt`,
 //! `ApplicationExecuted`, or any `neo-core` type: the concrete handler bodies
 //! are supplied as closures by the wiring lane (task 89), which is the only place
 //! allowed to translate a [`StageContext`] into the legacy

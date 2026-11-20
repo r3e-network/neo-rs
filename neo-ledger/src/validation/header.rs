@@ -13,7 +13,7 @@ use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_protocol::witness::Witness;
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::helper::Helper;
-use neo_storage::persistence::{DataCache, StoreCache};
+use neo_storage::persistence::{PersistenceDataCache, StoreCache};
 use std::sync::Arc;
 use tracing::debug;
 
@@ -117,7 +117,7 @@ fn log_self_validation_failure(
 pub fn verify_header_witness_against_hash(
     header: &Header,
     settings: &ProtocolSettings,
-    snapshot: &DataCache,
+    snapshot: &PersistenceDataCache,
     script_hash: &UInt160,
     witness: &Witness,
     gas_limit: i64,

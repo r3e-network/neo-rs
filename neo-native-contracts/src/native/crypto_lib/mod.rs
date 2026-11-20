@@ -11,9 +11,9 @@ use neo_protocol::Hardfork;
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::error::CoreError as Error;
 use neo_smart_contract::error::CoreResult as Result;
+use neo_smart_contract::impl_native_contract;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
-use std::any::Any;
 
 mod bls12381;
 mod metadata;
@@ -37,6 +37,16 @@ impl CryptoLib {
             CryptoLib,
             "0x726cb6e0cd8628a1350a611384688911ab75f51b"
         )
+    }
+
+    /// Dispatches a native method invocation against this contract.
+    pub fn invoke_method(
+        &self,
+        engine: &mut ApplicationEngine,
+        method: &str,
+        args: &[Vec<u8>],
+    ) -> Result<Vec<u8>> {
+        self.dispatch_method(engine, method, args)
     }
 
     /// SHA256 hash function backed by the shared cryptography crate.
@@ -223,33 +233,10 @@ impl CryptoLib {
 }
 
 impl NativeContract for CryptoLib {
+    impl_native_contract!(hash, "CryptoLib", methods);
+
     fn id(&self) -> i32 {
         self.id
-    }
-
-    fn hash(&self) -> UInt160 {
-        self.hash
-    }
-
-    fn name(&self) -> &str {
-        "CryptoLib"
-    }
-
-    fn methods(&self) -> &[NativeMethod] {
-        self.methods
-    }
-
-    fn invoke(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> Result<Vec<u8>> {
-        self.dispatch_method(engine, method, args)
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }
 
@@ -260,15 +247,15 @@ mod tests {
     use super::*;
     use neo_primitives::TriggerType;
     use neo_protocol::ProtocolSettings;
-    use neo_storage::persistence::DataCache;
+    use neo_storage::persistence::PersistenceDataCache;
     use std::collections::BTreeSet;
     use std::sync::Arc;
 
-    fn test_engine() -> ApplicationEngine {
+    fn new_engine() -> ApplicationEngine {
         ApplicationEngine::new(
             TriggerType::Application,
             None,
-            Arc::new(DataCache::new(false)),
+            Arc::new(PersistenceDataCache::new(false)),
             None,
             ProtocolSettings::default(),
             400_000_000,
@@ -279,7 +266,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sha256() {
+    fn sha256_returns_32_byte_digest() {
         let lib = CryptoLib::new();
         let data = b"hello world".to_vec();
         let result = lib.sha256(&[data]).unwrap();
@@ -287,7 +274,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ripemd160() {
+    fn ripemd160_returns_20_byte_digest() {
         let lib = CryptoLib::new();
         let data = b"hello world".to_vec();
         let result = lib.ripemd160(&[data]).unwrap();
@@ -297,7 +284,7 @@ mod tests {
     #[test]
     fn dispatch_method_routes_crypto_methods_and_unknowns() {
         let lib = CryptoLib::new();
-        let mut engine = test_engine();
+        let mut engine = new_engine();
         let data = b"hello world".to_vec();
 
         assert_eq!(
@@ -319,7 +306,7 @@ mod tests {
     #[test]
     fn dispatch_method_covers_declared_metadata_names() {
         let lib = CryptoLib::new();
-        let mut engine = test_engine();
+        let mut engine = new_engine();
         let mut names = BTreeSet::new();
 
         for method in lib.methods() {

@@ -2538,7 +2538,7 @@ mod tests {
     /// watermark is taken from.
     fn stage_block(logs: &ApplicationLogsService, system: &Arc<NeoSystem>, block: &Block) {
         let execution = neo_protocol::execution::Block::from(block);
-        let snapshot = neo_storage::persistence::DataCache::new(false);
+        let snapshot = neo_storage::persistence::PersistenceDataCache::new(false);
         logs.blockchain_committing_handler(system.as_ref(), &execution, &snapshot, &[]);
         logs.blockchain_committed_handler(system.as_ref(), &execution);
     }

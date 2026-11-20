@@ -8,7 +8,7 @@ use neo_protocol::execution::Block as ExecutionBlock;
 use neo_rpc_client::serialization::stack_item_json::{
     stack_item_rpc_json, stack_items_rpc_json_per_item,
 };
-use neo_storage::persistence::{DataCache, Store, StoreSnapshot};
+use neo_storage::persistence::{PersistenceDataCache, Store, StoreSnapshot};
 use neo_system::NeoSystem;
 use neo_system::i_event_handlers::{CommittedHandler, CommittingHandler};
 use neo_vm::NotifyEventArgs;
@@ -823,7 +823,7 @@ impl CommittingHandler for ApplicationLogsService {
         &self,
         system: &dyn Any,
         block: &ExecutionBlock,
-        _snapshot: &DataCache,
+        _snapshot: &PersistenceDataCache,
         application_executed_list: &[ApplicationExecuted],
     ) {
         if self.disabled.load(Ordering::Relaxed) {

@@ -175,6 +175,14 @@ impl ExecutionObservationHost for SystemAiAgentHost {
         self.system
             .register_transaction_execution_sink(system_sink)
             .map_err(|_| "canonical execution sink is already registered".to_owned())?;
+        // NOTE: this forwarding task is detached on purpose and is *not*
+        // registered with `crate::startup::tasks::BackgroundTasks`: this host is
+        // constructed before the node's task tracker exists and receives no
+        // handle to it. It terminates on its own once either channel side closes
+        // (the execution sink is dropped on system shutdown), so it cannot
+        // outlive the process, but it is a known untracked spawn that should be
+        // migrated to `BackgroundTasks::spawn` once the tracker is plumbed into
+        // `SystemAiAgentHost`.
         tokio::spawn(async move {
             while let Some(observation) = system_receiver.recv().await {
                 let observation = plain_execution_observation(observation);

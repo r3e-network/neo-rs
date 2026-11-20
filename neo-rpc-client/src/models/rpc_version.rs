@@ -11,18 +11,25 @@
 
 use super::super::utility::{object_array_from_iter, parse_string_array_lossy, token_array};
 use neo_json::{JObject, JToken};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// RPC version information matching C# `RpcVersion`
-#[derive(Debug, Clone)]
+///
+/// Serde derives are the canonical serialization path; the hand-written
+/// `to_json` / `from_json` methods are retained for backward compatibility and
+/// C# wire parity (including the obsolete `network` field).
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcVersion {
     /// TCP port
+    #[serde(rename = "tcpport")]
     pub tcp_port: i32,
 
     /// Nonce
     pub nonce: u32,
 
     /// User agent string
+    #[serde(rename = "useragent")]
     pub user_agent: String,
 
     /// Protocol information
@@ -89,42 +96,55 @@ impl RpcVersion {
 }
 
 /// RPC protocol information matching C# `RpcProtocol`
-#[derive(Debug, Clone)]
+///
+/// Serde derives use the wire field names; hand-written converters remain for
+/// backward compatibility.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcProtocol {
     /// Network ID
     pub network: u32,
 
     /// Number of validators
+    #[serde(rename = "validatorscount")]
     pub validators_count: i32,
 
     /// Milliseconds per block
+    #[serde(rename = "msperblock")]
     pub milliseconds_per_block: u32,
 
     /// Max valid until block increment
+    #[serde(rename = "maxvaliduntilblockincrement")]
     pub max_valid_until_block_increment: u32,
 
     /// Max traceable blocks
+    #[serde(rename = "maxtraceableblocks")]
     pub max_traceable_blocks: u32,
 
     /// Address version
+    #[serde(rename = "addressversion")]
     pub address_version: u8,
 
     /// Max transactions per block
+    #[serde(rename = "maxtransactionsperblock")]
     pub max_transactions_per_block: u32,
 
     /// Memory pool max transactions
+    #[serde(rename = "memorypoolmaxtransactions")]
     pub memory_pool_max_transactions: i32,
 
     /// Initial gas distribution
+    #[serde(rename = "initialgasdistribution")]
     pub initial_gas_distribution: i64,
 
     /// Hardforks (BTreeMap for deterministic JSON serialization order)
     pub hardforks: BTreeMap<String, u32>,
 
     /// Seed list
+    #[serde(rename = "seedlist")]
     pub seed_list: Vec<String>,
 
     /// Standby committee
+    #[serde(rename = "standbycommittee")]
     pub standby_committee: Vec<String>,
 }
 

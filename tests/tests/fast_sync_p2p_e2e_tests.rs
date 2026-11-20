@@ -15,7 +15,7 @@ use neo_protocol::payloads::block::Block as PayloadBlock;
 use neo_protocol::payloads::header::Header;
 use neo_protocol::payloads::transaction::Transaction;
 use neo_protocol::witness::Witness;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_system::NeoSystem;
 use neo_system::i_event_handlers::CommittingHandler;
 use neo_system::network::p2p::message::Message;
@@ -38,7 +38,7 @@ impl CommittingHandler for FastSyncCaptureHandler {
         &self,
         _system: &dyn std::any::Any,
         _block: &ExecBlock,
-        _snapshot: &DataCache,
+        _snapshot: &PersistenceDataCache,
         _application_executed_list: &[ApplicationExecuted],
     ) {
         self.observed_count.fetch_add(1, Ordering::Relaxed);

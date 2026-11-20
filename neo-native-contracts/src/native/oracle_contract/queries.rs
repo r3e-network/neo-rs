@@ -11,12 +11,16 @@ use super::{OracleContract, PREFIX_REQUEST, PendingRequest};
 use crate::native::oracle_request::OracleRequest;
 use neo_smart_contract::error::CoreResult as Result;
 use neo_storage::StorageKey;
-use neo_storage::persistence::{DataCache, seek_direction::SeekDirection};
+use neo_storage::persistence::{PersistenceDataCache, seek_direction::SeekDirection};
 use num_bigint::BigInt;
 
 impl OracleContract {
     /// Returns the oracle request stored under `id`, if any.
-    pub fn get_request(&self, snapshot: &DataCache, id: u64) -> Result<Option<OracleRequest>> {
+    pub fn get_request(
+        &self,
+        snapshot: &PersistenceDataCache,
+        id: u64,
+    ) -> Result<Option<OracleRequest>> {
         Ok(self
             .read_request(snapshot, id)?
             .map(|pending| self.to_public_request(&pending)))
@@ -35,7 +39,10 @@ impl OracleContract {
     }
 
     /// Returns every stored oracle request together with its id.
-    pub fn get_requests(&self, snapshot: &DataCache) -> Result<Vec<(u64, OracleRequest)>> {
+    pub fn get_requests(
+        &self,
+        snapshot: &PersistenceDataCache,
+    ) -> Result<Vec<(u64, OracleRequest)>> {
         let prefix = StorageKey::create(Self::ID, PREFIX_REQUEST);
         let mut results = Vec::new();
         for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Forward) {
@@ -51,7 +58,7 @@ impl OracleContract {
     /// Returns all oracle requests recorded for the given URL.
     pub fn get_requests_by_url(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         url: &str,
     ) -> Result<Vec<(u64, OracleRequest)>> {
         let hash = self.compute_url_hash(url);
@@ -65,7 +72,7 @@ impl OracleContract {
     }
 
     /// Returns the current oracle response price in GAS (C# `getPrice`).
-    pub fn get_price(&self, snapshot: &DataCache) -> BigInt {
+    pub fn get_price(&self, snapshot: &PersistenceDataCache) -> BigInt {
         self.get_price_value(snapshot)
     }
 }

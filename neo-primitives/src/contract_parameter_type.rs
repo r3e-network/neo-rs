@@ -6,7 +6,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 protocol_enum_repr! {
     all;
     /// Represents the type of `ContractParameter` (matches C# `ContractParameterType`)
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
     pub ContractParameterType {
         /// Indicates that the parameter can be of any type
         #[default]

@@ -10,7 +10,7 @@ use crate::StateStoreService;
 use neo_primitives::UInt256;
 use neo_protocol::ProtocolSettings;
 use neo_storage::persistence::store::Store;
-use neo_storage::persistence::{DataCache, SeekDirection, StoreCache};
+use neo_storage::persistence::{PersistenceDataCache, SeekDirection, StoreCache};
 use neo_storage::{StorageItem, StorageKey};
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -63,7 +63,11 @@ impl StateRootStore {
         })
     }
 
-    fn stage_local_root_progress(&self, state_root: &StateRoot, snapshot: &DataCache) -> bool {
+    fn stage_local_root_progress(
+        &self,
+        state_root: &StateRoot,
+        snapshot: &PersistenceDataCache,
+    ) -> bool {
         if state_root.version != CURRENT_VERSION || state_root.witness.is_some() {
             return false;
         }
@@ -186,7 +190,7 @@ impl StateStoreService for StateRootStore {
         }
     }
 
-    fn stage_local_root(&self, state_root: &StateRoot, snapshot: &DataCache) -> bool {
+    fn stage_local_root(&self, state_root: &StateRoot, snapshot: &PersistenceDataCache) -> bool {
         let _guard = self.write_lock.lock();
         if !self.stage_local_root_progress(state_root, snapshot) {
             return false;
@@ -270,7 +274,11 @@ fn stage_progress(cache: &StoreCache, prefix: u8, index: u32) -> Result<(), Stri
     stage_progress_in_snapshot(cache.data_cache(), prefix, index)
 }
 
-fn stage_progress_in_snapshot(snapshot: &DataCache, prefix: u8, index: u32) -> Result<(), String> {
+fn stage_progress_in_snapshot(
+    snapshot: &PersistenceDataCache,
+    prefix: u8,
+    index: u32,
+) -> Result<(), String> {
     let key = progress_key(prefix);
     let item = StorageItem::from_bytes(u64::from(index).to_be_bytes().to_vec());
     if snapshot.get(&key).is_some() {
@@ -499,7 +507,7 @@ mod tests {
         )
         .unwrap();
         let root = StateRoot::new_current(HEIGHT, UInt256::from([8u8; 32]));
-        let snapshot = DataCache::new(false);
+        let snapshot = PersistenceDataCache::new(false);
         assert!(state_store.stage_local_root(&root, &snapshot));
         assert!(state_store.staged_local_roots.lock().contains_key(&HEIGHT));
 

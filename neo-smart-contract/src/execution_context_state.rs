@@ -2,7 +2,7 @@
 
 use crate::contract_state::ContractState;
 use neo_primitives::{CallFlags, ContractParameterType, UInt160};
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_vm::ExecutionContext;
 use std::sync::Arc;
 
@@ -32,7 +32,7 @@ pub struct ExecutionContextState {
     pub call_flags: CallFlags,
 
     /// Cloned snapshot cache for the context
-    pub snapshot_cache: Option<Arc<DataCache>>,
+    pub snapshot_cache: Option<Arc<PersistenceDataCache>>,
 
     /// Notification count emitted by this context
     pub notification_count: usize,
@@ -215,7 +215,7 @@ mod tests {
     #[test]
     fn snapshot_cache_is_arc() {
         let mut state = ExecutionContextState::new();
-        let cache = Arc::new(DataCache::new(false));
+        let cache = Arc::new(PersistenceDataCache::new(false));
         state.snapshot_cache = Some(Arc::clone(&cache));
 
         assert!(Arc::ptr_eq(state.snapshot_cache.as_ref().unwrap(), &cache));

@@ -1,15 +1,15 @@
-//
-// native_impl.rs - NativeContract trait implementation
-//
-// Migrated from `neo-core/src/smart_contract/native/neo_token/native_impl.rs`.
-// Import adaptation applied per task-120 mapping:
-//   crate::error::ToNativeError                 -> neo_smart_contract::error::ToNativeError
-//   crate::impl_native_contract                 -> neo_smart_contract::impl_native_contract
-//   crate::smart_contract::native::security_fixes -> crate::native::security_fixes
-//   crate::persistence::DataCache               -> neo_storage::persistence::DataCache
-//   crate::smart_contract::native::fungible_token -> crate::native::fungible_token
-//   crate::smart_contract::env_flags            -> neo_smart_contract::env_flags
-//   crate::hardfork::Hardfork                   -> neo_protocol::Hardfork
+//!
+//! native_impl.rs - NativeContract trait implementation
+//!
+//! Migrated from `neo-core/src/smart_contract/native/neo_token/native_impl.rs`.
+//! Import adaptation applied per task-120 mapping:
+//!   crate::error::ToNativeError                 -> neo_smart_contract::error::ToNativeError
+//!   crate::impl_native_contract                 -> neo_smart_contract::impl_native_contract
+//!   crate::smart_contract::native::security_fixes -> crate::native::security_fixes
+//!   crate::persistence::PersistenceDataCache               -> neo_storage::persistence::PersistenceDataCache
+//!   crate::smart_contract::native::fungible_token -> crate::native::fungible_token
+//!   crate::smart_contract::env_flags            -> neo_smart_contract::env_flags
+//!   crate::hardfork::Hardfork                   -> neo_protocol::Hardfork
 
 use super::*;
 use crate::native::helpers::encode_bigint;
@@ -31,7 +31,7 @@ impl NativeContract for NeoToken {
     fn committee_address(
         &self,
         settings: &ProtocolSettings,
-        snapshot: &neo_storage::persistence::DataCache,
+        snapshot: &neo_storage::persistence::PersistenceDataCache,
     ) -> Option<UInt160> {
         Some(NativeHelpers::committee_address(settings, Some(snapshot)))
     }

@@ -4,7 +4,7 @@ use serde::Deserialize;
 use std::any::Any;
 
 /// Exception handling policy for plugin-style services.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 pub enum UnhandledExceptionPolicy {
     /// Ignore exceptions and continue processing.
     Ignore,

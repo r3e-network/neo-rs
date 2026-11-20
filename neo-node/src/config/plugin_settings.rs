@@ -63,44 +63,34 @@ fn dbft_config_path() -> PathBuf {
 }
 
 #[derive(Debug, Deserialize, Default)]
-#[serde(default)]
+#[serde(default, rename_all = "PascalCase")]
 struct PluginConfig<T> {
-    #[serde(rename = "PluginConfiguration")]
     plugin_configuration: Option<T>,
 }
 
 #[derive(Debug, Deserialize, Default)]
-#[serde(default)]
+#[serde(default, rename_all = "PascalCase")]
 struct ApplicationLogsPluginSection {
-    #[serde(rename = "Path")]
     path: Option<String>,
-    #[serde(rename = "Network")]
     network: Option<u32>,
-    #[serde(rename = "MaxStackSize")]
     max_stack_size: Option<usize>,
-    #[serde(rename = "Debug")]
     debug: Option<bool>,
-    #[serde(rename = "UnhandledExceptionPolicy")]
     unhandled_exception_policy: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
-#[serde(default)]
+#[serde(default, rename_all = "PascalCase")]
 struct StateServicePluginSection {
-    #[serde(rename = "Path")]
     path: Option<String>,
-    #[serde(rename = "FullState")]
     full_state: Option<bool>,
-    #[serde(rename = "Network")]
     network: Option<u32>,
-    #[serde(rename = "AutoVerify")]
     auto_verify: Option<bool>,
-    #[serde(rename = "MaxFindResultItems")]
     max_find_result_items: Option<usize>,
-    #[serde(rename = "UnhandledExceptionPolicy")]
     unhandled_exception_policy: Option<String>,
 }
 
+// `DBPath` is not reachable through `rename_all = "PascalCase"`, so this
+// section keeps its explicit per-field renames.
 #[derive(Debug, Deserialize, Default)]
 #[serde(default)]
 struct TokensTrackerPluginSection {
@@ -118,6 +108,8 @@ struct TokensTrackerPluginSection {
     unhandled_exception_policy: Option<String>,
 }
 
+// `NeoFS` is not reachable through `rename_all = "PascalCase"`, so this
+// section keeps its explicit per-field renames.
 #[derive(Debug, Deserialize, Default)]
 #[serde(default)]
 struct OracleServicePluginSection {
@@ -144,21 +136,14 @@ struct OracleServicePluginSection {
 }
 
 #[derive(Debug, Deserialize, Default)]
-#[serde(default)]
+#[serde(default, rename_all = "PascalCase")]
 struct DbftPluginSection {
-    #[serde(rename = "RecoveryLogs")]
     recovery_logs: Option<String>,
-    #[serde(rename = "IgnoreRecoveryLogs")]
     ignore_recovery_logs: Option<bool>,
-    #[serde(rename = "AutoStart")]
     auto_start: Option<bool>,
-    #[serde(rename = "Network")]
     network: Option<u32>,
-    #[serde(rename = "MaxBlockSize")]
     max_block_size: Option<u32>,
-    #[serde(rename = "MaxBlockSystemFee")]
     max_block_system_fee: Option<i64>,
-    #[serde(rename = "UnhandledExceptionPolicy")]
     unhandled_exception_policy: Option<String>,
 }
 

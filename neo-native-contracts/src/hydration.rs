@@ -15,7 +15,7 @@ use neo_protocol::ProtocolSettings;
 use neo_smart_contract::application_engine::{
     ApplicationEngine, EngineNativeServices, TEST_MODE_GAS,
 };
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use std::fmt;
 use std::sync::Arc;
 
@@ -78,7 +78,7 @@ pub fn metadata_hydration_contracts() -> Vec<neo_primitives::UInt160> {
 /// [`NativeHydrationError::Initialize`] when a contract's initialization hook
 /// fails.
 pub fn hydrate_native_contracts(
-    snapshot: &DataCache,
+    snapshot: &PersistenceDataCache,
     native_services: &EngineNativeServices,
     settings: &ProtocolSettings,
 ) -> Result<(), NativeHydrationError> {

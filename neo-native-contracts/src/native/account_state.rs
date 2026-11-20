@@ -11,7 +11,7 @@ use neo_vm::StackValue;
 use num_bigint::BigInt;
 
 /// Base account state for native tokens (matches C# AccountState)
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct AccountState {
     /// The balance of the account
     pub balance: BigInt,

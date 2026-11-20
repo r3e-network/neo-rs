@@ -13,7 +13,7 @@ use neo_protocol::payloads::transaction::Transaction;
 use neo_protocol::payloads::transaction_attribute::TransactionAttribute;
 use neo_protocol::payloads::witness::Witness;
 use neo_protocol::protocol_settings::ProtocolSettings;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm::BinarySerializer;
 use neo_vm::ExecutionEngineLimits;
@@ -32,7 +32,7 @@ fn test_balance_pool(settings: &ProtocolSettings) -> MemoryPool {
     pool
 }
 
-fn set_gas_balance(snapshot: &DataCache, account: UInt160, amount: i64) {
+fn set_gas_balance(snapshot: &PersistenceDataCache, account: UInt160, amount: i64) {
     let key = StorageKey::create_with_uint160(GasToken::new().id(), PREFIX_ACCOUNT, &account);
     let state = AccountState::with_balance(BigInt::from(amount));
     let bytes = BinarySerializer::serialize_stack_value(
@@ -47,7 +47,7 @@ fn set_gas_balance(snapshot: &DataCache, account: UInt160, amount: i64) {
 fn try_add_rejects_unhashable_transaction() {
     let settings = ProtocolSettings::default();
     let mut pool = MemoryPool::new(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let mut tx = Transaction::new();
     tx.set_script(vec![OpCode::NOP.byte(); u16::MAX as usize + 1]);
 
@@ -116,7 +116,7 @@ fn conflict_attribute(tx: &Transaction) -> TransactionAttribute {
 fn assert_add_result(
     pool: &mut MemoryPool,
     tx: Transaction,
-    snapshot: &DataCache,
+    snapshot: &PersistenceDataCache,
     settings: &ProtocolSettings,
     expected: VerifyResult,
 ) {
@@ -126,7 +126,7 @@ fn assert_add_result(
 fn add_succeed(
     pool: &mut MemoryPool,
     tx: Transaction,
-    snapshot: &DataCache,
+    snapshot: &PersistenceDataCache,
     settings: &ProtocolSettings,
 ) {
     assert_add_result(pool, tx, snapshot, settings, VerifyResult::Succeed);
@@ -136,7 +136,7 @@ fn add_succeed(
 fn new_transaction_event_can_cancel() {
     let settings = ProtocolSettings::default();
     let mut pool = MemoryPool::new(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let called = Arc::new(AtomicBool::new(false));
     let called_ref = called.clone();
@@ -164,7 +164,7 @@ fn transaction_added_event_is_emitted() {
         ..Default::default()
     };
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let called = Arc::new(AtomicBool::new(false));
     let captured = Arc::new(StdMutex::new(None::<UInt256>));
@@ -190,7 +190,7 @@ fn capacity_exceeded_emits_removed_event() {
         ..Default::default()
     };
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let removed = Arc::new(StdMutex::new(
         Vec::<(TransactionRemovalReason, Vec<UInt256>)>::new(),
@@ -224,7 +224,7 @@ fn capacity_exceeded_emits_removed_event() {
 fn try_get_returns_unverified_transactions() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let tx = signed_tx(&settings, 4, 1_0000_0000);
     add_succeed(&mut pool, tx.clone(), &snapshot, &settings);
@@ -242,7 +242,7 @@ fn try_get_returns_unverified_transactions() {
 fn conflict_with_different_sender_is_rejected() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let base = signed_tx(&settings, 5, 1_0000_0000);
     add_succeed(&mut pool, base.clone(), &snapshot, &settings);
@@ -273,7 +273,7 @@ fn max_transactions_per_sender_limit_is_enforced() {
     };
     let mut pool = test_balance_pool(&settings);
     pool.set_max_transactions_per_sender(Some(1));
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let tx1 = signed_tx(&settings, 101, 1_0000_0000);
     let tx2 = signed_tx(&settings, 101, 2_0000_0000);
@@ -299,7 +299,7 @@ fn max_transactions_per_sender_allows_conflict_replacement() {
     };
     let mut pool = test_balance_pool(&settings);
     pool.set_max_transactions_per_sender(Some(1));
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let tx1 = signed_tx(&settings, 102, 1_0000_0000);
     let tx2 = build_signed_transaction(
@@ -326,7 +326,7 @@ fn conflict_replacement_emits_conflict_reason() {
         ..Default::default()
     };
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let removed = Arc::new(StdMutex::new(Vec::new()));
     let removed_ref = Arc::clone(&removed);
     pool.transaction_removed = Some(Box::new(move |_sender, args| {
@@ -364,7 +364,7 @@ fn conflict_replacement_emits_conflict_reason() {
 fn higher_fee_conflict_replaces_multiple_transactions() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let tx1 = signed_tx(&settings, 7, 1_0000_0000);
     let tx2 = signed_tx(&settings, 7, 1_0000_0000);
@@ -390,7 +390,7 @@ fn higher_fee_conflict_replaces_multiple_transactions() {
 fn update_pool_for_block_persisted_keeps_conflict_without_shared_signer() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let pool_tx = signed_tx(&settings, 8, 1_0000_0000);
     add_succeed(&mut pool, pool_tx.clone(), &snapshot, &settings);
@@ -421,7 +421,7 @@ fn capacity_enforces_high_fee_eviction() {
         ..Default::default()
     };
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let tx_low = signed_tx(&settings, 20, 1_0000_0000);
     let tx_mid = signed_tx(&settings, 21, 2_0000_0000);
@@ -441,7 +441,7 @@ fn capacity_enforces_high_fee_eviction() {
 fn sorted_verified_transactions_respects_limit_and_order() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let tx_low = signed_tx(&settings, 10, 1_0000_0000);
     let tx_mid = signed_tx(&settings, 11, 2_0000_0000);
@@ -461,7 +461,7 @@ fn sorted_verified_transactions_respects_limit_and_order() {
 fn sorted_verified_transactions_subset_is_consistent() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let tx_low = signed_tx(&settings, 40, 1_0000_0000);
     let tx_mid = signed_tx(&settings, 41, 2_0000_0000);
@@ -492,7 +492,7 @@ fn can_transaction_fit_in_pool_checks_lowest_fee() {
         ..Default::default()
     };
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let low = signed_tx(&settings, 30, 1_0000_0000);
     let mid = signed_tx(&settings, 31, 2_0000_0000);
@@ -513,7 +513,7 @@ fn can_transaction_fit_in_pool_checks_lowest_fee() {
 fn reverify_promotes_highest_fee_first() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let tx_low = signed_tx(&settings, 13, 1_0000_0000);
     let tx_mid = signed_tx(&settings, 14, 2_0000_0000);
@@ -545,7 +545,7 @@ fn reverify_batches_progress_without_exhausting_pool() {
         ..Default::default()
     };
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     for i in 0..100u8 {
         let fee = 1_0000_0000 + (i as i64) * 10_000;
@@ -582,7 +582,7 @@ fn reverify_batches_progress_without_exhausting_pool() {
 fn update_pool_with_header_backlog_moves_to_unverified() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let tx1 = signed_tx(&settings, 30, 1_0000_0000);
     let tx2 = signed_tx(&settings, 31, 1_1000_0000);
@@ -609,7 +609,7 @@ fn update_pool_with_header_backlog_moves_to_unverified() {
 fn invalidate_all_clears_pool() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let tx1 = signed_tx(&settings, 40, 1_0000_0000);
     let tx2 = signed_tx(&settings, 41, 1_1000_0000);
@@ -634,7 +634,7 @@ fn invalidate_all_clears_pool() {
 fn contains_key_tracks_verified_and_unverified() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let tx = signed_tx(&settings, 50, 1_0000_0000);
     add_succeed(&mut pool, tx.clone(), &snapshot, &settings);
@@ -650,7 +650,7 @@ fn contains_key_tracks_verified_and_unverified() {
 fn iterator_returns_verified_and_unverified_transactions() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let tx1 = signed_tx(&settings, 10, 1_0000_0000);
     let tx2 = signed_tx(&settings, 11, 2_0000_0000);
@@ -683,7 +683,7 @@ fn iterator_returns_verified_and_unverified_transactions() {
 fn verified_and_unverified_transactions_are_sorted_descending() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let tx_low = signed_tx(&settings, 20, 1_0000_0000);
     let tx_mid = signed_tx(&settings, 21, 2_0000_0000);
@@ -713,7 +713,7 @@ fn verified_and_unverified_transactions_are_sorted_descending() {
 fn try_add_rejects_duplicate_transactions() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let tx = signed_tx(&settings, 60, 1_0000_0000);
     add_succeed(&mut pool, tx.clone(), &snapshot, &settings);
@@ -730,7 +730,7 @@ fn try_add_rejects_duplicate_transactions() {
 fn conflict_chain_rejects_lower_fee_replacement() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let tx1 = signed_tx(&settings, 70, 1_0000_0000);
     add_succeed(&mut pool, tx1.clone(), &snapshot, &settings);
@@ -768,7 +768,7 @@ fn conflict_chain_rejects_lower_fee_replacement() {
 fn conflict_chain_allows_nonexistent_conflict_replacement() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let tx1 = signed_tx(&settings, 80, 1_0000_0000);
     let tx2 = build_signed_transaction(
@@ -813,7 +813,7 @@ fn conflict_chain_allows_nonexistent_conflict_replacement() {
 fn block_persist_removes_one_same_payer_fee_only_once() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let private_key = [201u8; 32];
 
     let tx1 = build_signed_transaction_with_valid_until(
@@ -866,7 +866,7 @@ fn block_persist_removes_one_same_payer_fee_only_once() {
 fn block_persist_moves_to_unverified_and_reverify() {
     let settings = ProtocolSettings::default();
     let mut pool = MemoryPool::new(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let mut txs = Vec::new();
     for i in 0..70u8 {
@@ -901,7 +901,7 @@ fn block_persist_moves_to_unverified_and_reverify() {
 fn block_persist_reverify_drops_transactions_after_balance_change() {
     let settings = ProtocolSettings::default();
     let mut pool = MemoryPool::new(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let mut txs = Vec::new();
     for i in 0..70u8 {
@@ -938,7 +938,7 @@ fn unverified_high_priority_transactions_prevent_low_fee_admission() {
         ..Default::default()
     };
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     for i in 0..99u8 {
         let tx = signed_tx(&settings, 50u8 + i, 5_0000_0000);
@@ -963,7 +963,7 @@ fn unverified_high_priority_transactions_prevent_low_fee_admission() {
 fn verified_transactions_vec_returns_only_verified() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let tx1 = signed_tx(&settings, 60, 1_0000_0000);
     let tx2 = signed_tx(&settings, 61, 2_0000_0000);
@@ -987,7 +987,7 @@ fn reverify_uses_requested_count_when_verified_exceeds_max_per_block() {
         ..Default::default()
     };
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     for i in 0..3u8 {
         let tx = signed_tx(&settings, 70u8 + i, 1_0000_0000);
@@ -1043,7 +1043,7 @@ fn invalidate_verified_resets_state_even_when_verified_is_empty() {
 fn try_add_handles_multi_conflict_scenarios() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let sender_key = [90u8; 32];
     let malicious_key = [91u8; 32];
@@ -1161,7 +1161,7 @@ fn try_add_handles_multi_conflict_scenarios() {
 fn reverify_restores_higher_fee_conflict() {
     let settings = ProtocolSettings::default();
     let mut pool = MemoryPool::new(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let sender_key = [100u8; 32];
     let mp1 = build_signed_transaction(&settings, sender_key, 1_0000_0000, 0, Vec::new());
@@ -1196,7 +1196,7 @@ fn reverify_restores_higher_fee_conflict() {
 fn iter_verified_returns_transactions_in_priority_order() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let tx_low = signed_tx(&settings, 10, 1_0000_0000);
     let tx_high = signed_tx(&settings, 11, 3_0000_0000);
@@ -1214,7 +1214,7 @@ fn iter_verified_returns_transactions_in_priority_order() {
 fn iter_unverified_returns_transactions_in_priority_order() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let tx_low = signed_tx(&settings, 10, 1_0000_0000);
     let tx_high = signed_tx(&settings, 11, 3_0000_0000);
@@ -1233,7 +1233,7 @@ fn iter_unverified_returns_transactions_in_priority_order() {
 fn arc_transaction_returns_correct_data() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
 
     let tx = signed_tx(&settings, 1, 1_0000_0000);
     let tx_hash = tx.hash();
@@ -1284,7 +1284,7 @@ fn quarantine_tx(settings: &ProtocolSettings, key: u16, network_fee: i64) -> Tra
 
 fn add_quarantine_support(
     pool: &mut MemoryPool,
-    snapshot: &DataCache,
+    snapshot: &PersistenceDataCache,
     settings: &ProtocolSettings,
     key: u16,
 ) {
@@ -1296,7 +1296,7 @@ fn add_quarantine_support(
 fn automatic_quarantine_is_disabled_by_default() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let tx = signed_tx(&settings, 110, 3_0000_0000);
     let hash = tx.hash();
     add_succeed(&mut pool, tx, &snapshot, &settings);
@@ -1312,7 +1312,7 @@ fn automatic_quarantine_is_disabled_by_default() {
 fn disabled_quarantine_keeps_canonical_proposal_order_and_limit() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let high = signed_tx(&settings, 126, 3_0000_0000);
     let middle = signed_tx(&settings, 127, 2_0000_0000);
     let low = signed_tx(&settings, 128, 1_0000_0000);
@@ -1347,7 +1347,7 @@ fn disabled_quarantine_keeps_canonical_proposal_order_and_limit() {
 fn quarantine_metadata_does_not_replace_transaction_state() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let tx = signed_tx(&settings, 111, 3_0000_0000);
     let hash = tx.hash();
     add_succeed(&mut pool, tx, &snapshot, &settings);
@@ -1370,7 +1370,7 @@ fn capacity_eviction_releases_quarantine_state() {
         ..ProtocolSettings::default()
     };
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let evicted = signed_tx(&settings, 129, 1_0000_0000);
     let evicted_hash = evicted.hash();
     add_succeed(&mut pool, evicted, &snapshot, &settings);
@@ -1400,7 +1400,7 @@ fn capacity_eviction_releases_quarantine_state() {
 fn local_proposal_filter_backfills_but_external_views_ignore_labels() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let high = signed_tx(&settings, 112, 3_0000_0000);
     let middle = signed_tx(&settings, 113, 2_0000_0000);
     let low = signed_tx(&settings, 114, 1_0000_0000);
@@ -1447,7 +1447,7 @@ fn local_proposal_filter_backfills_but_external_views_ignore_labels() {
 fn quarantine_ttl_expires_automatically_for_local_selection() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let tx = signed_tx(&settings, 115, 3_0000_0000);
     let hash = tx.hash();
     add_succeed(&mut pool, tx, &snapshot, &settings);
@@ -1475,7 +1475,7 @@ fn quarantine_ttl_expires_automatically_for_local_selection() {
 fn active_quarantine_label_cannot_renew() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let tx = signed_tx(&settings, 116, 3_0000_0000);
     let hash = tx.hash();
     add_succeed(&mut pool, tx, &snapshot, &settings);
@@ -1497,7 +1497,7 @@ fn active_quarantine_label_cannot_renew() {
 fn quarantine_episode_cap_is_two() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let tx = signed_tx(&settings, 119, 3_0000_0000);
     let hash = tx.hash();
     add_succeed(&mut pool, tx, &snapshot, &settings);
@@ -1522,7 +1522,7 @@ fn quarantine_episode_cap_is_two() {
 fn quarantine_cumulative_lifetime_is_capped_at_sixty_seconds() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let tx = signed_tx(&settings, 120, 3_0000_0000);
     let hash = tx.hash();
     add_succeed(&mut pool, tx, &snapshot, &settings);
@@ -1546,7 +1546,7 @@ fn quarantine_cumulative_lifetime_is_capped_at_sixty_seconds() {
 fn context_and_rule_changes_do_not_reset_quarantine_history() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let tx = signed_tx(&settings, 121, 3_0000_0000);
     let hash = tx.hash();
     add_succeed(&mut pool, tx, &snapshot, &settings);
@@ -1572,7 +1572,7 @@ fn context_and_rule_changes_do_not_reset_quarantine_history() {
 fn expiry_restores_eligibility_and_schedules_bounded_review() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let tx = signed_tx(&settings, 117, 3_0000_0000);
     let hash = tx.hash();
     add_succeed(&mut pool, tx, &snapshot, &settings);
@@ -1603,7 +1603,7 @@ fn expiry_restores_eligibility_and_schedules_bounded_review() {
 fn expiry_review_queue_evicts_oldest_at_its_bound() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let transactions = [
         signed_tx(&settings, 123, 3_0000_0000),
         signed_tx(&settings, 124, 2_0000_0000),
@@ -1630,7 +1630,7 @@ fn expiry_review_queue_evicts_oldest_at_its_bound() {
 fn small_pool_cannot_be_fully_quarantined() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let tx = signed_tx(&settings, 122, 3_0000_0000);
     let hash = tx.hash();
     add_succeed(&mut pool, tx, &snapshot, &settings);
@@ -1650,7 +1650,7 @@ fn quarantine_impact_is_limited_to_one_percent_of_pool() {
         ..ProtocolSettings::default()
     };
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let mut hashes = Vec::new();
     for key in 200u16..301 {
         let tx = quarantine_tx(&settings, key, 100_000_000 + i64::from(key) * 100_000);
@@ -1676,7 +1676,7 @@ fn quarantine_impact_is_limited_to_one_percent_of_pool() {
 fn quarantine_ttl_is_clamped_to_thirty_seconds() {
     let settings = ProtocolSettings::default();
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let tx = signed_tx(&settings, 118, 3_0000_0000);
     let hash = tx.hash();
     add_succeed(&mut pool, tx, &snapshot, &settings);
@@ -1700,7 +1700,7 @@ fn local_proposal_scan_is_strictly_budgeted_and_advances_by_inspected_count() {
         ..ProtocolSettings::default()
     };
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     for key in 120u16..420 {
         let tx = quarantine_tx(&settings, key, 100_000_000 + i64::from(key) * 100_000);
         set_gas_balance(
@@ -1753,7 +1753,7 @@ fn large_pool_rotation_eventually_selects_every_interval() {
         ..ProtocolSettings::default()
     };
     let mut pool = test_balance_pool(&settings);
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let mut expected = HashSet::new();
     for key in 1..=80 {
         let tx = signed_tx(&settings, key, 100_000_000 + i64::from(key) * 100_000);

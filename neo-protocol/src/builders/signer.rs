@@ -2,6 +2,13 @@
 // Licensed under the MIT License. See LICENSE file for details.
 
 //! Fluent builder for protocol [`Signer`] payloads.
+//!
+//! # Builder convention
+//!
+//! `SignerBuilder` is handed to `FnOnce(&mut SignerBuilder, &Transaction)`
+//! closures by [`super::TransactionBuilder::add_signer`], so a setter cannot move
+//! the builder out from under its caller: infallible setters take `&mut self` and
+//! return `&mut Self`. `build()` consumes the builder.
 
 use super::WitnessRuleBuilder;
 use crate::payloads::{Signer, WitnessRule, WitnessRuleAction, WitnessScope};
@@ -10,7 +17,7 @@ use neo_primitives::UInt160;
 
 /// Builder for `Signer` instances. Provides a fluent API matching the
 /// expectations of the converted C# tests.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 #[must_use]
 pub struct SignerBuilder {
     account: UInt160,
@@ -20,19 +27,11 @@ pub struct SignerBuilder {
     rules: Vec<WitnessRule>,
 }
 
-neo_primitives::impl_default_via_new!(SignerBuilder);
-
 impl SignerBuilder {
     /// Creates a builder with default signer settings (zero account,
     /// `None` scope).
     pub fn new() -> Self {
-        Self {
-            account: UInt160::zero(),
-            scopes: WitnessScope::NONE,
-            allowed_contracts: Vec::new(),
-            allowed_groups: Vec::new(),
-            rules: Vec::new(),
-        }
+        Self::default()
     }
 
     /// Sets the account for this signer.
@@ -87,11 +86,11 @@ impl SignerBuilder {
     }
 
     /// Builds and returns the configured Signer.
-    pub fn build(&self) -> Signer {
+    pub fn build(self) -> Signer {
         let mut signer = Signer::new(self.account, self.scopes);
-        signer.allowed_contracts.clone_from(&self.allowed_contracts);
-        signer.allowed_groups.clone_from(&self.allowed_groups);
-        signer.rules.clone_from(&self.rules);
+        signer.allowed_contracts = self.allowed_contracts;
+        signer.allowed_groups = self.allowed_groups;
+        signer.rules = self.rules;
         signer
     }
 }

@@ -13,7 +13,7 @@ use neo_protocol::payloads::{
 use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_protocol::witness::Witness;
 use neo_smart_contract::application_engine::native_contract::NativeContract;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_vm::OpCode;
 use num_bigint::BigInt;
 use num_traits::Zero;
@@ -74,7 +74,7 @@ fn build_inclusion_block() -> Block {
 
 #[test]
 fn inclusion_predecessor_height_accepts_transaction_expired_at_snapshot_height() {
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let ledger = LedgerContract::new();
     let snapshot_hash = UInt256::from([0x81; 32]);
     ledger
@@ -149,7 +149,7 @@ fn inclusion_predecessor_height_accepts_transaction_expired_at_snapshot_height()
 
 #[test]
 fn inclusion_predecessor_height_accepts_transaction_beyond_snapshot_validity_window() {
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let ledger = LedgerContract::new();
     let snapshot_hash = UInt256::from([0x82; 32]);
     ledger
@@ -224,7 +224,7 @@ fn inclusion_predecessor_height_accepts_transaction_beyond_snapshot_validity_win
 
 #[test]
 fn duplicate_oracle_responses_are_rejected() {
-    let snapshot = DataCache::new(true);
+    let snapshot = PersistenceDataCache::new(true);
     let mut context =
         TransactionVerificationContext::with_balance_provider(|_, _| BigInt::from(10));
     let mut first = build_transaction(1, 2);
@@ -238,7 +238,7 @@ fn duplicate_oracle_responses_are_rejected() {
 
 #[test]
 fn sender_fee_accumulates_until_balance_exceeded() {
-    let snapshot = DataCache::new(true);
+    let snapshot = PersistenceDataCache::new(true);
     let mut context = TransactionVerificationContext::with_balance_provider(|_, _| BigInt::from(8));
     let tx = build_transaction(1, 2); // total fee = 3
     assert!(context.check_transaction(&tx, std::iter::empty::<&Transaction>(), &snapshot));
@@ -254,7 +254,7 @@ fn sender_fee_accumulates_until_balance_exceeded() {
 
 #[test]
 fn conflicts_release_fee_budget() {
-    let snapshot = DataCache::new(true);
+    let snapshot = PersistenceDataCache::new(true);
     let mut context = TransactionVerificationContext::with_balance_provider(|_, _| BigInt::from(7));
     let tx = build_transaction(1, 2); // fee = 3
     let conflict = build_transaction(1, 1); // fee = 2
@@ -270,7 +270,7 @@ fn conflicts_release_fee_budget() {
 
 #[test]
 fn sponsored_transactions_charge_notary_deposit_by_secondary_payer() {
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let notary = Notary::new();
     let payer = UInt160::from([7u8; UInt160::LENGTH]);
     notary.set_deposit(&snapshot, &payer, &Deposit::new(BigInt::from(8), 100));
@@ -287,7 +287,7 @@ fn sponsored_transactions_charge_notary_deposit_by_secondary_payer() {
 
 #[test]
 fn sponsored_conflicts_release_secondary_payer_budget() {
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let notary = Notary::new();
     let payer = UInt160::from([6u8; UInt160::LENGTH]);
     notary.set_deposit(&snapshot, &payer, &Deposit::new(BigInt::from(5), 100));
@@ -305,7 +305,7 @@ fn sponsored_conflicts_release_secondary_payer_budget() {
 
 #[test]
 fn sponsored_fee_budgets_are_isolated_by_secondary_payer() {
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let notary = Notary::new();
     let payer_a = UInt160::from([8u8; UInt160::LENGTH]);
     let payer_b = UInt160::from([9u8; UInt160::LENGTH]);

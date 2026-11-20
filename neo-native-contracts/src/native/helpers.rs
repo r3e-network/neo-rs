@@ -9,7 +9,7 @@ use neo_primitives::{UInt160, UInt256};
 use neo_protocol::ProtocolSettings;
 use neo_smart_contract::contract::Contract;
 use neo_smart_contract::error::{CoreError, CoreResult};
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_vm::BinarySerializer;
 use neo_vm::StackItem;
 use neo_vm::StackValue;
@@ -105,7 +105,10 @@ impl NativeHelpers {
     /// Computes the multi-signature committee address from the current committee list.
     /// Until the native NEO contract is fully ported, this uses the standby committee from
     /// protocol settings to mirror the default initialization path in the C# implementation.
-    pub fn committee_address(settings: &ProtocolSettings, snapshot: Option<&DataCache>) -> UInt160 {
+    pub fn committee_address(
+        settings: &ProtocolSettings,
+        snapshot: Option<&PersistenceDataCache>,
+    ) -> UInt160 {
         let committee = snapshot
             .and_then(|cache| NeoToken::new().committee_from_snapshot(cache))
             .filter(|members| !members.is_empty())

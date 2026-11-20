@@ -11,7 +11,7 @@ use neo_protocol::ProtocolSettings;
 use neo_protocol::payloads::Transaction;
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::diagnostic::Diagnostic;
-use neo_storage::persistence::data_cache::DataCache;
+use neo_storage::persistence::data_cache::PersistenceDataCache;
 use neo_storage::persistence::{
     DetachedSnapshot, DetachedSnapshotEntry, DetachedSnapshotError, DetachedSnapshotLimits,
 };
@@ -400,9 +400,9 @@ fn hex_digest(bytes: &[u8]) -> String {
 // Execution entry: `neo_smart_contract::application_engine::ApplicationEngine`
 // — the same public engine the block-persistence pipeline uses — driven through
 // its public API (`new`, `load_script`, `execute_allow_fault`). No neo-core file
-// was modified. The engine reads from an isolated, memory-only `DataCache`
+// was modified. The engine reads from an isolated, memory-only `PersistenceDataCache`
 // seeded from the detached snapshot entries (no live store is reachable,
-// since `DataCache::new_with_config`'s backing-store closure types are
+// since `PersistenceDataCache::new_with_config`'s backing-store closure types are
 // `pub(crate)` in neo-storage and cannot be constructed from outside).
 //
 // The controller owns double replay (two independent worker processes are
@@ -614,10 +614,10 @@ fn sandbox_preexecute(job: &ProbeJob, entries: &[SnapshotEntry]) -> VmProbeRepor
         }
     };
 
-    // Isolated, memory-only snapshot: a writable DataCache without a backing
+    // Isolated, memory-only snapshot: a writable PersistenceDataCache without a backing
     // store, seeded from the detached snapshot entries. All writes performed
     // by the engine are discarded together with the engine.
-    let snapshot_cache = Arc::new(DataCache::new(false));
+    let snapshot_cache = Arc::new(PersistenceDataCache::new(false));
     for entry in entries {
         snapshot_cache.add(
             StorageKey::from_bytes(&entry.key),
@@ -742,7 +742,7 @@ mod tests {
             },
             ProbeBuild {
                 binary_hash: "bc".repeat(32),
-                version: "neo-probe-0.20.0".to_owned(),
+                version: "neo-probe-0.21.0".to_owned(),
             },
             ProbeBudget {
                 max_duration_ms: 1_000,

@@ -1156,7 +1156,7 @@ mod tests {
             },
             ProbeBuild {
                 binary_hash: "bc".repeat(32),
-                version: "neo-probe-0.20.0".to_owned(),
+                version: "neo-probe-0.21.0".to_owned(),
             },
             ProbeBudget {
                 max_duration_ms: 1_000,

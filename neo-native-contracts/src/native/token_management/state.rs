@@ -154,7 +154,7 @@ impl TokenState {
 }
 
 /// Fungible token account state holding the current balance.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AccountState {
     /// The account's token balance.
     pub balance: BigInt,
@@ -195,7 +195,7 @@ impl AccountState {
 }
 
 /// Non-fungible token state describing an asset, its owner, and its properties.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NFTState {
     /// Identifier of the NFT asset (collection) the token belongs to.
     pub asset_id: UInt160,

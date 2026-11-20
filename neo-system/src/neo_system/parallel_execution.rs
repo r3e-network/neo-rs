@@ -11,7 +11,7 @@
 //! keeps that implementation available and adds a second one:
 //!
 //! 1. **Speculative phase** — every transaction runs on its own thread against its own
-//!    overlay of the *pre-block* snapshot (`DataCache::clone_cache`), with read-write set
+//!    overlay of the *pre-block* snapshot (`PersistenceDataCache::clone_cache`), with read-write set
 //!    recording enabled. Nothing is committed and nothing is published.
 //! 2. **Ordered validation phase** — the captured runs are walked in block order. A run
 //!    is committed when its read set does not intersect the writes already committed by
@@ -55,7 +55,7 @@ use neo_ledger::persistence::{
 use neo_primitives::{UInt256, Verifiable};
 use neo_protocol::payloads::Transaction;
 use neo_smart_contract::application_engine::{LedgerTransactionStates, NativeContractsCache};
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_vm::{RwSetTracker, VmState};
 use parking_lot::Mutex;
 use rayon::prelude::*;
@@ -71,7 +71,7 @@ const SPECULATION_GENERATION: u64 = 0;
 /// One transaction executed ahead of commit order.
 struct SpeculatedTransaction {
     /// Isolated overlay the run wrote into; merged only if the run is accepted.
-    overlay: Arc<DataCache>,
+    overlay: Arc<PersistenceDataCache>,
     /// The engine port, kept alive so the retained observation can be released in order.
     port: Box<dyn ApplicationEnginePort>,
     /// Receipt and read-write set captured by the run.

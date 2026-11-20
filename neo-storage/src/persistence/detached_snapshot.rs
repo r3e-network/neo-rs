@@ -1,5 +1,5 @@
 use super::data_cache::{
-    DataCache, DataCacheConfig, DataCacheResult, PrefetchConfig, StoreFindFn, StoreGetFn,
+    DataCacheConfig, DataCacheResult, PersistenceDataCache, PrefetchConfig, StoreFindFn, StoreGetFn,
 };
 use super::seek_direction::SeekDirection;
 use crate::types::{StorageItem, StorageKey};
@@ -143,7 +143,7 @@ impl DetachedSnapshot {
             ..DataCacheConfig::default()
         };
         DisposableOverlay {
-            cache: Arc::new(DataCache::new_with_config(
+            cache: Arc::new(PersistenceDataCache::new_with_config(
                 false,
                 Some(store_get),
                 Some(store_find),
@@ -163,7 +163,7 @@ fn detached_storage_item(value: &DetachedValue) -> StorageItem {
 
 /// Writable in-memory overlay that cannot reach or commit a live store.
 pub struct DisposableOverlay {
-    cache: Arc<DataCache>,
+    cache: Arc<PersistenceDataCache>,
 }
 
 impl DisposableOverlay {

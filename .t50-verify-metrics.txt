@@ -1,0 +1,187 @@
+# HELP neo_node_info Node information
+# TYPE neo_node_info gauge
+neo_node_info{name="neo-node",version="0.20.0"} 1
+
+# HELP neo_block_height Current block height
+# TYPE neo_block_height gauge
+neo_block_height {} 300000
+
+# HELP neo_header_height Current header height
+# TYPE neo_header_height gauge
+neo_header_height {} 300000
+
+# HELP neo_verified_height Current verified height
+# TYPE neo_verified_height gauge
+neo_verified_height {} 0
+
+# HELP neo_mempool_verified Verified transactions in mempool
+# TYPE neo_mempool_verified gauge
+neo_mempool_verified {} 0
+
+# HELP neo_mempool_unverified Unverified transactions in mempool
+# TYPE neo_mempool_unverified gauge
+neo_mempool_unverified {} 0
+
+# HELP neo_connections Active P2P connections
+# TYPE neo_connections gauge
+neo_connections {} 10
+
+# HELP neo_timeouts_total Total timeout count
+# TYPE neo_timeouts_total counter
+neo_timeouts_total {} 0
+
+# HELP neo_storage_free_gb Free storage space in GB
+# TYPE neo_storage_free_gb gauge
+neo_storage_free_gb {} 0.00
+
+# HELP neo_storage_total_gb Total storage space in GB
+# TYPE neo_storage_total_gb gauge
+neo_storage_total_gb {} 0.00
+# HELP neo_fast_path_direct_attempts_total Direct native NEP-17 dispatches that ran, including faulted ones
+# TYPE neo_fast_path_direct_attempts_total counter
+neo_fast_path_direct_attempts_total 324
+# HELP neo_fast_path_direct_outcomes_total Direct native NEP-17 dispatches by final VM state
+# TYPE neo_fast_path_direct_outcomes_total counter
+neo_fast_path_direct_outcomes_total{outcome="halt"} 322
+neo_fast_path_direct_outcomes_total{outcome="fault"} 2
+# HELP neo_fast_path_eligibility_declines_total Parsed transfers rejected by the engine-side eligibility checks
+# TYPE neo_fast_path_eligibility_declines_total counter
+neo_fast_path_eligibility_declines_total 8
+# HELP neo_fast_path_canonical_fallbacks_total Verify-mode executions that fell back to the canonical interpreter
+# TYPE neo_fast_path_canonical_fallbacks_total counter
+neo_fast_path_canonical_fallbacks_total 0
+# HELP neo_fast_path_verification_mismatches_total Dual executions whose direct and canonical fingerprints diverged
+# TYPE neo_fast_path_verification_mismatches_total counter
+neo_fast_path_verification_mismatches_total 0
+# HELP neo_fast_path_mode Selected execution mode, one-hot: 1 for the active mode
+# TYPE neo_fast_path_mode gauge
+neo_fast_path_mode{mode="canonical"} 0
+neo_fast_path_mode{mode="auto"} 0
+neo_fast_path_mode{mode="verify"} 1
+# HELP neo_parallel_speculative_blocks_total Blocks whose transactions were executed speculatively before validation
+# TYPE neo_parallel_speculative_blocks_total counter
+neo_parallel_speculative_blocks_total 0
+# HELP neo_parallel_speculative_transactions_total Transactions executed speculatively, including runs later discarded
+# TYPE neo_parallel_speculative_transactions_total counter
+neo_parallel_speculative_transactions_total 0
+# HELP neo_parallel_conflicts_total Speculative runs rejected by ordered validation
+# TYPE neo_parallel_conflicts_total counter
+neo_parallel_conflicts_total 0
+# HELP neo_parallel_reexecutions_total Transactions re-executed serially after a detected conflict
+# TYPE neo_parallel_reexecutions_total counter
+neo_parallel_reexecutions_total 0
+# HELP neo_parallel_serial_fallbacks_total Blocks routed to the serial loop while parallel execution was enabled
+# TYPE neo_parallel_serial_fallbacks_total counter
+neo_parallel_serial_fallbacks_total 0
+# HELP neo_parallel_seconds_total Wall-clock seconds spent in the speculative scheduler by phase
+# TYPE neo_parallel_seconds_total counter
+neo_parallel_seconds_total{phase="speculative"} 0
+neo_parallel_seconds_total{phase="serial"} 0
+# HELP neo_storage_acceleration_enabled Whether the active store runs the named acceleration component and it is producing telemetry
+# TYPE neo_storage_acceleration_enabled gauge
+neo_storage_acceleration_enabled{component="read_cache"} 1
+neo_storage_acceleration_enabled{component="write_buffer"} 0
+# HELP neo_storage_read_cache_hits_total Read cache lookups served from resident entries
+# TYPE neo_storage_read_cache_hits_total counter
+neo_storage_read_cache_hits_total 0
+# HELP neo_storage_read_cache_misses_total Read cache lookups that found no resident entry
+# TYPE neo_storage_read_cache_misses_total counter
+neo_storage_read_cache_misses_total 202928
+# HELP neo_storage_read_cache_evictions_total Read cache entries removed by LRU or TTL expiry
+# TYPE neo_storage_read_cache_evictions_total counter
+neo_storage_read_cache_evictions_total 292819
+# HELP neo_storage_read_cache_admissions_total Read cache entries accepted by the admission checks
+# TYPE neo_storage_read_cache_admissions_total counter
+neo_storage_read_cache_admissions_total 302835
+# HELP neo_storage_read_cache_rejected_total Read cache inserts rejected by the admission checks
+# TYPE neo_storage_read_cache_rejected_total counter
+neo_storage_read_cache_rejected_total{reason="oversized"} 0
+neo_storage_read_cache_rejected_total{reason="budget"} 0
+# HELP neo_storage_read_cache_prefetches_total Speculative values offered to the read cache by prefetch
+# TYPE neo_storage_read_cache_prefetches_total counter
+neo_storage_read_cache_prefetches_total 0
+# HELP neo_storage_read_cache_prefetch_hits_total Read cache hits served by a prefetched entry
+# TYPE neo_storage_read_cache_prefetch_hits_total counter
+neo_storage_read_cache_prefetch_hits_total 0
+# HELP neo_storage_read_cache_prefetch_stale_skips_total Prefetched values dropped because a fresher entry was resident
+# TYPE neo_storage_read_cache_prefetch_stale_skips_total counter
+neo_storage_read_cache_prefetch_stale_skips_total 0
+# HELP neo_storage_read_cache_bloom_checks_total Read cache lookups that probed the bloom filter
+# TYPE neo_storage_read_cache_bloom_checks_total counter
+neo_storage_read_cache_bloom_checks_total 202928
+# HELP neo_storage_read_cache_bloom_negatives_total Bloom filter probes that proved the key absent without a lookup
+# TYPE neo_storage_read_cache_bloom_negatives_total counter
+neo_storage_read_cache_bloom_negatives_total 195512
+# HELP neo_storage_read_cache_entries Resident read cache entries
+# TYPE neo_storage_read_cache_entries gauge
+neo_storage_read_cache_entries 10000
+# HELP neo_storage_read_cache_bytes Resident read cache payload bytes
+# TYPE neo_storage_read_cache_bytes gauge
+neo_storage_read_cache_bytes 930931
+# HELP neo_storage_write_buffer_flushes_total Write-batch buffer flushes completed
+# TYPE neo_storage_write_buffer_flushes_total counter
+neo_storage_write_buffer_flushes_total 0
+# HELP neo_storage_write_buffer_operations_written_total Store operations written by buffer flushes
+# TYPE neo_storage_write_buffer_operations_written_total counter
+neo_storage_write_buffer_operations_written_total 0
+# HELP neo_storage_write_buffer_bytes_written_total Bytes written by buffer flushes
+# TYPE neo_storage_write_buffer_bytes_written_total counter
+neo_storage_write_buffer_bytes_written_total 0
+# HELP neo_storage_write_buffer_flush_seconds_total Cumulative buffer flush wall-clock time in seconds
+# TYPE neo_storage_write_buffer_flush_seconds_total counter
+neo_storage_write_buffer_flush_seconds_total 0
+# HELP neo_storage_write_buffer_flush_timeouts_total Buffer flushes triggered by the delay timeout
+# TYPE neo_storage_write_buffer_flush_timeouts_total counter
+neo_storage_write_buffer_flush_timeouts_total 0
+# HELP neo_storage_write_buffer_pending_operations Operations buffered and not yet flushed
+# TYPE neo_storage_write_buffer_pending_operations gauge
+neo_storage_write_buffer_pending_operations 0
+# HELP neo_storage_write_buffer_pending_bytes Payload bytes buffered and not yet flushed
+# TYPE neo_storage_write_buffer_pending_bytes gauge
+neo_storage_write_buffer_pending_bytes 0
+# HELP neo_state_root_node_cache_enabled Whether the state-root node cache is active
+# TYPE neo_state_root_node_cache_enabled gauge
+neo_state_root_node_cache_enabled 1
+# HELP neo_state_root_node_cache_hits_total State-root MPT node lookups served from the shared node cache
+# TYPE neo_state_root_node_cache_hits_total counter
+neo_state_root_node_cache_hits_total 6
+# HELP neo_state_root_node_cache_misses_total State-root MPT node lookups that missed the shared node cache
+# TYPE neo_state_root_node_cache_misses_total counter
+neo_state_root_node_cache_misses_total 2133
+# HELP neo_state_root_node_cache_entries Resident state-root node cache entries
+# TYPE neo_state_root_node_cache_entries gauge
+neo_state_root_node_cache_entries 2133
+# HELP neo_state_root_node_cache_capacity Configured state-root node cache capacity in entries
+# TYPE neo_state_root_node_cache_capacity gauge
+neo_state_root_node_cache_capacity 65536
+# HELP neo_state_root_warm_root_nodes Resolved nodes retained for the warm state root, excluding hash stubs
+# TYPE neo_state_root_warm_root_nodes gauge
+neo_state_root_warm_root_nodes 110136
+# HELP neo_state_root_warm_root_bytes Estimated bytes retained for the warm state root
+# TYPE neo_state_root_warm_root_bytes gauge
+neo_state_root_warm_root_bytes 24433050
+# HELP neo_execution_profiling_enabled Whether persistence profiling is accumulating MPT timings
+# TYPE neo_execution_profiling_enabled gauge
+neo_execution_profiling_enabled 1
+# HELP neo_mpt_stage_seconds_total Cumulative MPT persistence stage wall-clock time in seconds
+# TYPE neo_mpt_stage_seconds_total counter
+neo_mpt_stage_seconds_total{stage="update"} 1.3183016
+neo_mpt_stage_seconds_total{stage="commit"} 6.5141797
+neo_mpt_stage_seconds_total{stage="root_hash"} 0.0196976
+neo_mpt_stage_seconds_total{stage="hash"} 3.6870959
+neo_mpt_stage_seconds_total{stage="serialization"} 5.4768825
+neo_mpt_stage_seconds_total{stage="hash256"} 0.5839317
+neo_mpt_stage_seconds_total{stage="node_cache"} 0.0004889
+neo_mpt_stage_seconds_total{stage="node_read"} 0.0484866
+neo_mpt_stage_seconds_total{stage="node_deserialize"} 0.0006958
+neo_mpt_stage_seconds_total{stage="node_encode"} 0.1894555
+neo_mpt_stage_seconds_total{stage="node_write"} 0.8558019
+# HELP neo_native_hook_seconds_total Cumulative native OnPersist and PostPersist wall-clock time in seconds
+# TYPE neo_native_hook_seconds_total counter
+neo_native_hook_seconds_total{phase="on_persist"} 10.5829569
+neo_native_hook_seconds_total{phase="post_persist"} 8.3158033
+# HELP neo_native_hook_empty_block_seconds_total The empty-block subset of neo_native_hook_seconds_total
+# TYPE neo_native_hook_empty_block_seconds_total counter
+neo_native_hook_empty_block_seconds_total{phase="on_persist"} 4.8119878
+neo_native_hook_empty_block_seconds_total{phase="post_persist"} 7.0278116
+

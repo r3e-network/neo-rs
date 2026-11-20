@@ -3,7 +3,7 @@
 use neo_primitives::protocol_enum;
 
 protocol_enum! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
     /// Change view reason enum matching C# `ChangeViewReason` exactly
     pub ChangeViewReason {
         /// The view timed out without a committed block.

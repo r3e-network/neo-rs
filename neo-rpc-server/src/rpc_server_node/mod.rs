@@ -18,7 +18,6 @@ use tokio::runtime::Handle;
 use tokio::task::block_in_place;
 
 #[cfg(test)]
-#[path = "tests.rs"]
 mod tests;
 
 pub struct RpcServerNode;

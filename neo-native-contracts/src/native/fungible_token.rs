@@ -272,7 +272,7 @@ pub trait TokenAccountState: Clone + Default {
 }
 
 /// Default implementation of token account state.
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct DefaultTokenAccountState {
     /// The balance of the account.
     pub balance: BigInt,

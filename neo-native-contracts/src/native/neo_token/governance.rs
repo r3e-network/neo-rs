@@ -1,12 +1,12 @@
-//
-// governance.rs - Voting, candidate registration, and committee management
-//
-// Migrated from `neo-core/src/smart_contract/native/neo_token/governance.rs`.
-// Import adaptation applied per task-120 mapping:
-//   crate::smart_contract::find_options::FindOptions -> neo_primitives::FindOptions
-//   crate::smart_contract::iterators::StorageIterator -> neo_smart_contract::iterators::StorageIterator
-//   crate::smart_contract::native::security_fixes     -> crate::native::security_fixes
-//   crate::smart_contract::env_flags                  -> neo_smart_contract::env_flags
+//!
+//! governance.rs - Voting, candidate registration, and committee management
+//!
+//! Migrated from `neo-core/src/smart_contract/native/neo_token/governance.rs`.
+//! Import adaptation applied per task-120 mapping:
+//!   crate::smart_contract::find_options::FindOptions -> neo_primitives::FindOptions
+//!   crate::smart_contract::iterators::StorageIterator -> neo_smart_contract::iterators::StorageIterator
+//!   crate::smart_contract::native::security_fixes     -> crate::native::security_fixes
+//!   crate::smart_contract::env_flags                  -> neo_smart_contract::env_flags
 
 use super::*;
 use crate::native::helpers::encode_bigint;

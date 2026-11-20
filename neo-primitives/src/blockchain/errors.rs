@@ -4,7 +4,7 @@ use thiserror::Error;
 // ============ Error Types ============
 
 /// Errors that can occur during block/transaction relay.
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum RelayError {
     /// Block validation failed.
     #[error("block validation failed: {message}")]

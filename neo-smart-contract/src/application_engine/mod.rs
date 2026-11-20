@@ -24,7 +24,7 @@
 //! |  +---------------------------------------------------------+|
 //! |  |                  Blockchain Context                      ||
 //! |  |  +----------+  +----------+  +----------------------+  ||
-//! |  |  | DataCache|  | Settings |  | Native Contracts     |  ||
+//! |  |  | PersistenceDataCache|  | Settings |  | Native Contracts     |  ||
 //! |  |  | (state)  |  | (proto)  |  | (NEO, GAS, Policy)   |  ||
 //! |  |  +----------+  +----------+  +----------------------+  ||
 //! |  +---------------------------------------------------------+|
@@ -133,7 +133,7 @@ use neo_protocol::transaction_attribute::TransactionAttribute;
 use neo_protocol::witness_condition::WitnessCondition;
 use neo_protocol::witness_rule_action::WitnessRuleAction;
 use neo_storage::SeekDirection;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::Instruction;
@@ -261,8 +261,8 @@ pub struct ApplicationEngine {
     call_flags: CallFlags,
     vm_engine: VmEngineHost,
     interop_handlers: Arc<HashMap<u32, HostInteropHandler>>,
-    snapshot_cache: Arc<DataCache>,
-    original_snapshot_cache: Arc<DataCache>,
+    snapshot_cache: Arc<PersistenceDataCache>,
+    original_snapshot_cache: Arc<PersistenceDataCache>,
     notifications: Vec<NotifyEventArgs>,
     logs: Vec<LogEventArgs>,
     native_registry: NativeRegistry,

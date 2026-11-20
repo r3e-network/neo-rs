@@ -23,7 +23,7 @@ use neo_smart_contract::binary_serializer::BinarySerializer;
 use neo_smart_contract::error::{CoreError as Error, CoreResult as Result};
 use neo_storage::StorageItem;
 use neo_storage::StorageKey;
-use neo_storage::persistence::{DataCache, read_only_store::ReadOnlyStoreGeneric};
+use neo_storage::persistence::{PersistenceDataCache, read_only_store::ReadOnlyStoreGeneric};
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::StackItem;
 use neo_vm::StackValue;
@@ -31,7 +31,7 @@ use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
 impl OracleContract {
-    pub(super) fn get_price_value(&self, snapshot: &DataCache) -> BigInt {
+    pub(super) fn get_price_value(&self, snapshot: &PersistenceDataCache) -> BigInt {
         // C# parity: stored as variable-width signed-LE BigInteger bytes (StorageItem.Value),
         // not a fixed 8-byte i64. Empty bytes => 0; parse via BigInt::from_signed_bytes_le.
         // The price is returned as a BigInteger so prices above i64::MAX survive intact.
@@ -42,7 +42,7 @@ impl OracleContract {
             .unwrap_or_else(|| BigInt::from(DEFAULT_PRICE))
     }
 
-    pub(super) fn next_request_id(&self, snapshot: &DataCache) -> Result<u64> {
+    pub(super) fn next_request_id(&self, snapshot: &PersistenceDataCache) -> Result<u64> {
         // C# parity: request ID counter is stored as a BigInt via StorageItem,
         // encoded as signed little-endian bytes (Integer format).
         let key = self.request_id_key();
@@ -67,7 +67,7 @@ impl OracleContract {
 
     pub(super) fn append_request_id(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         hash: &[u8; 20],
         id: u64,
     ) -> Result<()> {
@@ -84,7 +84,7 @@ impl OracleContract {
 
     pub(super) fn remove_request_id(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         hash: &[u8; 20],
         id: u64,
     ) -> Result<()> {
@@ -102,7 +102,7 @@ impl OracleContract {
 
     pub(super) fn read_request(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         id: u64,
     ) -> Result<Option<PendingRequest>> {
         let key = self.request_storage_key(id);
@@ -114,7 +114,7 @@ impl OracleContract {
 
     pub(super) fn write_request(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         request: &PendingRequest,
     ) -> Result<()> {
         let key = self.request_storage_key(request.id);
@@ -123,7 +123,7 @@ impl OracleContract {
         Ok(())
     }
 
-    pub(super) fn delete_request(&self, snapshot: &DataCache, id: u64) {
+    pub(super) fn delete_request(&self, snapshot: &PersistenceDataCache, id: u64) {
         let key = self.request_storage_key(id);
         snapshot.delete(&key);
     }
@@ -204,7 +204,11 @@ impl OracleContract {
             .ok_or_else(|| Error::serialization("Cannot convert to ByteArray"))
     }
 
-    pub(super) fn read_id_list(&self, snapshot: &DataCache, hash: &[u8; 20]) -> Result<Vec<u64>> {
+    pub(super) fn read_id_list(
+        &self,
+        snapshot: &PersistenceDataCache,
+        hash: &[u8; 20],
+    ) -> Result<Vec<u64>> {
         let key = self.id_list_key(hash);
         if let Some(item) = snapshot.try_get(&key) {
             self.deserialize_id_list(&item.value_bytes())
@@ -213,7 +217,12 @@ impl OracleContract {
         }
     }
 
-    fn write_id_list(&self, snapshot: &DataCache, hash: &[u8; 20], list: &[u64]) -> Result<()> {
+    fn write_id_list(
+        &self,
+        snapshot: &PersistenceDataCache,
+        hash: &[u8; 20],
+        list: &[u64],
+    ) -> Result<()> {
         let key = self.id_list_key(hash);
         let bytes = self.serialize_id_list(list)?;
         self.put_item(snapshot, key, StorageItem::from_bytes(bytes));
@@ -249,7 +258,12 @@ impl OracleContract {
         Some(u64::from_be_bytes(buf))
     }
 
-    pub(super) fn put_item(&self, snapshot: &DataCache, key: StorageKey, item: StorageItem) {
+    pub(super) fn put_item(
+        &self,
+        snapshot: &PersistenceDataCache,
+        key: StorageKey,
+        item: StorageItem,
+    ) {
         if snapshot.get(&key).is_some() {
             snapshot.update(key, item);
         } else {

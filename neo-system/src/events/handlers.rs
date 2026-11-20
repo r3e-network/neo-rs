@@ -1,5 +1,5 @@
 use neo_protocol::execution::{ApplicationExecuted, Block};
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_wallets::Wallet;
 use std::{any::Any, sync::Arc};
 
@@ -25,7 +25,7 @@ pub trait CommittingHandler {
         &self,
         system: &dyn Any,
         block: &Block,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         application_executed_list: &[ApplicationExecuted],
     );
 
@@ -34,7 +34,7 @@ pub trait CommittingHandler {
         &self,
         system: &dyn Any,
         block: &Block,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         application_executed_list: &[ApplicationExecuted],
     ) -> CoreResult<()> {
         self.blockchain_committing_handler(system, block, snapshot, application_executed_list);
@@ -48,7 +48,7 @@ pub trait CommittingHandler {
         &self,
         _system: &dyn Any,
         _block: &Block,
-        _snapshot: &DataCache,
+        _snapshot: &PersistenceDataCache,
     ) -> CoreResult<()> {
         Ok(())
     }

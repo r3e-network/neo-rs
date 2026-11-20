@@ -10,38 +10,26 @@
 //! (notably `GasToken::mint`) stay valid.
 
 use super::{DEFAULT_MAX_NOT_VALID_BEFORE_DELTA, Notary, deserialize_deposit};
-use crate::native::{
-    NativeContract, NativeMethod, gas_token::GasToken, policy_contract::PolicyContract,
-};
+use crate::native::{NativeContract, gas_token::GasToken, policy_contract::PolicyContract};
 use neo_primitives::UInt160;
 use neo_protocol::payloads::{TransactionAttribute, TransactionAttributeType};
 use neo_protocol::{Hardfork, ProtocolSettings};
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::contract::Contract;
-use neo_smart_contract::error::{CoreError as Error, CoreResult as Result};
+use neo_smart_contract::error::{CoreError as Error, CoreResult};
+use neo_smart_contract::impl_native_contract;
 use neo_storage::StorageItem;
 use neo_storage::persistence::read_only_store::ReadOnlyStoreGeneric;
 use num_bigint::BigInt;
 use num_traits::Zero;
-use std::any::Any;
 
 neo_storage::impl_default_via_new!(Notary);
 
 impl NativeContract for Notary {
+    impl_native_contract!(hash, "Notary", methods);
+
     fn id(&self) -> i32 {
         self.id
-    }
-
-    fn name(&self) -> &str {
-        "Notary"
-    }
-
-    fn hash(&self) -> UInt160 {
-        self.hash
-    }
-
-    fn methods(&self) -> &[NativeMethod] {
-        self.methods
     }
 
     fn active_in(&self) -> Option<Hardfork> {
@@ -60,7 +48,7 @@ impl NativeContract for Notary {
         standards
     }
 
-    fn initialize(&self, engine: &mut ApplicationEngine) -> Result<()> {
+    fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         let snapshot = engine.snapshot_cache();
         let key = Self::max_delta_key();
         if snapshot.as_ref().try_get(&key).is_none() {
@@ -74,7 +62,7 @@ impl NativeContract for Notary {
         Ok(())
     }
 
-    fn on_persist(&self, engine: &mut ApplicationEngine) -> Result<()> {
+    fn on_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         // Every branch below is gated on a `NotaryAssisted` attribute, so a block
         // whose transactions carry none (including an empty block) can only reach
         // the zero-fee return at the bottom. Decide that first, while the block is
@@ -181,13 +169,16 @@ impl NativeContract for Notary {
 
         Ok(())
     }
+}
 
-    fn invoke(
+impl Notary {
+    /// Dispatches a Notary method invocation.
+    fn invoke_method(
         &self,
         engine: &mut ApplicationEngine,
         method: &str,
         args: &[Vec<u8>],
-    ) -> Result<Vec<u8>> {
+    ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
         match method {
             "balanceOf" => {
@@ -225,9 +216,5 @@ impl NativeContract for Notary {
                 "Unknown Notary method: {method}"
             ))),
         }
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }

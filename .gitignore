@@ -166,3 +166,25 @@ formal/consensus/model/states/
 # Local verification logs (not sources)
 /.audit-logs/
 .target-*/
+
+# Local database artifacts
+ApplicationLogs_*/
+Data_LevelDB_*/
+Data_MPT_*/
+
+# Live-node harness runtime state (.t30-live): downloaded binaries, chain data,
+# logs and audit trails. The harness scripts and TOML configs stay tracked.
+/.t30-live/downloads/
+/.t30-live/logs/
+/.t30-live/nodes/
+/.t30-live/validator-data/
+
+# Task progress tracking
+.task-progress/
+
+# Verification snapshots
+.verify-*/
+
+# Temporary replay data
+state-root-diff-memory/
+

@@ -11,7 +11,7 @@ use neo_vm::StackItem;
 use std::ops::{Deref, DerefMut};
 
 /// A list that can be converted to/from StackItem (matches C# InteroperableList\<T>)
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct InteroperableList<T: Interoperable + Clone> {
     items: Vec<T>,
 }

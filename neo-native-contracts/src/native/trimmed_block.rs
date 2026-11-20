@@ -8,7 +8,7 @@ use neo_vm::StackValue;
 use num_bigint::BigInt;
 
 /// A trimmed block containing only the header and transaction hashes (matches C# TrimmedBlock)
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TrimmedBlock {
     /// The block header retained after trimming.
     pub header: BlockHeader,

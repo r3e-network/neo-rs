@@ -1,0 +1,87 @@
+# Task 57: A/B benchmark replay for the ACC import speed optimization
+# (Phases 1-4 + ApplicationLogs durable-flush watermark fix).
+#
+# Purpose:
+#   * Replay the full MainNet ACC package from block 0 into a brand-new store
+#     (`data/mainnet-ab-optimized`) so the numbers are directly comparable to
+#     the `data/mainnet-replay-fresh` control baseline, which was produced by
+#     the pre-optimization binary.
+#   * Identical execution semantics to the control run: canonical VM executor
+#     with the fast path enabled (`mode = "auto"`), serial commit order
+#     (`parallel_enabled = false`), persistence profiling OFF.
+#   * The only intended deltas are the Phase 4 RocksDB capacities below; every
+#     other block is a verbatim copy of `config/mainnet-replay-local.toml`.
+#
+# Schema note: `NodeConfig` is `#[serde(default, deny_unknown_fields)]`, so only
+# keys defined in `neo-node/src/config/sections.rs` may appear here.
+# `[storage.prefetch]` is intentionally absent: absent means disabled.
+
+[network]
+network_type = "MainNet"
+network_magic = 860833102
+
+[storage]
+backend = "rocksdb"
+path = "D:/Git/neo-rs/data/mainnet-ab-optimized"
+read_only = false
+# Phase 4 cache tuning. Both knobs are MiB in the config and are converted to
+# bytes by `NodeConfig::storage_config()`; the node has 95 GiB RAM.
+#   cache_size     = 4096 MiB block cache (control used the 256 MiB default)
+#   row_cache_size = 1024 MiB independent row cache (control derived it from the
+#                    block cache)
+cache_size = 4096
+row_cache_size = 1024
+
+# Fast-path execution (mode = "auto"), serial commit order, no profiling
+# telemetry overhead.
+[execution]
+mode = "auto"
+profiling = false
+parallel_enabled = false
+
+# Distinct from the other MainNet profiles (10333 / 10343) so this database can
+# coexist with the full-validation and protocol-consistency nodes. The replay
+# runs with `--import-only`, so P2P and RPC never bind.
+[p2p]
+listen_port = 10343
+seed_nodes = [
+    "seed1.neo.org:10333",
+    "seed2.neo.org:10333",
+    "seed3.neo.org:10333",
+    "seed4.neo.org:10333",
+    "seed5.neo.org:10333"
+]
+
+[rpc]
+enabled = true
+bind_address = "127.0.0.1"
+port = 10342
+auth_enabled = false
+
+# State service owns its own database; keep it out of the chain database
+# directory so two RocksDB instances never share a path.
+[state_service]
+enabled = true
+full_state = true
+auto_verify = false
+path = "D:/Git/neo-rs/data/mainnet-ab-optimized/StateRoot"
+
+[logging]
+level = "info"
+format = "json"
+console_output = true
+file_enabled = true
+file_path = "D:/Git/neo-rs/logs/mainnet-ab-optimized.log"
+
+[application_logs]
+enabled = true
+path = "D:/Git/neo-rs/data/mainnet-ab-optimized/ApplicationLogs"
+
+[tokens_tracker]
+enabled = false
+
+[oracle_service]
+enabled = false
+
+[dbft]
+enabled = false

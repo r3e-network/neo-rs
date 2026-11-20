@@ -37,7 +37,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 bitflags! {
     /// Represents the operations allowed when a contract is invoked.
-    #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
     pub struct CallFlags: u8 {
         /// No flag is set.
         const NONE = 0b0000_0000;

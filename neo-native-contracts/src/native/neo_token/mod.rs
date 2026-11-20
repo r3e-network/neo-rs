@@ -1,17 +1,17 @@
-//
-// neo_token/mod.rs - NEO native token contract
-//
-// This module implements the NEO native token contract, which is the governance
-// token of the Neo N3 blockchain. It handles:
-// - NEP-17 fungible token standard (transfer, balanceOf, etc.)
-// - Validator candidate registration and voting
-// - Committee management and elections
-// - GAS reward distribution to voters and committee members
-//
-// Migrated from `neo-core/src/smart_contract/native/neo_token/mod.rs`.
-// Import adaptation applied per task-120 mapping. Sibling `super::*` references
-// are preserved because the module nesting under `native/` is unchanged;
-// `crate::smart_contract::native::*` becomes `crate::native::*`.
+//!
+//! neo_token/mod.rs - NEO native token contract
+//!
+//! This module implements the NEO native token contract, which is the governance
+//! token of the Neo N3 blockchain. It handles:
+//! - NEP-17 fungible token standard (transfer, balanceOf, etc.)
+//! - Validator candidate registration and voting
+//! - Committee management and elections
+//! - GAS reward distribution to voters and committee members
+//!
+//! Migrated from `neo-core/src/smart_contract/native/neo_token/mod.rs`.
+//! Import adaptation applied per task-120 mapping. Sibling `super::*` references
+//! are preserved because the module nesting under `native/` is unchanged;
+//! `crate::smart_contract::native::*` becomes `crate::native::*`.
 
 use super::{
     contract_management::ContractManagement,
@@ -84,8 +84,8 @@ impl NeoToken {
     const COMMITTEE_REWARD_RATIO: i64 = 10;
     const VOTER_REWARD_RATIO: i64 = 80;
     const DATOSHI_FACTOR: i64 = 100_000_000;
-    /// Default register price: 1000 GAS (in Datoshi)
-    const DEFAULT_REGISTER_PRICE: i64 = 1000_00000000;
+    /// Default register price: 1000 GAS in datoshi.
+    const DEFAULT_REGISTER_PRICE: i64 = 100_000_000_000;
 }
 
 // Include implementation files

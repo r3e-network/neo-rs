@@ -57,15 +57,22 @@ impl RpcNep17Balances {
 }
 
 /// Individual NEP17 balance entry matching C# `RpcNep17Balance`
+///
+/// Serde is the canonical field-name mapping and mirrors the RPC wire format
+/// (`assethash`, `amount`, `lastupdatedblock`). The hand-written `to_json` /
+/// `from_json` converters below remain for address-aware parsing and C# parity.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcNep17Balance {
     /// Asset hash
+    #[serde(rename = "assethash")]
     pub asset_hash: UInt160,
 
-    /// Balance amount
+    /// Balance amount (wire encodes this as a decimal string)
+    #[serde(rename = "amount")]
     pub amount: BigInt,
 
     /// Last updated block height
+    #[serde(rename = "lastupdatedblock")]
     pub last_updated_block: u32,
 }
 

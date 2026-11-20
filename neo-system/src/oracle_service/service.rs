@@ -117,7 +117,7 @@ impl crate::events::handlers::CommittingHandler for OracleService {
         &self,
         system: &dyn std::any::Any,
         _block: &neo_protocol::execution::Block,
-        _snapshot: &neo_storage::persistence::DataCache,
+        _snapshot: &neo_storage::persistence::PersistenceDataCache,
         _application_executed_list: &[neo_protocol::execution::ApplicationExecuted],
     ) {
         let Some(system) = system.downcast_ref::<NeoSystem>() else {

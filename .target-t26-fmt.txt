@@ -1,0 +1,22 @@
+﻿Incorrect newline style in \\?\D:\Git\neo-rs\neo-smart-contract\src\application_engine\fast_path\block_scripts.rs
+Incorrect newline style in \\?\D:\Git\neo-rs\neo-smart-contract\src\application_engine\fast_path\classifier.rs
+Incorrect newline style in \\?\D:\Git\neo-rs\neo-smart-contract\src\application_engine\fast_path\executor.rs
+Incorrect newline style in \\?\D:\Git\neo-rs\neo-smart-contract\src\application_engine\fast_path\mod.rs
+Incorrect newline style in \\?\D:\Git\neo-rs\neo-smart-contract\src\application_engine\fast_path\nep17_parser.rs
+Diff in \\?\D:\Git\neo-rs\neo-smart-contract\src\application_engine\mod.rs:130:
+ use neo_vm::ExecutionEngineLimits;
+ use neo_vm::Instruction;
+ use neo_vm::InterpreterSemantics;
+[32m+use neo_vm::NotifyEventArgs;
+[0m use neo_vm::OpCode;
+ use neo_vm::StackValue as VmStackValue;
+ use neo_vm::SyscallProvider;
+Diff in \\?\D:\Git\neo-rs\neo-smart-contract\src\application_engine\mod.rs:137:
+ use neo_vm::interpret_with_stack_and_syscalls_at;
+ use neo_vm::interpret_with_stack_and_syscalls_at_with_result_limit;
+ use neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
+[31m-use neo_vm::NotifyEventArgs;
+[0m use num_traits::ToPrimitive;
+ use parking_lot::Mutex;
+ use std::any::{Any, TypeId};
+Incorrect newline style in \\?\D:\Git\neo-rs\neo-smart-contract\src\application_engine\storage_context.rs

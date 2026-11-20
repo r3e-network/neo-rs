@@ -17,7 +17,8 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use tracing::{debug, trace, warn};
 
 /// Delegate for storage entries
-pub type OnEntryDelegate = Arc<dyn Fn(&DataCache, &StorageKey, &StorageItem) + Send + Sync>;
+pub type OnEntryDelegate =
+    Arc<dyn Fn(&PersistenceDataCache, &StorageKey, &StorageItem) + Send + Sync>;
 
 /// Represents a cache for the underlying storage of the NEO blockchain.
 pub(crate) type StoreGetFn = dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync;
@@ -41,7 +42,7 @@ pub(crate) type CommitApplyFn = dyn Fn(&[(StorageKey, Trackable)]) + Send + Sync
 pub(crate) type GenerationSource = dyn Fn() -> u64 + Send + Sync;
 
 /// Represents a cache for the underlying storage of the NEO blockchain.
-pub struct DataCache {
+pub struct PersistenceDataCache {
     /// Shared state with CoW optimization
     state: Arc<RwLock<InnerState>>,
     /// Read-only flag (determines if changes are tracked)
@@ -112,7 +113,7 @@ fn overlay_item(trackable: &Trackable) -> Option<Option<StorageItem>> {
     }
 }
 
-impl Clone for DataCache {
+impl Clone for PersistenceDataCache {
     fn clone(&self) -> Self {
         Self {
             state: Arc::clone(&self.state),
@@ -137,13 +138,13 @@ impl Clone for DataCache {
     }
 }
 
-impl DataCache {
-    /// Creates a new DataCache.
+impl PersistenceDataCache {
+    /// Creates a new PersistenceDataCache.
     pub fn new(read_only: bool) -> Self {
         Self::new_with_config(read_only, None, None, DataCacheConfig::default())
     }
 
-    /// Creates a new DataCache with configuration.
+    /// Creates a new PersistenceDataCache with configuration.
     pub fn with_config(read_only: bool, config: DataCacheConfig) -> Self {
         Self::new_with_config(read_only, None, None, config)
     }
@@ -183,7 +184,7 @@ impl DataCache {
         }
     }
 
-    /// Creates a new DataCache with an optional backing store.
+    /// Creates a new PersistenceDataCache with an optional backing store.
     pub fn new_with_store(
         read_only: bool,
         store_get: Option<Arc<StoreGetFn>>,
@@ -192,7 +193,7 @@ impl DataCache {
         Self::new_with_config(read_only, store_get, store_find, DataCacheConfig::default())
     }
 
-    /// Creates a new DataCache with configuration and optional backing store.
+    /// Creates a new PersistenceDataCache with configuration and optional backing store.
     pub fn new_with_config(
         read_only: bool,
         store_get: Option<Arc<StoreGetFn>>,
@@ -314,11 +315,11 @@ impl DataCache {
         debug!(
             target: "neo",
             generation = current,
-            "DataCache dropped stale read state after an external commit"
+            "PersistenceDataCache dropped stale read state after an external commit"
         );
     }
 
-    /// Returns true if DataCache is read-only.
+    /// Returns true if PersistenceDataCache is read-only.
     pub fn is_read_only(&self) -> bool {
         self.read_only
     }
@@ -394,7 +395,7 @@ impl DataCache {
     }
 
     /// Drains tracked changes from a child cache and merges them into this cache without cloning.
-    pub fn merge_from_child(&self, child: &DataCache) {
+    pub fn merge_from_child(&self, child: &PersistenceDataCache) {
         let drained: Vec<(StorageKey, Trackable)> = {
             let mut child_state = child.state.write();
             child_state.dictionary.drain().collect()
@@ -634,7 +635,7 @@ impl DataCache {
     /// Adds an item to the cache.
     pub fn add(&self, key: StorageKey, value: StorageItem) {
         if self.try_add(key, value).is_err() {
-            warn!("attempted to add to read-only DataCache");
+            warn!("attempted to add to read-only PersistenceDataCache");
         }
     }
 
@@ -706,7 +707,7 @@ impl DataCache {
     /// Updates an item in the cache.
     pub fn update(&self, key: StorageKey, value: StorageItem) {
         if self.try_update(key, value).is_err() {
-            warn!("attempted to update read-only DataCache");
+            warn!("attempted to update read-only PersistenceDataCache");
         }
     }
 
@@ -778,7 +779,7 @@ impl DataCache {
     /// Deletes an item from the cache.
     pub fn delete(&self, key: &StorageKey) {
         if self.try_delete(key).is_err() {
-            warn!("attempted to delete from read-only DataCache");
+            warn!("attempted to delete from read-only PersistenceDataCache");
         }
     }
 
@@ -1050,7 +1051,7 @@ impl DataCache {
     pub fn clear_hot_key_cache(&self) {
         if let Some(ref cache) = self.hot_key_cache {
             cache.clear();
-            debug!(target: "neo", "DataCache hot-key cache cleared");
+            debug!(target: "neo", "PersistenceDataCache hot-key cache cleared");
         }
     }
 
@@ -1058,7 +1059,7 @@ impl DataCache {
     pub fn clear_read_cache(&self) {
         if let Some(ref cache) = self.read_cache {
             cache.clear();
-            debug!(target: "neo", "DataCache read cache cleared");
+            debug!(target: "neo", "PersistenceDataCache read cache cleared");
         }
     }
 
@@ -1348,7 +1349,7 @@ impl DataCache {
     }
 }
 
-impl ReadOnlyStore for DataCache {
+impl ReadOnlyStore for PersistenceDataCache {
     /// Overlay-first bounded scan.
     ///
     /// Backing rows are read through the bounded seek when one is installed, so
@@ -1412,7 +1413,7 @@ impl ReadOnlyStore for DataCache {
     }
 }
 
-impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for DataCache {
+impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for PersistenceDataCache {
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
         self.get(key)
     }
@@ -1434,7 +1435,7 @@ mod tests {
         StorageItem::from_bytes(value.to_vec())
     }
 
-    fn state_of(cache: &DataCache, key: &StorageKey) -> Option<TrackState> {
+    fn state_of(cache: &PersistenceDataCache, key: &StorageKey) -> Option<TrackState> {
         cache
             .state
             .read()
@@ -1452,7 +1453,7 @@ mod tests {
 
     #[test]
     fn delete_update_delete_preserves_the_tombstone() {
-        let cache = DataCache::new(false);
+        let cache = PersistenceDataCache::new(false);
         let key = StorageKey::new(1, b"k".to_vec());
 
         cache.add(key.clone(), item(b"v1"));
@@ -1481,8 +1482,12 @@ mod tests {
         let key = StorageKey::new(1, b"shared".to_vec());
         let store_get: Arc<StoreGetFn> =
             Arc::new(|_key: &StorageKey| Some(StorageItem::from_bytes(b"parent".to_vec())));
-        let parent =
-            DataCache::new_with_config(false, Some(store_get), None, untracked_read_config());
+        let parent = PersistenceDataCache::new_with_config(
+            false,
+            Some(store_get),
+            None,
+            untracked_read_config(),
+        );
         assert_eq!(parent.get(&key).unwrap().to_value(), b"parent".to_vec());
 
         let fork = parent.fork_isolated();
@@ -1500,8 +1505,12 @@ mod tests {
         let store_get: Arc<StoreGetFn> = Arc::new(move |_key: &StorageKey| {
             Some(StorageItem::from_bytes(backing_get.lock().clone()))
         });
-        let mut cache =
-            DataCache::new_with_config(false, Some(store_get), None, DataCacheConfig::default());
+        let mut cache = PersistenceDataCache::new_with_config(
+            false,
+            Some(store_get),
+            None,
+            DataCacheConfig::default(),
+        );
         let generation = Arc::new(AtomicU64::new(0));
         let generation_probe = Arc::clone(&generation);
         cache.set_generation_source(move || generation_probe.load(Ordering::Acquire));

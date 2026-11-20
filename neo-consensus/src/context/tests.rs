@@ -458,8 +458,8 @@ fn test_load_nonexistent_file() {
     let result = ConsensusContext::load(&nonexistent_path, validators, None);
     assert!(result.is_err());
     match result {
-        Err(ConsensusError::IoError(_)) => {} // Expected
-        _ => panic!("Expected IoError"),
+        Err(ConsensusError::Io(_)) => {} // Expected
+        _ => panic!("Expected Io"),
     }
 }
 

@@ -6,6 +6,9 @@
 //! `application_logs` and `tokens_tracker` subsystems. The historical
 //! `neo_rpc::server::*` paths remain available through the `neo-rpc` facade.
 
+// TODO: #![warn(missing_docs)] once the public surface (~113 undocumented
+// items) has been documented.
+
 pub mod application_logs;
 mod client_identity;
 mod diagnostic;

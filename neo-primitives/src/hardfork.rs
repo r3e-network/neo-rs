@@ -12,7 +12,7 @@ protocol_enum_repr! {
     /// Represents a hardfork in the Neo blockchain (matches C# Hardfork enum exactly).
     ///
     /// Hardforks are named after mythological creatures in alphabetical order.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
     pub Hardfork {
         /// Aspidochelone hardfork - First Neo N3 hardfork.
         HfAspidochelone = 0 => "HF_Aspidochelone",

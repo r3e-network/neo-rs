@@ -11,7 +11,7 @@ use neo_primitives::CallFlags;
 use neo_primitives::TriggerType;
 use neo_protocol::ProtocolSettings;
 use neo_smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_vm::InteropService;
 use std::sync::Arc;
 
@@ -19,7 +19,7 @@ fn make_engine() -> ApplicationEngine {
     ApplicationEngine::new(
         TriggerType::Application,
         None,
-        Arc::new(DataCache::new(false)),
+        Arc::new(PersistenceDataCache::new(false)),
         None,
         ProtocolSettings::default(),
         TEST_MODE_GAS,
@@ -53,7 +53,7 @@ fn bench_engine_initialization(c: &mut Criterion) {
             let engine = ApplicationEngine::new(
                 TriggerType::Application,
                 None,
-                Arc::new(DataCache::new(false)),
+                Arc::new(PersistenceDataCache::new(false)),
                 None,
                 settings.clone(),
                 TEST_MODE_GAS,
@@ -70,7 +70,7 @@ fn bench_engine_initialization(c: &mut Criterion) {
             let engine = ApplicationEngine::new_with_preloaded_native(
                 TriggerType::Application,
                 None,
-                Arc::new(DataCache::new(false)),
+                Arc::new(PersistenceDataCache::new(false)),
                 None,
                 settings.clone(),
                 TEST_MODE_GAS,

@@ -11,7 +11,7 @@ use neo_smart_contract::application_engine::{
     TransferParams,
 };
 use neo_smart_contract::{ContractState, CoreError, CoreResult};
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_vm::{OpCode, ScriptBuilder, VmState};
 use num_bigint::BigInt;
 use std::sync::Arc;
@@ -58,7 +58,7 @@ fn transaction(script: &[u8], witness: UInt160) -> Arc<dyn Verifiable> {
 
 fn make_engine_with_services(
     container: Option<Arc<dyn Verifiable>>,
-    snapshot: Arc<DataCache>,
+    snapshot: Arc<PersistenceDataCache>,
     services: EngineNativeServices,
 ) -> ApplicationEngine {
     ApplicationEngine::new_with_shared_block(
@@ -78,7 +78,7 @@ fn make_engine_with_services(
 
 fn make_engine(
     container: Option<Arc<dyn Verifiable>>,
-    snapshot: Arc<DataCache>,
+    snapshot: Arc<PersistenceDataCache>,
 ) -> ApplicationEngine {
     make_engine_with_services(
         container,
@@ -87,8 +87,8 @@ fn make_engine(
     )
 }
 
-fn funded_snapshot(gas: &GasToken, account: UInt160, amount: i64) -> Arc<DataCache> {
-    let snapshot = Arc::new(DataCache::new(false));
+fn funded_snapshot(gas: &GasToken, account: UInt160, amount: i64) -> Arc<PersistenceDataCache> {
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let mut engine = make_engine(None, Arc::clone(&snapshot));
     gas.mint(&mut engine, &account, &BigInt::from(amount), false)
         .expect("fund test account");
@@ -135,7 +135,7 @@ fn assert_direct_matches_canonical(
     params: &TransferParams,
     script: &[u8],
     container: Arc<dyn Verifiable>,
-    snapshot: Arc<DataCache>,
+    snapshot: Arc<PersistenceDataCache>,
 ) -> (ExecutionObservation, ExecutionObservation) {
     let canonical_snapshot = Arc::new(snapshot.fork_isolated());
     let direct_snapshot = Arc::new(snapshot.fork_isolated());
@@ -253,14 +253,14 @@ fn non_native_and_contract_recipient_decline_direct_dispatch() {
     let non_native = UInt160::from_bytes(&[9; 20]).unwrap();
     let script = transfer_script(non_native, from, from, 1);
     let params = Nep17Parser::parse_transfer_script(&script).unwrap();
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let mut engine = make_engine(None, snapshot);
     engine.load_script(script, CallFlags::ALL, None).unwrap();
     assert!(!engine.can_execute_direct_nep17_transfer(&params));
 
     let script = transfer_script(gas.hash(), from, gas.hash(), 0);
     let params = Nep17Parser::parse_transfer_script(&script).unwrap();
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let mut engine = make_engine(None, snapshot);
     engine.load_script(script, CallFlags::ALL, None).unwrap();
     assert!(!engine.can_execute_direct_nep17_transfer(&params));
@@ -282,7 +282,11 @@ enum ScriptedLookupOutcome {
 }
 
 impl NativeStateReader for ScriptedContractLookup {
-    fn contract(&self, snapshot: &DataCache, hash: &UInt160) -> CoreResult<Option<ContractState>> {
+    fn contract(
+        &self,
+        snapshot: &PersistenceDataCache,
+        hash: &UInt160,
+    ) -> CoreResult<Option<ContractState>> {
         if *hash != self.target {
             return self.inner.contract(snapshot, hash);
         }
@@ -298,17 +302,17 @@ impl NativeStateReader for ScriptedContractLookup {
         }
     }
 
-    fn current_index(&self, snapshot: &DataCache) -> CoreResult<u32> {
+    fn current_index(&self, snapshot: &PersistenceDataCache) -> CoreResult<u32> {
         self.inner.current_index(snapshot)
     }
 
-    fn is_blocked(&self, snapshot: &DataCache, hash: &UInt160) -> CoreResult<bool> {
+    fn is_blocked(&self, snapshot: &PersistenceDataCache, hash: &UInt160) -> CoreResult<bool> {
         self.inner.is_blocked(snapshot, hash)
     }
 
     fn whitelisted_fee(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         hash: &UInt160,
         method: &str,
         param_count: u32,
@@ -319,7 +323,7 @@ impl NativeStateReader for ScriptedContractLookup {
 
     fn oracle_original_signers(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         id: u64,
     ) -> CoreResult<Option<Vec<Signer>>> {
         self.inner.oracle_original_signers(snapshot, id)
@@ -341,7 +345,7 @@ fn engine_with_scripted_lookup(
     });
     let mut engine = make_engine_with_services(
         Some(transaction(script, witness)),
-        Arc::new(DataCache::new(false)),
+        Arc::new(PersistenceDataCache::new(false)),
         services,
     );
     engine
@@ -353,7 +357,7 @@ fn engine_with_scripted_lookup(
 fn engine_with_instruction_limit(
     script: &[u8],
     witness: UInt160,
-    snapshot: Arc<DataCache>,
+    snapshot: Arc<PersistenceDataCache>,
     max_instructions: u64,
 ) -> ApplicationEngine {
     let mut engine = make_engine(Some(transaction(script, witness)), snapshot);

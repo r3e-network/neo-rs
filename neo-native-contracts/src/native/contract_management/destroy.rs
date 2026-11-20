@@ -1,9 +1,9 @@
-//
-// destroy.rs - Contract destruction for ContractManagement
-//
-// Migrated from `neo-core/src/smart_contract/native/contract_management/destroy.rs`.
-// The single inline `crate::hardfork::Hardfork` path becomes `neo_protocol::Hardfork`.
-//
+//!
+//! destroy.rs - Contract destruction for ContractManagement
+//!
+//! Migrated from `neo-core/src/smart_contract/native/contract_management/destroy.rs`.
+//! The single inline `crate::hardfork::Hardfork` path becomes `neo_protocol::Hardfork`.
+//!
 
 use super::*;
 

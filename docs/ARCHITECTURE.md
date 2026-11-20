@@ -1,7 +1,7 @@
 # Neo-rs Architecture Documentation
 
-> **Version**: 0.20.0
-> **Last Updated**: 2026-10-29
+> **Version**: 0.21.0
+> **Last Updated**: 2026-11-20
 > **Target Compatibility**: Neo N3 v3.10.2 (NeoVM v3.10.1). See [docs/protocol/NEO_3.10.2.md](protocol/NEO_3.10.2.md).
 
 This document provides comprehensive architecture documentation for the neo-rs project, a professional Rust implementation of the Neo N3 blockchain node.

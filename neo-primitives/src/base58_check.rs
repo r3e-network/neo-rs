@@ -7,7 +7,7 @@ use thiserror::Error;
 pub const ADDRESS_PAYLOAD_SIZE: usize = 1 + ADDRESS_SIZE;
 
 /// Error returned when Base58Check decoding fails.
-#[derive(Debug, Error, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum Base58CheckDecodeError {
     /// The payload is shorter than the embedded checksum.
     #[error("missing Base58Check checksum")]
@@ -24,7 +24,7 @@ pub enum Base58CheckDecodeError {
 }
 
 /// Error returned when decoding a Neo address payload fails.
-#[derive(Debug, Error, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum AddressDecodeError {
     /// Base58Check decoding failed.
     #[error(transparent)]

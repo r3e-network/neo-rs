@@ -144,7 +144,7 @@ pub trait NativeContract: Any + Send + Sync {
     fn committee_address(
         &self,
         _settings: &ProtocolSettings,
-        _snapshot: &neo_storage::persistence::DataCache,
+        _snapshot: &neo_storage::persistence::PersistenceDataCache,
     ) -> Option<UInt160> {
         None
     }
@@ -377,6 +377,10 @@ impl BaseNativeContract {
 ///   The hash is read from `self.hash_field`.
 /// - **Expr hash**: `impl_native_contract!(expr, "Name", methods_field);`
 ///   The hash is the given expression.
+/// - **Metadata only**: `impl_native_contract!(metadata_only: hash_field, "Name", methods_field);`
+///   Generates everything except `invoke()`, for contracts whose dispatch does
+///   not follow the `self.invoke_method(engine, method, args)` convention and
+///   therefore keeps a hand-written `invoke()`.
 #[macro_export]
 macro_rules! impl_native_contract {
     // Arm 1: hash is a struct field (ident) — generates `self.$hash_field`
@@ -406,7 +410,25 @@ macro_rules! impl_native_contract {
             self
         }
     };
-    // Arm 2: hash is an arbitrary expression
+    // Arm 2: metadata only (hash is a struct field), hand-written `invoke`
+    (metadata_only: $hash_field:ident, $name:expr_2021, $methods_field:ident) => {
+        fn hash(&self) -> ::neo_primitives::UInt160 {
+            self.$hash_field
+        }
+
+        fn name(&self) -> &str {
+            $name
+        }
+
+        fn methods(&self) -> &[$crate::application_engine::NativeMethod] {
+            &self.$methods_field
+        }
+
+        fn as_any(&self) -> &dyn ::std::any::Any {
+            self
+        }
+    };
+    // Arm 3: hash is an arbitrary expression
     ($hash:expr_2021, $name:expr_2021, $methods_field:ident) => {
         fn hash(&self) -> ::neo_primitives::UInt160 {
             $hash

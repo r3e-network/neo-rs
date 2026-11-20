@@ -101,12 +101,15 @@ impl RpcSignerRuntime {
     }
 }
 
+/// A single registered JSON-RPC method: its descriptor plus the callback that
+/// serves it.
 pub struct RpcHandler {
     descriptor: RpcMethodDescriptor,
     callback: Arc<RpcCallback>,
 }
 
 impl RpcHandler {
+    /// Binds a method descriptor to the callback that implements it.
     pub fn new(descriptor: RpcMethodDescriptor, callback: Arc<RpcCallback>) -> Self {
         Self {
             descriptor,

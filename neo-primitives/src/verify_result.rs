@@ -12,7 +12,7 @@
 use crate::protocol_enum;
 
 protocol_enum! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
     /// Represents a verifying result of `Inventory`.
     pub VerifyResult {
         /// Verification succeeded.

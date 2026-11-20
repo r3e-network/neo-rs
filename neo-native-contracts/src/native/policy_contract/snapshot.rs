@@ -1,13 +1,13 @@
-//
-// snapshot.rs - Snapshot reading methods for PolicyContract
-//
-// Migrated from `neo-core/src/smart_contract/native/policy_contract/snapshot.rs`.
-//
-// Import adaptation:
-// - `crate::smart_contract::application_engine::FEE_FACTOR` → `neo_smart_contract::application_engine::FEE_FACTOR`
-// - `crate::persistence::seek_direction::SeekDirection` → `neo_storage::persistence::seek_direction::SeekDirection`
-// - `crate::persistence::DataCache` → `neo_storage::persistence::DataCache`
-// - `crate::smart_contract::native::ContractManagement` → `crate::native::ContractManagement`
+//!
+//! snapshot.rs - Snapshot reading methods for PolicyContract
+//!
+//! Migrated from `neo-core/src/smart_contract/native/policy_contract/snapshot.rs`.
+//!
+//! Import adaptation:
+//! - `crate::smart_contract::application_engine::FEE_FACTOR` → `neo_smart_contract::application_engine::FEE_FACTOR`
+//! - `crate::persistence::seek_direction::SeekDirection` → `neo_storage::persistence::seek_direction::SeekDirection`
+//! - `crate::persistence::PersistenceDataCache` → `neo_storage::persistence::PersistenceDataCache`
+//! - `crate::smart_contract::native::ContractManagement` → `crate::native::ContractManagement`
 
 use super::*;
 
@@ -167,7 +167,7 @@ impl PolicyContract {
     /// Gets the fixed fee for a whitelisted contract method, if it exists.
     pub fn get_whitelisted_fee(
         &self,
-        snapshot: &neo_storage::persistence::DataCache,
+        snapshot: &neo_storage::persistence::PersistenceDataCache,
         contract_hash: &UInt160,
         method: &str,
         arg_count: u32,

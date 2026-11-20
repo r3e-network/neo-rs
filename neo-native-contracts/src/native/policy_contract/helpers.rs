@@ -1,11 +1,11 @@
-//
-// helpers.rs - Helper methods for PolicyContract
-//
-// Migrated from `neo-core/src/smart_contract/native/policy_contract/helpers.rs`.
-//
-// Import adaptation:
-// - `crate::smart_contract::contract::Contract` → `neo_smart_contract::contract::Contract`
-// - `crate::smart_contract::native::neo_token::NeoToken` → `crate::native::neo_token::NeoToken`
+//!
+//! helpers.rs - Helper methods for PolicyContract
+//!
+//! Migrated from `neo-core/src/smart_contract/native/policy_contract/helpers.rs`.
+//!
+//! Import adaptation:
+//! - `crate::smart_contract::contract::Contract` → `neo_smart_contract::contract::Contract`
+//! - `crate::smart_contract::native::neo_token::NeoToken` → `crate::native::neo_token::NeoToken`
 
 use super::*;
 use crate::native::neo_token::NeoToken;

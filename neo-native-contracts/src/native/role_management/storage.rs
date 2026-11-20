@@ -4,7 +4,7 @@
 //!
 //! Import adaptation:
 //! - `crate::error::{CoreError, CoreResult}` → `neo_smart_contract::error::{...}`
-//! - `crate::persistence::{DataCache, SeekDirection}` → `neo_storage::persistence::{...}`
+//! - `crate::persistence::{PersistenceDataCache, SeekDirection}` → `neo_storage::persistence::{...}`
 //! - `crate::smart_contract::binary_serializer::BinarySerializer` → `neo_vm::BinarySerializer`
 //! - `crate::smart_contract::native::Role` → `crate::native::Role`
 //! - `crate::smart_contract::storage_key::StorageKey` → `neo_storage::StorageKey`
@@ -15,7 +15,7 @@ use crate::native::Role;
 use neo_crypto::{ECCurve, ECPoint};
 use neo_smart_contract::error::{CoreError as Error, CoreResult as Result};
 use neo_storage::StorageKey;
-use neo_storage::persistence::{DataCache, SeekDirection};
+use neo_storage::persistence::{PersistenceDataCache, SeekDirection};
 use neo_vm::BinarySerializer;
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::StackValue;
@@ -24,7 +24,7 @@ use std::convert::TryInto;
 impl RoleManagement {
     pub(super) fn find_designation_bytes(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         role: Role,
         index: u32,
     ) -> Result<Option<Vec<u8>>> {
@@ -63,7 +63,7 @@ impl RoleManagement {
     /// This is a public API used by other native contracts like Notary.
     pub fn get_designated_by_role_at(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         role: Role,
         index: u32,
     ) -> Result<Vec<ECPoint>> {

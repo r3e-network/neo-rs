@@ -5,7 +5,7 @@ use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
 
 /// Execution block representation, distinct from the network payload block.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Block {
     /// Execution header carrying a witness list.
     pub header: BlockHeader,

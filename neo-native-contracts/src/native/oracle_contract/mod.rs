@@ -134,10 +134,10 @@ mod tests {
     use neo_primitives::ContractParameterType;
     use neo_primitives::TriggerType;
     use neo_protocol::ProtocolSettings;
-    use neo_storage::persistence::DataCache;
+    use neo_storage::persistence::PersistenceDataCache;
     use std::sync::Arc;
 
-    fn application_engine(snapshot: Arc<DataCache>) -> ApplicationEngine {
+    fn application_engine(snapshot: Arc<PersistenceDataCache>) -> ApplicationEngine {
         ApplicationEngine::new(
             TriggerType::Application,
             None,
@@ -225,7 +225,7 @@ mod tests {
 
     /// Builds a PostPersist engine that observes `block` for the given height.
     fn post_persist_engine(
-        snapshot: Arc<DataCache>,
+        snapshot: Arc<PersistenceDataCache>,
         header_index: u32,
         transactions: Vec<neo_protocol::payloads::Transaction>,
     ) -> ApplicationEngine {
@@ -254,7 +254,7 @@ mod tests {
 
     /// Tracked storage effects, sorted by key for stable comparison.
     fn storage_fingerprint(
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
     ) -> Vec<(Vec<u8>, neo_storage::TrackState, Vec<u8>)> {
         let mut tracked: Vec<_> = snapshot
             .tracked_items()
@@ -267,7 +267,11 @@ mod tests {
 
     /// Seeds one pending request (plus its URL id-list entry) and returns the
     /// storage hash H160 of the request URL.
-    fn seed_pending_request(oracle: &OracleContract, snapshot: &DataCache, id: u64) -> [u8; 20] {
+    fn seed_pending_request(
+        oracle: &OracleContract,
+        snapshot: &PersistenceDataCache,
+        id: u64,
+    ) -> [u8; 20] {
         let request = PendingRequest {
             id,
             original_tx_id: UInt256::zero(),
@@ -313,7 +317,7 @@ mod tests {
     #[test]
     fn post_persist_on_an_empty_block_leaves_pending_requests_untouched() {
         let oracle = OracleContract::new();
-        let snapshot = Arc::new(DataCache::new(false));
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
         let url_hash = seed_pending_request(&oracle, snapshot.as_ref(), 7);
         let before = storage_fingerprint(&snapshot);
 
@@ -350,7 +354,7 @@ mod tests {
     #[test]
     fn post_persist_still_cleans_up_an_answered_request() {
         let oracle = OracleContract::new();
-        let snapshot = Arc::new(DataCache::new(false));
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
         let url_hash = seed_pending_request(&oracle, snapshot.as_ref(), 7);
         let before = storage_fingerprint(&snapshot);
 
@@ -386,7 +390,7 @@ mod tests {
     #[test]
     fn post_persist_ignores_unknown_response_ids() {
         let oracle = OracleContract::new();
-        let snapshot = Arc::new(DataCache::new(false));
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
         let before = storage_fingerprint(&snapshot);
 
         let mut engine = post_persist_engine(
@@ -406,7 +410,7 @@ mod tests {
     #[test]
     fn dispatch_method_covers_declared_metadata_names() {
         let oracle = OracleContract::new();
-        let mut engine = application_engine(Arc::new(DataCache::new(false)));
+        let mut engine = application_engine(Arc::new(PersistenceDataCache::new(false)));
         let mut names = std::collections::BTreeSet::new();
 
         for method in oracle.methods() {

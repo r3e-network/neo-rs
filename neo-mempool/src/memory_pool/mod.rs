@@ -28,7 +28,7 @@ use neo_protocol::hardfork::Hardfork;
 use neo_protocol::payloads::transaction_attribute::TransactionAttribute;
 use neo_protocol::payloads::{Transaction, conflicts::Conflicts};
 use neo_protocol::protocol_settings::ProtocolSettings;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
@@ -57,7 +57,10 @@ type TransactionRemovedCallback = dyn Fn(&MemoryPool, &TransactionRemovedEventAr
 type TransactionRelayCallback = dyn Fn(&Transaction) + Send + Sync;
 type NewTransactionCallback = dyn Fn(&MemoryPool, &mut NewTransactionEventArgs) + Send + Sync;
 
-fn resolve_time_per_block(snapshot: &DataCache, settings: &ProtocolSettings) -> Duration {
+fn resolve_time_per_block(
+    snapshot: &PersistenceDataCache,
+    settings: &ProtocolSettings,
+) -> Duration {
     let current_index = LedgerContract::new().current_index(snapshot).unwrap_or(0);
     if !settings.is_hardfork_enabled(Hardfork::HfEchidna, current_index) {
         return settings.time_per_block();
@@ -268,7 +271,7 @@ impl MemoryPool {
     pub fn try_add(
         &mut self,
         tx: Transaction,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         settings: &ProtocolSettings,
     ) -> VerifyResult {
         let hash = match tx.try_hash() {
@@ -414,7 +417,7 @@ impl MemoryPool {
     pub fn update_pool_for_block_persisted(
         &mut self,
         block: &neo_protocol::payloads::block::Block,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         settings: &ProtocolSettings,
         header_backlog_present: bool,
     ) {
@@ -542,7 +545,7 @@ impl MemoryPool {
     pub fn reverify_top_unverified_transactions(
         &mut self,
         max_to_verify: usize,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         settings: &ProtocolSettings,
         header_backlog_present: bool,
     ) -> bool {
@@ -564,7 +567,7 @@ impl MemoryPool {
     fn reverify_unverified_transactions(
         &mut self,
         max_to_verify: usize,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         settings: &ProtocolSettings,
         time_budget: Option<Duration>,
     ) -> bool {

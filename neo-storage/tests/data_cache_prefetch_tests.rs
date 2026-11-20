@@ -2,17 +2,17 @@
 //!
 //! Every test drives the public API only. Two seams are used deliberately:
 //!
-//! * `DataCache::set_store_seek` records exactly what the prefetch asked the
+//! * `PersistenceDataCache::set_store_seek` records exactly what the prefetch asked the
 //!   backing store for (prefix, cursor, direction, limit), which is the only way
 //!   to prove the scan is bounded *at the source* rather than bounded after an
 //!   eager `Vec` was built;
-//! * `DataCache::set_generation_source` simulates a commit landing mid-scan.
+//! * `PersistenceDataCache::set_generation_source` simulates a commit landing mid-scan.
 
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use neo_storage::persistence::data_cache::{
-    DataCache, DataCacheConfig, PrefetchConfig, PrefetchLimits, PrefetchPattern,
+    DataCacheConfig, PersistenceDataCache, PrefetchConfig, PrefetchLimits, PrefetchPattern,
 };
 use neo_storage::persistence::providers::memory_store::MemoryStore;
 use neo_storage::persistence::write_store::WriteStore;
@@ -55,8 +55,8 @@ fn active_config(count: usize, max_scan_keys: usize) -> PrefetchConfig {
     }
 }
 
-fn cache_with(config: PrefetchConfig) -> DataCache {
-    DataCache::new_with_config(
+fn cache_with(config: PrefetchConfig) -> PersistenceDataCache {
+    PersistenceDataCache::new_with_config(
         false,
         None,
         None,
@@ -82,7 +82,7 @@ struct SeekCall {
 /// The delegate truncates to `limit`, which is what a real store is required to
 /// do; recording the call is what lets a test prove the limit reached it.
 fn install_recording_seek(
-    cache: &mut DataCache,
+    cache: &mut PersistenceDataCache,
     rows: Vec<(StorageKey, StorageItem)>,
     calls: Arc<Mutex<Vec<SeekCall>>>,
 ) {
@@ -401,7 +401,7 @@ fn a_cache_without_a_bounded_seam_never_falls_back_to_find() {
         rows(0x01, 10)
     });
 
-    let cache = DataCache::new_with_config(
+    let cache = PersistenceDataCache::new_with_config(
         false,
         None,
         Some(find),

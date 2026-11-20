@@ -1,14 +1,14 @@
 use neo_native_contracts::{GasToken, NativeContract, Notary};
 use neo_primitives::{UInt160, UInt256};
 use neo_protocol::payloads::{OracleResponse, Transaction, TransactionAttribute};
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use num_bigint::BigInt;
 use num_traits::Zero;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 type Payer = (UInt160, Option<UInt160>);
-type BalanceProvider = Arc<dyn Fn(&DataCache, &UInt160) -> BigInt + Send + Sync>;
+type BalanceProvider = Arc<dyn Fn(&PersistenceDataCache, &UInt160) -> BigInt + Send + Sync>;
 
 pub struct TransactionVerificationContext {
     sender_fee: HashMap<Payer, BigInt>,
@@ -23,7 +23,7 @@ impl TransactionVerificationContext {
 
     pub fn with_balance_provider<F>(provider: F) -> Self
     where
-        F: Fn(&DataCache, &UInt160) -> BigInt + Send + Sync + 'static,
+        F: Fn(&PersistenceDataCache, &UInt160) -> BigInt + Send + Sync + 'static,
     {
         let balance_provider: BalanceProvider = Arc::new(provider);
         Self {
@@ -80,7 +80,7 @@ impl TransactionVerificationContext {
         &self,
         tx: &Transaction,
         conflicting_txs: I,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
     ) -> bool
     where
         I: IntoIterator<Item = &'a Transaction>,
@@ -112,7 +112,7 @@ impl TransactionVerificationContext {
         true
     }
 
-    fn balance(&self, snapshot: &DataCache, account: &UInt160) -> BigInt {
+    fn balance(&self, snapshot: &PersistenceDataCache, account: &UInt160) -> BigInt {
         (self.balance_provider)(snapshot, account)
     }
 
@@ -134,7 +134,10 @@ impl Default for TransactionVerificationContext {
     }
 }
 
-fn default_balance_provider() -> impl Fn(&DataCache, &UInt160) -> BigInt + Send + Sync + 'static {
+fn default_balance_provider()
+-> impl Fn(&PersistenceDataCache, &UInt160) -> BigInt + Send + Sync + 'static {
     let gas = GasToken::new();
-    move |snapshot: &DataCache, account: &UInt160| gas.balance_of_snapshot(snapshot, account)
+    move |snapshot: &PersistenceDataCache, account: &UInt160| {
+        gas.balance_of_snapshot(snapshot, account)
+    }
 }

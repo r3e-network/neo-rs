@@ -10,7 +10,7 @@ use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_protocol::witness::Witness;
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::helper::Helper;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_vm::validate_strict_script;
 use std::sync::Arc;
 
@@ -98,7 +98,7 @@ pub fn verify_standard_witness(
 pub fn verify_transaction_witness(
     transaction: &Transaction,
     settings: &ProtocolSettings,
-    snapshot: &DataCache,
+    snapshot: &PersistenceDataCache,
     hash: &UInt160,
     witness: &Witness,
     gas: i64,

@@ -128,7 +128,7 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     // KeyPair) directly. The plan's light-dependency goal is adjusted
     // accordingly; port inversion was rejected to preserve single-definition
     // TypeId identity during the move. Task 21 removed the storage edge: the
-    // client no longer builds a DataCache for ledger extension calls, it reads
+    // client no longer builds a PersistenceDataCache for ledger extension calls, it reads
     // chain state through the `neo-wallets` chain-query port.
     ("neo-rpc-client", "neo-primitives"),
     ("neo-rpc-client", "neo-crypto"),

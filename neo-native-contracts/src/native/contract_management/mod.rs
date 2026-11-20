@@ -19,7 +19,7 @@ use neo_smart_contract::error::CoreResult as Result;
 use neo_smart_contract::error::ToNativeError;
 use neo_smart_contract::manifest::ContractManifest;
 use neo_storage::StorageKey;
-use neo_storage::persistence::{DataCache, StoreCache};
+use neo_storage::persistence::{PersistenceDataCache, StoreCache};
 use neo_vm::BinarySerializer;
 use neo_vm::StackItem;
 use neo_vm::{ExecutionEngineLimits, StackValue};
@@ -40,8 +40,8 @@ const PREFIX_CONTRACT_HASH: u8 = 12;
 /// Prefix for contract count
 const PREFIX_CONTRACT_COUNT: u8 = 16;
 
-/// Default minimum deployment fee (10 GAS)
-const DEFAULT_MINIMUM_DEPLOYMENT_FEE: i64 = 10_00000000;
+/// Default minimum deployment fee (10 GAS in datoshi)
+const DEFAULT_MINIMUM_DEPLOYMENT_FEE: i64 = 1_000_000_000;
 
 /// Contract storage state
 #[derive(Debug, Clone, Default)]

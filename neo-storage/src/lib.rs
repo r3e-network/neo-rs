@@ -40,6 +40,9 @@
 //! let key = StorageKey::create_with_uint160(-1, 0x14, &hash);
 //! ```
 
+// TODO: #![warn(missing_docs)] once the public surface (~85 undocumented
+// items) has been documented.
+
 pub mod cache;
 pub mod error;
 pub mod hash_utils;

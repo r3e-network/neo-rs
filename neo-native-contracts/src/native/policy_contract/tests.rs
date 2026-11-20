@@ -1,39 +1,39 @@
-//
-// tests.rs - Tests for PolicyContract
-//
-// Migrated from `neo-core/src/smart_contract/native/policy_contract/tests.rs`.
-// Test names preserved verbatim.
-//
-// Import adaptation:
-// - `crate::hardfork::HardforkManager` → `neo_protocol::HardforkManager`
-// - `crate::ledger::{Block, BlockHeader, create_genesis_block}` → `neo_protocol::execution::{Block, BlockHeader}` + `crate::genesis::create_genesis_block`
-// - `crate::neo_vm::StackItem` → `neo_vm::StackItem`
-// - `crate::network::p2p::payloads::{...}` → `neo_protocol::payloads::{...}`
-// - `crate::persistence::DataCache` → `neo_storage::persistence::DataCache`
-// - `crate::protocol_settings::ProtocolSettings` → `neo_protocol::ProtocolSettings`
-// - `crate::script_builder::ScriptBuilder` → `neo_vm::ScriptBuilder`
-// - `crate::smart_contract::application_engine::ApplicationEngine` → `neo_smart_contract::application_engine::ApplicationEngine`
-// - `crate::smart_contract::binary_serializer::BinarySerializer` → `neo_vm::BinarySerializer`
-// - `crate::smart_contract::call_flags::CallFlags` → `neo_primitives::CallFlags`
-// - `crate::smart_contract::contract::Contract` → `neo_smart_contract::contract::Contract`
-// - `crate::smart_contract::iterators::IteratorInterop` → `neo_smart_contract::iterators::IteratorInterop`
-// - `crate::smart_contract::iterators::iterator::StorageIterator` → `neo_smart_contract::iterators::StorageIterator`
-// - `crate::smart_contract::native::{...}` → `crate::native::{...}`
-// - `crate::smart_contract::storage_key::StorageKey` → `neo_storage::StorageKey`
-// - `crate::smart_contract::trigger_type::TriggerType` → `neo_primitives::trigger_type::TriggerType`
-// - `crate::{UInt160, UInt256, Verifiable}` → `neo_primitives::{UInt160, UInt256, Verifiable}`
-// - `crate::error::CoreResult` → `neo_smart_contract::error::CoreResult`
-// - `crate::smart_contract::application_engine::FEE_FACTOR` → `neo_smart_contract::application_engine::FEE_FACTOR`
-// - `crate::smart_contract::native::fungible_token::PREFIX_ACCOUNT` → `crate::native::fungible_token::PREFIX_ACCOUNT`
-// - `crate::persistence::StorageItem` → `neo_storage::StorageItem`
-//
-// NOTE (handoff): `hex::decode` is used below but `hex` is not yet a
-// dev-dependency of neo-native-contracts. Task-89 owns Cargo.toml.
-//
-// Task-191: `create_genesis_block` now lives in this crate (`crate::genesis`) and
-// returns `neo_protocol::payloads::Block` directly, so the former field-by-field
-// transcription out of neo-core's ledger `Block` is gone and the
-// `neo-native-contracts` → `neo-core` dev-edge is retired.
+//!
+//! tests.rs - Tests for PolicyContract
+//!
+//! Migrated from `neo-core/src/smart_contract/native/policy_contract/tests.rs`.
+//! Test names preserved verbatim.
+//!
+//! Import adaptation:
+//! - `crate::hardfork::HardforkManager` → `neo_protocol::HardforkManager`
+//! - `crate::ledger::{Block, BlockHeader, create_genesis_block}` → `neo_protocol::execution::{Block, BlockHeader}` + `crate::genesis::create_genesis_block`
+//! - `crate::neo_vm::StackItem` → `neo_vm::StackItem`
+//! - `crate::network::p2p::payloads::{...}` → `neo_protocol::payloads::{...}`
+//! - `crate::persistence::PersistenceDataCache` → `neo_storage::persistence::PersistenceDataCache`
+//! - `crate::protocol_settings::ProtocolSettings` → `neo_protocol::ProtocolSettings`
+//! - `crate::script_builder::ScriptBuilder` → `neo_vm::ScriptBuilder`
+//! - `crate::smart_contract::application_engine::ApplicationEngine` → `neo_smart_contract::application_engine::ApplicationEngine`
+//! - `crate::smart_contract::binary_serializer::BinarySerializer` → `neo_vm::BinarySerializer`
+//! - `crate::smart_contract::call_flags::CallFlags` → `neo_primitives::CallFlags`
+//! - `crate::smart_contract::contract::Contract` → `neo_smart_contract::contract::Contract`
+//! - `crate::smart_contract::iterators::IteratorInterop` → `neo_smart_contract::iterators::IteratorInterop`
+//! - `crate::smart_contract::iterators::iterator::StorageIterator` → `neo_smart_contract::iterators::StorageIterator`
+//! - `crate::smart_contract::native::{...}` → `crate::native::{...}`
+//! - `crate::smart_contract::storage_key::StorageKey` → `neo_storage::StorageKey`
+//! - `crate::smart_contract::trigger_type::TriggerType` → `neo_primitives::trigger_type::TriggerType`
+//! - `crate::{UInt160, UInt256, Verifiable}` → `neo_primitives::{UInt160, UInt256, Verifiable}`
+//! - `crate::error::CoreResult` → `neo_smart_contract::error::CoreResult`
+//! - `crate::smart_contract::application_engine::FEE_FACTOR` → `neo_smart_contract::application_engine::FEE_FACTOR`
+//! - `crate::smart_contract::native::fungible_token::PREFIX_ACCOUNT` → `crate::native::fungible_token::PREFIX_ACCOUNT`
+//! - `crate::persistence::StorageItem` → `neo_storage::StorageItem`
+//!
+//! NOTE (handoff): `hex::decode` is used below but `hex` is not yet a
+//! dev-dependency of neo-native-contracts. Task-89 owns Cargo.toml.
+//!
+//! Task-191: `create_genesis_block` now lives in this crate (`crate::genesis`) and
+//! returns `neo_protocol::payloads::Block` directly, so the former field-by-field
+//! transcription out of neo-core's ledger `Block` is gone and the
+//! `neo-native-contracts` → `neo-core` dev-edge is retired.
 
 use super::*;
 use crate::genesis::create_genesis_block;
@@ -55,7 +55,7 @@ use neo_smart_contract::contract::Contract;
 use neo_smart_contract::iterators::IteratorInterop;
 use neo_smart_contract::iterators::iterator::StorageIterator;
 use neo_storage::StorageKey;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_vm::BinarySerializer;
 use neo_vm::ScriptBuilder;
 use neo_vm::StackItem;
@@ -65,7 +65,7 @@ use num_traits::{ToPrimitive, Zero};
 use std::sync::Arc;
 
 #[test]
-fn test_whitelist_stack_value_roundtrip() {
+fn whitelist_stack_value_roundtrip() {
     let bytes = hex::decode("1122334455667788990011223344556677889900").unwrap();
     let contract_hash = UInt160::from_bytes(&bytes).unwrap();
     let method = "testMethod";
@@ -149,8 +149,8 @@ fn settings_all_active() -> ProtocolSettings {
     settings
 }
 
-fn make_snapshot_with_genesis(settings: &ProtocolSettings) -> Arc<DataCache> {
-    let snapshot = Arc::new(DataCache::new(false));
+fn make_snapshot_with_genesis(settings: &ProtocolSettings) -> Arc<PersistenceDataCache> {
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let genesis = create_genesis_block(settings);
 
     let mut on_persist = ApplicationEngine::new(
@@ -200,7 +200,7 @@ fn make_block(index: u32, timestamp: u64) -> Block {
 }
 
 fn make_engine(
-    snapshot: Arc<DataCache>,
+    snapshot: Arc<PersistenceDataCache>,
     settings: ProtocolSettings,
     signers: Vec<Signer>,
     persisting_block: Option<Block>,
@@ -229,7 +229,7 @@ fn make_engine(
 }
 
 fn make_engine_with_script(
-    snapshot: Arc<DataCache>,
+    snapshot: Arc<PersistenceDataCache>,
     settings: ProtocolSettings,
     signers: Vec<Signer>,
     persisting_block: Option<Block>,
@@ -259,13 +259,13 @@ fn make_engine_with_script(
     engine
 }
 
-fn committee_address(settings: &ProtocolSettings, snapshot: &DataCache) -> UInt160 {
+fn committee_address(settings: &ProtocolSettings, snapshot: &PersistenceDataCache) -> UInt160 {
     NativeHelpers::committee_address(settings, Some(snapshot))
 }
 
 struct PolicyTestHarness {
     settings: ProtocolSettings,
-    snapshot: Arc<DataCache>,
+    snapshot: Arc<PersistenceDataCache>,
     block: Block,
     policy: PolicyContract,
 }
@@ -375,7 +375,10 @@ macro_rules! policy_scalar_setter_test {
     };
 }
 
-fn almost_full_committee_address(settings: &ProtocolSettings, snapshot: &DataCache) -> UInt160 {
+fn almost_full_committee_address(
+    settings: &ProtocolSettings,
+    snapshot: &PersistenceDataCache,
+) -> UInt160 {
     let committee = NeoToken::new()
         .committee_from_snapshot(snapshot)
         .filter(|members| !members.is_empty())
@@ -441,7 +444,7 @@ fn emit_dynamic_call(
 fn policy_dispatch_method_covers_declared_metadata_names() {
     let policy = PolicyContract::new();
     let mut engine = make_engine(
-        Arc::new(DataCache::new(false)),
+        Arc::new(PersistenceDataCache::new(false)),
         settings_all_active(),
         Vec::new(),
         None,
@@ -473,7 +476,7 @@ fn policy_dispatch_method_covers_declared_metadata_names() {
 
 #[test]
 fn faun_empty_snapshot_exec_fee_defaults_keep_their_units() {
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         None,
@@ -512,7 +515,7 @@ fn on_persist_engine_defers_policy_initialize_until_native_on_persist() {
     let mut settings = ProtocolSettings::default();
     settings.hardforks.insert(Hardfork::HfFaun, 10);
 
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let key = PolicyContract::exec_fee_factor_key();
     assert!(snapshot.as_ref().try_get(&key).is_none());
 
@@ -1103,7 +1106,7 @@ fn check_set_max_traceable_blocks() {
 }
 
 #[test]
-fn test_list_blocked_accounts() {
+fn list_blocked_accounts() {
     let settings = settings_all_active();
     let snapshot = make_snapshot_with_genesis(&settings);
     let block = make_block(1000, 1_000);
@@ -1158,7 +1161,7 @@ fn test_list_blocked_accounts() {
 }
 
 #[test]
-fn test_white_list_fee() {
+fn white_list_fee() {
     let settings = settings_all_active();
     let snapshot = make_snapshot_with_genesis(&settings);
     let policy = PolicyContract::new();
@@ -1294,7 +1297,7 @@ fn test_white_list_fee() {
 }
 
 #[test]
-fn test_set_whitelist_fee_contract_negative_fixed_fee() {
+fn set_whitelist_fee_contract_negative_fixed_fee() {
     let harness = PolicyTestHarness::new();
     let mut engine = harness.committee_engine_without_block();
     let result = harness.call_policy(
@@ -1311,7 +1314,7 @@ fn test_set_whitelist_fee_contract_negative_fixed_fee() {
 }
 
 #[test]
-fn test_set_whitelist_fee_contract_when_contract_not_found() {
+fn set_whitelist_fee_contract_when_contract_not_found() {
     let harness = PolicyTestHarness::new();
     let mut engine = harness.committee_engine_without_block();
     let random_hash = UInt160::from_bytes(&[1u8; 20]).expect("hash");
@@ -1329,7 +1332,7 @@ fn test_set_whitelist_fee_contract_when_contract_not_found() {
 }
 
 #[test]
-fn test_set_whitelist_fee_contract_when_contract_not_in_abi() {
+fn set_whitelist_fee_contract_when_contract_not_in_abi() {
     let harness = PolicyTestHarness::new();
     let mut engine = harness.committee_engine_without_block();
     let result = harness.call_policy(
@@ -1346,7 +1349,7 @@ fn test_set_whitelist_fee_contract_when_contract_not_in_abi() {
 }
 
 #[test]
-fn test_set_whitelist_fee_contract_when_arg_count_mismatch() {
+fn set_whitelist_fee_contract_when_arg_count_mismatch() {
     let harness = PolicyTestHarness::new();
     let mut engine = harness.committee_engine_without_block();
     let result = harness.call_policy(
@@ -1363,7 +1366,7 @@ fn test_set_whitelist_fee_contract_when_arg_count_mismatch() {
 }
 
 #[test]
-fn test_set_whitelist_fee_contract_when_not_committee() {
+fn set_whitelist_fee_contract_when_not_committee() {
     let harness = PolicyTestHarness::new();
     let mut engine = harness.signer_engine_without_block(UInt160::zero());
     let result = harness.call_policy(
@@ -1380,7 +1383,7 @@ fn test_set_whitelist_fee_contract_when_not_committee() {
 }
 
 #[test]
-fn test_set_whitelist_fee_contract_set_contract() {
+fn set_whitelist_fee_contract_set_contract() {
     let harness = PolicyTestHarness::new();
     let mut engine = harness.committee_engine_without_block();
 

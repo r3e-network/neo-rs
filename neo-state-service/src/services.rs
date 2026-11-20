@@ -18,7 +18,7 @@ pub trait StateStoreService: Send + Sync {
     fn stage_local_root(
         &self,
         state_root: &StateRoot,
-        snapshot: &neo_storage::persistence::DataCache,
+        snapshot: &neo_storage::persistence::PersistenceDataCache,
     ) -> bool;
 
     /// Finishes a staged root after the block transaction commits successfully.

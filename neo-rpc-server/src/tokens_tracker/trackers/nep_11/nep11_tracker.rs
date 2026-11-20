@@ -11,7 +11,7 @@ use neo_native_contracts::native::contract_management::ContractManagement;
 use neo_primitives::UInt160;
 use neo_primitives::log_level::LogLevel;
 use neo_protocol::execution::Block;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_system::NeoSystem;
 use neo_vm::VmState as VMState;
 use num_bigint::BigInt;
@@ -106,7 +106,11 @@ impl Nep11Tracker {
         *transfer_index += 1;
     }
 
-    fn save_divisible_nft_balance(&mut self, record: &TransferRecord, snapshot: &DataCache) {
+    fn save_divisible_nft_balance(
+        &mut self,
+        record: &TransferRecord,
+        snapshot: &PersistenceDataCache,
+    ) {
         let Some(token_id) = record.token_id.clone() else {
             TrackerBase::log(
                 self.track_name(),
@@ -225,7 +229,7 @@ impl Tracker for Nep11Tracker {
         &mut self,
         _system: &NeoSystem,
         block: &Block,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         executed_list: &[ApplicationExecuted],
     ) {
         self.current_block = Some(block.clone());

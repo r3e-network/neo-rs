@@ -11,7 +11,7 @@ pub const UINT160_SIZE: usize = ADDRESS_SIZE;
 
 crate::uint_type! {
     /// Represents a 160-bit unsigned integer.
-    #[derive(Clone, Copy, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
+    #[derive(Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
     #[repr(C)]
     pub struct UInt160 {
         size = UINT160_SIZE;

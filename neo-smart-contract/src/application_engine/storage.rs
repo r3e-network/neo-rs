@@ -471,20 +471,24 @@ mod tests {
     impl NativeStateReader for NoopStateReader {
         fn contract(
             &self,
-            _snapshot: &DataCache,
+            _snapshot: &PersistenceDataCache,
             _hash: &UInt160,
         ) -> CoreResult<Option<ContractState>> {
             Ok(None)
         }
-        fn current_index(&self, _snapshot: &DataCache) -> CoreResult<u32> {
+        fn current_index(&self, _snapshot: &PersistenceDataCache) -> CoreResult<u32> {
             Ok(0)
         }
-        fn is_blocked(&self, _snapshot: &DataCache, _hash: &UInt160) -> CoreResult<bool> {
+        fn is_blocked(
+            &self,
+            _snapshot: &PersistenceDataCache,
+            _hash: &UInt160,
+        ) -> CoreResult<bool> {
             Ok(false)
         }
         fn whitelisted_fee(
             &self,
-            _snapshot: &DataCache,
+            _snapshot: &PersistenceDataCache,
             _hash: &UInt160,
             _method: &str,
             _param_count: u32,
@@ -493,7 +497,7 @@ mod tests {
         }
         fn oracle_original_signers(
             &self,
-            _snapshot: &DataCache,
+            _snapshot: &PersistenceDataCache,
             _id: u64,
         ) -> CoreResult<Option<Vec<Signer>>> {
             Ok(None)
@@ -504,7 +508,7 @@ mod tests {
         fn resolve(
             &self,
             _verifiable: &dyn neo_primitives::Verifiable,
-            _snapshot: &DataCache,
+            _snapshot: &PersistenceDataCache,
         ) -> Vec<UInt160> {
             Vec::new()
         }
@@ -520,12 +524,15 @@ mod tests {
         }
     }
 
-    fn contract_engine(snapshot: Arc<DataCache>, script: Vec<u8>) -> (ApplicationEngine, UInt160) {
+    fn contract_engine(
+        snapshot: Arc<PersistenceDataCache>,
+        script: Vec<u8>,
+    ) -> (ApplicationEngine, UInt160) {
         contract_engine_with_container(snapshot, script, None)
     }
 
     fn contract_engine_with_container(
-        snapshot: Arc<DataCache>,
+        snapshot: Arc<PersistenceDataCache>,
         script: Vec<u8>,
         container: Option<Arc<dyn Verifiable>>,
     ) -> (ApplicationEngine, UInt160) {
@@ -554,7 +561,7 @@ mod tests {
 
     #[test]
     fn local_put_pops_key_before_value() {
-        let snapshot = Arc::new(DataCache::new(false));
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
         let mut script = ScriptBuilder::new();
         // C# scripts push value first, then key; PutLocal pops key, then value.
         script.emit_push(b"value");
@@ -579,7 +586,7 @@ mod tests {
 
     #[test]
     fn local_find_pops_prefix_before_options() {
-        let snapshot = DataCache::new(false);
+        let snapshot = PersistenceDataCache::new(false);
         snapshot.add(
             StorageKey::new(42, b"ab1".to_vec()),
             StorageItem::from_bytes(b"one".to_vec()),
@@ -655,12 +662,12 @@ mod tests {
     }
 
     /// Builds an engine for `script` with read-write set recording enabled.
-    fn tracked_engine(snapshot: &Arc<DataCache>, script: Vec<u8>) -> ApplicationEngine {
+    fn tracked_engine(snapshot: &Arc<PersistenceDataCache>, script: Vec<u8>) -> ApplicationEngine {
         tracked_engine_with_container(snapshot, script, None)
     }
 
     fn tracked_engine_with_container(
-        snapshot: &Arc<DataCache>,
+        snapshot: &Arc<PersistenceDataCache>,
         script: Vec<u8>,
         container: Option<Arc<dyn Verifiable>>,
     ) -> ApplicationEngine {
@@ -671,7 +678,7 @@ mod tests {
         engine
     }
 
-    fn run_script(snapshot: &Arc<DataCache>, script: Vec<u8>) -> RwSetTracker {
+    fn run_script(snapshot: &Arc<PersistenceDataCache>, script: Vec<u8>) -> RwSetTracker {
         let mut engine = tracked_engine(snapshot, script);
         assert_eq!(engine.execute_allow_fault(), VmState::HALT);
         engine.take_rw_set().expect("recorded read-write set")
@@ -679,7 +686,7 @@ mod tests {
 
     #[test]
     fn rw_set_tracking_is_off_by_default() {
-        let snapshot = Arc::new(DataCache::new(false));
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
         let script = read_then_write_script(CONTRACT_ID, b"missing", b"stored", b"value");
         let (mut engine, _) = contract_engine(Arc::clone(&snapshot), script);
 
@@ -697,7 +704,7 @@ mod tests {
 
     #[test]
     fn rw_set_records_reads_absent_reads_and_writes() {
-        let snapshot = Arc::new(DataCache::new(false));
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
         let script = read_then_write_script(CONTRACT_ID, b"missing", b"stored", b"value");
         let set = run_script(&snapshot, script);
 
@@ -716,7 +723,7 @@ mod tests {
 
     #[test]
     fn rw_set_marks_present_reads_as_non_absent() {
-        let snapshot = DataCache::new(false);
+        let snapshot = PersistenceDataCache::new(false);
         snapshot.add(
             StorageKey::new(CONTRACT_ID, b"present".to_vec()),
             StorageItem::from_bytes(b"value".to_vec()),
@@ -731,7 +738,7 @@ mod tests {
 
     #[test]
     fn rw_sets_of_two_transactions_detect_conflicts() {
-        let snapshot = Arc::new(DataCache::new(false));
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
         let set_a = run_script(
             &snapshot,
             read_then_write_script(CONTRACT_ID, b"shared", b"a-only", b"1"),
@@ -768,7 +775,7 @@ mod tests {
 
     #[test]
     fn rw_sets_detect_write_write_conflicts() {
-        let snapshot = Arc::new(DataCache::new(false));
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
         let first = run_script(
             &snapshot,
             read_then_write_script(CONTRACT_ID, b"k1", b"same", b"1"),
@@ -784,7 +791,7 @@ mod tests {
 
     #[test]
     fn rw_set_records_find_scans_as_prefix_reads() {
-        let snapshot = DataCache::new(false);
+        let snapshot = PersistenceDataCache::new(false);
         snapshot.add(
             StorageKey::new(CONTRACT_ID, b"p/x".to_vec()),
             StorageItem::from_bytes(b"1".to_vec()),
@@ -827,7 +834,7 @@ mod tests {
 
     #[test]
     fn rw_set_records_notifications_and_logs() {
-        let snapshot = Arc::new(DataCache::new(false));
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
         let script_hash = UInt160::from_bytes(&[0x42; 20]).expect("contract hash");
         let mut script = ScriptBuilder::new();
         script.emit_push(b"payload");
@@ -857,7 +864,7 @@ mod tests {
 
     #[test]
     fn disabling_rw_set_tracking_drops_recorded_data() {
-        let snapshot = Arc::new(DataCache::new(false));
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
         let script = read_then_write_script(CONTRACT_ID, b"missing", b"stored", b"value");
         let (mut engine, _) = contract_engine(Arc::clone(&snapshot), script);
 

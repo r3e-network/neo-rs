@@ -47,6 +47,14 @@ impl LedgerContract {
             "0xda65b600f7124ce6c79950c1772a36403104f2be"
         )
     }
+
+    fn is_traceable_block(current_index: u32, target_index: u32, max_traceable: u32) -> bool {
+        if target_index > current_index {
+            return false;
+        }
+        let window_end = target_index.saturating_add(max_traceable);
+        window_end > current_index
+    }
 }
 
 /// Hash or index parameter for block queries
@@ -57,7 +65,6 @@ pub enum HashOrIndex {
     Index(u32),
 }
 
-#[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod tests {
     use self::keys::{block_hash_storage_key, block_storage_key, transaction_storage_key};
@@ -68,7 +75,7 @@ mod tests {
     use neo_protocol::payloads::Transaction;
     use neo_protocol::payloads::Witness;
     use neo_protocol::payloads::signer::Signer;
-    use neo_storage::persistence::DataCache;
+    use neo_storage::persistence::PersistenceDataCache;
     use neo_vm::OpCode;
     use neo_vm::VmState as VMState;
 
@@ -92,7 +99,7 @@ mod tests {
     #[test]
     fn update_vm_state_overwrites_persisted_value() {
         let ledger = LedgerContract::new();
-        let snapshot = DataCache::new(false);
+        let snapshot = PersistenceDataCache::new(false);
 
         let mut tx = make_signed_transaction();
         tx.set_script(vec![0xAA]);
@@ -117,7 +124,7 @@ mod tests {
     #[test]
     fn batch_vm_state_update_applies_all_entries() {
         let ledger = LedgerContract::new();
-        let snapshot = DataCache::new(false);
+        let snapshot = PersistenceDataCache::new(false);
 
         let mut tx1 = make_signed_transaction();
         tx1.set_nonce(100);
@@ -169,7 +176,7 @@ mod tests {
     #[test]
     fn persist_transaction_state_rejects_unserializable_hash_without_zero_key() {
         let ledger = LedgerContract::new();
-        let snapshot = DataCache::new(false);
+        let snapshot = PersistenceDataCache::new(false);
         let tx = make_unserializable_transaction();
         let state = PersistedTransactionState::new(&tx, 42);
 
@@ -183,7 +190,7 @@ mod tests {
     #[test]
     fn store_block_state_rejects_unserializable_transaction_before_tracking_writes() {
         let ledger = LedgerContract::new();
-        let snapshot = DataCache::new(false);
+        let snapshot = PersistenceDataCache::new(false);
         let tx = make_unserializable_transaction();
         let block = Block::new(BlockHeader::default(), vec![tx.clone()]);
         let tx_states = vec![PersistedTransactionState::new(&tx, block.index())];
@@ -232,7 +239,7 @@ mod tests {
     #[test]
     fn conflict_stub_requires_traceable_base_and_matching_signer() {
         let ledger = LedgerContract::new();
-        let snapshot = DataCache::new(false);
+        let snapshot = PersistenceDataCache::new(false);
         let current_hash = UInt256::from_bytes(&[0xCC; 32]).unwrap();
         ledger
             .set_current_block_state(&snapshot, &current_hash, 100)
@@ -280,15 +287,5 @@ mod tests {
                 .contains_conflict_hash(&snapshot, &base_only_conflict, &[signer], 10)
                 .expect("base-only conflict")
         );
-    }
-}
-
-impl LedgerContract {
-    fn is_traceable_block(current_index: u32, target_index: u32, max_traceable: u32) -> bool {
-        if target_index > current_index {
-            return false;
-        }
-        let window_end = target_index.saturating_add(max_traceable);
-        window_end > current_index
     }
 }

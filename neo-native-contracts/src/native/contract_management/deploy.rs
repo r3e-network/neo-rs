@@ -1,13 +1,13 @@
-//
-// deploy.rs - Contract deployment for ContractManagement
-//
-// Migrated from `neo-core/src/smart_contract/native/contract_management/deploy.rs`.
-// `crate::hardfork::Hardfork` → `neo_protocol::Hardfork`,
-// `crate::script_validation` → `neo_vm` (thin re-export in neo-core),
-// `crate::smart_contract::call_flags::CallFlags` → `neo_primitives::CallFlags`,
-// `crate::smart_contract::manifest::*` → `neo_smart_contract::manifest::*`,
-// `crate::smart_contract::native::security_fixes::*` → `crate::native::security_fixes::*`.
-//
+//!
+//! deploy.rs - Contract deployment for ContractManagement
+//!
+//! Migrated from `neo-core/src/smart_contract/native/contract_management/deploy.rs`.
+//! `crate::hardfork::Hardfork` → `neo_protocol::Hardfork`,
+//! `crate::script_validation` → `neo_vm` (thin re-export in neo-core),
+//! `crate::smart_contract::call_flags::CallFlags` → `neo_primitives::CallFlags`,
+//! `crate::smart_contract::manifest::*` → `neo_smart_contract::manifest::*`,
+//! `crate::smart_contract::native::security_fixes::*` → `crate::native::security_fixes::*`.
+//!
 
 use super::*;
 use crate::native::security_fixes::{

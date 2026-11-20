@@ -45,7 +45,7 @@ use neo_protocol::payloads::{Block as PayloadBlock, Header};
 use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_smart_contract::error::CoreError;
 use neo_smart_contract::error::CoreResult;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_storage::persistence::StoreCache;
 use std::any::Any;
 use std::collections::HashSet;

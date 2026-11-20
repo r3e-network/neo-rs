@@ -1,17 +1,19 @@
-//
-// native_impl.rs - NativeContract trait implementation for ContractManagement
-//
-// Migrated from
-// `neo-core/src/smart_contract/native/contract_management/native_impl.rs`.
-// `crate::protocol_settings::ProtocolSettings` → `neo_protocol::ProtocolSettings`;
-// the serializer and `Interoperable` move to `neo_vm`, `StorageContext` moves to
-// `neo_smart_contract::storage_context`; manifest types move to
-// `neo_smart_contract::manifest`;
-// `crate::impl_default_via_new!` → `neo_storage::impl_default_via_new!`.
-//
+//!
+//! native_impl.rs - NativeContract trait implementation for ContractManagement
+//!
+//! Migrated from
+//! `neo-core/src/smart_contract/native/contract_management/native_impl.rs`.
+//! `crate::protocol_settings::ProtocolSettings` → `neo_protocol::ProtocolSettings`;
+//! the serializer and `Interoperable` move to `neo_vm`, `StorageContext` moves to
+//! `neo_smart_contract::storage_context`; manifest types move to
+//! `neo_smart_contract::manifest`;
+//! `crate::impl_default_via_new!` → `neo_storage::impl_default_via_new!`.
+//!
 
 use super::*;
 use neo_protocol::ProtocolSettings;
+use neo_smart_contract::error::CoreResult;
+use neo_smart_contract::impl_native_contract;
 use neo_smart_contract::manifest::ContractEventDescriptor;
 use neo_smart_contract::storage_context::StorageContext;
 use neo_vm::BinarySerializer;
@@ -40,24 +42,14 @@ fn put_storage_if_changed(
 }
 
 impl NativeContract for ContractManagement {
+    impl_native_contract!(metadata_only: hash, "ContractManagement", methods);
+
     fn id(&self) -> i32 {
         self.id
     }
 
-    fn initialize(&self, engine: &mut ApplicationEngine) -> Result<()> {
+    fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         self.hydrate_from_engine(engine)
-    }
-
-    fn name(&self) -> &str {
-        "ContractManagement"
-    }
-
-    fn hash(&self) -> UInt160 {
-        self.hash
-    }
-
-    fn methods(&self) -> &[NativeMethod] {
-        self.methods
     }
 
     fn events(
@@ -73,7 +65,7 @@ impl NativeContract for ContractManagement {
         engine: &mut ApplicationEngine,
         method: &str,
         args: &[Vec<u8>],
-    ) -> Result<Vec<u8>> {
+    ) -> CoreResult<Vec<u8>> {
         match method {
             "getContract" => {
                 if args.len() != 1 {
@@ -263,11 +255,7 @@ impl NativeContract for ContractManagement {
         }
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn on_persist(&self, engine: &mut ApplicationEngine) -> Result<()> {
+    fn on_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         let persisting_block = engine
             .persisting_block()
             .ok_or_else(|| Error::native_contract("No persisting block available"))?;

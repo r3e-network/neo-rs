@@ -9,7 +9,7 @@ use neo_protocol::payloads::signer::Signer;
 use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_protocol::witness::Witness;
 use neo_smart_contract::error::CoreError;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_system::events::handlers::CoreResult;
 use neo_system::i_event_handlers::{CommittedHandler, CommittingHandler};
 use neo_system::neo_system::{
@@ -46,7 +46,7 @@ impl CommittingHandler for FastSyncCaptureHandler {
         &self,
         _system: &dyn std::any::Any,
         _block: &LedgerBlock,
-        _snapshot: &DataCache,
+        _snapshot: &PersistenceDataCache,
         application_executed_list: &[ApplicationExecuted],
     ) {
         self.observed_len
@@ -59,7 +59,7 @@ impl CommittingHandler for FailingCommittingHandler {
         &self,
         _system: &dyn std::any::Any,
         _block: &LedgerBlock,
-        _snapshot: &DataCache,
+        _snapshot: &PersistenceDataCache,
         _application_executed_list: &[ApplicationExecuted],
     ) {
     }
@@ -68,7 +68,7 @@ impl CommittingHandler for FailingCommittingHandler {
         &self,
         _system: &dyn std::any::Any,
         _block: &LedgerBlock,
-        _snapshot: &DataCache,
+        _snapshot: &PersistenceDataCache,
         _application_executed_list: &[ApplicationExecuted],
     ) -> CoreResult<()> {
         Err(CoreError::system("injected committing failure").into())
@@ -80,7 +80,7 @@ impl CommittingHandler for FillEvidenceQueueHandler {
         &self,
         _system: &dyn std::any::Any,
         _block: &LedgerBlock,
-        _snapshot: &DataCache,
+        _snapshot: &PersistenceDataCache,
         _application_executed_list: &[ApplicationExecuted],
     ) {
         for _ in 0..self.count {
@@ -101,7 +101,7 @@ impl CommittingHandler for LifecycleCapture {
         &self,
         _system: &dyn std::any::Any,
         _block: &LedgerBlock,
-        _snapshot: &DataCache,
+        _snapshot: &PersistenceDataCache,
         _application_executed_list: &[ApplicationExecuted],
     ) {
         self.events

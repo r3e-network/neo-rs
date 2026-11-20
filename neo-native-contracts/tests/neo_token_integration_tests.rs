@@ -4,7 +4,7 @@ use neo_native_contracts::{NativeContract, NeoToken};
 use neo_protocol::ProtocolSettings;
 use neo_protocol::execution::Block;
 use neo_smart_contract::application_engine::ApplicationEngine;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use std::sync::Arc;
 
 fn make_test_settings() -> ProtocolSettings {
@@ -26,7 +26,7 @@ fn make_test_block(index: u32) -> Block {
     Block::new(header, vec![])
 }
 
-fn make_test_engine(snapshot: Arc<DataCache>) -> ApplicationEngine {
+fn make_test_engine(snapshot: Arc<PersistenceDataCache>) -> ApplicationEngine {
     let settings = make_test_settings();
     let block = make_test_block(0);
 
@@ -128,7 +128,7 @@ fn neo_token_has_governance_methods() {
 #[test]
 fn neo_token_total_supply_is_100_million() {
     let neo = NeoToken::new();
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let mut engine = make_test_engine(snapshot);
 
     let result = neo.invoke(&mut engine, "totalSupply", &[]);
@@ -139,7 +139,7 @@ fn neo_token_total_supply_is_100_million() {
 #[test]
 fn neo_token_rejects_unknown_method() {
     let neo = NeoToken::new();
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let mut engine = make_test_engine(snapshot);
 
     let result = neo.invoke(&mut engine, "unknownMethod", &[]);

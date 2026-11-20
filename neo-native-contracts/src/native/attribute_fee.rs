@@ -45,10 +45,10 @@ mod tests {
     use super::*;
     use neo_primitives::{UInt160, UInt256, WitnessScope};
     use neo_protocol::payloads::{Conflicts, NotaryAssisted, Signer};
-    use neo_storage::persistence::DataCache;
+    use neo_storage::persistence::PersistenceDataCache;
 
-    fn empty_snapshot() -> DataCache {
-        DataCache::new(true)
+    fn empty_snapshot() -> PersistenceDataCache {
+        PersistenceDataCache::new(true)
     }
 
     #[test]

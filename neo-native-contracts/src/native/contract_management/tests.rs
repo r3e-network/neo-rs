@@ -1,16 +1,16 @@
-//
-// tests.rs - Unit tests for ContractManagement
-//
-// Migrated from `neo-core/src/smart_contract/native/contract_management/tests.rs`.
-// Import roots move to their owning crates: `crate::neo_io` → `neo_io`,
-// `crate::neo_vm`/`crate::smart_contract::binary_serializer` → `neo_vm`,
-// `crate::network::p2p::payloads::*`/`crate::witness`/`crate::protocol_settings`
-// → `neo_protocol`, `crate::persistence::*` → `neo_storage`,
-// `crate::smart_contract::*` → `neo_smart_contract`/`neo_primitives`,
-// `crate::wallets::KeyPair` → `neo_crypto` P-256 primitives (no neo-wallets
-// dev-dependency; breaks the native-contracts <-> wallets dev cycle),
-// `crate::{UInt160, Verifiable, WitnessScope}` → `neo_primitives`.
-//
+//!
+//! tests.rs - Unit tests for ContractManagement
+//!
+//! Migrated from `neo-core/src/smart_contract/native/contract_management/tests.rs`.
+//! Import roots move to their owning crates: `crate::neo_io` → `neo_io`,
+//! `crate::neo_vm`/`crate::smart_contract::binary_serializer` → `neo_vm`,
+//! `crate::network::p2p::payloads::*`/`crate::witness`/`crate::protocol_settings`
+//! → `neo_protocol`, `crate::persistence::*` → `neo_storage`,
+//! `crate::smart_contract::*` → `neo_smart_contract`/`neo_primitives`,
+//! `crate::wallets::KeyPair` → `neo_crypto` P-256 primitives (no neo-wallets
+//! dev-dependency; breaks the native-contracts <-> wallets dev cycle),
+//! `crate::{UInt160, Verifiable, WitnessScope}` → `neo_primitives`.
+//!
 
 use super::*;
 use neo_crypto::{ECC, ECCurve, ECDsa, ECPoint};
@@ -29,7 +29,7 @@ use neo_smart_contract::manifest::{
 };
 use neo_storage::StorageItem;
 use neo_storage::persistence::providers::MemoryStore;
-use neo_storage::persistence::{DataCache, SeekDirection, Store, StoreCache};
+use neo_storage::persistence::{PersistenceDataCache, SeekDirection, Store, StoreCache};
 use neo_vm::{BinarySerializer, OpCode, StackItem};
 use std::sync::Arc;
 
@@ -87,7 +87,7 @@ fn assert_native_contract_error_contains(err: Error, expected: &str) {
     }
 }
 
-fn add_contract_to_snapshot(snapshot: &DataCache, contract: &ContractState) {
+fn add_contract_to_snapshot(snapshot: &PersistenceDataCache, contract: &ContractState) {
     let mut writer = BinaryWriter::new();
     contract.serialize(&mut writer).expect("serialize contract");
     let key = StorageKey::new(
@@ -107,7 +107,7 @@ fn add_contract_to_snapshot(snapshot: &DataCache, contract: &ContractState) {
 }
 
 fn make_engine(
-    snapshot: Arc<DataCache>,
+    snapshot: Arc<PersistenceDataCache>,
     sender: Option<UInt160>,
     gas_limit: i64,
 ) -> ApplicationEngine {
@@ -135,7 +135,7 @@ fn make_engine(
 
 #[test]
 fn deploy_rejects_missing_sender_and_invalid_payloads() {
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let cm_hash = ContractManagement::new().hash();
     let nef = make_nef(vec![OpCode::RET.byte(); u8::MAX as usize]);
     let nef_bytes = nef.to_bytes();
@@ -199,7 +199,7 @@ fn deploy_rejects_missing_sender_and_invalid_payloads() {
 
 #[test]
 fn deploy_returns_expected_hash_and_prevents_duplicates() {
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let cm_hash = ContractManagement::new().hash();
     let nef = make_nef(vec![OpCode::RET.byte(); u8::MAX as usize]);
     let nef_bytes = nef.to_bytes();
@@ -243,7 +243,7 @@ fn deploy_returns_expected_hash_and_prevents_duplicates() {
 
 #[test]
 fn deploy_accepts_manifest_with_empty_permissions() {
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let cm_hash = ContractManagement::new().hash();
     let nef = make_nef(vec![OpCode::RET.byte(); u8::MAX as usize]);
     let nef_bytes = nef.to_bytes();
@@ -266,7 +266,7 @@ fn deploy_accepts_manifest_with_empty_permissions() {
 
 #[test]
 fn deploy_reads_next_contract_id_from_variable_length_storage_integer() {
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let cm = ContractManagement::new();
     let cm_hash = cm.hash();
 
@@ -354,7 +354,7 @@ fn deploy_increments_contract_id_after_store_roundtrip() {
 
 #[test]
 fn update_preserves_storage_and_increments_counter() {
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let cm_hash = ContractManagement::new().hash();
 
     let initial_nef = make_nef(vec![OpCode::RET.byte()]);
@@ -452,7 +452,7 @@ fn update_preserves_storage_and_increments_counter() {
 
 #[test]
 fn update_requires_calling_context() {
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let cm_hash = ContractManagement::new().hash();
     let nef = make_nef(vec![OpCode::RET.byte()]);
     let method = ContractMethodDescriptor::new(
@@ -480,7 +480,7 @@ fn update_requires_calling_context() {
 
 #[test]
 fn update_rejects_empty_payloads() {
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let cm_hash = ContractManagement::new().hash();
     let nef = make_nef(vec![OpCode::RET.byte()]);
     let manifest = default_manifest();
@@ -523,7 +523,7 @@ fn update_rejects_empty_payloads() {
 
 #[test]
 fn update_rejects_oversized_manifest() {
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let cm_hash = ContractManagement::new().hash();
     let nef = make_nef(vec![OpCode::RET.byte()]);
     let manifest = default_manifest();
@@ -571,7 +571,7 @@ fn update_rejects_oversized_manifest() {
 
 #[test]
 fn is_contract_and_list_contracts_filter_native() {
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let cm = ContractManagement::new();
     let manifest = default_manifest();
     let nef = make_nef(vec![OpCode::RET.byte()]);
@@ -593,7 +593,7 @@ fn is_contract_and_list_contracts_filter_native() {
 
 #[test]
 fn list_contracts_rejects_malformed_contract_payload() {
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let hash = UInt160::from_bytes(&[0x11; 20]).expect("hash");
     let key = StorageKey::new(
         ContractManagement::ID,
@@ -608,7 +608,7 @@ fn list_contracts_rejects_malformed_contract_payload() {
 
 #[test]
 fn validate_snapshot_integrity_rejects_duplicate_non_native_ids() {
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let manifest = default_manifest();
     let nef = make_nef(vec![OpCode::RET.byte()]);
 
@@ -638,7 +638,7 @@ fn validate_snapshot_integrity_rejects_duplicate_non_native_ids() {
 
 #[test]
 fn hydrate_from_engine_rejects_duplicate_non_native_ids() {
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let manifest = default_manifest();
     let nef = make_nef(vec![OpCode::RET.byte()]);
     let cm = ContractManagement::new();
@@ -744,7 +744,7 @@ fn contract_hashes_sorted_and_non_native() {
 
 #[test]
 fn get_contract_hashes_returns_iterator() {
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let cm_hash = ContractManagement::new().hash();
     let manifest = default_manifest();
     let nef = make_nef(vec![OpCode::RET.byte()]);
@@ -791,7 +791,7 @@ fn get_contract_hashes_returns_iterator() {
 
 #[test]
 fn destroy_removes_contract_and_storage() {
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let cm_hash = ContractManagement::new().hash();
 
     let mut engine = make_engine(Arc::clone(&snapshot), Some(UInt160::zero()), 50_000_000_000);
@@ -857,7 +857,7 @@ fn destroy_removes_contract_and_storage() {
 
 #[test]
 fn get_contract_hashes_excludes_destroyed_contract_in_same_snapshot() {
-    let snapshot = Arc::new(DataCache::new(false));
+    let snapshot = Arc::new(PersistenceDataCache::new(false));
     let cm_hash = ContractManagement::new().hash();
 
     let mut engine = make_engine(Arc::clone(&snapshot), Some(UInt160::zero()), 50_000_000_000);
@@ -923,7 +923,7 @@ fn get_contract_hashes_excludes_destroyed_contract_in_same_snapshot() {
 
 #[test]
 fn update_counter_peek_matches_the_stored_record() {
-    let snapshot = DataCache::new(false);
+    let snapshot = PersistenceDataCache::new(false);
     let mut contract = ContractState::default();
     contract.id = 7;
     contract.hash = UInt160::from_bytes(&[0x11; 20]).expect("hash");

@@ -1,7 +1,7 @@
 //! Read-only canonical chain-state projection port.
 //!
 //! Replaces the session/task-manager reads that previously went through
-//! `NeoSystemContext`, `LedgerContract`, and a `DataCache`/store snapshot. The
+//! `NeoSystemContext`, `LedgerContract`, and a `PersistenceDataCache`/store snapshot. The
 //! port names only canonical protocol payloads and primitives, so the P2P
 //! layer never depends on ledger, storage, native-contract, or system types.
 

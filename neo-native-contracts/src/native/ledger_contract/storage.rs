@@ -6,7 +6,7 @@
 //! - `crate::error::{CoreError, CoreResult}` → `neo_smart_contract::error::{CoreError, CoreResult}`
 //! - `crate::hardfork::Hardfork` → `neo_protocol::Hardfork`
 //! - `crate::ledger::Block` → `neo_protocol::execution::Block`
-//! - `crate::persistence::{DataCache, read_only_store::ReadOnlyStoreGeneric}` → `neo_storage::persistence::{DataCache, read_only_store::ReadOnlyStoreGeneric}`
+//! - `crate::persistence::{PersistenceDataCache, read_only_store::ReadOnlyStoreGeneric}` → `neo_storage::persistence::{PersistenceDataCache, read_only_store::ReadOnlyStoreGeneric}`
 //! - `crate::protocol_settings::ProtocolSettings` → `neo_protocol::ProtocolSettings`
 //! - `crate::smart_contract::native::{policy_contract::PolicyContract, trimmed_block::TrimmedBlock}` → `crate::native::{policy_contract::PolicyContract, trimmed_block::TrimmedBlock}`
 //! - `crate::smart_contract::{StorageItem, StorageKey}` → `neo_storage::{StorageItem, StorageKey}`
@@ -28,7 +28,7 @@ use neo_protocol::Hardfork;
 use neo_protocol::ProtocolSettings;
 use neo_protocol::execution::Block;
 use neo_smart_contract::error::{CoreError as Error, CoreResult as Result};
-use neo_storage::persistence::{DataCache, read_only_store::ReadOnlyStoreGeneric};
+use neo_storage::persistence::{PersistenceDataCache, read_only_store::ReadOnlyStoreGeneric};
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm::VmState as VMState;
 
@@ -272,7 +272,7 @@ impl LedgerContract {
     /// has been staged successfully, normally through [`Self::set_current_block_state`].
     pub fn store_block_state(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         block: &Block,
         tx_states: &[PersistedTransactionState],
     ) -> Result<()> {
@@ -311,7 +311,7 @@ impl LedgerContract {
 
     pub(super) fn update_current_block_state(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         hash: &UInt256,
         index: u32,
     ) -> Result<()> {
@@ -324,7 +324,7 @@ impl LedgerContract {
     /// Repairs or updates the persisted current block pointer.
     pub fn set_current_block_state(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         hash: &UInt256,
         index: u32,
     ) -> Result<()> {
@@ -334,7 +334,7 @@ impl LedgerContract {
     #[allow(dead_code)]
     pub(crate) fn persist_transaction_states(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         states: &[PersistedTransactionState],
     ) -> Result<()> {
         let tx_records = self.prepare_transaction_records(states)?;
@@ -345,7 +345,7 @@ impl LedgerContract {
     #[allow(dead_code)]
     pub(crate) fn persist_transaction_state(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         state: &PersistedTransactionState,
     ) -> Result<()> {
         let tx_hash = state.try_transaction_hash()?;
@@ -370,7 +370,11 @@ impl LedgerContract {
             .collect()
     }
 
-    fn put_transaction_records(&self, snapshot: &DataCache, records: Vec<(UInt256, Vec<u8>)>) {
+    fn put_transaction_records(
+        &self,
+        snapshot: &PersistenceDataCache,
+        records: Vec<(UInt256, Vec<u8>)>,
+    ) {
         for (tx_hash, tx_bytes) in records {
             let tx_key = transaction_storage_key(self.id, &tx_hash);
             put_item(snapshot, tx_key, StorageItem::from_bytes(tx_bytes));
@@ -381,7 +385,7 @@ impl LedgerContract {
     /// after its application.
     pub fn update_transaction_vm_state(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         hash: &UInt256,
         vm_state: VMState,
     ) -> Result<()> {
@@ -398,7 +402,7 @@ impl LedgerContract {
 
     pub(super) fn persist_conflict_stub(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         conflict_hash: &UInt256,
         block_index: u32,
         signers: &[UInt160],
@@ -420,7 +424,7 @@ impl LedgerContract {
     /// Applies a batch of transaction VM state updates in order.
     pub fn update_transaction_vm_states(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         updates: &[(UInt256, VMState)],
     ) -> Result<()> {
         for (hash, vm_state) in updates {
@@ -430,8 +434,8 @@ impl LedgerContract {
     }
 }
 
-fn put_item(snapshot: &DataCache, key: StorageKey, item: StorageItem) {
-    // DataCache::update is an upsert. A preceding get only repeated the
+fn put_item(snapshot: &PersistenceDataCache, key: StorageKey, item: StorageItem) {
+    // PersistenceDataCache::update is an upsert. A preceding get only repeated the
     // persistent point lookup; block/hash keys are new on the common path,
     // while current-block and VM-state records still replace existing values.
     snapshot.update(key, item);

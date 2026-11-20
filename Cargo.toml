@@ -95,7 +95,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.20.0"
+version = "0.21.0"
 edition = "2024"
 # MSRV equals the rust-toolchain.toml pin; see docs/TOOLCHAIN.md.
 rust-version = "1.99"
@@ -137,23 +137,23 @@ assertions_on_constants = "allow"
 [workspace.dependencies]
 # === Internal crates ===
 # Foundation layer
-neo-primitives = { path = "neo-primitives", version = "0.20.0" }
-neo-crypto = { path = "neo-crypto", version = "0.20.0" }
-neo-storage = { path = "neo-storage", version = "0.20.0" }
-neo-io = { path = "neo-io", version = "0.20.0" }
-neo-json = { path = "neo-json", version = "0.20.0" }
+neo-primitives = { path = "neo-primitives", version = "0.21.0" }
+neo-crypto = { path = "neo-crypto", version = "0.21.0" }
+neo-storage = { path = "neo-storage", version = "0.21.0" }
+neo-io = { path = "neo-io", version = "0.21.0" }
+neo-json = { path = "neo-json", version = "0.21.0" }
 
 # Core layer
-neo-vm = { path = "neo-vm", version = "0.20.0" }
-neo-protocol = { path = "neo-protocol", version = "0.20.0" }
-neo-rpc = { path = "neo-rpc", version = "0.20.0" }
-neo-rpc-client = { path = "neo-rpc-client", version = "0.20.0" }
-neo-rpc-server = { path = "neo-rpc-server", version = "0.20.0" }
-neo-native-contracts = { path = "neo-native-contracts", version = "0.20.0" }
+neo-vm = { path = "neo-vm", version = "0.21.0" }
+neo-protocol = { path = "neo-protocol", version = "0.21.0" }
+neo-rpc = { path = "neo-rpc", version = "0.21.0" }
+neo-rpc-client = { path = "neo-rpc-client", version = "0.21.0" }
+neo-rpc-server = { path = "neo-rpc-server", version = "0.21.0" }
+neo-native-contracts = { path = "neo-native-contracts", version = "0.21.0" }
 
 # Generic actor runtime extracted from neo-core (task 189). It has no neo-*
 # dependency, so it carries the workspace version like the core layer above.
-neo-actors = { path = "neo-actors", version = "0.20.0" }
+neo-actors = { path = "neo-actors", version = "0.21.0" }
 
 # Application layer crates (task 89).
 neo-ledger = { path = "neo-ledger" }
@@ -168,12 +168,12 @@ neo-consensus = { path = "neo-consensus" }
 neo-tee = { path = "neo-tee" }
 neo-hsm = { path = "neo-hsm" }
 neo-signer-server = { path = "neo-signer-server" }
-neo-ai-agent = { path = "neo-ai-agent", version = "0.20.0" }
-neo-probe = { path = "neo-probe", version = "0.20.0" }
+neo-ai-agent = { path = "neo-ai-agent", version = "0.21.0" }
+neo-probe = { path = "neo-probe", version = "0.21.0" }
 
 # Application layer
 # neo-cli removed: functionality merged into neo-node
-neo-node = { path = "neo-node", version = "0.20.0" }
+neo-node = { path = "neo-node", version = "0.21.0" }
 
 # === Core dependencies ===
 # Async runtime

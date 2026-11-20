@@ -18,13 +18,14 @@ use super::{NativeContract, NativeMethod};
 use neo_primitives::UInt160;
 use neo_protocol::Hardfork;
 use neo_smart_contract::application_engine::ApplicationEngine;
-use neo_smart_contract::error::{CoreError as Error, CoreResult as Result};
+use neo_smart_contract::error::{CoreError as Error, CoreResult};
+use neo_smart_contract::impl_native_contract;
 
 /// The Treasury native contract.
 pub struct TreasuryContract {
     id: i32,
     hash: UInt160,
-    methods: Vec<NativeMethod>,
+    methods: &'static [NativeMethod],
 }
 
 impl TreasuryContract {
@@ -33,19 +34,43 @@ impl TreasuryContract {
 
     /// Creates a new Treasury contract.
     pub fn new() -> Self {
-        let hash =
-            neo_smart_contract::helper::Helper::get_contract_hash(&UInt160::zero(), 0, Self::NAME);
+        Self {
+            id: Self::ID,
+            hash: neo_smart_contract::helper::Helper::get_contract_hash(
+                &UInt160::zero(),
+                0,
+                Self::NAME,
+            ),
+            methods: crate::native::static_native_methods!(TreasuryContract::native_methods()),
+        }
+    }
 
-        let methods = neo_native_methods![
+    /// Declares the Treasury method table.
+    fn native_methods() -> Vec<NativeMethod> {
+        neo_native_methods![
             safe "verify", fee = 1 << 5, flags = [READ_STATES], params = [], returns = Boolean;
             safe "onNEP17Payment", fee = 1 << 5, flags = [], params = [Hash160, Integer, Any], returns = Void, names = ["from", "amount", "data"];
             safe "onNEP11Payment", fee = 1 << 5, flags = [], params = [Hash160, Integer, ByteArray, Any], returns = Void, names = ["from", "amount", "tokenId", "data"];
-        ];
+        ]
+    }
 
-        Self {
-            id: Self::ID,
-            hash,
-            methods,
+    /// Dispatches a Treasury method invocation.
+    fn invoke_method(
+        &self,
+        engine: &mut ApplicationEngine,
+        method: &str,
+        _args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        match method {
+            "verify" => {
+                let check = engine.check_committee_witness()?;
+                Ok(vec![u8::from(check)])
+            }
+            "onNEP17Payment" => Ok(Vec::new()),
+            "onNEP11Payment" => Ok(Vec::new()),
+            _ => Err(Error::invalid_operation(format!(
+                "Method {method} not found in Treasury"
+            ))),
         }
     }
 }
@@ -53,18 +78,12 @@ impl TreasuryContract {
 neo_storage::impl_default_via_new!(TreasuryContract);
 
 impl NativeContract for TreasuryContract {
+    impl_native_contract!(hash, Self::NAME, methods);
+
     fn id(&self) -> i32 {
         self.id
     }
-    fn hash(&self) -> UInt160 {
-        self.hash
-    }
-    fn name(&self) -> &str {
-        Self::NAME
-    }
-    fn methods(&self) -> &[NativeMethod] {
-        &self.methods
-    }
+
     fn active_in(&self) -> Option<Hardfork> {
         Some(Hardfork::HfFaun)
     }
@@ -83,28 +102,5 @@ impl NativeContract for TreasuryContract {
             "NEP-27".to_string(),
             "NEP-30".to_string(),
         ]
-    }
-
-    fn invoke(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        _args: &[Vec<u8>],
-    ) -> Result<Vec<u8>> {
-        match method {
-            "verify" => {
-                let check = engine.check_committee_witness()?;
-                Ok(vec![u8::from(check)])
-            }
-            "onNEP17Payment" => Ok(Vec::new()),
-            "onNEP11Payment" => Ok(Vec::new()),
-            _ => Err(Error::invalid_operation(format!(
-                "Method {method} not found in Treasury"
-            ))),
-        }
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }

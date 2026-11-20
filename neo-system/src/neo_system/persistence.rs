@@ -50,7 +50,7 @@ use neo_smart_contract::application_engine::{
 use neo_smart_contract::error::{CoreError, CoreResult};
 use neo_storage::persistence::data_cache::DataCacheConfig;
 use neo_storage::persistence::{
-    DataCache, StoreCommitProfiler, StoreCommitStage, StoreTransaction, store::Store,
+    PersistenceDataCache, StoreCommitProfiler, StoreCommitStage, StoreTransaction, store::Store,
 };
 use neo_vm::VmState;
 use parking_lot::Mutex;
@@ -764,12 +764,12 @@ impl SnapshotStore for SystemSnapshotStore {
 /// A flat write-back cache shared only by a bounded run of transaction-free blocks.
 ///
 /// Every canonical block commit harvests just that block's delta and then uses
-/// `DataCache::commit` to retain visible values as hot `None` entries. No database
+/// `PersistenceDataCache::commit` to retain visible values as hot `None` entries. No database
 /// write occurs until `finish`, which applies the coalesced final state in one
 /// physical transaction. Dropping this object before `finish` writes nothing.
 struct EmptyBlockWriteBack {
     transaction: Mutex<Option<StoreTransaction>>,
-    base_snapshot: Arc<DataCache>,
+    base_snapshot: Arc<PersistenceDataCache>,
     changes: Mutex<BTreeMap<neo_storage::StorageKey, Option<neo_storage::StorageItem>>>,
     committed_blocks: AtomicU64,
     expected_blocks: usize,
@@ -856,12 +856,12 @@ impl EmptyBlockWriteBack {
 
 struct SystemStoreTransaction {
     transaction: Option<StoreTransaction>,
-    base_snapshot: Arc<DataCache>,
+    base_snapshot: Arc<PersistenceDataCache>,
     empty_block_batch: Option<Arc<EmptyBlockWriteBack>>,
 }
 
 impl StoreTransactionPort for SystemStoreTransaction {
-    fn base_snapshot(&self) -> Arc<DataCache> {
+    fn base_snapshot(&self) -> Arc<PersistenceDataCache> {
         Arc::clone(&self.base_snapshot)
     }
 
@@ -1077,7 +1077,7 @@ impl SystemEngineFactory {
 impl EngineFactory for SystemEngineFactory {
     fn open_on_persist(
         &self,
-        snapshot: Arc<DataCache>,
+        snapshot: Arc<PersistenceDataCache>,
         block: Arc<Block>,
     ) -> Result<Box<dyn NativeEnginePort>, LedgerError> {
         let engine = ApplicationEngine::new_with_shared_block(
@@ -1098,7 +1098,7 @@ impl EngineFactory for SystemEngineFactory {
     fn open_application(
         &self,
         container: Arc<dyn Verifiable>,
-        snapshot: Arc<DataCache>,
+        snapshot: Arc<PersistenceDataCache>,
         block: Arc<Block>,
         system_fee: i64,
         seeded: &SeededNativeContracts,
@@ -1139,7 +1139,7 @@ impl EngineFactory for SystemEngineFactory {
 
     fn open_post_persist(
         &self,
-        snapshot: Arc<DataCache>,
+        snapshot: Arc<PersistenceDataCache>,
         block: Arc<Block>,
         seeded: &SeededNativeContracts,
         cache: &NativeCacheHandle,
@@ -1164,7 +1164,7 @@ impl EngineFactory for SystemEngineFactory {
 #[derive(Clone)]
 struct VerificationContext {
     container: Arc<dyn Verifiable>,
-    snapshot: Arc<DataCache>,
+    snapshot: Arc<PersistenceDataCache>,
     payload_block: Arc<neo_protocol::payloads::Block>,
     system_fee: i64,
     seeded: SeededNativeContracts,

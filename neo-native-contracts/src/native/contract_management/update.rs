@@ -1,15 +1,15 @@
-//
-// update.rs - Contract update for ContractManagement
-//
-// Migrated from `neo-core/src/smart_contract/native/contract_management/update.rs`.
-// Import adaptation:
-// - `crate::hardfork::Hardfork` -> `neo_protocol::Hardfork`
-// - `crate::script_validation` -> `neo_vm` (neo-core re-exported the VM module)
-// - `crate::smart_contract::call_flags::CallFlags` -> `neo_primitives::CallFlags`
-// - `crate::smart_contract::manifest::contract_manifest::MAX_MANIFEST_LENGTH`
-//   -> `neo_smart_contract::manifest::contract_manifest::MAX_MANIFEST_LENGTH`
-// - `crate::neo_io::Serializable` -> `neo_io::Serializable`
-//
+//!
+//! update.rs - Contract update for ContractManagement
+//!
+//! Migrated from `neo-core/src/smart_contract/native/contract_management/update.rs`.
+//! Import adaptation:
+//! - `crate::hardfork::Hardfork` -> `neo_protocol::Hardfork`
+//! - `crate::script_validation` -> `neo_vm` (neo-core re-exported the VM module)
+//! - `crate::smart_contract::call_flags::CallFlags` -> `neo_primitives::CallFlags`
+//! - `crate::smart_contract::manifest::contract_manifest::MAX_MANIFEST_LENGTH`
+//!   -> `neo_smart_contract::manifest::contract_manifest::MAX_MANIFEST_LENGTH`
+//! - `crate::neo_io::Serializable` -> `neo_io::Serializable`
+//!
 
 use super::*;
 use neo_primitives::CallFlags;

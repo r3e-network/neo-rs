@@ -31,7 +31,7 @@ use neo_smart_contract::error::{CoreError as Error, CoreResult as Result};
 use neo_smart_contract::helper::Helper;
 use neo_storage::StorageItem;
 use neo_storage::StorageKey;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use neo_storage::persistence::read_only_store::ReadOnlyStoreGeneric;
 use neo_vm::BinarySerializer;
 use neo_vm::ExecutionEngineLimits;
@@ -71,7 +71,7 @@ pub struct Notary {
 
 impl Notary {
     /// Contract ID for Notary (-10 per Neo protocol).
-    pub const ID: i32 = -10;
+    const ID: i32 = -10;
 
     /// Creates a new Notary contract instance.
     ///
@@ -162,12 +162,16 @@ impl Notary {
     }
 
     /// Gets the GAS balance of an account (Arc version for engine calls).
-    pub fn balance_of_arc(&self, snapshot: &Arc<DataCache>, account: &UInt160) -> BigInt {
+    pub fn balance_of_arc(
+        &self,
+        snapshot: &Arc<PersistenceDataCache>,
+        account: &UInt160,
+    ) -> BigInt {
         self.balance_of(snapshot.as_ref(), account)
     }
 
     /// Gets the GAS balance of an account.
-    pub fn balance_of(&self, snapshot: &DataCache, account: &UInt160) -> BigInt {
+    pub fn balance_of(&self, snapshot: &PersistenceDataCache, account: &UInt160) -> BigInt {
         let key = Self::deposit_key(account);
         match snapshot.try_get(&key) {
             Some(item) => {
@@ -182,12 +186,16 @@ impl Notary {
     }
 
     /// Gets the expiration block of an account's deposit (Arc version for engine calls).
-    pub fn expiration_of_arc(&self, snapshot: &Arc<DataCache>, account: &UInt160) -> u32 {
+    pub fn expiration_of_arc(
+        &self,
+        snapshot: &Arc<PersistenceDataCache>,
+        account: &UInt160,
+    ) -> u32 {
         self.expiration_of(snapshot.as_ref(), account)
     }
 
     /// Gets the expiration block of an account's deposit.
-    pub fn expiration_of(&self, snapshot: &DataCache, account: &UInt160) -> u32 {
+    pub fn expiration_of(&self, snapshot: &PersistenceDataCache, account: &UInt160) -> u32 {
         let key = Self::deposit_key(account);
         match snapshot.try_get(&key) {
             Some(item) => {
@@ -202,12 +210,12 @@ impl Notary {
     }
 
     /// Gets the maximum NotValidBefore delta (Arc version for engine calls).
-    pub fn get_max_not_valid_before_delta_arc(&self, snapshot: &Arc<DataCache>) -> u32 {
+    pub fn get_max_not_valid_before_delta_arc(&self, snapshot: &Arc<PersistenceDataCache>) -> u32 {
         self.get_max_not_valid_before_delta(snapshot.as_ref())
     }
 
     /// Gets the maximum NotValidBefore delta.
-    pub fn get_max_not_valid_before_delta(&self, snapshot: &DataCache) -> u32 {
+    pub fn get_max_not_valid_before_delta(&self, snapshot: &PersistenceDataCache) -> u32 {
         // C# parity: stored as variable-width signed-LE BigInteger bytes (StorageItem.Value),
         // not a fixed 4-byte u32. Empty bytes ⇒ 0; parse via BigInt::from_signed_bytes_le.
         let key = Self::max_delta_key();
@@ -228,14 +236,19 @@ impl Notary {
 
     /// Sets deposit for an account.
     #[allow(dead_code)]
-    pub fn set_deposit(&self, snapshot: &DataCache, account: &UInt160, deposit: &Deposit) {
+    pub fn set_deposit(
+        &self,
+        snapshot: &PersistenceDataCache,
+        account: &UInt160,
+        deposit: &Deposit,
+    ) {
         let key = Self::deposit_key(account);
         let data = serialize_deposit(deposit);
         snapshot.add(key, StorageItem::from_bytes(data));
     }
 
     fn persist_deposit(
-        snapshot: &Arc<DataCache>,
+        snapshot: &Arc<PersistenceDataCache>,
         key: StorageKey,
         existed: bool,
         deposit: &Deposit,
@@ -636,7 +649,7 @@ impl Notary {
     /// fails, and a missing provider keeps the index `0` fallback.
     fn get_notary_nodes(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         queries: Option<&dyn NativeChainQueries>,
     ) -> Result<Vec<neo_crypto::ECPoint>> {
         let ledger = LedgerContract::new();
@@ -656,7 +669,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_notary_creation() {
+    fn notary_creation() {
         let notary = Notary::new();
         assert_eq!(notary.id(), Notary::ID);
         assert_eq!(notary.name(), "Notary");

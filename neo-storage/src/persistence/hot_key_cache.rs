@@ -15,7 +15,7 @@
 //!
 //! Correctness contract:
 //! - Only values read from committed backing state may be inserted. The
-//!   [`crate::persistence::DataCache`] therefore fills this cache exclusively on
+//!   [`crate::persistence::PersistenceDataCache`] therefore fills this cache exclusively on
 //!   the `store_get` path, never from its write dictionary.
 //! - Every write to a cached key invalidates that key, so an entry can never
 //!   outlive a value the same execution already replaced.

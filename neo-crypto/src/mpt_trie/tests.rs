@@ -1,7 +1,6 @@
 //! Comprehensive MPT tests converted from C# Neo.Cryptography.MPTTrie.Tests
 //! Covers all test cases from UT_Node.cs, UT_Trie.cs, and UT_Cache.cs
 
-#[cfg(test)]
 pub(crate) mod mpt_tests {
     use crate::mpt_trie::{
         MptCache, MptResult, MptStoreSnapshot, NODE_KEY_PREFIX, Node, NodeType, Trie, node_key,

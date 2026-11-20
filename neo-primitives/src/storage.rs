@@ -19,7 +19,7 @@
 use thiserror::Error;
 
 /// Errors that can occur during storage operations.
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum StorageValueError {
     /// Deserialization failed.
     #[error("deserialization failed: {message}")]
@@ -315,7 +315,7 @@ mod tests {
     // ============ Custom Implementation Test ============
 
     /// A mock struct to demonstrate custom StorageValue implementation.
-    #[derive(Clone, Debug, PartialEq)]
+    #[derive(Debug, Clone, PartialEq)]
     struct MockStorageValue {
         id: u32,
         data: Vec<u8>,

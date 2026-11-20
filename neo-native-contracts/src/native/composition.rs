@@ -12,7 +12,7 @@ use neo_smart_contract::application_engine::{
 };
 use neo_smart_contract::contract_state::ContractState;
 use neo_smart_contract::error::CoreResult;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use std::sync::{Arc, OnceLock};
 
 /// Registers standard contracts with a fresh ContractManagement for every engine.
@@ -71,7 +71,7 @@ impl WitnessHashResolver for StandardWitnessHashResolver {
     fn resolve(
         &self,
         verifiable: &dyn neo_primitives::Verifiable,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
     ) -> Vec<UInt160> {
         if let Some(transaction) = verifiable.as_any().downcast_ref::<Transaction>() {
             return transaction.signer_accounts();
@@ -97,7 +97,10 @@ impl WitnessHashResolver for StandardWitnessHashResolver {
 /// verification, the [`StandardWitnessHashResolver`] and the ledger's
 /// witness-hash resolver all delegate here, so consensus-critical witness
 /// selection exists in exactly one place.
-pub fn header_verifying_script_hashes(header: &Header, snapshot: &DataCache) -> Vec<UInt160> {
+pub fn header_verifying_script_hashes(
+    header: &Header,
+    snapshot: &PersistenceDataCache,
+) -> Vec<UInt160> {
     if *header.prev_hash() == UInt256::default() {
         return vec![header.witness.script_hash()];
     }
@@ -125,29 +128,33 @@ pub fn header_verifying_script_hashes(header: &Header, snapshot: &DataCache) -> 
 pub struct StandardNativeStateReader;
 
 impl NativeStateReader for StandardNativeStateReader {
-    fn contract(&self, snapshot: &DataCache, hash: &UInt160) -> CoreResult<Option<ContractState>> {
+    fn contract(
+        &self,
+        snapshot: &PersistenceDataCache,
+        hash: &UInt160,
+    ) -> CoreResult<Option<ContractState>> {
         ContractManagement::get_contract_from_snapshot(snapshot, hash)
     }
 
     fn contract_update_counter(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         hash: &UInt160,
     ) -> CoreResult<Option<u16>> {
         ContractManagement::get_contract_update_counter_from_snapshot(snapshot, hash)
     }
 
-    fn current_index(&self, snapshot: &DataCache) -> CoreResult<u32> {
+    fn current_index(&self, snapshot: &PersistenceDataCache) -> CoreResult<u32> {
         LedgerContract::new().current_index(snapshot)
     }
 
-    fn is_blocked(&self, snapshot: &DataCache, hash: &UInt160) -> CoreResult<bool> {
+    fn is_blocked(&self, snapshot: &PersistenceDataCache, hash: &UInt160) -> CoreResult<bool> {
         PolicyContract::new().is_blocked_snapshot(snapshot, hash)
     }
 
     fn whitelisted_fee(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         hash: &UInt160,
         method: &str,
         param_count: u32,
@@ -157,7 +164,7 @@ impl NativeStateReader for StandardNativeStateReader {
 
     fn oracle_original_signers(
         &self,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         id: u64,
     ) -> CoreResult<Option<Vec<Signer>>> {
         let Some(request) = OracleContract::new().get_request(snapshot, id)? else {
@@ -197,7 +204,7 @@ mod tests {
     // own witness rather than a ledger lookup.
     #[test]
     fn genesis_header_verifies_against_its_own_witness() {
-        let snapshot = DataCache::new(true);
+        let snapshot = PersistenceDataCache::new(true);
         let header = Header::new();
         assert_eq!(
             header_verifying_script_hashes(&header, &snapshot),

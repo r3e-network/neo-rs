@@ -1,9 +1,9 @@
-//
-// committee.rs - Committee management and validator selection
-//
-// Migrated from `neo-core/src/smart_contract/native/neo_token/committee.rs`.
-// Import adaptation: `crate::smart_contract::env_flags` -> `neo_smart_contract::env_flags`.
-// All other names resolve through `super::*` (neo_token/mod.rs). Body preserved verbatim.
+//!
+//! committee.rs - Committee management and validator selection
+//!
+//! Migrated from `neo-core/src/smart_contract/native/neo_token/committee.rs`.
+//! Import adaptation: `crate::smart_contract::env_flags` -> `neo_smart_contract::env_flags`.
+//! All other names resolve through `super::*` (neo_token/mod.rs). Body preserved verbatim.
 
 use super::*;
 use std::cmp::Reverse;
@@ -227,7 +227,7 @@ impl NeoToken {
                 .collect());
         }
 
-        #[derive(Clone, Eq, PartialEq)]
+        #[derive(Clone, PartialEq, Eq)]
         struct RankedCandidate {
             pubkey: ECPoint,
             votes: BigInt,
@@ -390,7 +390,7 @@ impl NeoToken {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_storage::persistence::DataCache;
+    use neo_storage::persistence::PersistenceDataCache;
 
     fn sample_committee_point() -> ECPoint {
         let encoded =
@@ -439,8 +439,8 @@ mod tests {
         assert!(err.starts_with("invalid committee public key:"));
     }
 
-    fn snapshot_with_committee(committee: &[(ECPoint, BigInt)]) -> (DataCache, Vec<u8>) {
-        let snapshot = DataCache::new(false);
+    fn snapshot_with_committee(committee: &[(ECPoint, BigInt)]) -> (PersistenceDataCache, Vec<u8>) {
+        let snapshot = PersistenceDataCache::new(false);
         let encoded = NeoToken::encode_committee_with_votes(committee).expect("encode committee");
         snapshot.add(
             StorageKey::create(NeoToken::ID, NeoToken::PREFIX_COMMITTEE),

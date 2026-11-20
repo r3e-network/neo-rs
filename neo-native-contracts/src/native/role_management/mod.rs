@@ -271,7 +271,7 @@ mod tests {
     use neo_protocol::payloads::{signer::Signer, transaction::Transaction};
     use neo_storage::StorageItem;
     use neo_storage::StorageKey;
-    use neo_storage::persistence::DataCache;
+    use neo_storage::persistence::PersistenceDataCache;
     use neo_vm::BinarySerializer;
     use neo_vm::OpCode;
     use neo_vm::ScriptBuilder;
@@ -319,7 +319,7 @@ mod tests {
         Block::new(header, Vec::new())
     }
 
-    fn make_engine(snapshot: Arc<DataCache>) -> ApplicationEngine {
+    fn make_engine(snapshot: Arc<PersistenceDataCache>) -> ApplicationEngine {
         let mut container = Transaction::new();
         container.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::GLOBAL)]);
         container.add_witness(Witness::new());
@@ -339,7 +339,7 @@ mod tests {
     }
 
     fn make_engine_with_signers(
-        snapshot: Arc<DataCache>,
+        snapshot: Arc<PersistenceDataCache>,
         settings: ProtocolSettings,
         signers: Vec<Signer>,
         persisting_block: Option<Block>,
@@ -363,7 +363,7 @@ mod tests {
         .expect("engine")
     }
 
-    fn committee_address(settings: &ProtocolSettings, snapshot: &DataCache) -> UInt160 {
+    fn committee_address(settings: &ProtocolSettings, snapshot: &PersistenceDataCache) -> UInt160 {
         NativeHelpers::committee_address(settings, Some(snapshot))
     }
 
@@ -390,7 +390,7 @@ mod tests {
     #[test]
     fn dispatch_method_covers_declared_metadata_names() {
         let contract = RoleManagement::new();
-        let mut engine = make_engine(Arc::new(DataCache::new(false)));
+        let mut engine = make_engine(Arc::new(PersistenceDataCache::new(false)));
         let mut names = std::collections::BTreeSet::new();
 
         for method in contract.methods() {
@@ -456,7 +456,7 @@ mod tests {
     #[test]
     fn find_designation_returns_latest_entry() {
         let contract = RoleManagement::new();
-        let cache = DataCache::new(false);
+        let cache = PersistenceDataCache::new(false);
         let role = Role::Oracle;
 
         let key_old = StorageKey::new(RoleManagement::ID, RoleManagement::role_key_suffix(role, 5));
@@ -490,7 +490,7 @@ mod tests {
     #[test]
     fn vm_get_designated_by_role_accepts_compact_integer_index() {
         let contract = RoleManagement::new();
-        let snapshot = Arc::new(DataCache::new(false));
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
         let public_key = sample_point(0x21);
         let encoded = contract
             .serialize_public_keys(std::slice::from_ref(&public_key))
@@ -531,7 +531,7 @@ mod tests {
     #[test]
     fn designate_as_role_rejects_duplicate_public_keys() {
         let settings = settings_all_active();
-        let snapshot = Arc::new(DataCache::new(false));
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
         let contract = RoleManagement::new();
         let committee = committee_address(&settings, snapshot.as_ref());
         let persisting_block = make_block(1000, 1_000);
@@ -574,7 +574,7 @@ mod tests {
     #[test]
     fn designate_as_role_reports_existing_designation_before_duplicate_validation() {
         let settings = settings_all_active();
-        let snapshot = Arc::new(DataCache::new(false));
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
         let contract = RoleManagement::new();
         let committee = committee_address(&settings, snapshot.as_ref());
         let persisting_block = make_block(1000, 1_000);

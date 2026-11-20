@@ -3,8 +3,8 @@
 use super::{
     commit_profile::{StoreCommitProfiler, StoreCommitStage, StoreCommitTimer},
     data_cache::{
-        DataCache, DataCacheConfig, DataCacheError, DataCacheResult, PrefetchMetricsSnapshot,
-        StoreSeekFn,
+        DataCacheConfig, DataCacheError, DataCacheResult, PersistenceDataCache,
+        PrefetchMetricsSnapshot, StoreSeekFn,
     },
     read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
     seek_direction::SeekDirection,
@@ -23,7 +23,7 @@ type StoreFindFn =
     dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)> + Send + Sync;
 
 pub struct StoreCache {
-    data_cache: DataCache,
+    data_cache: PersistenceDataCache,
     store: Option<Arc<dyn Store>>,
     snapshot: Option<Arc<dyn StoreSnapshot>>,
     commit_profiler: Option<Arc<dyn StoreCommitProfiler>>,
@@ -62,8 +62,12 @@ impl StoreCache {
         let store_seek: Arc<StoreSeekFn> = Arc::new(move |prefix, start, direction, limit| {
             store_for_seek.seek_limited(prefix, start, direction, limit)
         });
-        let mut data_cache =
-            DataCache::new_with_config(read_only, Some(store_get), Some(store_find), config);
+        let mut data_cache = PersistenceDataCache::new_with_config(
+            read_only,
+            Some(store_get),
+            Some(store_find),
+            config,
+        );
         data_cache.set_store_seek(move |prefix, start, direction, limit| {
             store_seek(prefix, start, direction, limit)
         });
@@ -80,7 +84,7 @@ impl StoreCache {
     }
 
     /// Provides read-only access to the underlying in-memory data cache.
-    pub fn data_cache(&self) -> &DataCache {
+    pub fn data_cache(&self) -> &PersistenceDataCache {
         &self.data_cache
     }
 
@@ -116,7 +120,7 @@ impl StoreCache {
                 .collect::<Vec<(StorageKey, StorageItem)>>()
         });
         Self {
-            data_cache: DataCache::new_with_config(
+            data_cache: PersistenceDataCache::new_with_config(
                 false,
                 Some(snapshot_get),
                 Some(snapshot_find),

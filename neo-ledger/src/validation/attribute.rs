@@ -3,13 +3,13 @@ use neo_primitives::UInt160;
 use neo_protocol::payloads::{OracleResponse, Transaction, TransactionAttribute, get_fixed_script};
 use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_smart_contract::helper::Helper;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use tracing::warn;
 
 pub fn verify_attribute(
     attribute: &TransactionAttribute,
     settings: &ProtocolSettings,
-    snapshot: &DataCache,
+    snapshot: &PersistenceDataCache,
     transaction: &Transaction,
 ) -> bool {
     match attribute {
@@ -59,7 +59,7 @@ pub fn verify_attribute(
 /// forwards to them.
 pub fn attribute_network_fee(
     attribute: &TransactionAttribute,
-    snapshot: &DataCache,
+    snapshot: &PersistenceDataCache,
     transaction: &Transaction,
 ) -> i64 {
     neo_native_contracts::attribute_network_fee(attribute, snapshot, transaction)
@@ -82,7 +82,7 @@ pub fn oracle_fixed_script() -> Vec<u8> {
 /// to it.
 fn verify_oracle_response(
     attribute: &OracleResponse,
-    snapshot: &DataCache,
+    snapshot: &PersistenceDataCache,
     transaction: &Transaction,
 ) -> bool {
     OracleContract::verify_oracle_response(attribute, snapshot, transaction)

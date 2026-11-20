@@ -84,7 +84,7 @@ use profile::StageTimer;
 use evidence::FaultObservationBuffer;
 use neo_protocol::execution::Block;
 use neo_smart_contract::application_engine::LedgerTransactionStates;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 use std::sync::Arc;
 
 /// Options selecting the persistence mode for one [`persist_block`] invocation.
@@ -137,8 +137,8 @@ pub trait StoreTransactionPort: Send {
     /// The base overlay snapshot accumulating the block's committed state (step 4).
     ///
     /// Returns a shared handle; the pipeline derives per-transaction child overlays via
-    /// [`DataCache::clone_cache`] and merges them back with [`DataCache::merge_from_child`].
-    fn base_snapshot(&self) -> Arc<DataCache>;
+    /// [`PersistenceDataCache::clone_cache`] and merges them back with [`PersistenceDataCache::merge_from_child`].
+    fn base_snapshot(&self) -> Arc<PersistenceDataCache>;
 
     /// Commits the staged canonical block state to the underlying store (step 13).
     ///
@@ -624,7 +624,7 @@ mod tests {
     impl EngineFactory for MockFactory {
         fn open_on_persist(
             &self,
-            _snapshot: Arc<DataCache>,
+            _snapshot: Arc<PersistenceDataCache>,
             _block: Arc<Block>,
         ) -> Result<Box<dyn NativeEnginePort>, LedgerError> {
             Ok(Box::new(MockNative {
@@ -637,7 +637,7 @@ mod tests {
         fn open_application(
             &self,
             _container: Arc<dyn Verifiable>,
-            _snapshot: Arc<DataCache>,
+            _snapshot: Arc<PersistenceDataCache>,
             _block: Arc<Block>,
             _system_fee: i64,
             _seeded: &SeededNativeContracts,
@@ -654,7 +654,7 @@ mod tests {
         }
         fn open_post_persist(
             &self,
-            _snapshot: Arc<DataCache>,
+            _snapshot: Arc<PersistenceDataCache>,
             _block: Arc<Block>,
             _seeded: &SeededNativeContracts,
             _cache: &NativeCacheHandle,
@@ -671,13 +671,13 @@ mod tests {
     // ---- storage / runtime / evidence mocks -----------------------------------
 
     struct MockTransaction {
-        base: Arc<DataCache>,
+        base: Arc<PersistenceDataCache>,
         commit_result: Result<(), String>,
         log: Log,
     }
 
     impl StoreTransactionPort for MockTransaction {
-        fn base_snapshot(&self) -> Arc<DataCache> {
+        fn base_snapshot(&self) -> Arc<PersistenceDataCache> {
             Arc::clone(&self.base)
         }
         fn commit(self: Box<Self>) -> Result<(), String> {
@@ -697,7 +697,7 @@ mod tests {
             _options: &PersistOptions,
         ) -> Result<Box<dyn StoreTransactionPort>, LedgerError> {
             Ok(Box::new(MockTransaction {
-                base: Arc::new(DataCache::new(false)),
+                base: Arc::new(PersistenceDataCache::new(false)),
                 commit_result: self.commit_result.clone(),
                 log: self.log.clone(),
             }))

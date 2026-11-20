@@ -109,7 +109,7 @@ mod tests {
     use neo_protocol::payloads::{Block, Header, Transaction};
     use neo_protocol::witness::Witness;
     use neo_state_service::StateServiceSettings;
-    use neo_storage::persistence::{DataCache, ReadOnlyStoreGeneric};
+    use neo_storage::persistence::{PersistenceDataCache, ReadOnlyStoreGeneric};
     use neo_storage::{StorageItem, StorageKey};
     use neo_system::{TransactionExecutionExceptionCategory, TransactionExecutionStage};
     use neo_vm::BinarySerializer;
@@ -403,7 +403,7 @@ mod tests {
         (directory, runtime, store)
     }
 
-    fn set_gas_balance(snapshot: &DataCache, account: UInt160, amount: i64) {
+    fn set_gas_balance(snapshot: &PersistenceDataCache, account: UInt160, amount: i64) {
         let key = StorageKey::create_with_uint160(GasToken::new().id(), PREFIX_ACCOUNT, &account);
         let state = AccountState::with_balance(BigInt::from(amount));
         let bytes = BinarySerializer::serialize_stack_value(
@@ -450,7 +450,7 @@ mod tests {
     /// serialization, the exact bytes the probe contract hashes.
     fn seed_verified_transactions(system: &NeoSystem, key_seed: u8) -> (UInt256, Vec<u8>) {
         let settings = ProtocolSettings::default();
-        let snapshot = DataCache::new(false);
+        let snapshot = PersistenceDataCache::new(false);
         let transaction = signed_probe_transaction(&settings, key_seed, u32::from(key_seed));
         let filler = signed_probe_transaction(
             &settings,

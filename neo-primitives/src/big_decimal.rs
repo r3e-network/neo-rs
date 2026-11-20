@@ -47,7 +47,7 @@ use std::ops::{Add, Mul};
 use std::str::FromStr;
 
 /// Represents a fixed-point number of arbitrary precision.
-#[derive(Clone, Debug, Eq)]
+#[derive(Debug, Clone, Eq)]
 pub struct BigDecimal {
     /// The value of the number.
     value: BigInt,

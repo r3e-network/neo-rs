@@ -10,7 +10,7 @@ use super::trackers::tracker_base::Tracker;
 use neo_ledger::ApplicationExecuted;
 use neo_primitives::panic_message;
 use neo_protocol::execution::Block;
-use neo_storage::persistence::{DataCache, Store};
+use neo_storage::persistence::{PersistenceDataCache, Store};
 use neo_system::NeoSystem;
 use neo_system::i_event_handlers::{CommittedHandler, CommittingHandler};
 use parking_lot::RwLock;
@@ -140,7 +140,7 @@ impl CommittingHandler for TokensTracker {
         &self,
         system: &dyn Any,
         block: &Block,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         application_executed_list: &[ApplicationExecuted],
     ) {
         let Some(system) = system.downcast_ref::<NeoSystem>() else {

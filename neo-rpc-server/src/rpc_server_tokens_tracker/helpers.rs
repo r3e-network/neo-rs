@@ -198,7 +198,7 @@ pub(super) fn collect_nep11_transfers(
 }
 
 pub(super) fn query_asset_metadata(
-    snapshot: &neo_storage::persistence::DataCache,
+    snapshot: &neo_storage::persistence::PersistenceDataCache,
     settings: &neo_protocol::ProtocolSettings,
     asset: &UInt160,
 ) -> Option<(String, u32)> {

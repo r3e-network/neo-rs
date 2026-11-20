@@ -1,7 +1,6 @@
 // Converted from C# Neo.UnitTests.UT_UInt160
 use crate::UInt160;
 
-#[cfg(test)]
 mod tests {
     use super::*;
 

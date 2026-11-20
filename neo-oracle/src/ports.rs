@@ -16,7 +16,7 @@ use neo_smart_contract::{ContractMethodDescriptor, ContractState};
 ///
 /// The concrete type is provided by the integration layer (task 89).
 /// This trait allows the Oracle service to query state without depending
-/// on neo-core's DataCache directly.
+/// on neo-core's PersistenceDataCache directly.
 ///
 /// `Any` is a supertrait so integration-side adapters (e.g. the response
 /// transaction builder, which needs the raw ledger snapshot for the

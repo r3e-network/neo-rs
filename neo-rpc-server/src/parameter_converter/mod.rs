@@ -12,7 +12,6 @@ use super::rpc_exception::RpcException;
 
 mod signers;
 #[cfg(test)]
-#[path = "tests.rs"]
 mod tests;
 
 /// Context supplied when converting RPC parameters.

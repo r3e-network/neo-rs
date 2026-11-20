@@ -1,15 +1,16 @@
-//
-// native_impl.rs - NativeContract trait implementation for PolicyContract
-//
-// Migrated from `neo-core/src/smart_contract/native/policy_contract/native_impl.rs`.
-//
-// Import adaptation:
-// - `crate::impl_native_contract` → `neo_smart_contract::impl_native_contract`
-// - `crate::smart_contract::application_engine::FEE_FACTOR` → `neo_smart_contract::application_engine::FEE_FACTOR`
-// - `crate::persistence::seek_direction::SeekDirection` → `neo_storage::persistence::seek_direction::SeekDirection`
-// - `crate::impl_default_via_new!` → `neo_storage::impl_default_via_new!`
+//!
+//! native_impl.rs - NativeContract trait implementation for PolicyContract
+//!
+//! Migrated from `neo-core/src/smart_contract/native/policy_contract/native_impl.rs`.
+//!
+//! Import adaptation:
+//! - `crate::impl_native_contract` → `neo_smart_contract::impl_native_contract`
+//! - `crate::smart_contract::application_engine::FEE_FACTOR` → `neo_smart_contract::application_engine::FEE_FACTOR`
+//! - `crate::persistence::seek_direction::SeekDirection` → `neo_storage::persistence::seek_direction::SeekDirection`
+//! - `crate::impl_default_via_new!` → `neo_storage::impl_default_via_new!`
 
 use super::*;
+use neo_smart_contract::error::CoreResult;
 use neo_smart_contract::impl_native_contract;
 
 impl NativeContract for PolicyContract {
@@ -27,7 +28,7 @@ impl NativeContract for PolicyContract {
         Self::event_descriptors(settings, block_height)
     }
 
-    fn initialize(&self, engine: &mut ApplicationEngine) -> Result<()> {
+    fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         let snapshot = engine.snapshot_cache();
         let snapshot_ref = snapshot.as_ref();
 

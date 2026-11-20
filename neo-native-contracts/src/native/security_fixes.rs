@@ -39,7 +39,7 @@ fn strict_security_enforced() -> bool {
 }
 
 /// Types of operations that need reentrancy protection
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ReentrancyGuardType {
     /// GAS token transfer
     GasTransfer,
@@ -374,7 +374,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_reentrancy_guard() {
+    fn reentrancy_guard() {
         // Reset guards first
         SecurityContext::reset_all_guards();
 
@@ -395,7 +395,7 @@ mod tests {
     }
 
     #[test]
-    fn test_safe_sub() {
+    fn safe_sub_rejects_negative_result() {
         let a = BigInt::from(100);
         let b = BigInt::from(50);
         let result = SafeArithmetic::safe_sub(&a, &b);
@@ -409,7 +409,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_balance_change() {
+    fn validate_balance_change_rejects_overdraft() {
         let current = BigInt::from(100);
         let delta = BigInt::from(-50);
         let result = SafeArithmetic::validate_balance_change(&current, &delta, false);
@@ -426,7 +426,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_total_supply_change() {
+    fn validate_total_supply_change_rejects_negative_total() {
         let current = BigInt::from(100);
         let delta = BigInt::from(-50);
         let result = SafeArithmetic::validate_total_supply_change(&current, &delta);
@@ -439,21 +439,21 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_range() {
+    fn validate_range() {
         assert!(PermissionValidator::validate_range(50u32, 0, 100, "test").is_ok());
         assert!(PermissionValidator::validate_range(150u32, 0, 100, "test").is_err());
         assert!(PermissionValidator::validate_range(0u32, 1, 100, "test").is_err());
     }
 
     #[test]
-    fn test_validate_account_hash() {
+    fn validate_account_hash_enforces_length() {
         assert!(PermissionValidator::validate_account_hash(&[0u8; 20]).is_ok());
         assert!(PermissionValidator::validate_account_hash(&[0u8; 19]).is_err());
         assert!(PermissionValidator::validate_account_hash(&[0u8; 21]).is_err());
     }
 
     #[test]
-    fn test_validate_public_key() {
+    fn validate_public_key_enforces_prefix_and_length() {
         let mut valid_key = vec![0x02u8];
         valid_key.extend_from_slice(&[0u8; 32]);
         assert!(PermissionValidator::validate_public_key(&valid_key).is_ok());
@@ -472,7 +472,7 @@ mod tests {
     }
 
     #[test]
-    fn test_state_validator() {
+    fn state_validator() {
         // Test account state validation
         assert!(StateValidator::validate_account_state(&BigInt::from(100), 100, 200).is_ok());
 

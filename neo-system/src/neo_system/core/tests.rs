@@ -481,7 +481,7 @@ impl CommittingHandler for GenesisIndexCapture {
         &self,
         _system: &dyn Any,
         block: &neo_protocol::execution::Block,
-        _snapshot: &neo_storage::persistence::DataCache,
+        _snapshot: &neo_storage::persistence::PersistenceDataCache,
         _executed: &[neo_protocol::execution::ApplicationExecuted],
     ) {
         self.seen.store(block.index(), Ordering::SeqCst);

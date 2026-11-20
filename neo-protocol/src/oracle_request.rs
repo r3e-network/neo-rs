@@ -13,7 +13,7 @@
 use neo_primitives::{UInt160, UInt256};
 
 /// Oracle request state (matches C# `Neo.SmartContract.Native.OracleRequest`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OracleRequest {
     /// The original transaction hash that triggered this oracle request.
     pub original_tx_id: UInt256,

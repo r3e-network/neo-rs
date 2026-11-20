@@ -1,9 +1,9 @@
-//
-// types.rs - NeoAccountState and CandidateState data structures
-//
-// Migrated from `neo-core/src/smart_contract/native/neo_token/types.rs`.
-// Imports preserved verbatim: `super::*` resolves all shared types via
-// neo_token/mod.rs, and `neo_vm::StackValue` is already a leaf-crate path.
+//!
+//! types.rs - NeoAccountState and CandidateState data structures
+//!
+//! Migrated from `neo-core/src/smart_contract/native/neo_token/types.rs`.
+//! Imports preserved verbatim: `super::*` resolves all shared types via
+//! neo_token/mod.rs, and `neo_vm::StackValue` is already a leaf-crate path.
 
 use super::*;
 use neo_vm::StackValue;
@@ -42,7 +42,7 @@ fn stack_value_to_bool(value: &StackValue) -> Result<bool, String> {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct NeoAccountState {
     pub(crate) balance: BigInt,
     pub(crate) balance_height: u32,
@@ -155,7 +155,7 @@ impl NeoAccountState {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct CandidateState {
     pub(crate) registered: bool,
     pub(crate) votes: BigInt,

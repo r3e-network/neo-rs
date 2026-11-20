@@ -19,7 +19,7 @@ use neo_protocol::payloads::transaction_attribute::TransactionAttribute;
 use neo_protocol::payloads::{OracleResponse, Transaction, WitnessScope};
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::error::CoreResult as Result;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::PersistenceDataCache;
 
 impl OracleContract {
     pub(super) fn verify(&self, engine: &mut ApplicationEngine) -> Result<Vec<u8>> {
@@ -51,7 +51,7 @@ impl OracleContract {
     /// transaction producers can never drift apart either.
     pub fn verify_oracle_response(
         response: &OracleResponse,
-        snapshot: &DataCache,
+        snapshot: &PersistenceDataCache,
         tx: &Transaction,
     ) -> bool {
         // Check that no signers have scopes other than None.

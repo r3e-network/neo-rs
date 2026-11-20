@@ -20,7 +20,7 @@ impl InnerState {
     }
 }
 
-/// Configuration for DataCache.
+/// Configuration for PersistenceDataCache.
 #[derive(Debug, Clone, Copy)]
 pub struct DataCacheConfig {
     /// Maximum number of entries in the write cache
@@ -54,7 +54,7 @@ impl Default for DataCacheConfig {
     }
 }
 
-/// Errors returned by DataCache operations.
+/// Errors returned by PersistenceDataCache operations.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum DataCacheError {
     #[error("cache is read-only")]

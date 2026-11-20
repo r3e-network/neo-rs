@@ -7,7 +7,7 @@ pub const UINT256_SIZE: usize = crate::constants::HASH_SIZE;
 
 crate::uint_type! {
     /// Represents a 256-bit unsigned integer.
-    #[derive(Clone, Copy, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
+    #[derive(Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
     #[repr(C)]
     pub struct UInt256 {
         size = UINT256_SIZE;

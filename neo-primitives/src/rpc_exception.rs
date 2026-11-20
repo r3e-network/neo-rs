@@ -2,7 +2,7 @@ use thiserror::Error;
 
 /// Shared JSON-RPC exception representation containing the error code,
 /// message, and optional data payload.
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("{message}{}", .data.as_ref().map(|d| format!(" - {d}")).unwrap_or_default())]
 pub struct RpcException {
     code: i32,

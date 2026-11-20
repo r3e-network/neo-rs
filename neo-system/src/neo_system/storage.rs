@@ -21,20 +21,18 @@ use neo_storage::persistence::data_cache::DataCacheConfig;
 use neo_storage::persistence::store::Store;
 use neo_storage::persistence::store_provider::StoreProvider;
 use std::sync::Arc;
+use thiserror::Error;
 
 /// Error type for storage operations.
-#[derive(Debug, Clone)]
+///
+/// The `Display` text (`Storage error: {message}`) is unchanged from the previous
+/// hand-written implementation.
+#[derive(Error, Debug, Clone)]
+#[error("Storage error: {message}")]
 pub struct StorageError {
+    /// Human-readable failure detail.
     pub message: String,
 }
-
-impl std::fmt::Display for StorageError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Storage error: {}", self.message)
-    }
-}
-
-impl std::error::Error for StorageError {}
 
 impl From<StorageError> for neo_smart_contract::CoreError {
     fn from(err: StorageError) -> Self {

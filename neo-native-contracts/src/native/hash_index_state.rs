@@ -11,7 +11,7 @@ use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
 /// State for hash index tracking (matches C# HashIndexState)
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct HashIndexState {
     /// The hash value
     pub hash: UInt256,

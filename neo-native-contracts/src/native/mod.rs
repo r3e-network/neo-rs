@@ -170,7 +170,7 @@ mod tests {
     use std::sync::Arc;
 
     #[test]
-    fn test_native_registry_creation() {
+    fn native_registry_creation() {
         let registry = super::composition::standard_registry();
 
         // Check that standard contracts are registered
@@ -202,7 +202,7 @@ mod tests {
     }
 
     #[test]
-    fn test_native_registry_all_hashes() {
+    fn native_registry_all_hashes() {
         let registry = super::composition::standard_registry();
         let hashes = registry.all_hashes();
 
@@ -211,7 +211,7 @@ mod tests {
     }
 
     #[test]
-    fn test_native_registry_contract_iteration_order() {
+    fn native_registry_contract_iteration_order() {
         let registry = super::composition::standard_registry();
         let names: Vec<String> = registry
             .contracts()
@@ -237,7 +237,7 @@ mod tests {
     }
 
     #[test]
-    fn test_native_registry_hashes_follow_iteration_order() {
+    fn native_registry_hashes_follow_iteration_order() {
         let registry = super::composition::standard_registry();
         let hashes = registry.all_hashes();
         let contract_hashes: Vec<UInt160> = registry
@@ -249,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn test_native_registry_take_preserves_remaining_order() {
+    fn native_registry_take_preserves_remaining_order() {
         let mut registry = super::composition::standard_registry();
         let before: Vec<String> = registry
             .contracts()
@@ -274,7 +274,7 @@ mod tests {
     }
 
     #[test]
-    fn test_non_native_contract() {
+    fn non_native_contract() {
         let registry = super::composition::standard_registry();
         let random_hash = UInt160::zero();
 
