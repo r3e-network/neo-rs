@@ -11,7 +11,8 @@
 
 use neo_crypto::MerkleTree;
 use neo_io_crate::serializable::helper::{
-    deserialize_array, get_var_size_bytes, get_var_size_serializable_slice, serialize_array,
+    deserialize_array, get_var_size_bytes, get_var_size_serializable_slice, get_var_size_usize,
+    serialize_array,
 };
 use neo_io_crate::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::UInt256;
@@ -117,8 +118,10 @@ fn pack_flags(flags: &[bool]) -> Vec<u8> {
 
 impl Serializable for MerkleBlockPayload {
     fn size(&self) -> usize {
+        // C# v3.11.2: `Size => Header.Size + TxCount.GetVarSize() + ...` — the
+        // transaction count contributes its var-int width, not a fixed 4 bytes.
         self.header.size()
-            + std::mem::size_of::<u32>()
+            + get_var_size_usize(self.tx_count as usize)
             + get_var_size_serializable_slice(&self.hashes)
             + get_var_size_bytes(&self.flags)
     }
@@ -149,7 +152,15 @@ impl Serializable for MerkleBlockPayload {
         let header = <Header as Serializable>::deserialize(reader)?;
 
         let tx_count = reader.read_var_int(u16::MAX as u64)? as u32;
-        let hashes = deserialize_array::<UInt256>(reader, tx_count as usize)?;
+        // C# v3.11.2: `maxHashes = RoundUpToPowerOf2(TxCount)`. Trimming an odd
+        // level of the merkle tree duplicates its last subtree, so a compliant
+        // sender may emit up to twice the leaf count of hashes.
+        let max_hashes = if tx_count == 0 {
+            0
+        } else {
+            tx_count.next_power_of_two() as usize
+        };
+        let hashes = deserialize_array::<UInt256>(reader, max_hashes)?;
 
         let max_flags = (tx_count.max(1) as usize).div_ceil(8);
         let flags = reader.read_var_bytes(max_flags)?;
@@ -213,5 +224,51 @@ mod tests {
         assert_eq!(payload.tx_count, 0);
         // Depth 0 for an empty tree: pad_flags returns the empty vec unchanged.
         assert!(payload.hashes.is_empty());
+    }
+
+    fn write_payload_bytes(writer: &mut BinaryWriter, tx_count: u32, hashes: usize) {
+        Serializable::serialize(&Header::new(), writer).unwrap();
+        writer.write_var_uint(tx_count as u64).unwrap();
+        // `deserialize_array` expects the var-int element count ahead of the items.
+        writer.write_var_uint(hashes as u64).unwrap();
+        for i in 0..hashes {
+            let mut hash = [0u8; 32];
+            hash[0] = i as u8;
+            Serializable::serialize(&UInt256::from(hash), writer).unwrap();
+        }
+        writer.write_var_bytes(&[0x1]).unwrap();
+    }
+
+    #[test]
+    fn deserialize_accepts_hashes_up_to_next_power_of_two() {
+        // C# v3.11.2: `maxHashes = RoundUpToPowerOf2(TxCount)` — a trimmed odd
+        // merkle level duplicates its last subtree, so tx_count 5 may carry 8 hashes.
+        let mut writer = BinaryWriter::new();
+        write_payload_bytes(&mut writer, 5, 8);
+        let bytes = writer.into_bytes();
+
+        let mut reader = MemoryReader::new(&bytes);
+        let payload = <MerkleBlockPayload as Serializable>::deserialize(&mut reader).unwrap();
+        assert_eq!(payload.tx_count, 5);
+        assert_eq!(payload.hashes.len(), 8);
+    }
+
+    #[test]
+    fn deserialize_rejects_hashes_beyond_power_of_two_bound() {
+        // Nine hashes for tx_count 5 exceed RoundUpToPowerOf2(5) = 8.
+        let mut writer = BinaryWriter::new();
+        write_payload_bytes(&mut writer, 5, 9);
+        let bytes = writer.into_bytes();
+
+        let mut reader = MemoryReader::new(&bytes);
+        assert!(<MerkleBlockPayload as Serializable>::deserialize(&mut reader).is_err());
+    }
+
+    #[test]
+    fn size_counts_var_int_transaction_width() {
+        // C# v3.11.2: `TxCount.GetVarSize()` — one byte for 127 instead of the
+        // fixed 4-byte width used before.
+        let payload = MerkleBlockPayload::new(Header::new(), 127, Vec::new(), Vec::new());
+        assert_eq!(payload.size(), payload.header.size() + 1 + 1 + 1);
     }
 }

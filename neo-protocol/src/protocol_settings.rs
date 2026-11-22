@@ -257,6 +257,12 @@ impl ProtocolSettings {
         let mut hardforks = hardforks;
         let mut encountered_configured = false;
         for &hardfork in HardforkManager::all() {
+            // C# `EnsureOmmitedHardforks` stops at `LastConfigManagedHardfork`:
+            // post-Huyao hardforks are Policy-activated and must never be
+            // defaulted to genesis by configuration normalization.
+            if !hardfork.is_config_managed() {
+                break;
+            }
             match hardforks.entry(hardfork) {
                 Entry::Occupied(_) => encountered_configured = true,
                 Entry::Vacant(entry) if !encountered_configured => {
@@ -269,6 +275,17 @@ impl ProtocolSettings {
     }
 
     fn validate_hardfork_sequence(hardforks: &HashMap<Hardfork, u32>) -> Result<(), String> {
+        // C# `CheckingHardfork` rejects post-Huyao entries outright: those
+        // hardforks come from the on-chain Policy activation record.
+        if let Some(&hardfork) = hardforks
+            .keys()
+            .find(|hardfork| !hardfork.is_config_managed())
+        {
+            return Err(format!(
+                "Hardfork {hardfork:?} cannot be configured in ProtocolSettings; activate it via Policy.activateHardfork."
+            ));
+        }
+
         let all = HardforkManager::all();
         let mut previous_index: Option<usize> = None;
         let mut previous_height: Option<u32> = None;

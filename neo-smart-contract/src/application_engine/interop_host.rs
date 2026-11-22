@@ -8,7 +8,20 @@ impl InteropHost for ApplicationEngine {
                     entry.required_call_flags
                 )));
             }
-            if entry.price > 0 {
+            // Since `HF_Huyao` the syscall price is an `InteropPriceAttribute`
+            // coefficient in 1e-11 GAS charged directly as femtoGAS (C#
+            // `AddFemtoGas(GetSysCallPrice(descriptor), false)` with the default
+            // `respectWhitelist: true`); pre-Huyao engines keep the datoshi path.
+            if let Some(huyao_price) = entry
+                .huyao_price
+                .filter(|_| self.is_hardfork_enabled(Hardfork::HfHuyao))
+            {
+                let femto_gas = huyao_price
+                    .checked_mul(i64::from(self.exec_fee_factor))
+                    .ok_or_else(|| VmError::invalid_operation_msg("Syscall price overflow"))?;
+                self.add_femto_gas(femto_gas, true)
+                    .map_err(map_core_error_to_vm_error)?;
+            } else if entry.price > 0 {
                 self.add_cpu_fee(entry.price)
                     .map_err(map_core_error_to_vm_error)?;
             }
@@ -164,10 +177,17 @@ impl InteropHost for ApplicationEngine {
         _engine: &mut ExecutionEngine,
         instruction: &Instruction,
     ) -> VmResult<()> {
-        let opcode_price = Self::get_opcode_price(instruction.opcode.byte());
-        if opcode_price > 0 {
-            self.add_cpu_fee(opcode_price)
-                .map_err(map_core_error_to_vm_error)?;
+        // C# captures the whitelist flag in `_whitelisted` before every
+        // instruction, so the charges made later in the same instruction see
+        // the state it started with.
+        self.capture_whitelisted();
+        if !self.use_dynamic_pricing {
+            let opcode_price = Self::get_opcode_price(instruction.opcode.byte());
+            if opcode_price > 0 {
+                // C# `AddFee(_execFeeFactor * OpCodePriceTable[op], false)`.
+                self.add_cpu_fee(opcode_price)
+                    .map_err(map_core_error_to_vm_error)?;
+            }
         }
         if let Some(profiler) = self.profiler.as_ref() {
             profiler.record_opcode(instruction.opcode.byte());
@@ -180,10 +200,27 @@ impl InteropHost for ApplicationEngine {
     fn post_execute_instruction(
         &mut self,
         _engine: &mut ExecutionEngine,
-        instruction: &Instruction,
+        instruction: Option<&Instruction>,
+        run_stats: &neo_vm::run_stats::RunStats,
     ) -> VmResult<()> {
         if let Some(diagnostic) = self.diagnostic.as_mut() {
-            diagnostic.post_execute_instruction(instruction);
+            // C# `ApplicationEngine.PostExecuteInstruction` reports the
+            // implicit RET to the diagnostic when there is no current
+            // instruction.
+            diagnostic.post_execute_instruction(instruction.unwrap_or(&Instruction::ret()));
+        }
+        if self.use_dynamic_pricing {
+            // C# charges the instruction from the `RunStats` collected while it
+            // executed; the implicit RET has no instruction and costs nothing.
+            let price = instruction.map_or(0, |instruction| {
+                self.opcode_v1(
+                    i64::from(self.exec_fee_factor),
+                    instruction.opcode.byte(),
+                    run_stats,
+                )
+            });
+            self.add_femto_gas(price, true)
+                .map_err(map_core_error_to_vm_error)?;
         }
         Ok(())
     }
@@ -241,9 +278,28 @@ impl InteropHost for ApplicationEngine {
             args.push(engine.pop()?);
         }
         // 6. Look up the target contract
-        let target_contract = self.fetch_contract(&token.hash).map_err(|e| {
-            VmError::invalid_operation_msg(format!("Failed to fetch contract {}: {e}", token.hash))
-        })?;
+        let target_contract = match self.fetch_contract(&token.hash) {
+            Ok(contract) => contract,
+            Err(err @ Error::NotFound { .. }) => {
+                // C# v3.11.2 `CallContractInternal(chargeCallFee: true)`: the
+                // disk-read fee is charged before the existence error is raised.
+                self.add_contract_call_fee(None)
+                    .map_err(map_core_error_to_vm_error)?;
+                return Err(VmError::invalid_operation_msg(format!(
+                    "Failed to fetch contract {}: {err}",
+                    token.hash
+                )));
+            }
+            Err(err) => {
+                return Err(VmError::invalid_operation_msg(format!(
+                    "Failed to fetch contract {}: {err}",
+                    token.hash
+                )));
+            }
+        };
+        // C# v3.11.2: deployed (non-native) contracts pay the disk-read fee.
+        self.add_contract_call_fee(Some(&target_contract))
+            .map_err(map_core_error_to_vm_error)?;
         // 7. Find the method descriptor in the target contract's ABI
         let method = target_contract
             .manifest

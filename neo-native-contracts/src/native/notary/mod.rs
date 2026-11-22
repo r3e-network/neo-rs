@@ -622,6 +622,17 @@ impl Notary {
             if deposit.amount < BigInt::from(total_fee) {
                 return Ok(vec![0]);
             }
+        } else {
+            // C# v3.11.2: Main transaction of NotaryRequest is not allowed to
+            // have Conflicts attribute to prohibit malicious attempt to use
+            // Conflicts attribute against other mempooled transactions signed
+            // by Notary contract.
+            if !tx
+                .get_attributes(TransactionAttributeType::Conflicts)
+                .is_empty()
+            {
+                return Ok(vec![0]);
+            }
         }
 
         let snapshot = engine.snapshot_cache();
@@ -667,11 +678,125 @@ impl Notary {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_crypto::signature::{ECC, ECDsa};
+    use neo_crypto::{ECCurve, ECPoint};
+    use neo_primitives::trigger_type::TriggerType;
+    use neo_primitives::{UInt256, Verifiable};
+    use neo_protocol::ProtocolSettings;
+    use neo_protocol::payloads::{
+        Conflicts, NotaryAssisted, Signer, TransactionAttribute, Witness,
+    };
+    use neo_vm::StackValue;
 
     #[test]
     fn notary_creation() {
         let notary = Notary::new();
         assert_eq!(notary.id(), Notary::ID);
         assert_eq!(notary.name(), "Notary");
+    }
+
+    /// Writes a P2PNotary designation valid from index 1 into the snapshot.
+    fn designate_notary(snapshot: &PersistenceDataCache, point: &ECPoint) {
+        let role_management = RoleManagement::new();
+        let value = StackValue::Array(vec![StackValue::ByteString(point.as_bytes().to_vec())]);
+        let serialized =
+            BinarySerializer::serialize_stack_value(&value, &ExecutionEngineLimits::default())
+                .expect("serialize public keys");
+        let mut suffix = vec![Role::P2PNotary as u8];
+        suffix.extend_from_slice(&1u32.to_be_bytes());
+        snapshot.add(
+            StorageKey::new(role_management.id(), suffix),
+            StorageItem::from_bytes(serialized),
+        );
+    }
+
+    /// Builds a NotaryRequest fallback transaction: payer first (the sender),
+    /// notary contract second with `NONE` scope.
+    fn notary_request_tx(notary_hash: UInt160, with_conflicts: bool) -> Transaction {
+        let mut attributes = vec![TransactionAttribute::NotaryAssisted(NotaryAssisted::new(1))];
+        if with_conflicts {
+            attributes.push(TransactionAttribute::Conflicts(Conflicts::new(
+                UInt256::zero(),
+            )));
+        }
+
+        let mut tx = Transaction::new();
+        tx.set_attributes(attributes);
+        tx.set_signers(vec![
+            Signer::new(UInt160::zero(), WitnessScope::GLOBAL),
+            Signer::new(notary_hash, WitnessScope::NONE),
+        ]);
+        tx.set_witnesses(vec![Witness::empty(), Witness::empty()]);
+        tx.set_script(vec![0x61]); // RET
+        tx
+    }
+
+    fn notary_verify_engine(
+        tx: Transaction,
+        snapshot: Arc<PersistenceDataCache>,
+    ) -> ApplicationEngine {
+        let container: Arc<dyn Verifiable> = Arc::new(tx);
+        ApplicationEngine::new(
+            TriggerType::Application,
+            Some(container),
+            snapshot,
+            None,
+            ProtocolSettings::default(),
+            400_000_000,
+            None,
+            crate::native::composition::default_native_services(),
+        )
+        .expect("engine")
+    }
+
+    #[test]
+    fn verify_accepts_valid_notary_signature_without_conflicts() {
+        let notary = Notary::new();
+        let private_key: [u8; 32] = [0x2a; 32];
+        let point = ECC::generate_public_key(&private_key, ECCurve::Secp256r1).expect("public key");
+
+        let tx = notary_request_tx(notary.hash(), false);
+        let sign_data = neo_protocol::get_sign_data_vec(&tx, ProtocolSettings::default().network)
+            .expect("sign data");
+        let signature =
+            ECDsa::sign(&sign_data, &private_key, ECCurve::Secp256r1).expect("signature");
+        assert!(Crypto::verify_signature_bytes(
+            &sign_data,
+            &signature,
+            point.as_bytes()
+        ));
+
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
+        designate_notary(&snapshot, &point);
+        let mut engine = notary_verify_engine(tx, snapshot);
+
+        let result = notary
+            .verify(&mut engine, &[signature.to_vec()])
+            .expect("verify");
+        assert_eq!(result, vec![1]);
+    }
+
+    #[test]
+    fn verify_rejects_conflicts_attribute_on_payer_signed_transactions() {
+        // C# v3.11.2: Main transaction of NotaryRequest is not allowed to have
+        // Conflicts attribute — even with a valid designated-notary signature.
+        let notary = Notary::new();
+        let private_key: [u8; 32] = [0x2a; 32];
+        let point = ECC::generate_public_key(&private_key, ECCurve::Secp256r1).expect("public key");
+
+        let tx = notary_request_tx(notary.hash(), true);
+        let sign_data = neo_protocol::get_sign_data_vec(&tx, ProtocolSettings::default().network)
+            .expect("sign data");
+        let signature =
+            ECDsa::sign(&sign_data, &private_key, ECCurve::Secp256r1).expect("signature");
+
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
+        designate_notary(&snapshot, &point);
+        let mut engine = notary_verify_engine(tx, snapshot);
+
+        let result = notary
+            .verify(&mut engine, &[signature.to_vec()])
+            .expect("verify");
+        assert_eq!(result, vec![0]);
     }
 }

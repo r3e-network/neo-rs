@@ -1,16 +1,19 @@
 use super::*;
 use neo_crypto::ECPoint;
+use neo_primitives::WitnessScope;
 use neo_vm::binary_serializer::BinarySerializer;
 impl ApplicationEngine {
-    /// Validates that the provided hash has a matching witness in the current transaction.
+    /// Validates that the provided hash has a matching witness in the current
+    /// transaction, also reporting how many of the signer's own witness rules
+    /// were evaluated (C# v3.11.2 `CheckWitnessInternal(hash, out int rulesCount)`).
     /// This matches C# ApplicationEngine.CheckWitnessInternal exactly, including witness rules.
-    fn check_witness_internal(&self, hash: &UInt160) -> Result<bool> {
+    pub(crate) fn check_witness_internal_counted(&self, hash: &UInt160) -> Result<(bool, i64)> {
         // 1. Calling script hash always succeeds.
         if self.get_calling_script_hash() == Some(*hash) {
-            return Ok(true);
+            return Ok((true, 0));
         }
         let Some(container) = self.script_container.as_ref() else {
-            return Ok(false);
+            return Ok((false, 0));
         };
         // 2. Transaction container path (witness rules and scopes).
         if let Some(tx) = container.as_any().downcast_ref::<Transaction>() {
@@ -24,19 +27,29 @@ impl ApplicationEngine {
                     .native_state_reader
                     .oracle_original_signers(self.snapshot_cache.as_ref(), oracle_id)?
                 else {
-                    return Ok(false);
+                    return Ok((false, 0));
                 };
                 signers = original_signers;
             }
             let Some(signer) = signers.iter().find(|s| s.account == *hash) else {
-                return Ok(false);
+                return Ok((false, 0));
             };
-            for rule in signer.get_all_rules() {
+            // Scope-derived rules are free; only the signer's own witness rules
+            // are priced through `rules_count`.
+            for rule in signer.get_scope_rules() {
                 if self.match_witness_condition(&rule.condition)? {
-                    return Ok(rule.action == WitnessRuleAction::Allow);
+                    return Ok((rule.action == WitnessRuleAction::Allow, 0));
                 }
             }
-            return Ok(false);
+            if signer.scopes().contains(WitnessScope::WITNESS_RULES) {
+                for (index, rule) in signer.rules.iter().enumerate() {
+                    if self.match_witness_condition(&rule.condition)? {
+                        return Ok((rule.action == WitnessRuleAction::Allow, index as i64 + 1));
+                    }
+                }
+                return Ok((false, signer.rules.len() as i64));
+            }
+            return Ok((false, 0));
         }
         // 3. Non-transaction containers require ReadStates and use verifying script hashes.
         if !self.has_call_flags(CallFlags::READ_STATES) {
@@ -47,7 +60,12 @@ impl ApplicationEngine {
         let hashes = self
             .witness_hash_resolver
             .resolve(container.as_ref(), self.snapshot_cache.as_ref());
-        Ok(hashes.contains(hash))
+        Ok((hashes.contains(hash), 0))
+    }
+    /// Validates that the provided hash has a matching witness in the current transaction.
+    fn check_witness_internal(&self, hash: &UInt160) -> Result<bool> {
+        self.check_witness_internal_counted(hash)
+            .map(|(result, _)| result)
     }
     /// Checks whether the specified hash has witnessed the current execution.
     ///
@@ -367,12 +385,16 @@ impl ApplicationEngine {
                 "Public key must be 33 bytes".to_string(),
             ));
         }
-        let fee = if self.is_hardfork_enabled(Hardfork::HfAspidochelone) {
-            CHECK_SIG_PRICE
-        } else {
-            1 << 8
-        };
-        self.add_cpu_fee(fee)?;
+        // C# v3.11.2: the legacy CheckSig fee is only charged before HF_Huyao,
+        // which prices the call through its `[InteropPrice]` base instead.
+        if !self.is_hardfork_enabled(Hardfork::HfHuyao) {
+            let fee = if self.is_hardfork_enabled(Hardfork::HfAspidochelone) {
+                CHECK_SIG_PRICE
+            } else {
+                1 << 8
+            };
+            self.add_cpu_fee(fee)?;
+        }
         let script = Helper::signature_redeem_script(public_key);
         let hash = UInt160::from_bytes(&Crypto::hash160(&script))
             .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {e}")))?;
@@ -385,20 +407,34 @@ impl ApplicationEngine {
         required_signatures: i32,
         public_keys_items: Vec<StackItem>,
     ) -> Result<UInt160> {
-        if required_signatures <= 0 {
-            return Err(Error::invalid_operation(
-                "Multisig threshold must be positive".to_string(),
-            ));
+        // C# parity (v3.11.2 Contract.CreateMultisigAccount): the parameter
+        // validation runs unconditionally before any fee is charged.
+        let count = public_keys_items.len() as i64;
+        let m = required_signatures as i64;
+        if !(1 <= m && m <= count && count <= 1024) {
+            return Err(Error::invalid_operation(format!(
+                "Invalid multisig parameters: m={m}, publicKeys.Count={count}"
+            )));
         }
-        let m = required_signatures as usize;
-        // C# parity (Contract.CreateMultiSigRedeemScript): up to 1024 pubkeys.
-        if public_keys_items.is_empty()
-            || public_keys_items.len() > 1024
-            || m > public_keys_items.len()
-        {
-            return Err(Error::invalid_operation(
-                "Invalid multisig public key count".to_string(),
-            ));
+        let m = m as usize;
+        // The fee is charged before the public keys are decoded: legacy
+        // hardforks keep the CheckSig-per-key rule, Huyao uses its per-key
+        // price (C# `CreateMultisigAccountPricePerKey`).
+        if !self.is_hardfork_enabled(Hardfork::HfHuyao) {
+            let fee = if self.is_hardfork_enabled(Hardfork::HfAspidochelone) {
+                CHECK_SIG_PRICE
+                    .checked_mul(public_keys_items.len() as i64)
+                    .ok_or_else(|| Error::invalid_operation("Multisig fee overflow"))?
+            } else {
+                1 << 8
+            };
+            self.add_cpu_fee(fee)?;
+        } else {
+            let femto = op_code_prices_v1::CREATE_MULTISIG_ACCOUNT_PRICE_PER_KEY
+                .checked_mul(public_keys_items.len() as i64)
+                .and_then(|value| value.checked_mul(i64::from(self.exec_fee_factor)))
+                .ok_or_else(|| Error::invalid_operation("Multisig fee overflow"))?;
+            self.add_femto_gas(femto, true)?;
         }
         let mut public_keys: Vec<Vec<u8>> = Vec::with_capacity(public_keys_items.len());
         for item in public_keys_items {
@@ -412,14 +448,6 @@ impl ApplicationEngine {
             }
             public_keys.push(bytes);
         }
-        let fee = if self.is_hardfork_enabled(Hardfork::HfAspidochelone) {
-            CHECK_SIG_PRICE
-                .checked_mul(public_keys.len() as i64)
-                .ok_or_else(|| Error::invalid_operation("Multisig fee overflow"))?
-        } else {
-            1 << 8
-        };
-        self.add_cpu_fee(fee)?;
         let script = Helper::multi_sig_redeem_script(m, &public_keys);
         let hash = UInt160::from_bytes(&Crypto::hash160(&script))
             .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {e}")))?;

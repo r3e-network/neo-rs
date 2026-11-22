@@ -145,15 +145,29 @@ fn fallback_settings_and_empty_manager_have_distinct_activation_semantics() {
         settings.initial_gas_distribution,
         constants::INITIAL_GAS_DISTRIBUTION
     );
-    assert_eq!(settings.hardforks.len(), Hardfork::ALL.len());
+    // C# v3.11.2 `EnsureOmmitedHardforks` only normalizes the config-managed
+    // hardforks (through `LastConfigManagedHardfork` = HF_Huyao); later forks
+    // are Policy-activated on chain and stay unconfigured by default.
+    let config_managed = Hardfork::ALL
+        .iter()
+        .filter(|fork| fork.is_config_managed())
+        .count();
+    assert_eq!(settings.hardforks.len(), config_managed);
 
     for manager in [HardforkManager::new(), HardforkManager::default()] {
         assert!(manager.get_hardforks().is_empty());
         for &fork in &Hardfork::ALL {
-            assert_eq!(settings.hardforks.get(&fork), Some(&0));
-            assert!(settings.is_hardfork_defined(fork));
-            assert!(settings.is_hardfork_enabled(fork, 0));
-            assert!(settings.is_hardfork_enabled(fork, u32::MAX));
+            if fork.is_config_managed() {
+                assert_eq!(settings.hardforks.get(&fork), Some(&0));
+                assert!(settings.is_hardfork_defined(fork));
+                assert!(settings.is_hardfork_enabled(fork, 0));
+                assert!(settings.is_hardfork_enabled(fork, u32::MAX));
+            } else {
+                assert_eq!(settings.hardforks.get(&fork), None);
+                assert!(!settings.is_hardfork_defined(fork));
+                assert!(!settings.is_hardfork_enabled(fork, 0));
+                assert!(!settings.is_hardfork_enabled(fork, u32::MAX));
+            }
             assert!(!manager.is_enabled(fork, 0));
             assert!(!manager.is_enabled(fork, u32::MAX));
         }

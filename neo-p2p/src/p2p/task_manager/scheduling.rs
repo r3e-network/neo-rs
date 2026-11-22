@@ -42,6 +42,12 @@ where
         }
     }
 
+    /// Fully releases a task, mirroring C# `globalInvTasks.Remove(key)` /
+    /// `globalIndexTasks.Remove(key)`.
+    pub(super) fn remove(&mut self, key: &K) {
+        self.counts.remove(key);
+    }
+
     pub(super) fn count(&self, key: &K) -> u32 {
         self.counts.get(key).copied().unwrap_or(0)
     }

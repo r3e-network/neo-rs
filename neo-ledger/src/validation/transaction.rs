@@ -109,9 +109,14 @@ pub fn verify_transaction_state_dependent_at_height(
     if net_fee_datoshi > max_verification_gas {
         net_fee_datoshi = max_verification_gas;
     }
+    // v3.11.2: read the factor with full decimals at the current index and let
+    // the shape-aware cost helpers apply `ApplyExecFeeFactor`.
     let exec_fee_factor = policy
-        .get_exec_fee_factor_snapshot(snapshot, settings, height)
-        .unwrap_or(PolicyContract::DEFAULT_EXEC_FEE_FACTOR) as i64;
+        .get_exec_fee_factor_with_decimals_snapshot(snapshot, settings, height)
+        .unwrap_or(
+            (PolicyContract::DEFAULT_EXEC_FEE_FACTOR
+                * neo_smart_contract::application_engine::FEE_FACTOR as u32) as i64,
+        );
     let sign_data = match transaction_sign_data(transaction, settings.network) {
         Ok(data) => data,
         Err(error) => {
@@ -122,10 +127,23 @@ pub fn verify_transaction_state_dependent_at_height(
     for (i, hash) in hashes.iter().enumerate() {
         let witness = &transaction.witnesses()[i];
         match verify_standard_witness(hash, witness, &sign_data) {
-            Ok(StandardWitnessVerification::Verified {
-                unscaled_verification_fee,
-            }) => {
-                net_fee_datoshi -= exec_fee_factor * unscaled_verification_fee;
+            // The cost helpers already apply the execution-fee factor
+            // (`ApplyExecFeeFactor`); the hardfork gates use the verification
+            // index (current height + 1), mirroring `Transaction.Verify`.
+            Ok(StandardWitnessVerification::Signature) => {
+                net_fee_datoshi -= Helper::signature_contract_cost(
+                    settings,
+                    height.saturating_add(1),
+                    exec_fee_factor,
+                );
+            }
+            Ok(StandardWitnessVerification::MultiSignature(parameters)) => {
+                net_fee_datoshi -= Helper::multi_signature_contract_cost(
+                    settings,
+                    height.saturating_add(1),
+                    exec_fee_factor,
+                    &parameters,
+                );
             }
             Ok(StandardWitnessVerification::NonStandard) => {
                 let mut fee = 0i64;

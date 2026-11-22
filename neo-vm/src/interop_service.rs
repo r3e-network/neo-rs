@@ -119,13 +119,20 @@ pub trait InteropHost {
 
     /// Called after executing an instruction. Allows the host to perform post-processing.
     ///
+    /// `instruction` is `None` for the implicit `RET` that the engine substitutes
+    /// when the instruction pointer reaches the end of the script; the host
+    /// charges no instruction price for it. `run_stats` holds the statistics
+    /// collected by the handler and drives the post-`HF_Huyao` opcode pricing
+    /// (neo-vm v3.11.2 `PostExecuteInstruction(instruction, runStats)`).
+    ///
     /// If the host needs the current execution context it can obtain it via
     /// `engine.current_context()` — this avoids an expensive per-instruction
     /// `ExecutionContext` clone.
     fn post_execute_instruction(
         &mut self,
         _engine: &mut ExecutionEngine,
-        _instruction: &Instruction,
+        _instruction: Option<&Instruction>,
+        _run_stats: &crate::run_stats::RunStats,
     ) -> VmResult<()> {
         Ok(())
     }

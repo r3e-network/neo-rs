@@ -60,6 +60,12 @@ impl PolicyContract {
             .ok_or_else(|| Error::native_contract(format!("{name} is out of range")))
     }
 
+    pub(super) fn parse_u64_argument(arg: &[u8], name: &str) -> Result<u64> {
+        BigInt::from_signed_bytes_le(arg)
+            .to_u64()
+            .ok_or_else(|| Error::native_contract(format!("{name} is out of range")))
+    }
+
     pub(super) fn fee_per_byte_key() -> StorageKey {
         StorageKey::create(Self::ID, Self::PREFIX_FEE_PER_BYTE)
     }
@@ -82,6 +88,25 @@ impl PolicyContract {
 
     pub(super) fn max_traceable_blocks_key() -> StorageKey {
         StorageKey::create(Self::ID, Self::PREFIX_MAX_TRACEABLE_BLOCKS)
+    }
+
+    pub(super) fn temporary_storage_max_ttl_key() -> StorageKey {
+        StorageKey::create(Self::ID, Self::PREFIX_TEMP_STORAGE_MAX_TTL)
+    }
+
+    /// Builds the storage key of a committee-activated hardfork height.
+    ///
+    /// Matches C# `PolicyContract.CreateHardforkKey`:
+    /// `CreateStorageKey(Prefix_Hardfork, Hardforks.GetName(hardfork))`.
+    pub(super) fn hardfork_key(hardfork: Hardfork) -> StorageKey {
+        StorageKey::new(
+            Self::ID,
+            [&[Self::PREFIX_HARDFORK][..], hardfork.raw_name().as_bytes()].concat(),
+        )
+    }
+
+    pub(super) fn hardfork_prefix() -> StorageKey {
+        StorageKey::create(Self::ID, Self::PREFIX_HARDFORK)
     }
 
     pub(super) fn blocked_account_key(account: &UInt160) -> StorageKey {

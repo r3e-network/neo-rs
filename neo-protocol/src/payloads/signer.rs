@@ -48,8 +48,19 @@ impl Signer {
     pub fn scopes(&self) -> WitnessScope {
         self.scopes
     }
-    /// Expands scopes in the original GetAllRules order.
+    /// Expands scopes in the C# `GetAllRules` order: the scope-derived rules
+    /// first, then the signer's own witness rules.
     pub fn get_all_rules(&self) -> Vec<WitnessRule> {
+        let mut result = self.get_scope_rules();
+        if self.scopes.contains(WitnessScope::WITNESS_RULES) {
+            result.extend(self.rules.clone());
+        }
+        result
+    }
+
+    /// Converts the scopes of the signer except `WitnessScope::WITNESS_RULES`
+    /// to witness rules (C# v3.11.2 `Signer.GetScopeRules`).
+    pub fn get_scope_rules(&self) -> Vec<WitnessRule> {
         if self.scopes == WitnessScope::GLOBAL {
             return vec![WitnessRule::new(
                 WitnessRuleAction::Allow,
@@ -80,9 +91,6 @@ impl Signer {
                     },
                 ));
             }
-        }
-        if self.scopes.contains(WitnessScope::WITNESS_RULES) {
-            result.extend(self.rules.clone());
         }
         result
     }

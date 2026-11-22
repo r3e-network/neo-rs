@@ -218,7 +218,9 @@ impl JsonSerializer {
                 StackItem::Array(array) => {
                     let identity = (array.id(), StackItemType::Array);
                     if !seen.insert(identity) {
-                        return Err("Circular reference detected".to_string());
+                        return Err(
+                            "Cyclic compound references cannot be serialized to JSON.".to_string()
+                        );
                     }
                     Ok(Frame::List {
                         identity,
@@ -229,7 +231,9 @@ impl JsonSerializer {
                 StackItem::Struct(structure) => {
                     let identity = (structure.id(), StackItemType::Struct);
                     if !seen.insert(identity) {
-                        return Err("Circular reference detected".to_string());
+                        return Err(
+                            "Cyclic compound references cannot be serialized to JSON.".to_string()
+                        );
                     }
                     Ok(Frame::List {
                         identity,
@@ -240,7 +244,9 @@ impl JsonSerializer {
                 StackItem::Map(map) => {
                     let identity = (map.id(), StackItemType::Map);
                     if !seen.insert(identity) {
-                        return Err("Circular reference detected".to_string());
+                        return Err(
+                            "Cyclic compound references cannot be serialized to JSON.".to_string()
+                        );
                     }
                     Ok(Frame::Map {
                         identity,

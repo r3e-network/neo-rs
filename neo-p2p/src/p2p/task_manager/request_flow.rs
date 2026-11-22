@@ -11,6 +11,7 @@ use crate::p2p::payloads::{
     inv_payload::{InvPayload, MAX_HASHES_COUNT},
 };
 use neo_actors::ActorRef;
+use neo_primitives::UInt256;
 use std::sync::Arc;
 use tracing::{trace, warn};
 
@@ -59,6 +60,14 @@ impl TaskManager {
         );
 
         if !session.available_tasks.is_empty() {
+            // C# v3.11.2 RequestTasks: `session.AvailableTasks.Remove(session.InvTasks)`
+            // — a hash already in flight on this session must not be re-requested
+            // from it while the first request is still pending.
+            let in_flight: Vec<UInt256> = session.inv_tasks.keys().copied().collect();
+            for hash in in_flight {
+                session.available_tasks.remove(&hash);
+            }
+
             let available_plan = plan_available_inventory_tasks(
                 session.available_tasks.iter().copied(),
                 |hash| self.known_hashes.contains(hash) || system.contains_block(hash),
@@ -106,8 +115,11 @@ impl TaskManager {
             header_task_count,
             session.should_request_headers(header_request_start, self.task_timeout),
         );
-        if let Some(header_request) =
-            header_request.filter(|_| self.increment_inv_task(HEADER_TASK_HASH))
+        // C# v3.11.2: `!session.InvTasks.ContainsKey(HeaderTaskHash)` — a
+        // session never re-requests headers while its own request is pending.
+        if let Some(header_request) = header_request
+            .filter(|_| !session.inv_tasks.contains_key(&HEADER_TASK_HASH))
+            .filter(|_| self.increment_inv_task(HEADER_TASK_HASH))
         {
             session.register_inv_task(HEADER_TASK_HASH);
             session.record_header_request(header_request.start_index);
@@ -271,7 +283,11 @@ impl TaskManager {
                     continue;
                 }
 
-                if inventory_type == InventoryType::Block && this.global_inv_tasks.is_tracked(&hash)
+                // C# v3.11.2 OnNewTasks: `AvailableTasks.UnionWith(hashes.Where(p
+                // => globalInvTasks.ContainsKey(p) && !session.InvTasks.ContainsKey(p)))`.
+                if inventory_type == InventoryType::Block
+                    && this.global_inv_tasks.is_tracked(&hash)
+                    && !entry.session.inv_tasks.contains_key(&hash)
                 {
                     entry.session.available_tasks.insert(hash);
                 }

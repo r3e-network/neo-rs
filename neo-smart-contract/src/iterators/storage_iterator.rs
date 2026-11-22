@@ -52,34 +52,13 @@ impl StorageIterator {
     {
         Self::new(iter.collect(), prefix_length, options)
     }
-}
 
-impl Iter for StorageIterator {
-    fn next(&mut self) -> bool {
-        match self.current {
-            None => {
-                if !self.items.is_empty() {
-                    self.current = Some(0);
-                    true
-                } else {
-                    false
-                }
-            }
-            Some(idx) => {
-                if idx + 1 < self.items.len() {
-                    self.current = Some(idx + 1);
-                    true
-                } else {
-                    false
-                }
-            }
-        }
-    }
-
-    fn value(&self) -> StackItem {
+    /// Returns the current value together with the number of bytes deserialized
+    /// to produce it (C# v3.11.2 `StorageIterator.Value(out int bytesDeserialized)`).
+    pub(crate) fn value_with_bytes(&self) -> (StackItem, i64) {
         let idx = match self.current {
             Some(i) if i < self.items.len() => i,
-            _ => return StackItem::Null,
+            _ => return (StackItem::Null, 0),
         };
 
         let (key, value) = &self.items[idx];
@@ -95,10 +74,14 @@ impl Iter for StorageIterator {
 
         // Get value
         let raw_value = value.value_bytes();
+        let mut bytes_deserialized = 0i64;
         let mut value_item = if self.options.contains(FindOptions::DeserializeValues) {
             match BinarySerializer::deserialize(&raw_value, &ExecutionEngineLimits::default(), None)
             {
-                Ok(item) => item,
+                Ok(item) => {
+                    bytes_deserialized = deserialized_byte_length(&item);
+                    item
+                }
                 Err(_) => StackItem::from_byte_string(raw_value.clone()),
             }
         } else {
@@ -137,14 +120,63 @@ impl Iter for StorageIterator {
         }
 
         // Return based on options
-        if self.options.contains(FindOptions::KeysOnly) {
+        let result = if self.options.contains(FindOptions::KeysOnly) {
             StackItem::from_byte_string(key_bytes)
         } else if self.options.contains(FindOptions::ValuesOnly) {
             value_item
         } else {
             // Return struct with key and value
             StackItem::from_struct(vec![StackItem::from_byte_string(key_bytes), value_item])
+        };
+        (result, bytes_deserialized)
+    }
+}
+
+/// Sums the payload lengths of every `ByteString`/`Buffer` reachable from the
+/// deserialized item, matching the `bytesRead` counted by C# v3.11.2
+/// `BinarySerializer.Deserialize(..., out int bytesRead)`.
+fn deserialized_byte_length(item: &StackItem) -> i64 {
+    match item {
+        StackItem::ByteString(bytes) => bytes.len() as i64,
+        StackItem::Buffer(buffer) => buffer.len() as i64,
+        StackItem::Array(array) => array.items().iter().map(deserialized_byte_length).sum(),
+        StackItem::Struct(struct_item) => struct_item
+            .items()
+            .iter()
+            .map(deserialized_byte_length)
+            .sum(),
+        StackItem::Map(entries) => entries
+            .iter()
+            .map(|(key, value)| deserialized_byte_length(&key) + deserialized_byte_length(&value))
+            .sum(),
+        _ => 0,
+    }
+}
+
+impl Iter for StorageIterator {
+    fn next(&mut self) -> bool {
+        match self.current {
+            None => {
+                if !self.items.is_empty() {
+                    self.current = Some(0);
+                    true
+                } else {
+                    false
+                }
+            }
+            Some(idx) => {
+                if idx + 1 < self.items.len() {
+                    self.current = Some(idx + 1);
+                    true
+                } else {
+                    false
+                }
+            }
         }
+    }
+
+    fn value(&self) -> StackItem {
+        self.value_with_bytes().0
     }
 
     fn dispose(&mut self) {

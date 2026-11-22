@@ -19,11 +19,19 @@ pub fn verify_witnesses<V: VerifiableExt>(
     settings: &ProtocolSettings,
     snapshot: &PersistenceDataCache,
     max_gas: i64,
+    cap_gas: bool,
 ) -> bool {
     if max_gas < 0 {
         return false;
     }
-    let max_gas = max_gas.min(Helper::MAX_VERIFICATION_GAS);
+    // v3.11.2 `Helper.VerifyWitnesses`: the gas cap is optional so block
+    // headers can verify against the caller-provided budget verbatim
+    // (`Header.Verify` passes `capGas: false`).
+    let max_gas = if cap_gas {
+        max_gas.min(Helper::MAX_VERIFICATION_GAS)
+    } else {
+        max_gas
+    };
     let hashes = verifiable.script_hashes_for_verifying(snapshot);
     let witnesses = WitnessData::witnesses(verifiable);
     if hashes.len() != witnesses.len() {

@@ -27,6 +27,7 @@ use async_trait::async_trait;
 use neo_crypto::{Crypto, ECCurve, ECPoint, Secp256r1Crypto};
 use neo_primitives::{OracleResponseCode, UInt160, UInt256};
 use neo_protocol::payloads::Transaction;
+use neo_protocol::protocol_settings::ProtocolSettings;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -62,6 +63,7 @@ struct TestSnapshot {
     oracles: Vec<ECPoint>,
     requests: BTreeMap<u64, OracleRequest>,
     tx_block_index: Option<u32>,
+    settings: ProtocolSettings,
 }
 
 impl OracleSnapshot for TestSnapshot {
@@ -104,8 +106,14 @@ impl OracleSnapshot for TestSnapshot {
         24
     }
 
-    fn exec_fee_factor(&self) -> u32 {
-        30
+    fn protocol_settings(&self) -> &ProtocolSettings {
+        &self.settings
+    }
+
+    fn exec_fee_factor_with_decimals(&self) -> i64 {
+        // Raw factor 30 with the full decimals applied
+        // (C# `Policy.GetExecFeeFactorWithDecimals`).
+        30 * neo_smart_contract::application_engine::FEE_FACTOR as i64
     }
 
     fn fee_per_byte(&self) -> i64 {
@@ -514,6 +522,7 @@ fn queue_service(request: Option<OracleRequest>, tx_block_index: Option<u32>) ->
             oracles: vec![sample_point(0x01)],
             requests,
             tx_block_index,
+            settings: ProtocolSettings::default(),
         },
         Arc::new(TestRelay::default()),
     )
@@ -573,6 +582,7 @@ fn add_response_tx_sign_rejects_blocked_url() {
             oracles: vec![sample_point(0x01)],
             requests,
             tx_block_index: Some(1),
+            settings: ProtocolSettings::default(),
         },
         Arc::new(TestRelay::default()),
     );

@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.22.0] - 2026-11-22
+
+### Protocol — C# v3.11.2 alignment
+- Target C# Neo N3 v3.11.2 (baseline v3.10.2). Full port map: `docs/V3_11_2_ALIGNMENT.md`.
+- Hardforks: added `HF_Iara` and `HF_Jackalope`; `HF_Huyao` is `LAST_CONFIG_MANAGED`; hardfork parsing rules, `UnknownHardforkException` fault paths, and the `Policy` activations (`activateHardfork`, `getLastConfigManagedHardfork`, `tempStorageMaxTTL`, `LastConfigManagedHardfork` setting) are ported.
+- New `TemporaryStorage` native contract with TTL enforcement via the Policy setting.
+- Huyao dynamic pricing: VM `RunStats` with hardfork-selected pre/post instruction hooks, `StaticCoefficients`/`DynamicPriceTable`/`OpcodeV1` pricing, femtoGAS accounting (`AddFemtoGas`/`GasLeft`/`FeeConsumed`), variable interop fees (CheckWitness rule counts, LoadScript bytes, Notify items, GetNotifications, CurrentSigners, Iterator.Value, CreateMultisig per key, Contract.Call/CALLT disk fee, CheckMultisig, CheckSig), NEP17 fast-path fee parity, and the pre-Huyao legacy handlers (`SETITEM_Before606`, `Roll_Before575`).
+- Huyao behaviour fixes: `StdLib.strLen` codepoint counting, `FindWithStart` syscalls (forward/backward seek parity, local-store variant, pre-Huyao fault), `CryptoLib.recoverSecp256K1` V0/V1 split, BLS Iara identity gate in `bls12381_deserialize`.
+- Non-hardfork ports: `MerkleTree.Trim` depth-vs-flags fix, witness cost helpers with `cap_gas` (`VerifyWitnesses`), `MaxTransactionSize` enforcement in transaction deserialization, `Header.Verify` applies the 3 GAS budget verbatim (`capGas: false`), `DataCache`/`Find` skip parity, `StdLib.jsonSerialize` reject-cycles message, `Notary` persist guards and Conflicts else-branch, `NeoToken` vote early-return.
+- P2P/mempool parity: `MemoryPool.checkConflicts` matches any common signer, stale conflict entries are evicted from verified and unverified pools on block persist, `MerkleBlockPayload` var-size `TxCount` with hash-count bounds, TaskManager global slot release on completion, per-session timeout accounting with ascending re-request, `RequestTasks` in-flight dedupe, v3.11.2 `IsIntranetAddress` rules, out-of-window blocks still complete matching tasks.
+- Deliberate Rust divergences kept and documented (richer `TaskSession` block cache, 4096-task budget, bounded outbound queues).
+
+### Changed
+- **Maintenance**: split every production Rust file above 1000 lines (37 files) into directory modules — small parents, cohesive children, public paths preserved via re-exports, inline `mod tests` moved to sibling test files, architecture guard suite updated for the new module layout. Largest non-test parent is 659 lines.
+- Completed the interrupted `neo-storage` rocksdb store modularization (`RocksDbSnapshot` re-export, snapshot/range field visibility).
+- Workspace version bumped 0.21.0 → 0.22.0 (root, fuzz, benches-package, tests manifests).
+
+### Fixed
+- rpc-server test expectations updated to C# v3.11.2 behaviour: the PUSH1 `gasconsumed` vector (66 datoshi under Huyao dynamic pricing), the wallet-relay scenario under the recalibrated 69,911-datoshi signature cost, and the `sendrawtransaction` oversize mapping to the -509 pre-check.
+
 ## [0.21.0] - 2026-11-20
 
 ### Added

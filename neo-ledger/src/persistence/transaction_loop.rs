@@ -143,6 +143,17 @@ pub fn execute_serially(
             VmState::HALT => context.base_snapshot.merge_from_child(&tx_overlay),
             // Step 10b — FAULT: reset the overlay and stage a bounded observation.
             VmState::FAULT => {
+                // C# v3.11.2: `Blockchain.Persist` rethrows
+                // `UnknownHardforkException` out of the faulted transaction, so
+                // an outdated node stops following the chain instead of
+                // recording divergent state. Aborting with a typed error before
+                // any commit side effect is the Rust equivalent.
+                if let Some(hardfork_name) = app.fault_unknown_hardfork_name() {
+                    return Err(LedgerError::UnknownHardforkFault {
+                        transaction_hash: *tx_hash,
+                        hardfork_name: hardfork_name.to_owned(),
+                    });
+                }
                 tx_overlay.reset();
                 let category = if app.fault_exception().is_some() {
                     FaultCategory::CaughtVmException

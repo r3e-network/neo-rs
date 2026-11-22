@@ -37,6 +37,16 @@ impl TaskManager {
         self.global_index_tasks.decrement(&index);
     }
 
+    /// Fully releases a hash task, mirroring C# `globalInvTasks.Remove(hash)`.
+    pub(super) fn release_inv_task(&mut self, hash: &UInt256) {
+        self.global_inv_tasks.remove(hash);
+    }
+
+    /// Fully releases an index task, mirroring C# `globalIndexTasks.Remove(index)`.
+    pub(super) fn release_index_task(&mut self, index: u32) {
+        self.global_index_tasks.remove(&index);
+    }
+
     pub(super) fn forget_hash(&mut self, hash: &UInt256) {
         self.known_hashes.remove(hash);
     }

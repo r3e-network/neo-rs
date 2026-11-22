@@ -124,13 +124,21 @@ impl OracleSnapshot for CoreSnapshot {
             .unwrap_or(self.settings.max_valid_until_block_increment)
     }
 
-    fn exec_fee_factor(&self) -> u32 {
+    fn protocol_settings(&self) -> &ProtocolSettings {
+        &self.settings
+    }
+
+    fn exec_fee_factor_with_decimals(&self) -> i64 {
         let height = LedgerContract::new()
             .current_index(&self.data_cache)
             .unwrap_or(0);
         PolicyContract::new()
-            .get_exec_fee_factor_snapshot(&self.data_cache, &self.settings, height)
-            .unwrap_or(PolicyContract::DEFAULT_EXEC_FEE_FACTOR)
+            .get_exec_fee_factor_with_decimals_snapshot(&self.data_cache, &self.settings, height)
+            .unwrap_or(
+                (PolicyContract::DEFAULT_EXEC_FEE_FACTOR
+                    * neo_smart_contract::application_engine::FEE_FACTOR as u32)
+                    as i64,
+            )
     }
 
     fn fee_per_byte(&self) -> i64 {

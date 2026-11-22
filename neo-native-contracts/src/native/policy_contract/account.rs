@@ -105,6 +105,16 @@ impl PolicyContract {
         Ok(iterator_id.to_le_bytes().to_vec())
     }
 
+    /// GAS recipient for the vote-revocation performed by `BlockAccountInternal`.
+    ///
+    /// C# v3.11.2:
+    /// `await NEO.VoteInternal(engine, account, null, engine.IsHardforkEnabled(Hardfork.HF_Huyao) ? Treasury.Hash : account);`
+    fn gas_recipient(engine: &ApplicationEngine) -> Option<UInt160> {
+        engine
+            .is_hardfork_enabled(Hardfork::HfHuyao)
+            .then(|| crate::native::TreasuryContract::new().hash())
+    }
+
     /// Blocks an account in the current snapshot (used by other native contracts).
     pub fn block_account_internal(
         &self,
@@ -128,7 +138,12 @@ impl PolicyContract {
         if let Some(item_bytes) = existing {
             if engine.is_hardfork_enabled(Hardfork::HfFaun) && item_bytes.is_empty() {
                 use crate::native::neo_token::NeoToken;
-                let _ = NeoToken::new().vote_internal(engine, account, None)?;
+                let _ = NeoToken::new().vote_internal(
+                    engine,
+                    account,
+                    None,
+                    Self::gas_recipient(engine),
+                )?;
                 let timestamp = engine
                     .get_current_block_time()
                     .map_err(Error::invalid_operation)?;
@@ -143,7 +158,12 @@ impl PolicyContract {
             use crate::native::neo_token::NeoToken;
             // We ignore the result of VoteInternal as C# does (await and forget return?)
             // C# `await NEO.VoteInternal(...)` returns bool, but BlockAccount continues regardless.
-            let _ = NeoToken::new().vote_internal(engine, account, None)?;
+            let _ = NeoToken::new().vote_internal(
+                engine,
+                account,
+                None,
+                Self::gas_recipient(engine),
+            )?;
         }
 
         // Add to blocked list

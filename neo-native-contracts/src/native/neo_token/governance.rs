@@ -588,16 +588,22 @@ impl NeoToken {
         }
 
         Ok(vec![u8::from(
-            self.vote_internal(engine, &account, vote_to)?,
+            self.vote_internal(engine, &account, vote_to, None)?,
         )])
     }
 
     /// voteInternal - actual voting logic (bypasses witness check)
+    ///
+    /// `gas_recipient` mirrors C# `VoteInternal(engine, account, voteTo, gasRecipient)`:
+    /// when `Some`, the accrued GAS is minted there instead of `account`. Policy's
+    /// `BlockAccount` uses it from Huyao on to redirect a blocked account's reward
+    /// to the Treasury.
     pub(crate) fn vote_internal(
         &self,
         engine: &mut ApplicationEngine,
         account: &UInt160,
         vote_to: Option<ECPoint>,
+        gas_recipient: Option<UInt160>,
     ) -> CoreResult<bool> {
         // Enter reentrancy guard
         let _guard = SecurityContext::enter_guard(ReentrancyGuardType::NeoVote)?;
@@ -728,7 +734,8 @@ impl NeoToken {
             .native_err()?;
 
         if let Some(reward) = gas_distribution {
-            GasToken::new().mint(engine, account, &reward, true)?;
+            let recipient = gas_recipient.as_ref().unwrap_or(account);
+            GasToken::new().mint(engine, recipient, &reward, true)?;
         }
 
         Ok(true)

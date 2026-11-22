@@ -237,12 +237,30 @@ fn trim_node(node: &mut MerkleTreeNode, index: usize, depth: usize, flags: &[boo
     if let Some(left) = node.left.as_mut() {
         trim_node(left, index * 2, depth - 1, flags);
     }
-    if let Some(right) = node.right.as_mut() {
-        trim_node(right, index * 2 + 1, depth - 1, flags);
+
+    // Odd tree levels reuse the left subtree for the right slot: the C# tree
+    // stores a single shared node there, and v3.11.2 skips trimming it again
+    // so padded flags of unrelated slots never prune the duplicated subtree.
+    // This implementation clones instead of sharing, so duplicates are detected
+    // by equal subtree hashes (distinct subtrees collide only via SHA-256).
+    let right_is_shared = matches!(
+        (&node.left, &node.right),
+        (Some(left), Some(right)) if left.hash == right.hash
+    );
+    if !right_is_shared {
+        if let Some(right) = node.right.as_mut() {
+            trim_node(right, index * 2 + 1, depth - 1, flags);
+        }
     }
 
     let left_pruned = node.left.as_ref().is_none_or(|child| child.is_pruned());
-    let right_pruned = node.right.as_ref().is_none_or(|child| child.is_pruned());
+    let right_pruned = if right_is_shared {
+        // The shared subtree is trimmed only through the left slot; the parent
+        // prunes when that single object is bare.
+        left_pruned
+    } else {
+        node.right.as_ref().is_none_or(|child| child.is_pruned())
+    };
 
     if left_pruned && right_pruned {
         node.left = None;
@@ -440,6 +458,87 @@ mod tests {
             time.as_micros() < 1000,
             "Small tree performance regression: {time:?} (expected <1ms)"
         );
+    }
+
+    #[test]
+    fn test_trim_odd_level_keeps_duplicated_subtree() {
+        // 5 leaves: Q2 = (P3, P3') reuses P3. Flags keep the left slot but drop
+        // the padded right slot; the shared subtree must survive (C# v3.11.2).
+        let hashes: Vec<UInt256> = (1..=5).map(test_hash).collect();
+        let mut tree = MerkleTree::new(&hashes);
+        let flags = [false, false, false, false, true, false, false, false];
+
+        tree.trim(&flags);
+
+        let q1_hash = MerkleTree::hash_pair(
+            &MerkleTree::hash_pair(&hashes[0], &hashes[1]),
+            &MerkleTree::hash_pair(&hashes[2], &hashes[3]),
+        );
+        let collected = tree.to_hash_array();
+        assert_eq!(
+            collected,
+            vec![q1_hash, hashes[4], hashes[4], hashes[4], hashes[4]],
+            "Duplicated subtree must keep its leaves once kept by the left slot"
+        );
+    }
+
+    #[test]
+    fn test_trim_odd_level_prunes_shared_subtree_from_left_flags() {
+        // The left slot of the shared node is dropped while its padded right
+        // slot says keep; the parent must prune anyway because the shared node
+        // was already made bare through the left slot.
+        let hashes: Vec<UInt256> = (1..=5).map(test_hash).collect();
+        let mut tree = MerkleTree::new(&hashes);
+        let flags = [false, false, false, false, false, false, true, false];
+
+        tree.trim(&flags);
+
+        // Q1 is pruned, Q2 (shared) is pruned via the left slot, so the root
+        // collapses to a bare node holding only its own hash.
+        let collected = tree.to_hash_array();
+        assert_eq!(collected.len(), 1, "Fully trimmed tree keeps only the root");
+        let expected_root = MerkleTree::compute_root(&hashes).unwrap();
+        assert_eq!(collected[0], expected_root, "Trim must never alter hashes");
+    }
+
+    #[test]
+    fn test_trim_matching_flags_on_shared_levels_matches_csharp() {
+        // When the padded right-slot flags mirror the left slot, trimming is
+        // identical before and after the fix.
+        let hashes: Vec<UInt256> = (1..=5).map(test_hash).collect();
+        let mut tree = MerkleTree::new(&hashes);
+        let flags = [false, false, false, false, true, true, true, true];
+
+        tree.trim(&flags);
+
+        let q1_hash = MerkleTree::hash_pair(
+            &MerkleTree::hash_pair(&hashes[0], &hashes[1]),
+            &MerkleTree::hash_pair(&hashes[2], &hashes[3]),
+        );
+        let collected = tree.to_hash_array();
+        assert_eq!(
+            collected,
+            vec![q1_hash, hashes[4], hashes[4], hashes[4], hashes[4]],
+            "Fully kept shared subtree emits its leaf per padded slot"
+        );
+    }
+
+    #[test]
+    fn test_trim_even_tree_keeps_leaves_and_root_hash() {
+        // Regression: even leaf counts have no shared nodes.
+        let hashes: Vec<UInt256> = (1..=4).map(test_hash).collect();
+        let mut tree = MerkleTree::new(&hashes);
+        let flags = [true, false, false, true];
+
+        tree.trim(&flags);
+
+        assert_eq!(
+            tree.to_hash_array(),
+            hashes,
+            "Kept leaves must survive trimming"
+        );
+        let expected_root = MerkleTree::compute_root(&hashes).unwrap();
+        assert_eq!(tree.root(), Some(&expected_root), "Trim must keep the root");
     }
 
     /// Stress test: ensure no panics with very large inputs

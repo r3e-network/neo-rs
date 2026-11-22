@@ -152,6 +152,41 @@ impl NativeContract for PolicyContract {
             }
         }
 
+        if engine.is_hardfork_enabled(Hardfork::HfHuyao) {
+            // v3.11.2: TemporaryStorage TTL cap plus a snapshot of the
+            // configuration-managed activation heights, so later hardfork
+            // checks can be answered from Policy storage alone.
+            //
+            // C# ref: `engine.SnapshotCache.Add(_tempStorageMaxTTL,
+            //           new StorageItem(MaxTemporaryStorageMaxTTL));` followed by
+            //          `SnapshotCache.Add(CreateHardforkKey(hf), height)` for
+            //          every `hf <= LastConfigManagedHardfork` present in the
+            //          configuration.
+            if snapshot_ref
+                .try_get(&Self::temporary_storage_max_ttl_key())
+                .is_none()
+            {
+                engine.set_storage(
+                    Self::temporary_storage_max_ttl_key(),
+                    StorageItem::from_bytes(Self::encode_u64(Self::MAX_TEMPORARY_STORAGE_MAX_TTL)),
+                )?;
+            }
+
+            let config_heights: Vec<(Hardfork, u32)> = engine
+                .protocol_settings()
+                .hardforks
+                .iter()
+                .filter(|(hardfork, _)| hardfork.is_config_managed())
+                .map(|(hardfork, height)| (*hardfork, *height))
+                .collect();
+            for (hardfork, height) in config_heights {
+                let key = Self::hardfork_key(hardfork);
+                if snapshot_ref.try_get(&key).is_none() {
+                    engine.set_storage(key, StorageItem::from_bytes(Self::encode_u32(height)))?;
+                }
+            }
+        }
+
         Ok(())
     }
 }

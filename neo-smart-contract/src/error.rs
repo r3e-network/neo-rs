@@ -169,6 +169,16 @@ pub enum CoreError {
         /// Error message describing the compression issue
         message: String,
     },
+
+    /// Unknown hardfork name passed to `Policy.activateHardfork`
+    /// (C# v3.11.2 `UnknownHardforkException`).
+    #[error(
+        "Unknown hardfork: {hardfork_name}. Update node software to the latest version to continue."
+    )]
+    UnknownHardfork {
+        /// The unrecognized hardfork name
+        hardfork_name: String,
+    },
 }
 
 impl CoreError {
@@ -369,6 +379,14 @@ impl CoreError {
         }
     }
 
+    /// Create an unknown-hardfork error raised by `Policy.activateHardfork`
+    /// (C# v3.11.2 `UnknownHardforkException`)
+    pub fn unknown_hardfork<S: Into<String>>(hardfork_name: S) -> Self {
+        Self::UnknownHardfork {
+            hardfork_name: hardfork_name.into(),
+        }
+    }
+
     /// Check if this error is retryable
     pub fn is_retryable(&self) -> bool {
         matches!(
@@ -399,6 +417,12 @@ impl CoreError {
         !self.is_user_error()
     }
 
+    /// Check if this error is the unknown-hardfork fault raised by
+    /// `Policy.activateHardfork` (C# v3.11.2 `UnknownHardforkException`)
+    pub const fn is_unknown_hardfork(&self) -> bool {
+        matches!(self, CoreError::UnknownHardfork { .. })
+    }
+
     /// Get error category for logging/metrics
     pub fn category(&self) -> &'static str {
         match self {
@@ -418,6 +442,7 @@ impl CoreError {
             CoreError::TypeConversion { .. } => "conversion",
             CoreError::Execution { .. } => "execution",
             CoreError::Compression { .. } => "compression",
+            CoreError::UnknownHardfork { .. } => "operation",
         }
     }
 }
@@ -866,5 +891,16 @@ mod tests {
         assert_eq!(mapped, Err(CoreError::native_contract("native failure")));
         let result: Result<u8> = Ok(7);
         assert_eq!(result.native_err(), Ok(7));
+    }
+
+    #[test]
+    fn unknown_hardfork_matches_csharp_exception_message() {
+        let error = CoreError::unknown_hardfork("HF_Basilisk");
+        assert_eq!(
+            error.to_string(),
+            "Unknown hardfork: HF_Basilisk. Update node software to the latest version to continue."
+        );
+        assert!(error.is_unknown_hardfork());
+        assert_eq!(error.category(), "operation");
     }
 }

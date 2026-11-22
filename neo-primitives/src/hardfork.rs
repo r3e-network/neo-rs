@@ -30,14 +30,67 @@ protocol_enum_repr! {
         HfGorgon = 6 => "HF_Gorgon",
         /// Huyao hardfork (introduced in Neo 3.10).
         HfHuyao = 7 => "HF_Huyao",
+        /// Iara hardfork. First hardfork activated on-chain via `Policy.activateHardfork`.
+        HfIara = 8 => "HF_Iara",
+        /// Jackalope hardfork.
+        HfJackalope = 9 => "HF_Jackalope",
     }
 }
 
 impl Hardfork {
+    /// The last hardfork that is activated exclusively through
+    /// `ProtocolSettings` configuration. Later hardforks are activated on-chain
+    /// through Policy's `activateHardfork` call.
+    ///
+    /// Matches C# `ProtocolSettings.LastConfigManagedHardfork`.
+    pub const LAST_CONFIG_MANAGED: Self = Self::HfHuyao;
+
+    /// Returns whether this hardfork is managed by `ProtocolSettings` rather
+    /// than by an on-chain Policy activation record.
+    #[must_use]
+    pub const fn is_config_managed(&self) -> bool {
+        (*self as u8) <= (Self::LAST_CONFIG_MANAGED as u8)
+    }
+
     /// Returns the hardfork name as a string.
     #[must_use]
     pub const fn name(&self) -> &'static str {
         self.as_str()
+    }
+
+    /// Returns the on-chain name of this hardfork: the enum identifier with
+    /// the `HF_` prefix removed (e.g. `Iara`).
+    ///
+    /// Matches C# `Hardforks.GetName`; this is the exact string used as the
+    /// Policy storage key for committee-activated hardforks.
+    #[must_use]
+    pub const fn raw_name(&self) -> &'static str {
+        match self {
+            Self::HfAspidochelone => "Aspidochelone",
+            Self::HfBasilisk => "Basilisk",
+            Self::HfCockatrice => "Cockatrice",
+            Self::HfDomovoi => "Domovoi",
+            Self::HfEchidna => "Echidna",
+            Self::HfFaun => "Faun",
+            Self::HfGorgon => "Gorgon",
+            Self::HfHuyao => "Huyao",
+            Self::HfIara => "Iara",
+            Self::HfJackalope => "Jackalope",
+        }
+    }
+
+    /// Parses a Policy hardfork name with the strict rules of C#
+    /// `Hardforks.TryParseExact`.
+    ///
+    /// Only the full raw name is accepted, case-sensitively: `Iara` parses,
+    /// while `iara`, `HF_Iara` and `8` do not. Returns `None` for anything else.
+    #[must_use]
+    pub fn try_parse_exact(name: &str) -> Option<Self> {
+        let hardfork = Self::all()
+            .iter()
+            .copied()
+            .find(|hardfork| hardfork.raw_name() == name)?;
+        Some(hardfork)
     }
 
     /// Returns the hardfork index (0-based).
@@ -67,6 +120,8 @@ impl FromStr for Hardfork {
             "HF_FAUN" | "FAUN" => Ok(Self::HfFaun),
             "HF_GORGON" | "GORGON" => Ok(Self::HfGorgon),
             "HF_HUYAO" | "HUYAO" => Ok(Self::HfHuyao),
+            "HF_IARA" | "IARA" => Ok(Self::HfIara),
+            "HF_JACKALOPE" | "JACKALOPE" => Ok(Self::HfJackalope),
             _ => Err(HardforkParseError(value.to_string())),
         }
     }
@@ -92,12 +147,23 @@ mod tests {
     #[test]
     fn test_hardfork_all() {
         let all = Hardfork::all();
-        assert_eq!(all.len(), 8);
-        assert_eq!(Hardfork::COUNT, 8);
+        assert_eq!(all.len(), 10);
+        assert_eq!(Hardfork::COUNT, 10);
         assert_eq!(Hardfork::ALL, all);
         assert_eq!(all[0], Hardfork::HfAspidochelone);
         assert_eq!(all[6], Hardfork::HfGorgon);
         assert_eq!(all[7], Hardfork::HfHuyao);
+        assert_eq!(all[8], Hardfork::HfIara);
+        assert_eq!(all[9], Hardfork::HfJackalope);
+    }
+
+    #[test]
+    fn test_last_config_managed_hardfork_matches_csharp() {
+        // C# `ProtocolSettings.LastConfigManagedHardfork`.
+        assert_eq!(Hardfork::LAST_CONFIG_MANAGED, Hardfork::HfHuyao);
+        assert!(Hardfork::HfHuyao.is_config_managed());
+        assert!(!Hardfork::HfIara.is_config_managed());
+        assert!(!Hardfork::HfJackalope.is_config_managed());
     }
 
     #[test]
@@ -116,7 +182,9 @@ mod tests {
         assert_eq!(Hardfork::from_index(0), Some(Hardfork::HfAspidochelone));
         assert_eq!(Hardfork::from_index(6), Some(Hardfork::HfGorgon));
         assert_eq!(Hardfork::from_index(7), Some(Hardfork::HfHuyao));
-        assert_eq!(Hardfork::from_index(8), None);
+        assert_eq!(Hardfork::from_index(8), Some(Hardfork::HfIara));
+        assert_eq!(Hardfork::from_index(9), Some(Hardfork::HfJackalope));
+        assert_eq!(Hardfork::from_index(10), None);
         assert_eq!(Hardfork::from_index(255), None);
     }
 
@@ -164,6 +232,32 @@ mod tests {
     }
 
     #[test]
+    fn test_hardfork_raw_name_strips_prefix() {
+        assert_eq!(Hardfork::HfAspidochelone.raw_name(), "Aspidochelone");
+        assert_eq!(Hardfork::HfHuyao.raw_name(), "Huyao");
+        assert_eq!(Hardfork::HfIara.raw_name(), "Iara");
+        assert_eq!(Hardfork::HfJackalope.raw_name(), "Jackalope");
+    }
+
+    #[test]
+    fn test_hardfork_try_parse_exact_matches_csharp() {
+        assert_eq!(Hardfork::try_parse_exact("Iara"), Some(Hardfork::HfIara));
+        assert_eq!(
+            Hardfork::try_parse_exact("Jackalope"),
+            Some(Hardfork::HfJackalope)
+        );
+        assert_eq!(Hardfork::try_parse_exact("Huyao"), Some(Hardfork::HfHuyao));
+
+        // C# `Hardforks.TryParseExact` is case-sensitive and rejects the
+        // `HF_` prefixed form as well as numeric names.
+        assert_eq!(Hardfork::try_parse_exact("iara"), None);
+        assert_eq!(Hardfork::try_parse_exact("IARA"), None);
+        assert_eq!(Hardfork::try_parse_exact("HF_Iara"), None);
+        assert_eq!(Hardfork::try_parse_exact("8"), None);
+        assert_eq!(Hardfork::try_parse_exact(""), None);
+    }
+
+    #[test]
     fn test_hardfork_ordering() {
         assert!(Hardfork::HfAspidochelone < Hardfork::HfBasilisk);
         assert!(Hardfork::HfBasilisk < Hardfork::HfCockatrice);
@@ -175,7 +269,8 @@ mod tests {
         assert_eq!(Hardfork::try_from(0u8).unwrap(), Hardfork::HfAspidochelone);
         assert_eq!(Hardfork::try_from(6u8).unwrap(), Hardfork::HfGorgon);
         assert_eq!(Hardfork::try_from(7u8).unwrap(), Hardfork::HfHuyao);
-        assert!(Hardfork::try_from(8u8).is_err());
+        assert_eq!(Hardfork::try_from(8u8).unwrap(), Hardfork::HfIara);
+        assert!(Hardfork::try_from(10u8).is_err());
     }
 
     #[test]

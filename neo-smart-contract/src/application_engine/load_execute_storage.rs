@@ -290,6 +290,45 @@ impl ApplicationEngine {
         }
         Ok(StorageIterator::new(entries, prefix.len(), options))
     }
+    /// Finds storage entries with a prefix, starting at `prefix + start`
+    /// inclusive (matches C# v3.11.2 `FindWithStart`, active since `HF_Huyao`).
+    ///
+    /// C# seeks from `prefixKey + start` and bounds the ordered scan with
+    /// `TakeWhile(StartsWith(prefixKey))`. The cache's `find` already returns
+    /// the ordered prefix range, so an inclusive-cursor filter over the id
+    /// relative suffix selects the same entries in both directions.
+    pub fn find_storage_entries_with_start(
+        &self,
+        context: &StorageContext,
+        prefix: &[u8],
+        start: &[u8],
+        options: FindOptions,
+    ) -> Result<StorageIterator, String> {
+        self.validate_find_options(options)?;
+        let search_key = StorageKey::new(context.id, prefix.to_vec());
+        let start_suffix = [prefix, start].concat();
+        let direction = if options.contains(FindOptions::Backwards) {
+            SeekDirection::Backward
+        } else {
+            SeekDirection::Forward
+        };
+        let entries = self
+            .snapshot_cache
+            .find(Some(&search_key), direction)
+            .filter(|(key, _)| match direction {
+                SeekDirection::Forward => key.suffix() >= start_suffix.as_slice(),
+                SeekDirection::Backward => key.suffix() <= start_suffix.as_slice(),
+            })
+            .collect::<Vec<_>>();
+        // A scan depends both on the entries it returned and on the range
+        // itself: a key created inside the prefix afterwards still invalidates
+        // the result.
+        self.record_rw_prefix_read(context.id, prefix);
+        for (key, _) in &entries {
+            self.record_rw_storage_read_key(key);
+        }
+        Ok(StorageIterator::new(entries, prefix.len(), options))
+    }
     /// Gets the storage price from the policy contract (matches C# StoragePrice property).
     pub(super) fn get_storage_price(&mut self) -> usize {
         self.storage_price as usize

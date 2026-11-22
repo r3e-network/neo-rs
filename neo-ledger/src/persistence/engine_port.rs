@@ -127,6 +127,15 @@ pub trait ApplicationEnginePort: Send {
     /// Captured fault exception message, if any (step 10b classification).
     fn fault_exception(&self) -> Option<String>;
 
+    /// Returns the unknown-hardfork name behind the current fault, when the run
+    /// carried the C# v3.11.2 unknown-hardfork fault raised by
+    /// `Policy.activateHardfork`. The ledger aborts persistence on it (the C#
+    /// `Blockchain.Persist` rethrow); ports without native dispatch retain the
+    /// default `None`.
+    fn fault_unknown_hardfork_name(&self) -> Option<String> {
+        None
+    }
+
     /// Projects the pure execution receipt for this transaction engine (step 10).
     fn execution_receipt(&mut self) -> ExecutionReceipt;
 

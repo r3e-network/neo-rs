@@ -12,7 +12,6 @@ use neo_protocol::payloads::Header;
 use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_protocol::witness::Witness;
 use neo_smart_contract::application_engine::ApplicationEngine;
-use neo_smart_contract::helper::Helper;
 use neo_storage::persistence::{PersistenceDataCache, StoreCache};
 use std::sync::Arc;
 use tracing::debug;
@@ -127,7 +126,10 @@ pub fn verify_header_witness_against_hash(
         debug!(target: "neo", %script_hash, gas_limit, "gas limit below zero");
         return false;
     }
-    let verification_gas = gas_limit.min(Helper::MAX_VERIFICATION_GAS);
+    // C# v3.11.2 `Header.Verify` calls `VerifyWitnesses(..., 3_00000000L, capGas: false)`:
+    // the caller-provided budget is applied verbatim and must NOT be capped to
+    // `Helper.MaxVerificationGas` (1.5 GAS) the way transaction verification is.
+    let verification_gas = gas_limit;
     if let Err(e) = neo_vm::validate_strict_script(witness.invocation_script()) {
         tracing::warn!(target: "neo", %script_hash, error = %e, invocation_len = witness.invocation_script().len(), "invocation script is invalid");
         return false;

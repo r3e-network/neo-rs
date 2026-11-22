@@ -228,6 +228,45 @@ impl StorageKey {
             cache: Some(cache.to_vec()),
         }
     }
+
+    /// Determines whether the serialized key bytes start with the given prefix.
+    ///
+    /// Mirrors C# v3.11.2 `StorageKey.StartsWith(ReadOnlySpan<byte>)`, which
+    /// compares against the cached serialized buffer.
+    #[must_use]
+    pub fn starts_with_serialized(&self, prefix: &[u8]) -> bool {
+        self.as_bytes().starts_with(prefix)
+    }
+
+    /// Determines whether the serialized key bytes equal the given bytes.
+    ///
+    /// Mirrors C# v3.11.2 `StorageKey.SequenceEqual(ReadOnlySpan<byte>)`.
+    #[must_use]
+    pub fn serialized_equals(&self, other: &[u8]) -> bool {
+        self.as_bytes().as_ref() == other
+    }
+
+    /// Compares two keys in serialized byte order (C# `StorageKeyComparer`).
+    ///
+    /// The default [`Ord`] implementation orders numerically by contract id,
+    /// which matches persistence semantics but diverges from the on-disk byte
+    /// order for negative ids: id `-5` serializes as `FB FF FF FF`, which
+    /// sorts after id `10` (`0A 00 00 00`). Scans that are not bounded by a
+    /// single contract id must use this comparison to match C# seek order.
+    #[must_use]
+    pub fn compare_serialized(&self, other: &StorageKey) -> std::cmp::Ordering {
+        self.as_bytes().as_ref().cmp(other.as_bytes().as_ref())
+    }
+
+    /// Compares the serialized key against raw bytes in byte order.
+    ///
+    /// Mirrors the second operand of C#
+    /// `StorageKey.Compare(StorageKey, IComparer, StorageKey)` being a raw
+    /// serialized buffer (e.g. a range end in `FindRange`).
+    #[must_use]
+    pub fn compare_serialized_bytes(&self, other: &[u8]) -> std::cmp::Ordering {
+        self.as_bytes().as_ref().cmp(other)
+    }
 }
 
 impl PartialOrd for StorageKey {
@@ -512,5 +551,60 @@ mod tests {
         let deserialized: StorageKey = serde_json::from_str(&serialized).unwrap();
         assert_eq!(key.id, deserialized.id);
         assert_eq!(key.key, deserialized.key);
+    }
+
+    #[test]
+    fn test_storage_key_serialized_prefix_and_equality() {
+        let key = StorageKey::new(-1, vec![0x14, 0xAA]);
+        let bytes = key.to_array();
+
+        assert!(key.starts_with_serialized(&bytes[..2]));
+        assert!(key.starts_with_serialized(&bytes));
+        assert!(!key.starts_with_serialized(&[0x01, 0x02]));
+        assert!(key.serialized_equals(&bytes));
+        // id -2 (FF FF FF FE) differs from id -1 (FF FF FF FF).
+        assert!(!key.serialized_equals(&[0xFF, 0xFF, 0xFF, 0xFE, 0x14, 0xAA]));
+
+        // Cached and uncached representations must agree.
+        let cached = StorageKey::from_bytes(&bytes);
+        assert!(cached.starts_with_serialized(&bytes[..2]));
+        assert!(cached.serialized_equals(&bytes));
+    }
+
+    #[test]
+    fn test_storage_key_compare_serialized_byte_order() {
+        // Byte order compares the serialized LE id, so id -5 (FB FF FF FF)
+        // sorts AFTER id 10 (0A 00 00 00) even though it is numerically
+        // smaller. This matches the C# StorageKeyComparer seek order.
+        let negative = StorageKey::new(-5, vec![0xFF]);
+        let positive = StorageKey::new(10, vec![0x00]);
+
+        assert_eq!(negative.cmp(&positive), std::cmp::Ordering::Less);
+        assert_eq!(
+            negative.compare_serialized(&positive),
+            std::cmp::Ordering::Greater
+        );
+        assert_eq!(
+            positive.compare_serialized(&negative),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            positive.compare_serialized_bytes(&negative.as_bytes()),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            negative.compare_serialized(&negative),
+            std::cmp::Ordering::Equal
+        );
+    }
+
+    #[test]
+    fn test_storage_key_compare_serialized_agrees_within_id() {
+        // Within a single contract id the numeric and byte orders coincide.
+        let low = StorageKey::new(3, vec![0x01, 0x00]);
+        let high = StorageKey::new(3, vec![0x02, 0x7F]);
+
+        assert_eq!(low.cmp(&high), low.compare_serialized(&high));
+        assert_eq!(high.cmp(&low), high.compare_serialized(&low));
     }
 }

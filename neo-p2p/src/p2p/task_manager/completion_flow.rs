@@ -55,6 +55,34 @@ impl TaskManager {
         }
         self.remove_available_task_from_all(&hash);
 
+        let path = actor.path().to_string();
+        let index_to_release = block
+            .as_ref()
+            .map(|block_ref| block_ref.index())
+            .or(block_index);
+
+        // C# v3.11.2 `OnTaskCompleted` fully releases the global slots
+        // (`globalInvTasks.Remove` / `globalIndexTasks.Remove`) and clears the
+        // entry from every session, not only the sender's: with
+        // MaxConcurrentTasks allowing the same hash/index to be assigned to
+        // more than one session, leaving it behind would let a later timeout
+        // steal the slot from whichever session was reassigned to it in the
+        // meantime. The completing session's own entries are released in its
+        // dedicated handling below.
+        self.release_inv_task(&hash);
+        if let Some(index) = index_to_release {
+            self.release_index_task(index);
+        }
+        for (session_path, other) in self.sessions.iter_mut() {
+            if *session_path == path {
+                continue;
+            }
+            other.session.inv_tasks.remove(&hash);
+            if let Some(index) = index_to_release {
+                other.session.index_tasks.remove(&index);
+            }
+        }
+
         trace!(
             target: "neo",
             actor = %actor.path(),
@@ -64,7 +92,6 @@ impl TaskManager {
             "inventory completed"
         );
 
-        let path = actor.path().to_string();
         let Some(mut entry) = self.sessions.remove(&path) else {
             trace!(target: "neo", actor = %path, "inventory completion for unknown session");
             return;
@@ -81,19 +108,12 @@ impl TaskManager {
                 || entry.session.received_block.contains_key(&index)
         });
 
-        if entry.session.complete_inv_task(&hash) {
-            self.decrement_inv_task(&hash);
-        }
+        // The global slots were already fully released above; only the
+        // completing session's own bookkeeping remains.
+        entry.session.complete_inv_task(&hash);
 
-        let mut index_to_release = block_index;
-        if let Some(ref block_ref) = block {
-            index_to_release = Some(block_ref.index());
-        }
-
-        if let Some(index) = index_to_release
-            && entry.session.complete_index_task(index)
-        {
-            self.decrement_index_task(index);
+        if let Some(index) = index_to_release {
+            entry.session.complete_index_task(index);
         }
 
         let mut should_request = true;

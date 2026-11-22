@@ -121,7 +121,9 @@ impl ContractManagement {
                     "The name of the contract cannot be changed".to_string(),
                 ));
             }
-            Self::validate_manifest(&manifest)?;
+            // Same height-dependent duplicate rule as deploy (C# passes
+            // `LegacyContractPermissionDescriptorComparer` before `HF_Huyao`).
+            Self::validate_manifest(&manifest, !engine.is_hardfork_enabled(Hardfork::HfHuyao))?;
             Self::validate_manifest_groups(&manifest, &contract_hash)?;
             Self::validate_manifest_serialization(&manifest, engine.execution_limits())?;
             contract.manifest = manifest;

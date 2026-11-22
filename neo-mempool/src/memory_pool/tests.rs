@@ -1789,3 +1789,113 @@ fn large_pool_rotation_eventually_selects_every_interval() {
         "rotation must cover the entire real pool"
     );
 }
+
+#[test]
+fn check_conflicts_step1_matches_any_common_signer() {
+    // C# v3.11.2 `CheckConflicts` step 1 counts the conflicting fee of a pool
+    // transaction that declared Conflicts against `tx` whenever the two share
+    // ANY signer — not only when that pool tx involves `tx`'s payer.
+    let settings = ProtocolSettings::default();
+    let mut pool = test_balance_pool(&settings);
+    let snapshot = PersistenceDataCache::new(false);
+
+    let payer_key = KeyPair::from_private_key(&[7u8; 32]).expect("keypair");
+    let cosigner_key = KeyPair::from_private_key(&[8u8; 32]).expect("keypair");
+
+    let mut target = Transaction::new();
+    target.set_network_fee(1_0000_0000);
+    target.set_system_fee(0);
+    target.set_valid_until_block(1);
+    target.set_script(vec![OpCode::PUSH1.byte()]);
+    target.set_signers(vec![
+        Signer::new(payer_key.get_script_hash(), WitnessScope::GLOBAL),
+        Signer::new(cosigner_key.get_script_hash(), WitnessScope::GLOBAL),
+    ]);
+    let sign_data = get_sign_data_vec(&target, settings.network).expect("sign data");
+    let mut witnesses = Vec::new();
+    for keypair in [&payer_key, &cosigner_key] {
+        let signature = keypair.sign(&sign_data).expect("sign");
+        let mut invocation = Vec::with_capacity(signature.len() + 2);
+        invocation.push(OpCode::PUSHDATA1.byte());
+        invocation.push(signature.len() as u8);
+        invocation.extend_from_slice(&signature);
+        witnesses.push(Witness::new_with_scripts(
+            invocation,
+            keypair.get_verification_script(),
+        ));
+    }
+    target.set_witnesses(witnesses);
+
+    // A pool transaction signed only by the cosigner declares Conflicts
+    // against `target`. Its signer list does not contain `target`'s payer, so
+    // the pre-v3.11.2 payer-based fee match would have let `target` in.
+    let attacker = build_signed_transaction(
+        &settings,
+        [8u8; 32],
+        2_0000_0000,
+        0,
+        vec![conflict_attribute(&target)],
+    );
+    add_succeed(&mut pool, attacker, &snapshot, &settings);
+
+    assert_add_result(
+        &mut pool,
+        target,
+        &snapshot,
+        &settings,
+        VerifyResult::HasConflicts,
+    );
+}
+
+#[test]
+fn update_pool_for_block_persisted_evicts_unverified_conflicts() {
+    // C# v3.11.2: the stale scan runs over verified AND unverified
+    // transactions, so a demoted transaction whose Conflicts target was
+    // persisted is evicted instead of lingering in the unverified cache.
+    let settings = ProtocolSettings::default();
+    let mut pool = test_balance_pool(&settings);
+    let snapshot = PersistenceDataCache::new(false);
+
+    let persisted_tx = signed_tx(&settings, 9, 1_0000_0000);
+    add_succeed(&mut pool, persisted_tx.clone(), &snapshot, &settings);
+
+    // Same signer so the conflicts attribute passes the common-signer check.
+    // Adding the higher-fee conflict replaces `persisted_tx` in the pool (C#
+    // conflict replacement), so only the conflict transaction is demoted below.
+    let unverified_conflict = build_signed_transaction(
+        &settings,
+        [9u8; 32],
+        2_0000_0000,
+        0,
+        vec![conflict_attribute(&persisted_tx)],
+    );
+    add_succeed(&mut pool, unverified_conflict.clone(), &snapshot, &settings);
+
+    pool.invalidate_verified_transactions();
+    assert_eq!(pool.unverified_count(), 1);
+
+    let mut block = Block::new();
+    block.header.set_index(1);
+    block.transactions = vec![persisted_tx.clone()];
+
+    let removed = Arc::new(StdMutex::new(Vec::<UInt256>::new()));
+    let removed_ref = removed.clone();
+    pool.transaction_removed = Some(Box::new(move |_sender, args| {
+        for tx in &args.transactions {
+            removed_ref.lock().unwrap().push(tx.hash());
+        }
+    }));
+
+    pool.update_pool_for_block_persisted(&block, &snapshot, &settings, false);
+
+    assert!(!pool.contains_key(&persisted_tx.hash()));
+    assert!(!pool.contains_key(&unverified_conflict.hash()));
+    assert_eq!(pool.verified_count(), 0);
+    assert_eq!(pool.unverified_count(), 0);
+    assert!(
+        removed
+            .lock()
+            .unwrap()
+            .contains(&unverified_conflict.hash())
+    );
+}

@@ -34,6 +34,7 @@ macro_rules! neo_native_methods {
             $(, active = $active:ident)?
             $(, deprecated = $deprecated:ident)?
             $(, storage_fee = $storage_fee:expr_2021)?
+            $(, nullable = $nullable_value:tt)?
             $(, names = [$($param_name:literal),* $(,)?])?
         );+ $(;)?
     ) => {
@@ -50,6 +51,7 @@ macro_rules! neo_native_methods {
                 $(.with_active_in(neo_protocol::Hardfork::$active))?
                 $(.with_deprecated_in(neo_protocol::Hardfork::$deprecated))?
                 $(.with_storage_fee($storage_fee))?
+                $(.with_nullable($nullable_value))?
                 $(.with_parameter_names(vec![$(::std::string::String::from($param_name)),*]))?
             ),+
         ]
@@ -81,6 +83,7 @@ macro_rules! neo_native_method_metadata {
                 $(, active = $active:ident)?
                 $(, deprecated = $deprecated:ident)?
                 $(, storage_fee = $storage_fee:expr_2021)?
+                $(, nullable = $nullable_value:tt)?
                 $(, names = [$($param_name:literal),* $(,)?])?
                 => $handler_kind:ident $handler:ident
             );+ $(;)?
@@ -96,6 +99,7 @@ macro_rules! neo_native_method_metadata {
                 $(, active = $active)?
                 $(, deprecated = $deprecated)?
                 $(, storage_fee = $storage_fee)?
+                $(, nullable = $nullable_value)?
                 $(, names = [$($param_name),*])?
             );+
         ]
@@ -133,6 +137,7 @@ macro_rules! neo_native_method_dispatch {
                 $(, active = $active:ident)?
                 $(, deprecated = $deprecated:ident)?
                 $(, storage_fee = $storage_fee:expr_2021)?
+                $(, nullable = $nullable_value:tt)?
                 $(, names = [$($param_name:literal),* $(,)?])?
                 => $handler_kind:ident $handler:ident
             );+ $(;)?

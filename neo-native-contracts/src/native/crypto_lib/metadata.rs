@@ -7,7 +7,8 @@ macro_rules! crypto_method_table {
             $($args)*
             ;
             {
-                safe "recoverSecp256K1", fee = 1 << 15, flags = [], params = [ByteArray, ByteArray], returns = ByteArray, active = HfEchidna, names = ["messageHash", "signature"] => args recover_secp256k1;
+                safe "recoverSecp256K1", fee = 1 << 15, flags = [], params = [ByteArray, ByteArray], returns = ByteArray, active = HfEchidna, deprecated = HfHuyao, names = ["messageHash", "signature"] => engine recover_secp256k1;
+                safe "recoverSecp256K1", fee = 1 << 15, flags = [], params = [ByteArray, ByteArray], returns = ByteArray, active = HfHuyao, names = ["messageHash", "signature"] => engine recover_secp256k1;
                 safe "sha256", fee = 1 << 15, flags = [], params = [ByteArray], returns = ByteArray, names = ["data"] => args sha256;
                 safe "ripemd160", fee = 1 << 15, flags = [], params = [ByteArray], returns = ByteArray, names = ["data"] => args ripemd160;
                 safe "murmur32", fee = 1 << 13, flags = [], params = [ByteArray, Integer], returns = ByteArray, names = ["data", "seed"] => args murmur32;
@@ -22,7 +23,7 @@ macro_rules! crypto_method_table {
                 safe "bls12381Mul", fee = 1 << 21, flags = [], params = [InteropInterface, ByteArray, Boolean], returns = InteropInterface, names = ["x", "mul", "neg"] => args bls12381_mul;
                 safe "bls12381Pairing", fee = 1 << 23, flags = [], params = [InteropInterface, InteropInterface], returns = InteropInterface, names = ["g1", "g2"] => args bls12381_pairing;
                 safe "bls12381Serialize", fee = 1 << 19, flags = [], params = [InteropInterface], returns = ByteArray, names = ["g"] => args bls12381_serialize;
-                safe "bls12381Deserialize", fee = 1 << 19, flags = [], params = [ByteArray], returns = InteropInterface, names = ["data"] => args bls12381_deserialize;
+                safe "bls12381Deserialize", fee = 1 << 19, flags = [], params = [ByteArray], returns = InteropInterface, names = ["data"] => engine bls12381_deserialize;
             }
         }
     };

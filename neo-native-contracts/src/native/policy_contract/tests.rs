@@ -514,6 +514,11 @@ fn faun_empty_snapshot_exec_fee_defaults_keep_their_units() {
 fn on_persist_engine_defers_policy_initialize_until_native_on_persist() {
     let mut settings = ProtocolSettings::default();
     settings.hardforks.insert(Hardfork::HfFaun, 10);
+    // `ProtocolSettings::default()` normalizes every leading configuration-managed
+    // hardfork to genesis, Huyao included. Huyao is the last configuration-managed
+    // hardfork, so once it is enabled the heights come from Policy storage; keep it
+    // ahead of this block so the configuration path remains under test.
+    settings.hardforks.insert(Hardfork::HfHuyao, 1_000_000);
 
     let snapshot = Arc::new(PersistenceDataCache::new(false));
     let key = PolicyContract::exec_fee_factor_key();
@@ -1195,7 +1200,12 @@ fn white_list_fee() {
         .as_int()
         .expect("int");
     assert!(result.is_zero());
-    assert_eq!(engine.fee_consumed(), 2_028_330);
+    // v3.11.2 dynamic pricing (all hardforks active): entry script opcodes
+    // (13336) plus the native stub (3272) price units scaled by the exec fee
+    // factor 30, the System.Contract.Call (2205000) and System.Contract.CallNative
+    // (1130000) Huyao syscall prices, and the balanceOf CpuFee (1 << 15) scaled
+    // the same way — ceil(femto / 1e7) = ceil(10835882.4) datoshi.
+    assert_eq!(engine.fee_consumed(), 1_083_589);
     assert_eq!(
         policy
             .clean_whitelist(
@@ -1275,7 +1285,10 @@ fn white_list_fee() {
         .as_int()
         .expect("int");
     assert!(result.is_zero());
-    assert_eq!(engine.fee_consumed(), 1_045_260);
+    // Whitelisted: the callee context skips the stub opcodes, CallNative price
+    // and CpuFee (fixed fee is 0), so only the entry opcodes and the
+    // System.Contract.Call price are charged — ceil(665500800000 / 1e7).
+    assert_eq!(engine.fee_consumed(), 66_551);
 
     // Clean whitelist.
     let mut engine = make_engine(
@@ -1410,4 +1423,46 @@ fn set_whitelist_fee_contract_set_contract() {
         )
         .expect("get whitelisted fee");
     assert_eq!(fixed_fee, Some(123_456));
+}
+
+#[test]
+fn activate_hardfork_unknown_name_raises_csharp_unknown_hardfork_exception() {
+    let harness = PolicyTestHarness::new();
+    let mut engine = harness.committee_engine();
+
+    let error = harness
+        .call_policy(
+            &mut engine,
+            "activateHardfork",
+            &[b"HF_Basilisk".to_vec(), int_arg_u32(5)],
+        )
+        .expect_err("unknown hardfork must fault");
+    assert_eq!(
+        error.to_string(),
+        "Unknown hardfork: HF_Basilisk. Update node software to the latest version to continue."
+    );
+
+    // C# `Blockchain.Persist` rethrows `UnknownHardforkException`, halting the
+    // node. The engine exposes the typed name so the ledger can produce the
+    // same halt; contract `THROW` text can never set it.
+    assert_eq!(engine.fault_unknown_hardfork_name(), Some("HF_Basilisk"));
+}
+
+#[test]
+fn activate_hardfork_unknown_name_requires_committee_first() {
+    let harness = PolicyTestHarness::new();
+    let mut engine = harness.signer_engine_without_block(UInt160::zero());
+
+    let error = harness
+        .call_policy(
+            &mut engine,
+            "activateHardfork",
+            &[b"HF_Basilisk".to_vec(), int_arg_u32(5)],
+        )
+        .expect_err("non-committee caller must fault");
+
+    // The committee check runs first (C# parity), so a random sender cannot
+    // reach the unknown-hardfork branch and forge the node halt.
+    assert!(!error.is_unknown_hardfork());
+    assert_eq!(engine.fault_unknown_hardfork_name(), None);
 }

@@ -39,6 +39,10 @@ pub struct TaskSession {
     pub last_block_index: u32,
     /// Whether the peer has already been sent the mempool snapshot.
     pub mempool_sent: bool,
+    /// Number of timed-out block (index) tasks, mirroring C#
+    /// `TaskSession.BlockTaskTimeouts`; peers with fewer timeouts are
+    /// preferred when the timer re-requests tasks.
+    pub block_task_timeouts: u32,
     /// Tracks the last header range request issued to this peer.
     last_header_request: Option<HeaderRequestState>,
 }
@@ -82,6 +86,7 @@ impl TaskSession {
             is_full_node,
             last_block_index,
             mempool_sent: false,
+            block_task_timeouts: 0,
             last_header_request: None,
         }
     }
@@ -272,6 +277,13 @@ impl TaskSession {
     /// Removes and returns any index tasks that exceeded the timeout.
     pub fn prune_timed_out_index_tasks(&mut self, timeout: Duration) -> Vec<u32> {
         self.prune_index_tasks(timeout)
+    }
+
+    /// Records timed-out block (index) tasks, mirroring the capped
+    /// `session.BlockTaskTimeouts++` per expired task in C#
+    /// `TaskManager.OnTimer`.
+    pub fn note_block_task_timeouts(&mut self, count: usize) {
+        self.block_task_timeouts = self.block_task_timeouts.saturating_add(count as u32);
     }
 
     fn prune_tasks<T>(tasks: &mut HashMap<T, Instant>, timeout: Duration) -> Vec<T>

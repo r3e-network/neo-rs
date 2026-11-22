@@ -31,7 +31,7 @@ macro_rules! stdlib_method_table {
                 safe "memorySearch", fee = 1 << 6, flags = [], params = [ByteArray, ByteArray, Integer, Boolean], returns = Integer, names = ["mem", "value", "start", "backward"] => args memory_search;
                 safe "stringSplit", fee = 1 << 8, flags = [], params = [String, String], returns = Array, names = ["str", "separator"] => engine string_split;
                 safe "stringSplit", fee = 1 << 8, flags = [], params = [String, String, Boolean], returns = Array, names = ["str", "separator", "removeEmptyEntries"] => engine string_split;
-                safe "strLen", fee = 1 << 8, flags = [], params = [String], returns = Integer, names = ["str"] => args str_len;
+                safe "strLen", fee = 1 << 8, flags = [], params = [String], returns = Integer, names = ["str"] => engine str_len;
             }
         }
     };
@@ -44,5 +44,5 @@ macro_rules! stdlib_method_table {
 neo_native_contract_methods!(
     StdLib,
     table = stdlib_method_table,
-    aliases = ["stringLen" => args str_len]
+    aliases = ["stringLen" => engine str_len]
 );

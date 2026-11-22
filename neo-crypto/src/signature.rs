@@ -8,6 +8,18 @@ use ed25519_dalek::{
     VerifyingKey as Ed25519VerifyingKey,
 };
 use ed25519_dalek::{Signer as _, Verifier as _};
+use k256::elliptic_curve::PrimeField as K256PrimeField;
+use k256::elliptic_curve::group::prime::PrimeCurveAffine;
+use k256::elliptic_curve::ops::MulByGenerator;
+use k256::elliptic_curve::sec1::{
+    FromEncodedPoint as K256FromEncodedPoint, ToEncodedPoint as K256ToEncodedPoint,
+};
+use k256::{
+    AffinePoint as K256AffinePoint, EncodedPoint as K256EncodedPoint,
+    ProjectivePoint as K256ProjectivePoint, Scalar as K256Scalar,
+};
+use num_bigint::{BigInt, Sign};
+use num_traits::{One, Zero};
 use p256::{
     PublicKey as P256PublicKey, SecretKey as P256SecretKey,
     ecdsa::{
@@ -28,6 +40,98 @@ pub struct Secp256k1Crypto;
 
 /// Maximum attempts for key generation to prevent infinite loops in case of RNG failure.
 const MAX_KEY_GEN_ATTEMPTS: usize = 1000;
+
+/// secp256k1 group order N (the C# `ECCurve.Secp256k1.BouncyCastleCurve.N` constant).
+const SECP256K1_ORDER: [u8; 32] = [
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE,
+    0xBA, 0xAE, 0xDC, 0xE6, 0xAF, 0x48, 0xA0, 0x3B, 0xBF, 0xD2, 0x5E, 0x8C, 0xD0, 0x36, 0x41, 0x41,
+];
+
+/// secp256k1 field prime P.
+const SECP256K1_PRIME: [u8; 32] = [
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFC, 0x2F,
+];
+
+/// `(a mod m)` with a non-negative result, like BouncyCastle `BigInteger.Mod`.
+fn mod_floor(value: &BigInt, modulus: &BigInt) -> BigInt {
+    let rem = value % modulus;
+    if rem.sign() == Sign::Minus {
+        rem + modulus
+    } else {
+        rem
+    }
+}
+
+/// Extended-Euclidean modular inverse; `None` when `value` and `modulus` are
+/// not coprime (mirrors BouncyCastle `BigInteger.ModInverse`, which throws).
+fn mod_inverse(value: &BigInt, modulus: &BigInt) -> Option<BigInt> {
+    let (mut t, mut new_t) = (BigInt::zero(), BigInt::one());
+    let (mut r, mut new_r) = (modulus.clone(), mod_floor(value, modulus));
+    while new_r.sign() != Sign::NoSign {
+        let quotient = &r / &new_r;
+        let next_t = &t - &quotient * &new_t;
+        t = std::mem::replace(&mut new_t, next_t);
+        let next_r = &r - &quotient * &new_r;
+        r = std::mem::replace(&mut new_r, next_r);
+    }
+    if r == BigInt::one() {
+        Some(mod_floor(&t, modulus))
+    } else {
+        None
+    }
+}
+
+/// Big-endian 32-byte encoding of a non-negative integer.
+fn to_32_bytes_be(value: &BigInt) -> [u8; 32] {
+    let bytes = value.to_bytes_be().1;
+    let mut out = [0u8; 32];
+    out[32 - bytes.len()..].copy_from_slice(&bytes);
+    out
+}
+
+/// Parses the `(r, s, recId)` components exactly like the C# `Crypto
+/// ECRecoverInternal`: 65-byte `r[32] || s[32] || v[1]` (v normalized from the
+/// Ethereum 27..30 style) or 64-byte `r[32] || yParityAndS[32]` compact format
+/// with the parity fused into the top bit of s.
+fn parse_ec_recover_components(signature: &[u8]) -> CryptoResult<(BigInt, BigInt, u8)> {
+    if signature.len() != 65 && signature.len() != 64 {
+        return Err(CryptoError::invalid_signature(
+            "Signature must be 65 or 64 bytes",
+        ));
+    }
+
+    let r = BigInt::from_bytes_be(Sign::Plus, &signature[..32]);
+    if signature.len() == 65 {
+        // v could be 0..3 or 27..30 (Ethereum style).
+        let v = signature[64];
+        let rec_id = if v >= 27 { v - 27 } else { v };
+        if rec_id > 3 {
+            return Err(CryptoError::invalid_signature(
+                "Recovery value must be in range [0..3] after normalization",
+            ));
+        }
+        let s = BigInt::from_bytes_be(Sign::Plus, &signature[32..64]);
+        Ok((r, s, rec_id))
+    } else {
+        // Mask out the top bit to get s; the bit itself is the yParity.
+        let y_parity_and_s = BigInt::from_bytes_be(Sign::Plus, &signature[32..]);
+        let mask = (BigInt::one() << 255u32) - 1u32;
+        let s = &y_parity_and_s & &mask;
+        let rec_id = u8::from(signature[32] & 0x80 != 0);
+        Ok((r, s, rec_id))
+    }
+}
+
+/// Rejects zero and order-size R/S values (the C# `checkRS` gate of
+/// `Crypto.ECRecover`, active since Huyao).
+fn check_rs(r: &BigInt, s: &BigInt) -> CryptoResult<()> {
+    let order = BigInt::from_bytes_be(Sign::Plus, &SECP256K1_ORDER);
+    if r.sign() == Sign::NoSign || s.sign() == Sign::NoSign || *r >= order || *s >= order {
+        return Err(CryptoError::invalid_signature("Invalid R or S value"));
+    }
+    Ok(())
+}
 
 impl Secp256k1Crypto {
     /// Generates a new random private key.
@@ -95,37 +199,27 @@ impl Secp256k1Crypto {
     /// Recovers a compressed secp256k1 public key from a message hash and signature.
     ///
     /// Accepts 65-byte (r||s||v) or 64-byte EIP-2098 compact signatures.
+    ///
+    /// This matches C# v3.11.2 `Crypto.ECRecover` (the Huyao
+    /// `recoverSecp256K1`): zero and order-size R/S values are rejected before
+    /// the recovery runs. The pre-Huyao compatibility behaviour lives in
+    /// [`Secp256k1Crypto::recover_public_key_v0`].
     pub fn recover_public_key(message_hash: &[u8], signature: &[u8]) -> CryptoResult<Vec<u8>> {
-        if signature.len() != 65 && signature.len() != 64 {
-            return Err(CryptoError::invalid_signature(
-                "Signature must be 65 or 64 bytes",
-            ));
-        }
         if message_hash.len() != 32 {
             return Err(CryptoError::invalid_argument(
                 "Message hash must be 32 bytes",
             ));
         }
 
+        let (r, s, rec_id) = parse_ec_recover_components(signature)?;
+        check_rs(&r, &s)?;
+
         let msg = Message::from_digest_slice(message_hash)
             .map_err(|e| CryptoError::invalid_argument(format!("Invalid message hash: {e}")))?;
 
-        let (rec_id, sig_bytes) = if signature.len() == 65 {
-            let rec = signature[64];
-            let rec_id = if rec >= 27 { rec - 27 } else { rec };
-            if rec_id > 3 {
-                return Err(CryptoError::invalid_signature(
-                    "Recovery id must be in range 0..3",
-                ));
-            }
-            (rec_id, signature[..64].to_vec())
-        } else {
-            let mut sig = signature.to_vec();
-            let y_parity = (sig[32] & 0x80) != 0;
-            sig[32] &= 0x7f;
-            let rec_id = u8::from(y_parity);
-            (rec_id, sig)
-        };
+        let mut sig_bytes = Vec::with_capacity(64);
+        sig_bytes.extend_from_slice(&to_32_bytes_be(&r));
+        sig_bytes.extend_from_slice(&to_32_bytes_be(&s));
 
         let rec_id = RecoveryId::from_i32(i32::from(rec_id))
             .map_err(|e| CryptoError::invalid_signature(format!("Invalid recovery id: {e}")))?;
@@ -139,6 +233,93 @@ impl Secp256k1Crypto {
             .map_err(|e| CryptoError::invalid_key(format!("Failed to recover public key: {e}")))?;
 
         Ok(public_key.serialize().to_vec())
+    }
+
+    /// Recovers a compressed secp256k1 public key with the pre-Huyao
+    /// compatibility behaviour (C# `Crypto.ECRecoverV0`, the BouncyCastle
+    /// recovery that Neo exposes as `recoverSecp256K1` between Echidna and
+    /// Huyao).
+    ///
+    /// R and S are NOT validated against the curve order: the BouncyCastle
+    /// modular arithmetic wraps order-size components and treats a zero S as a
+    /// zero scalar, so those inputs still produce a key here. The final
+    /// compressed encoding mirrors the C# `point.EncodePoint(true)` result.
+    pub fn recover_public_key_v0(message_hash: &[u8], signature: &[u8]) -> CryptoResult<Vec<u8>> {
+        if message_hash.len() != 32 {
+            return Err(CryptoError::invalid_argument(
+                "Message hash must be 32 bytes",
+            ));
+        }
+
+        let (r, s, rec_id) = parse_ec_recover_components(signature)?;
+
+        let order = BigInt::from_bytes_be(Sign::Plus, &SECP256K1_ORDER);
+        let prime = BigInt::from_bytes_be(Sign::Plus, &SECP256K1_PRIME);
+
+        // Decompose recId into i = recId >> 1 and yBit = recId & 1.
+        let i_part = u32::from(rec_id >> 1);
+        let y_bit = rec_id & 1 == 1;
+
+        let e = BigInt::from_bytes_be(Sign::Plus, message_hash);
+
+        // eInv = -e mod n, rInv = (r^-1) mod n, srInv = (s * r^-1) mod n and
+        // eInvrInv = (eInv * r^-1) mod n (C# ECRecoverInternal).
+        let e_inv = mod_floor(&(-e), &order);
+        let Some(r_inv) = mod_inverse(&r, &order) else {
+            return Err(CryptoError::invalid_signature(
+                "R is not invertible modulo the group order",
+            ));
+        };
+        let sr_inv = mod_floor(&(&r_inv * &s), &order);
+        let e_invr_inv = mod_floor(&(&r_inv * &e_inv), &order);
+
+        // x = r + iPart * n, bounded by the field prime like the C# check.
+        let x = &r + BigInt::from(i_part) * &order;
+        if x >= prime {
+            return Err(CryptoError::invalid_signature(
+                "X coordinate is out of range for secp256k1 curve",
+            ));
+        }
+
+        // Decompress R through SEC1 compressed decoding — mirrors the C#
+        // `DecompressKey`/BouncyCastle `DecodePoint` call, failing when the
+        // parity bit does not produce a curve point. The C# `R * n = infinity`
+        // re-check is implied by the on-curve construction here.
+        let mut compressed = [0u8; 33];
+        compressed[0] = if y_bit { 0x03 } else { 0x02 };
+        compressed[1..].copy_from_slice(&to_32_bytes_be(&x));
+        let encoded = K256EncodedPoint::from_bytes(&compressed)
+            .map_err(|_| CryptoError::invalid_signature("Invalid R point encoding"))?;
+        let r_affine =
+            Option::<K256AffinePoint>::from(K256AffinePoint::from_encoded_point(&encoded))
+                .ok_or_else(|| {
+                    CryptoError::invalid_signature("R point is not valid on the secp256k1 curve")
+                })?;
+
+        // Q = eInvrInv * G + srInv * R (C# SumOfTwoMultiplies).
+        let e_invr_inv_scalar = K256Scalar::from_repr(to_32_bytes_be(&e_invr_inv).into());
+        let sr_inv_scalar = K256Scalar::from_repr(to_32_bytes_be(&sr_inv).into());
+        let (Some(e_invr_inv_scalar), Some(sr_inv_scalar)) = (
+            Option::<K256Scalar>::from(e_invr_inv_scalar),
+            Option::<K256Scalar>::from(sr_inv_scalar),
+        ) else {
+            return Err(CryptoError::invalid_signature(
+                "Recovery scalars exceed the group order",
+            ));
+        };
+
+        let q = K256ProjectivePoint::mul_by_generator(&e_invr_inv_scalar)
+            + K256ProjectivePoint::from(r_affine) * sr_inv_scalar;
+        let q_affine = q.to_affine();
+        if bool::from(q_affine.is_identity()) {
+            // C# cannot encode the point at infinity and surfaces it as an
+            // ArgumentException (CryptoLib degrades that to null).
+            return Err(CryptoError::invalid_signature(
+                "Recovered point is the point at infinity",
+            ));
+        }
+
+        Ok(q_affine.to_encoded_point(true).as_bytes().to_vec())
     }
 }
 
@@ -563,7 +744,7 @@ impl Crypto {
 
 #[cfg(test)]
 mod tests {
-    use super::{NEOFS_ECDSA_SHA512_PREFIX, Secp256k1Crypto, Secp256r1Crypto};
+    use super::{NEOFS_ECDSA_SHA512_PREFIX, SECP256K1_ORDER, Secp256k1Crypto, Secp256r1Crypto};
     use crate::{Crypto, ECCurve, HashAlgorithm};
 
     /// Half of the secp256r1 group order; an ECDSA signature is low-S when
@@ -617,6 +798,109 @@ mod tests {
         let is_valid = Secp256k1Crypto::verify(message, &signature, &public_key).unwrap();
 
         assert!(is_valid);
+    }
+
+    #[test]
+    fn secp256k1_recovery_matches_the_signer_key_on_both_versions() {
+        for seed in 0u8..4 {
+            let mut private_key = [0u8; 32];
+            private_key[31] = seed.wrapping_add(11);
+            let public_key = Secp256k1Crypto::derive_public_key(&private_key).unwrap();
+            let message = format!("recovery sample {seed}");
+            let message_hash = Crypto::sha256(message.as_bytes());
+            let signature = Secp256k1Crypto::sign(message.as_bytes(), &private_key).unwrap();
+
+            // Huyao (V1) and pre-Huyao (V0) agree on well-formed signatures.
+            // The 65-byte r||s||v form with v = 27/28 probes both R parities:
+            // the two versions must recover identical keys and exactly one
+            // parity hits the signer. (The raw 64-byte compact form cannot be
+            // used directly: without the parity bit it only decodes to the
+            // signer key for even recovery ids.)
+            let mut sig65 = [0u8; 65];
+            sig65[..64].copy_from_slice(&signature);
+            let mut matched = false;
+            for v in [27u8, 28] {
+                sig65[64] = v;
+                let recovered_v1 =
+                    Secp256k1Crypto::recover_public_key(&message_hash, &sig65).unwrap();
+                let recovered_v0 =
+                    Secp256k1Crypto::recover_public_key_v0(&message_hash, &sig65).unwrap();
+                assert_eq!(recovered_v1, recovered_v0, "seed {seed}");
+                matched |= recovered_v1.as_slice() == public_key;
+            }
+            assert!(matched, "seed {seed}");
+
+            // 64-byte compact form with the parity fused into the top bit of s:
+            // exactly one of the two parities recovers the signer key.
+            let mut compact = signature;
+            let mut matched = false;
+            for parity in [0u8, 1] {
+                compact[32] = signature[32] | (parity << 7);
+                let recovered_v1 =
+                    Secp256k1Crypto::recover_public_key(&message_hash, &compact).unwrap();
+                let recovered_v0 =
+                    Secp256k1Crypto::recover_public_key_v0(&message_hash, &compact).unwrap();
+                assert_eq!(recovered_v1, recovered_v0, "seed {seed}");
+                matched |= recovered_v1.as_slice() == public_key;
+            }
+            assert!(matched, "seed {seed}");
+        }
+    }
+
+    #[test]
+    fn secp256k1_recovery_v1_rejects_invalid_r_s_and_v0_wraps_s() {
+        let message = b"order-size probe";
+        let mut private_key = [0u8; 32];
+        private_key[31] = 23;
+        let message_hash = Crypto::sha256(message);
+        let signature = Secp256k1Crypto::sign(message, &private_key).unwrap();
+
+        // 65-byte carrier so the raw s bytes reach the R/S validation.
+        let mut sig65 = [0u8; 65];
+        sig65[..64].copy_from_slice(&signature);
+        sig65[64] = 27;
+
+        // Huyao (V1) rejects zero and order-size R/S outright.
+        let mut zero_s = sig65;
+        zero_s[32..64].fill(0);
+        assert!(Secp256k1Crypto::recover_public_key(&message_hash, &zero_s).is_err());
+
+        let mut order_s = sig65;
+        order_s[32..64].copy_from_slice(&SECP256K1_ORDER);
+        assert!(Secp256k1Crypto::recover_public_key(&message_hash, &order_s).is_err());
+
+        let mut order_r = sig65;
+        order_r[..32].copy_from_slice(&SECP256K1_ORDER);
+        assert!(Secp256k1Crypto::recover_public_key(&message_hash, &order_r).is_err());
+
+        // Pre-Huyao (V0) wraps order-size S through the modular arithmetic:
+        // s = N behaves exactly like s = 0 (srInv = 0) and still yields a key.
+        let wrapped = Secp256k1Crypto::recover_public_key_v0(&message_hash, &order_s).unwrap();
+        let zeroed = Secp256k1Crypto::recover_public_key_v0(&message_hash, &zero_s).unwrap();
+        assert_eq!(wrapped, zeroed);
+        assert_eq!(wrapped.len(), 33);
+        assert!(wrapped[0] == 2 || wrapped[0] == 3);
+
+        // ...while the order-size r stays unrecoverable (not invertible).
+        assert!(Secp256k1Crypto::recover_public_key_v0(&message_hash, &order_r).is_err());
+    }
+
+    #[test]
+    fn secp256k1_recovery_rejects_bad_lengths_and_recovery_ids() {
+        let message_hash = Crypto::sha256(b"length probe");
+        assert!(Secp256k1Crypto::recover_public_key(&message_hash, &[0u8; 63]).is_err());
+        assert!(Secp256k1Crypto::recover_public_key(&message_hash, &[0u8; 66]).is_err());
+        assert!(Secp256k1Crypto::recover_public_key(&[0u8; 31], &[0u8; 65]).is_err());
+        assert!(Secp256k1Crypto::recover_public_key_v0(&message_hash, &[0u8; 63]).is_err());
+        assert!(Secp256k1Crypto::recover_public_key_v0(&[0u8; 31], &[0u8; 65]).is_err());
+
+        let mut sig = [0u8; 65];
+        sig[64] = 31; // normalized recId 4
+        assert!(Secp256k1Crypto::recover_public_key(&message_hash, &sig).is_err());
+        assert!(Secp256k1Crypto::recover_public_key_v0(&message_hash, &sig).is_err());
+        sig[64] = 26; // below the Ethereum range without wrapping to 0..3
+        assert!(Secp256k1Crypto::recover_public_key(&message_hash, &sig).is_err());
+        assert!(Secp256k1Crypto::recover_public_key_v0(&message_hash, &sig).is_err());
     }
 
     #[test]

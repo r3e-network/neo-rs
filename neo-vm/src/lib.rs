@@ -198,6 +198,13 @@ pub mod jump_table;
 /// Reference counting for garbage collection.
 pub mod reference_counter;
 
+/// Per-instruction runtime statistics used to price opcodes dynamically.
+///
+/// Mirrors `Neo.VM.RunStats` at neo-vm v3.11.2: the jump table fills one in while
+/// an instruction executes and the host reads it from the post-instruction hook
+/// to price the opcode since `HF_Huyao`.
+pub mod run_stats;
+
 /// Script validation and execution utilities.
 pub mod script;
 

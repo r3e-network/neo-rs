@@ -1,5 +1,6 @@
 //! Node-related RPC handlers (port of `RpcServer.Node.cs`).
 
+use crate::rpc_error::RpcError;
 use crate::rpc_exception::RpcException;
 use crate::rpc_helpers::{expect_base64_param_with_decode_message, internal_error, invalid_params};
 use crate::rpc_relay;
@@ -10,7 +11,10 @@ use neo_io::{MemoryReader, Serializable};
 use neo_ledger::BlockchainCommand;
 use neo_p2p::p2p::local_node::LocalNode;
 use neo_protocol::hardfork::Hardfork;
-use neo_protocol::payloads::{block::Block, transaction::Transaction};
+use neo_protocol::payloads::{
+    block::Block,
+    transaction::{MAX_TRANSACTION_SIZE, Transaction},
+};
 use serde_json::{Map, Value, json};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -189,6 +193,14 @@ impl RpcServerNode {
             "sendrawtransaction",
             "Invalid transaction payload",
         )?;
+        // C# RpcServer.Node.cs checks the raw payload length against
+        // MaxTransactionSize *before* deserialization and rejects oversize
+        // payloads with the -509 invalid-size error.
+        if raw.len() > MAX_TRANSACTION_SIZE {
+            return Err(RpcError::invalid_size()
+                .with_data("Transaction size exceeds the maximum allowed.")
+                .into());
+        }
         let transaction = Transaction::from_bytes(&raw)
             .map_err(|err| invalid_params(format!("Invalid transaction: {err}")))?;
         let relay_result = rpc_relay::with_relay_responder(server, move |sender| {

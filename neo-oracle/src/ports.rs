@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use neo_crypto::ECPoint;
 use neo_primitives::{CallFlags, OracleResponseCode, UInt160, UInt256};
 use neo_protocol::payloads::Transaction;
+use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_smart_contract::{ContractMethodDescriptor, ContractState};
 
 /// Opaque snapshot handle for reading blockchain state.
@@ -57,8 +58,12 @@ pub trait OracleSnapshot: Send + Sync + std::any::Any {
     /// Returns the maximum valid-until-block increment from policy.
     fn max_valid_until_block_increment(&self) -> u32;
 
-    /// Returns the execution fee factor from policy.
-    fn exec_fee_factor(&self) -> u32;
+    /// Returns the protocol settings of the host chain.
+    fn protocol_settings(&self) -> &ProtocolSettings;
+
+    /// Returns the execution fee factor with the full decimals applied
+    /// (C# `Policy.GetExecFeeFactorWithDecimals`).
+    fn exec_fee_factor_with_decimals(&self) -> i64;
 
     /// Returns the fee per byte from policy.
     fn fee_per_byte(&self) -> i64;

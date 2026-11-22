@@ -106,6 +106,45 @@ impl Slot {
         Ok(())
     }
 
+    /// Creates a slot from items popped with `PopNoRef`.
+    ///
+    /// neo-vm v3.11.2 `Slot(EvaluationStack stack, int n, IReferenceCounter)`:
+    /// the items keep the stack references they already hold and the reference
+    /// counter is not adjusted here. The first item is the topmost popped
+    /// element.
+    #[inline]
+    #[must_use]
+    pub fn from_popped_items(items: Vec<StackItem>, reference_counter: ReferenceCounter) -> Self {
+        Self {
+            reference_counter,
+            items,
+        }
+    }
+
+    /// Checks that `index` is within a slot of the given length, matching the
+    /// C# v3.11.2 `Slot.Store` bounds check.
+    #[inline]
+    pub fn check_bounds(index: usize, len: usize) -> VmResult<()> {
+        if index >= len {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Out of stack bounds: {index}/{len}"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Stores an item that was popped via `PopNoRef` at the specified index.
+    ///
+    /// neo-vm v3.11.2 `Slot.Store`: the item moves from the evaluation stack to
+    /// the slot, so its own reference is kept and only the previous slot
+    /// value's reference is released. Callers must run `check_bounds` before
+    /// popping so a failed store leaves the evaluation stack untouched.
+    #[inline]
+    pub fn store_popped(&mut self, index: usize, item: StackItem) {
+        let old = std::mem::replace(&mut self.items[index], item);
+        self.reference_counter.remove_stack_reference(&old);
+    }
+
     /// Resets all items to `Null`, mirroring how the C# engine clears slots when contexts unload.
     pub fn clear(&mut self) {
         for item in &mut self.items {

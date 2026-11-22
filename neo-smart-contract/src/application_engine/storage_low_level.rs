@@ -139,21 +139,28 @@ impl ApplicationEngine {
     }
     /// Returns the current value of the iterator with the given id.
     pub fn iterator_value_internal(&self, iterator_id: u32) -> Result<StackItem, String> {
+        self.iterator_value_with_bytes(iterator_id)
+            .map(|(value, _)| value)
+    }
+    /// Returns the current value of the iterator with the given id, together
+    /// with the number of bytes deserialized to produce it (C# v3.11.2
+    /// `StorageIterator.Value(out int bytesDeserialized)`).
+    pub fn iterator_value_with_bytes(&self, iterator_id: u32) -> Result<(StackItem, i64), String> {
         let iterator = self
             .storage_iterators
             .get(&iterator_id)
             .ok_or_else(|| format!("Iterator {iterator_id} not found"))?;
-        let value = iterator.value();
+        let (value, bytes_deserialized) = iterator.value_with_bytes();
         if Self::should_trace_block(self.current_block_index()) {
             let (position, _, key) = iterator.trace_position();
             eprintln!(
-                "TRACE iterator_value block={} id={iterator_id} position={position:?} key={} type={:?}",
+                "TRACE iterator_value block={} id={iterator_id} position={position:?} key={} type={:?} bytes={bytes_deserialized}",
                 self.current_block_index(),
                 key.map(hex::encode).unwrap_or_default(),
                 value.stack_item_type(),
             );
         }
-        Ok(value)
+        Ok((value, bytes_deserialized))
     }
     pub fn load_script_with_state<F>(
         &mut self,

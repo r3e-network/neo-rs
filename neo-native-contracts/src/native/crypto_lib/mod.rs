@@ -209,7 +209,12 @@ impl CryptoLib {
     }
 
     /// Recover a secp256k1 public key from a message hash and signature.
-    fn recover_secp256k1(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+    ///
+    /// C# v3.11.2 splits this into two `recoverSecp256K1` versions: the Huyao
+    /// `RecoverSecp256K1V1` validates R/S before recovering, while the pre-Huyao
+    /// `RecoverSecp256K1V0` keeps the legacy BouncyCastle behaviour that wraps
+    /// out-of-range values. Both catch every failure and return null.
+    fn recover_secp256k1(&self, engine: &ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.len() != 2 {
             return Err(Error::native_contract(
                 "recoverSecp256K1 requires messageHash and signature arguments".to_string(),
@@ -219,7 +224,13 @@ impl CryptoLib {
         let message_hash = &args[0];
         let signature = &args[1];
 
-        match neo_crypto::Secp256k1Crypto::recover_public_key(message_hash, signature) {
+        let result = if engine.is_hardfork_enabled(Hardfork::HfHuyao) {
+            neo_crypto::Secp256k1Crypto::recover_public_key(message_hash, signature)
+        } else {
+            neo_crypto::Secp256k1Crypto::recover_public_key_v0(message_hash, signature)
+        };
+
+        match result {
             Ok(public_key) => Ok(public_key),
             Err(_) => Ok(Vec::new()),
         }
@@ -246,8 +257,10 @@ neo_storage::impl_default_via_new!(CryptoLib);
 mod tests {
     use super::*;
     use neo_primitives::TriggerType;
-    use neo_protocol::ProtocolSettings;
+    use neo_protocol::{Hardfork, ProtocolSettings};
     use neo_storage::persistence::PersistenceDataCache;
+    use neo_storage::{StorageItem, StorageKey};
+    use num_bigint::BigInt;
     use std::collections::BTreeSet;
     use std::sync::Arc;
 
@@ -322,5 +335,93 @@ mod tests {
                 );
             }
         }
+    }
+
+    fn engine_with_hardforks_and_snapshot(
+        hardforks: &[Hardfork],
+        snapshot: Arc<PersistenceDataCache>,
+    ) -> ApplicationEngine {
+        let mut settings = ProtocolSettings::default();
+        let mut heights = std::collections::HashMap::new();
+        for &hardfork in hardforks {
+            heights.insert(hardfork, 0);
+        }
+        settings.hardforks = heights;
+        ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            snapshot,
+            None,
+            settings,
+            400_000_000,
+            None,
+            crate::native::composition::default_native_services(),
+        )
+        .expect("engine")
+    }
+
+    fn engine_with_hardforks(hardforks: &[Hardfork]) -> ApplicationEngine {
+        engine_with_hardforks_and_snapshot(hardforks, Arc::new(PersistenceDataCache::new(false)))
+    }
+
+    /// Writes an on-chain Policy hardfork activation record.
+    ///
+    /// Iara and later hardforks are not configuration-managed: the engine
+    /// reads their activation height from the Policy contract's prefix-25
+    /// storage (`PolicyContract::hardfork_key`: suffix `[prefix, name]`,
+    /// value = little-endian activation height), so settings entries alone
+    /// never enable them.
+    fn write_policy_hardfork_height(snapshot: &PersistenceDataCache, name: &str, height: u32) {
+        let policy = crate::native::policy_contract::PolicyContract::new();
+        let mut suffix = vec![25u8]; // PolicyContract::PREFIX_HARDFORK
+        suffix.extend_from_slice(name.as_bytes());
+        snapshot.add(
+            StorageKey::new(policy.id(), suffix),
+            StorageItem::from_bytes(BigInt::from(height).to_signed_bytes_le()),
+        );
+    }
+
+    #[test]
+    fn bls12381_deserialize_g2_identity_requires_iara() {
+        let lib = CryptoLib::new();
+        let g2_identity: Vec<u8> = std::iter::once(0xc0)
+            .chain(std::iter::repeat(0).take(95))
+            .collect();
+
+        // C# v3.11.2: `G2Affine.FromCompressed` faults on the canonical
+        // compressed identity before Iara — decompression computes
+        // `y = sqrt(4(1+i))`, which does not exist in Fp2.
+        let err = lib
+            .bls12381_deserialize(&engine_with_hardforks(&[]), &[g2_identity.clone()])
+            .expect_err("pre-Iara G2 identity must fault");
+        assert!(
+            err.to_string().contains("Invalid G2 point"),
+            "unexpected error: {err}"
+        );
+
+        // From Iara the identity is accepted; the interop payload keeps the
+        // original compressed bytes behind the group tag. Iara activation is
+        // read from the on-chain Policy table, not from settings.
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
+        write_policy_hardfork_height(&snapshot, "Iara", 0);
+        let result = lib
+            .bls12381_deserialize(
+                &engine_with_hardforks_and_snapshot(&[], snapshot),
+                &[g2_identity.clone()],
+            )
+            .expect("Iara accepts the canonical G2 identity");
+        assert_eq!(result.len(), 1 + 96);
+        assert_eq!(&result[1..], &g2_identity[..]);
+
+        // The G1 identity has no Iara dependency: sqrt(4) exists in Fp, so
+        // `G1Affine.FromCompressed` accepts it in every hardfork.
+        let g1_identity: Vec<u8> = std::iter::once(0xc0)
+            .chain(std::iter::repeat(0).take(47))
+            .collect();
+        let result = lib
+            .bls12381_deserialize(&engine_with_hardforks(&[]), &[g1_identity.clone()])
+            .expect("G1 identity is valid in every hardfork");
+        assert_eq!(result.len(), 1 + 48);
+        assert_eq!(&result[1..], &g1_identity[..]);
     }
 }

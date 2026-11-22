@@ -42,6 +42,15 @@ impl ContractManagement {
         Ok(Some(contract))
     }
 
+    /// Gets only the `id` of a deployed contract record.
+    ///
+    /// Mirrors C# v3.11.2 `ContractManagement.GetContractId`, which exists so
+    /// callers that only need the ID (e.g. the `TemporaryStorage` contract) do
+    /// not pay for NEF checksum verification and manifest parsing.
+    pub fn get_contract_id(snapshot: &PersistenceDataCache, hash: &UInt160) -> Result<Option<i32>> {
+        Ok(Self::get_contract_from_snapshot(snapshot, hash)?.map(|contract| contract.id))
+    }
+
     /// Gets only the `update_counter` of a deployed contract record.
     ///
     /// `ContractState` is serialized as `id: i32` followed by

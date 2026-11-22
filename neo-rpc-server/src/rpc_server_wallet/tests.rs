@@ -1,3 +1,5 @@
+use super::prepared::{PreparedTransaction, authorization_json};
+use super::signing::signature_contract_pubkey;
 use super::*;
 use crate::rpc_server_settings::RpcServerConfig;
 use neo_crypto::{ECPoint, Secp256r1Crypto};
@@ -548,7 +550,12 @@ async fn rpc_uses_configured_non_default_key_after_finalizing_fee() {
 
     let preverify_calls = Arc::new(AtomicUsize::new(0));
     let preverify_calls_observer = Arc::clone(&preverify_calls);
-    let error = tokio::task::block_in_place(|| {
+    // v3.11.2 recalibrated witness costs: the Huyao signature contract cost is
+    // 69,911 datoshi (Helper.SignatureContractCost via StaticCoefficients and
+    // CHECK_SIG_PRICE_SINCE_HUYAO), so the post-fee-per-byte remainder
+    // (1,361,000 - 1,261 * 1,000 = 100,000) now covers verification and the
+    // relay succeeds instead of faulting with InsufficientFunds.
+    let relayed = tokio::task::block_in_place(|| {
         RpcServerWallet::sign_and_relay_with_observers(
             &server,
             &wallet,
@@ -560,8 +567,16 @@ async fn rpc_uses_configured_non_default_key_after_finalizing_fee() {
             },
         )
     })
-    .expect_err("the isolated relay actor has no persisted balance");
-    assert!(error.to_string().contains("Insufficient funds for fee"));
+    .expect("relay must succeed under the v3.11.2 fee schedule");
+    assert!(
+        relayed["hash"]
+            .as_str()
+            .is_some_and(|hash| hash.starts_with("0x"))
+    );
+    assert_eq!(
+        relayed["netfee"].as_str(),
+        Some(finalized_fee.to_string()).as_deref()
+    );
     assert_eq!(preverify_calls.load(Ordering::SeqCst), 1);
     let recorded = signer_service
         .requests

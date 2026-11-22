@@ -544,9 +544,12 @@ async fn invokescript_push1_reports_csharp_gas_units() {
         .get("gasconsumed")
         .and_then(|value| value.as_str())
         .expect("gasconsumed");
-    // PUSH1 feeUnits=1 * default ExecFeeFactor=30 = 30 datoshi (matches C#).
-    // Test pre-dated commit 4f599eb2 which corrected the 30× cpu_fee undercharge.
-    assert_eq!(gas, "30");
+    // v3.11.2: ProtocolSettings.Default back-fills every config-managed hardfork
+    // (through HF_Huyao) to height 0, so dynamic pricing is active at genesis.
+    // PUSH1 uses StaticCoefficients[PUSH1] = 2187 (1e-11 GAS) instead of the
+    // legacy OpCodePriceTable value, and FeeConsumed divides by the full factor:
+    // DivideCeiling(30 * 10000 * 2187 / 10^7) = 66 datoshi (matches C#).
+    assert_eq!(gas, "66");
 
     let stack = result
         .get("stack")

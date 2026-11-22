@@ -2,7 +2,7 @@
 // execution.rs - Main execution loop and instruction execution
 //
 
-use super::{ExecutionEngine, StackItem, VMState, VmError, VmResult};
+use super::{ExecutionEngine, RunStats, VMState, VmError, VmResult};
 use crate::Instruction;
 use tracing::instrument;
 
@@ -50,11 +50,13 @@ impl ExecutionEngine {
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
         if context.instruction_pointer() >= context.script().len() {
-            // neo-vm v3.10.1 `ExecuteNext` substitutes `Instruction.RET` when
+            // neo-vm v3.11.2 `ExecuteNext` substitutes `Instruction.RET` when
             // the instruction pointer is past the end of the script and runs
             // it through the same pre/post instruction hooks as any other
-            // instruction, without moving the instruction pointer.
-            return self.execute_instruction(&Instruction::ret(), None);
+            // instruction, without moving the instruction pointer. The post
+            // hook receives `null` as the current instruction so the host
+            // charges nothing for it.
+            return self.execute_instruction(&Instruction::ret(), None, None);
         }
 
         self.execute_next_internal()
@@ -112,21 +114,30 @@ impl ExecutionEngine {
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
             .current_instruction()?;
 
-        self.execute_instruction(&instruction, Some(context_index))
+        self.execute_instruction(&instruction, Some(&instruction), Some(context_index))
     }
 
     /// Runs one instruction through the pre hook, its handler and the post
-    /// hook, matching the body of neo-vm v3.10.1 `ExecutionEngine.ExecuteNext`.
+    /// hook, matching the body of neo-vm v3.11.2 `ExecutionEngine.ExecuteNext`:
     ///
-    /// `context_index` is the context whose instruction pointer is advanced
-    /// when the instruction did not jump; it is `None` for the implicit `RET`
-    /// at the end of a script.
+    /// ```text
+    /// RunStats runStats = default;
+    /// PreExecuteInstruction(instruction);
+    /// try { JumpTable[instruction.OpCode](this, instruction, ref runStats); }
+    /// finally { PostExecuteInstruction(currentInstruction, runStats); }
+    /// ```
+    ///
+    /// `current_instruction` is `None` only for the implicit `RET` at the end of
+    /// a script, and `context_index` is the context whose instruction pointer is
+    /// advanced when the instruction did not jump.
     #[inline(always)]
     fn execute_instruction(
         &mut self,
         instruction: &Instruction,
+        current_instruction: Option<&Instruction>,
         context_index: Option<usize>,
     ) -> VmResult<()> {
+        self.run_stats = RunStats::default();
         self.pre_execute_instruction(instruction)?;
 
         if let Some(host) = self.interop_host {
@@ -143,24 +154,18 @@ impl ExecutionEngine {
             ))),
         };
 
-        match result {
-            Ok(()) => {}
-            Err(err) => {
-                if self.limits.catch_engine_exceptions
-                    && let VmError::CatchableException { message } = err
-                {
-                    // A caught engine exception is handled like THROW and the
-                    // instruction then completes normally, so the post
-                    // instruction check below still runs.
-                    let exception = StackItem::from_byte_string(message.into_bytes());
-                    self.execute_throw(Some(exception))?;
-                } else {
-                    return Err(err);
-                }
-            }
-        }
+        // C# runs this in a `finally`, so it executes even when the handler
+        // faulted; an error raised here replaces the handler's error, exactly
+        // like an exception thrown from a `finally` block.
+        let run_stats = self.run_stats;
+        self.post_execute_instruction(current_instruction, &run_stats)?;
 
-        self.post_execute_instruction(instruction)?;
+        // neo-vm v3.11.2 runs the post hook in a `finally` block and no longer
+        // catches `CatchableException` in `ExecuteNext`: every handler error
+        // faults the engine, and script-visible exceptions are only raised via
+        // `ExecuteThrow` inside the handlers themselves (THROW, PICKITEM,
+        // SETITEM, ENDFINALLY).
+        result?;
 
         if !self.is_jumping
             && let Some(context_index) = context_index
@@ -185,16 +190,21 @@ impl ExecutionEngine {
 
     /// Called after executing an instruction.
     ///
-    /// Matches neo-vm v3.10.1 `ExecutionEngine.PostExecuteInstruction`: the
-    /// only check is `ReferenceCounter.PostExecuteInstruction`, which faults
-    /// when the reference count is above `MaxStackSize`. Nothing is collected.
+    /// Matches neo-vm v3.11.2 `ExecutionEngine.PostExecuteInstruction`: the
+    /// first check is `ReferenceCounter.PostExecuteInstruction`, which faults
+    /// when the reference count is above `MaxStackSize`; the host then gets a
+    /// chance to charge the instruction price and notify its diagnostic.
     #[inline(always)]
-    fn post_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
+    fn post_execute_instruction(
+        &mut self,
+        instruction: Option<&Instruction>,
+        run_stats: &RunStats,
+    ) -> VmResult<()> {
         self.reference_counter
             .post_execute_instruction(self.limits.max_stack_size)?;
 
         if let Some(host) = self.interop_host {
-            host.post_execute_instruction(self, instruction)?;
+            host.post_execute_instruction(self, instruction, run_stats)?;
         }
 
         Ok(())

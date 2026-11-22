@@ -368,6 +368,11 @@ fn exception_handling_facades_are_removed() {
     let state_path = workspace.join("neo-core/src/neo_vm/exception_handling_state.rs");
     let vm_module = read_source(workspace.join("neo-vm/src/lib.rs"));
     let execution_context = read_source(workspace.join("neo-vm/src/execution_context/context.rs"));
+    // context.rs was split into sibling modules (its inline tests now live in
+    // context/tests.rs); the ExceptionHandlingState import is function-local
+    // inside test_try_stack, so it is asserted against the tests file.
+    let execution_context_tests =
+        read_source(workspace.join("neo-vm/src/execution_context/context/tests.rs"));
     let exception_runtime = read_source(workspace.join("neo-vm/src/execution_engine/exception.rs"));
     let mut context = ExceptionHandlingContext::new(-1, 42);
 
@@ -381,7 +386,7 @@ fn exception_handling_facades_are_removed() {
     );
     assert!(
         execution_context.contains("use crate::ExceptionHandlingContext;")
-            && execution_context.contains("use crate::ExceptionHandlingState;")
+            && execution_context_tests.contains("use crate::ExceptionHandlingState;")
             && exception_runtime.contains("use crate::ExceptionHandlingContext;")
             && exception_runtime.contains("use crate::ExceptionHandlingState;"),
         "local runtime should import exception frame types directly from the \
@@ -1825,7 +1830,7 @@ fn newbuffer_reuses_neo_vm_rs_collection_semantics() {
 #[test]
 fn array_and_struct_constructors_reuse_neo_vm_rs_collection_semantics() {
     let workspace = workspace_root();
-    let compound = read_source(workspace.join("neo-vm/src/jump_table/compound.rs"));
+    let compound = read_compound_module(&workspace);
 
     assert!(
         compound.contains("crate::semantics::collections::new_array("),
@@ -1854,7 +1859,7 @@ fn array_and_struct_constructors_reuse_neo_vm_rs_collection_semantics() {
 #[test]
 fn newmap_reuses_neo_vm_rs_map_semantics() {
     let workspace = workspace_root();
-    let compound = read_source(workspace.join("neo-vm/src/jump_table/compound.rs"));
+    let compound = read_compound_module(&workspace);
 
     assert!(
         compound.contains("crate::semantics::collections::pack_map(Vec::new())"),
@@ -1967,7 +1972,7 @@ fn stack_item_convert_to_boolean_reuses_neo_vm_rs_for_safe_sources_only() {
 #[test]
 fn size_primitive_lengths_reuse_neo_vm_rs_byte_string_rules() {
     let workspace = workspace_root();
-    let compound = read_source(workspace.join("neo-vm/src/jump_table/compound.rs"));
+    let compound = read_compound_module(&workspace);
 
     assert!(
         compound.contains("crate::semantics::collections::size(&value)"),
@@ -2876,7 +2881,7 @@ fn splice_byte_sequence_ops_reuse_neo_vm_rs_helpers() {
 #[test]
 fn compound_byte_sequence_reads_reuse_neo_vm_rs_collection_semantics() {
     let workspace = workspace_root();
-    let compound = read_source(workspace.join("neo-vm/src/jump_table/compound.rs"));
+    let compound = read_compound_module(&workspace);
 
     assert!(
         compound.contains("crate::semantics::collections::has_key"),
@@ -3074,7 +3079,9 @@ fn fuzz_manifest_and_source_use_direct_vm_authority() {
     let workspace = workspace_root();
     let manifest = read_source(workspace.join("fuzz/Cargo.toml"));
     let target = read_source(workspace.join("fuzz/fuzz_targets/fuzz_script_parse.rs"));
-    assert!(manifest.contains("neo-vm = { path = \"../neo-vm\", version = \"0.21.0\" }"));
+    // The dependency version follows the workspace release; only the local
+    // path pin is an architectural invariant here.
+    assert!(manifest.contains("neo-vm = { path = \"../neo-vm\""));
     assert!(manifest.contains("path = \"fuzz_targets/fuzz_script_parse.rs\""));
     assert!(target.contains("use neo_vm::validate_script;") && !target.contains("neo_core::"));
     let probe = read_source(workspace.join("neo-probe/Cargo.toml"));
@@ -3987,6 +3994,21 @@ fn read_source(path: impl AsRef<Path>) -> String {
         .unwrap()
         .replace("\r\n", "\n")
         .replace('\r', "\n")
+}
+
+/// Reads the whole `jump_table::compound` module. The oversized
+/// `compound.rs` was split into sibling modules by pure code motion, so the
+/// implementation the compound-semantics guards audit now spans the parent
+/// file plus `compound/build.rs` and `compound/items.rs`.
+fn read_compound_module(workspace: &Path) -> String {
+    [
+        "neo-vm/src/jump_table/compound.rs",
+        "neo-vm/src/jump_table/compound/build.rs",
+        "neo-vm/src/jump_table/compound/items.rs",
+    ]
+    .iter()
+    .map(|relative| read_source(workspace.join(relative)))
+    .collect()
 }
 
 /// Returns `source` with every `#[cfg(test)]` item removed, so boundary scans

@@ -28,7 +28,10 @@ struct MapInner {
     /// Unique identifier mirroring reference equality semantics.
     id: usize,
     /// Number of stack references held on this map (C# `CompoundType.StackReferences`).
-    stack_references: usize,
+    ///
+    /// Signed like the C# `int`: VALUES decrements it directly, and a negative
+    /// value still reads as stack-referenced.
+    stack_references: isize,
     /// Indicates whether the map is read-only.
     is_read_only: bool,
 }
@@ -54,7 +57,7 @@ impl Map {
 
     /// Returns the number of stack references held on this map.
     #[must_use]
-    pub fn stack_references(&self) -> usize {
+    pub fn stack_references(&self) -> isize {
         self.inner.lock().stack_references
     }
 
@@ -68,8 +71,22 @@ impl Map {
     /// made the map stack referenced.
     pub(crate) fn add_stack_references(&self, count: usize) -> Option<SubItems> {
         let mut inner = self.inner.lock();
-        inner.stack_references += count;
-        (inner.stack_references == count).then(|| Self::collect_sub_items(&inner))
+        inner.stack_references += count as isize;
+        (inner.stack_references == count as isize).then(|| Self::collect_sub_items(&inner))
+    }
+
+    /// Adds `count` stack references without touching any sub item
+    /// (C# `CompoundType.StackReferences++`).
+    pub(crate) fn increment_stack_references(&self, count: usize) {
+        let mut inner = self.inner.lock();
+        inner.stack_references += count as isize;
+    }
+
+    /// Removes `count` stack references without touching any sub item
+    /// (C# `CompoundType.StackReferences--`).
+    pub(crate) fn decrement_stack_references(&self, count: usize) {
+        let mut inner = self.inner.lock();
+        inner.stack_references -= count as isize;
     }
 
     /// Removes one stack reference, if the map is stack referenced.
@@ -158,10 +175,24 @@ impl Map {
 
     /// Removes the value for the specified key, returning `None` if the key is absent.
     pub fn remove_entry(&self, key: &StackItem) -> VmResult<Option<StackItem>> {
+        Ok(self.remove_entry_with_index(key)?.map(|(_, value)| value))
+    }
+
+    /// Removes the value for the specified key, also reporting the insertion
+    /// index the entry occupied.
+    ///
+    /// neo-vm v3.11.2 `Map.Remove(key, out index)`. REMOVE uses the index to
+    /// price the entries that shift down.
+    pub fn remove_entry_with_index(&self, key: &StackItem) -> VmResult<Option<(usize, StackItem)>> {
         let mut inner = self.inner.lock();
         Self::ensure_mutable(&inner)?;
         self.validate_key(key)?;
-        Ok(inner.items.remove(key))
+        let Some(index) = inner.items.index_of(key) else {
+            return Ok(None);
+        };
+        let removed = inner.items.remove_at(index);
+        drop(inner);
+        Ok(removed.map(|(_, value)| (index, value)))
     }
 
     /// Removes the value for the specified key.
@@ -242,7 +273,7 @@ impl Map {
     ) -> (
         VmOrderedDictionary<StackItem, StackItem>,
         usize,
-        usize,
+        isize,
         bool,
     ) {
         let inner = self.inner.lock();

@@ -394,6 +394,32 @@ impl ExecutionContext {
         self.shared_states.evaluation_stack_mut().pop()
     }
 
+    /// Pop an item without releasing its stack reference.
+    ///
+    /// neo-vm v3.11.2 `EvaluationStack.PopNoRef`.
+    #[inline(always)]
+    pub fn pop_no_ref(&mut self) -> VmResult<crate::stack_item::StackItem> {
+        self.shared_states.evaluation_stack_mut().pop_no_ref()
+    }
+
+    /// Push an item and add exactly `count` to the reference counter.
+    ///
+    /// neo-vm v3.11.2 `EvaluationStack.PushItemCounted`.
+    #[inline(always)]
+    pub fn push_item_counted(&mut self, item: crate::stack_item::StackItem, count: i64) {
+        self.shared_states
+            .evaluation_stack_mut()
+            .push_item_counted(item, count);
+    }
+
+    /// Move the item `index` places below the top of the stack to the top.
+    ///
+    /// neo-vm v3.11.2 `EvaluationStack.Roll`.
+    #[inline(always)]
+    pub fn roll(&mut self, index: usize) -> VmResult<()> {
+        self.shared_states.evaluation_stack_mut().roll(index)
+    }
+
     /// Peek at an item on the evaluation stack without removing it
     #[inline(always)]
     pub fn peek(&self, index: usize) -> VmResult<crate::stack_item::StackItem> {
@@ -586,6 +612,67 @@ impl ExecutionContext {
             Err(VmError::invalid_operation_msg("No arguments initialized"))
         }
     }
+
+    /// Moves the top evaluation-stack item into the static field at `index`.
+    ///
+    /// neo-vm v3.11.2 `Slot.Store`: the item is popped via `PopNoRef` and keeps
+    /// its stack reference, while the previous value's reference is released.
+    /// The slot is resolved and bounds-checked before the pop, so a failed
+    /// store leaves the evaluation stack untouched. The two-pass structure
+    /// avoids holding the static-fields lock across the stack pop.
+    pub fn store_static_field_from_stack(&mut self, index: usize) -> VmResult<()> {
+        let slot_len = self.with_static_fields_mut(|static_fields| {
+            static_fields
+                .as_ref()
+                .map(Slot::len)
+                .ok_or_else(|| VmError::invalid_operation_msg("Slot has not been initialized."))
+        })?;
+        Slot::check_bounds(index, slot_len)?;
+        let item = self.evaluation_stack_mut().pop_no_ref()?;
+        self.with_static_fields_mut(|static_fields| {
+            static_fields
+                .as_mut()
+                .expect("slot verified initialized")
+                .store_popped(index, item);
+        });
+        Ok(())
+    }
+
+    /// Moves the top evaluation-stack item into the local variable at `index`.
+    ///
+    /// neo-vm v3.11.2 `Slot.Store` semantics; see `store_static_field_from_stack`.
+    pub fn store_local_from_stack(&mut self, index: usize) -> VmResult<()> {
+        let slot_len = self
+            .local_variables
+            .as_ref()
+            .map(Slot::len)
+            .ok_or_else(|| VmError::invalid_operation_msg("Slot has not been initialized."))?;
+        Slot::check_bounds(index, slot_len)?;
+        let item = self.evaluation_stack_mut().pop_no_ref()?;
+        self.local_variables
+            .as_mut()
+            .expect("slot verified initialized")
+            .store_popped(index, item);
+        Ok(())
+    }
+
+    /// Moves the top evaluation-stack item into the argument at `index`.
+    ///
+    /// neo-vm v3.11.2 `Slot.Store` semantics; see `store_static_field_from_stack`.
+    pub fn store_argument_from_stack(&mut self, index: usize) -> VmResult<()> {
+        let slot_len = self
+            .arguments
+            .as_ref()
+            .map(Slot::len)
+            .ok_or_else(|| VmError::invalid_operation_msg("Slot has not been initialized."))?;
+        Slot::check_bounds(index, slot_len)?;
+        let item = self.evaluation_stack_mut().pop_no_ref()?;
+        self.arguments
+            .as_mut()
+            .expect("slot verified initialized")
+            .store_popped(index, item);
+        Ok(())
+    }
 }
 
 impl Clone for ExecutionContext {
@@ -596,359 +683,4 @@ impl Clone for ExecutionContext {
 
 #[cfg(test)]
 #[allow(dead_code)]
-mod tests {
-    use super::*;
-    use crate::OpCode;
-    use crate::stack_item::StackItem;
-    use num_bigint::BigInt;
-
-    #[derive(Default)]
-    struct TestFlag {
-        flag: bool,
-    }
-
-    #[test]
-    fn test_execution_context_creation() {
-        let script_bytes = vec![
-            OpCode::PUSH1.byte(),
-            OpCode::PUSH2.byte(),
-            OpCode::ADD.byte(),
-        ];
-        let script = Script::new_relaxed(script_bytes);
-        let reference_counter = ReferenceCounter::new();
-
-        let context = ExecutionContext::new(script, -1, &reference_counter);
-
-        assert_eq!(context.instruction_pointer(), 0);
-        assert_eq!(context.rvcount(), -1);
-        assert_eq!(
-            context
-                .current_instruction()
-                .expect("intermediate value should exist")
-                .opcode(),
-            OpCode::PUSH1
-        );
-        assert!(context.evaluation_stack().is_empty());
-        assert!(context.try_stack().is_none());
-    }
-
-    #[test]
-    fn test_move_next() {
-        let script_bytes = vec![
-            OpCode::PUSH1.byte(),
-            OpCode::PUSH2.byte(),
-            OpCode::ADD.byte(),
-        ];
-        let script = Script::new_relaxed(script_bytes);
-        let reference_counter = ReferenceCounter::new();
-
-        let mut context = ExecutionContext::new(script, -1, &reference_counter);
-
-        assert_eq!(
-            context
-                .current_instruction()
-                .expect("intermediate value should exist")
-                .opcode(),
-            OpCode::PUSH1
-        );
-
-        context.move_next().expect("VM operation should succeed");
-        assert_eq!(context.instruction_pointer(), 1);
-        assert_eq!(
-            context
-                .current_instruction()
-                .expect("intermediate value should exist")
-                .opcode(),
-            OpCode::PUSH2
-        );
-
-        context.move_next().expect("VM operation should succeed");
-        assert_eq!(context.instruction_pointer(), 2);
-        assert_eq!(
-            context
-                .current_instruction()
-                .expect("intermediate value should exist")
-                .opcode(),
-            OpCode::ADD
-        );
-
-        context.move_next().expect("VM operation should succeed");
-        assert_eq!(context.instruction_pointer(), 3);
-        assert!(context.current_instruction().is_err());
-    }
-
-    #[test]
-    fn test_try_stack() {
-        let script_bytes = vec![OpCode::NOP.byte()];
-        let script = Script::new_relaxed(script_bytes);
-        let reference_counter = ReferenceCounter::new();
-
-        let mut context = ExecutionContext::new(script, -1, &reference_counter);
-
-        // Initially, try_stack is None
-        assert!(context.try_stack().is_none());
-
-        // Create a try stack with one context
-        use crate::ExceptionHandlingContext;
-        use crate::ExceptionHandlingState;
-        let mut try_stack = Vec::new();
-        let try_context = ExceptionHandlingContext::new(10, 20);
-        try_stack.push(try_context);
-
-        // Set the try stack
-        context.set_try_stack(Some(try_stack));
-
-        // Check that the try stack is set
-        assert!(context.try_stack().is_some());
-        assert_eq!(
-            context
-                .try_stack()
-                .expect("intermediate value should exist")
-                .len(),
-            1
-        );
-        assert_eq!(
-            context.try_stack().expect("VM operation should succeed")[0].catch_pointer(),
-            10
-        );
-        assert_eq!(
-            context.try_stack().expect("Operation failed")[0].finally_pointer(),
-            20
-        );
-
-        // Modify the try stack
-        if let Some(stack) = context.try_stack_mut() {
-            let exception_context = &mut stack[0];
-            exception_context.set_state(ExceptionHandlingState::Catch);
-        }
-
-        // Check that the modification was applied
-        assert_eq!(
-            context.try_stack().expect("Operation failed")[0].state(),
-            ExceptionHandlingState::Catch
-        );
-    }
-
-    #[test]
-    fn test_slot() {
-        let reference_counter = ReferenceCounter::new();
-
-        let items = vec![
-            StackItem::from_int(1),
-            StackItem::from_int(2),
-            StackItem::from_int(3),
-        ];
-
-        let mut slot = Slot::with_items(items, reference_counter.clone());
-
-        assert_eq!(slot.len(), 3);
-        assert_eq!(
-            slot.get(0)
-                .expect("Index out of bounds")
-                .as_int()
-                .expect("VM operation should succeed"),
-            BigInt::from(1)
-        );
-        assert_eq!(
-            slot.get(1)
-                .expect("Index out of bounds")
-                .as_int()
-                .expect("VM operation should succeed"),
-            BigInt::from(2)
-        );
-        assert_eq!(
-            slot.get(2)
-                .expect("Index out of bounds")
-                .as_int()
-                .expect("VM operation should succeed"),
-            BigInt::from(3)
-        );
-
-        slot.set(1, StackItem::from_int(42)).unwrap();
-        assert_eq!(
-            slot.get(1)
-                .expect("Index out of bounds")
-                .as_int()
-                .expect("VM operation should succeed"),
-            BigInt::from(42)
-        );
-
-        assert!(slot.set(5, StackItem::from_int(5)).is_err());
-
-        assert_eq!(reference_counter.count(), 3);
-        // neo-vm v3.10.1 `Slot.ClearReferences` only releases the stack
-        // references; the stored items are left in place.
-        slot.clear_references();
-        assert_eq!(reference_counter.count(), 0);
-        assert_eq!(slot.len(), 3);
-        let values: Vec<BigInt> = slot
-            .iter()
-            .map(|item| item.as_int().expect("VM operation should succeed"))
-            .collect();
-        assert_eq!(
-            values,
-            vec![BigInt::from(1), BigInt::from(42), BigInt::from(3)]
-        );
-    }
-
-    #[test]
-    fn test_next_instruction() {
-        let script_bytes = vec![
-            OpCode::PUSH1.byte(),
-            OpCode::PUSH2.byte(),
-            OpCode::ADD.byte(),
-            OpCode::RET.byte(),
-        ];
-
-        let script = Script::new_relaxed(script_bytes);
-        let reference_counter = ReferenceCounter::new();
-
-        let context = ExecutionContext::new(script, -1, &reference_counter);
-
-        // Test current instruction
-        let current = context
-            .current_instruction()
-            .expect("VM operation should succeed");
-        assert_eq!(current.opcode(), OpCode::PUSH1);
-
-        // Test next instruction
-        let next = context
-            .next_instruction()
-            .expect("VM operation should succeed");
-        assert_eq!(next.opcode(), OpCode::PUSH2);
-    }
-
-    #[test]
-    fn test_clone() {
-        let script_bytes = vec![
-            OpCode::PUSH1.byte(),
-            OpCode::PUSH2.byte(),
-            OpCode::ADD.byte(),
-            OpCode::RET.byte(),
-        ];
-
-        let script = Script::new_relaxed(script_bytes);
-        let reference_counter = ReferenceCounter::new();
-
-        let mut context = ExecutionContext::new(script, -1, &reference_counter);
-
-        // Push a value onto the stack
-        context
-            .push(StackItem::from_int(42))
-            .expect("push should succeed");
-
-        // Clone the context
-        let clone = context.clone();
-
-        // Clone() shares script/evaluation stack/static fields (C# semantics).
-        assert_eq!(clone.script().to_array(), context.script().to_array());
-        assert_eq!(clone.evaluation_stack().len(), 1);
-        assert!(clone.shares_evaluation_stack_with(&context));
-
-        // Check that the clone has the same instruction pointer
-        assert_eq!(clone.instruction_pointer(), context.instruction_pointer());
-
-        // C# Clone() sets rvcount = 0 for CALL.
-        assert_eq!(clone.rvcount(), 0);
-
-        // Clone with a different position
-        let clone_with_position = context.clone_with_position(2);
-
-        // Check that the clone has a different instruction pointer
-        assert_eq!(clone_with_position.instruction_pointer(), 2);
-    }
-
-    #[test]
-    fn test_get_state() -> Result<(), Box<dyn std::error::Error>> {
-        let script_bytes = vec![OpCode::NOP.byte()];
-        let script = Script::new_relaxed(script_bytes);
-        let reference_counter = ReferenceCounter::new();
-
-        let context = ExecutionContext::new(script, -1, &reference_counter);
-
-        let flag_state = context.get_state_with_factory::<TestFlag, _>(|| TestFlag { flag: true });
-        {
-            let mut flag = flag_state.lock();
-            assert!(flag.flag);
-            flag.flag = false;
-        }
-
-        let flag_state_again = context.get_state::<TestFlag>();
-        {
-            let flag = flag_state_again.lock();
-            assert!(!flag.flag);
-        }
-
-        let stack_state = context.get_state_with_factory::<Vec<i32>, _>(Vec::new);
-        {
-            let mut stack = stack_state.lock();
-            stack.push(100);
-        }
-
-        let clone = context.clone();
-        let cloned_stack_state = clone.get_state::<Vec<i32>>();
-        {
-            let mut stack = cloned_stack_state.lock();
-            assert_eq!(stack.pop(), Some(100));
-            stack.push(200);
-        }
-
-        let original_stack_state = context.get_state::<Vec<i32>>();
-        {
-            let mut stack = original_stack_state.lock();
-            assert_eq!(stack.pop(), Some(200));
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn test_get_shared_state() -> Result<(), Box<dyn std::error::Error>> {
-        let script_bytes = vec![OpCode::NOP.byte()];
-        let script = Script::new_relaxed(script_bytes);
-        let reference_counter = ReferenceCounter::new();
-
-        let context = ExecutionContext::new(script, -1, &reference_counter);
-
-        let shared_vec = context.get_shared_state::<Vec<i32>>();
-        {
-            let mut vec = shared_vec.lock();
-            vec.push(100);
-        }
-
-        let shared_vec_again = context.get_shared_state::<Vec<i32>>();
-        {
-            let vec = shared_vec_again.lock();
-            assert_eq!(*vec, vec![100]);
-        }
-
-        let shared_with_factory =
-            context.get_shared_state_with_factory::<Vec<i32>, _>(|| vec![200]);
-        {
-            let vec = shared_with_factory.lock();
-            assert_eq!(*vec, vec![100]);
-        }
-
-        let clone = context.clone();
-        let clone_shared_vec = clone.get_shared_state::<Vec<i32>>();
-        {
-            let mut vec = clone_shared_vec.lock();
-            vec.push(300);
-        }
-
-        let context_shared_vec = context.get_shared_state::<Vec<i32>>();
-        {
-            let vec = context_shared_vec.lock();
-            assert_eq!(*vec, vec![100, 300]);
-        }
-
-        context.set_state(vec![1, 2, 3]);
-        let context_shared_vec_after = context.get_shared_state::<Vec<i32>>();
-
-        {
-            let vec = context_shared_vec_after.lock();
-            assert_eq!(*vec, vec![1, 2, 3]);
-        }
-
-        Ok(())
-    }
-}
+mod tests;

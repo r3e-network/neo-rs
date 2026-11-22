@@ -107,6 +107,22 @@ impl ApplicationEngine {
         }
         Err(Error::not_found(format!("Contract not found: {hash:?}")))
     }
+    /// Charges the disk-read fee for cross-contract calls under Huyao
+    /// (C# v3.11.2 `AddContractCallFee`): a missing contract or a deployed
+    /// (non-native) contract may require a storage read.
+    pub(crate) fn add_contract_call_fee(&mut self, contract: Option<&ContractState>) -> Result<()> {
+        if !self.is_hardfork_enabled(Hardfork::HfHuyao) {
+            return Ok(());
+        }
+        let requires_disk_read = contract.is_none_or(|contract| contract.id >= 0);
+        if requires_disk_read {
+            let femto = op_code_prices_v1::READ_FROM_DISK_PRICE
+                .checked_mul(i64::from(self.exec_fee_factor))
+                .ok_or_else(|| Error::invalid_operation("Contract call fee overflow"))?;
+            self.add_femto_gas(femto, true)?;
+        }
+        Ok(())
+    }
     /// Returns a deployed contract record from the process-wide metadata cache.
     ///
     /// The cache is addressed by `(hash, update_counter)`, so an upgrade reads a
@@ -403,12 +419,14 @@ impl ApplicationEngine {
             has_return_value,
         )?;
         if let Some(fixed_fee) = whitelisted_fixed_fee {
-            self.add_fee_datoshi(fixed_fee)?;
+            // The callee's fixed fee is payable even when the caller's execution is
+            // exempt (C# `respectWhitelist: false`).
+            self.add_fee_datoshi_exempt(fixed_fee)?;
             let state_arc = new_context
                 .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
             state_arc.lock().whitelisted = true;
-            // The fixed fee above ran before this assignment and cached "not
-            // whitelisted". Drop that cache so later opcodes see the flag.
+            // The fixed fee above ran before this assignment, so the cached flag
+            // still says "not whitelisted". Drop it so the next capture sees it.
             self.invalidate_fee_whitelist();
         }
         {
@@ -474,7 +492,17 @@ impl ApplicationEngine {
                 "Method name '{method}' cannot start with underscore."
             )));
         }
-        let contract = self.fetch_contract(contract_hash)?;
+        // C# v3.11.2 `CallContract`: the disk-read fee is charged for a missing
+        // contract as well, before the existence error is raised.
+        let contract = match self.fetch_contract(contract_hash) {
+            Ok(contract) => contract,
+            Err(err @ Error::NotFound { .. }) => {
+                self.add_contract_call_fee(None)?;
+                return Err(err);
+            }
+            Err(err) => return Err(err),
+        };
+        self.add_contract_call_fee(Some(&contract))?;
         if Self::should_trace_block(self.current_block_index()) && method == "updateListToMap" {
             std::fs::write("data/contract-2655903-actual.script", &contract.nef.script)
                 .map_err(|error| Error::invalid_operation(error.to_string()))?;

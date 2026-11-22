@@ -6,6 +6,8 @@ use blst::{
     BLST_ERROR, blst_fp, blst_fp12, blst_p1, blst_p1_affine, blst_p2, blst_p2_affine, blst_scalar,
 };
 
+use neo_protocol::Hardfork;
+use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::application_engine::native_interop::{
     Bls12381Group, Bls12381Interop, Bls12381Kind,
 };
@@ -209,7 +211,14 @@ impl CryptoLib {
     }
 
     /// BLS12-381 point deserialization
-    pub(super) fn bls12381_deserialize(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+    ///
+    /// C# v3.11.2 passes the `ApplicationEngine` here so the canonical
+    /// compressed G2 identity can be special-cased from HF_Iara onwards.
+    pub(super) fn bls12381_deserialize(
+        &self,
+        engine: &ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> Result<Vec<u8>> {
         if args.is_empty() {
             return Err(Error::native_contract(
                 "bls12381Deserialize requires bytes argument".to_string(),
@@ -224,6 +233,17 @@ impl CryptoLib {
                 (Bls12381Kind::G1Affine, data.clone())
             }
             96 => {
+                // C# v3.11.2: the canonical compressed G2 identity
+                // (`0xc0 || 0x00…`) maps to `G2Affine.Identity` only from
+                // HF_Iara onwards. Before Iara, `G2Affine.FromCompressed`
+                // faults on it: decompression computes `y = sqrt(x^3 + B)`
+                // before the infinity select, and `4(1+i)` is not a square
+                // in Fp2, so `Fp2.Sqrt` throws for `x == 0`.
+                if Self::is_compressed_infinity(data)
+                    && !engine.is_hardfork_enabled(Hardfork::HfIara)
+                {
+                    return Err(Error::native_contract("Invalid G2 point"));
+                }
                 let _ = self.deserialize_g2(data)?;
                 (Bls12381Kind::G2Affine, data.clone())
             }

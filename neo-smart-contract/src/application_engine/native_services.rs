@@ -6,6 +6,7 @@ use crate::error::CoreResult;
 use indexmap::IndexMap;
 use neo_primitives::LogEventArgs;
 use neo_primitives::{UInt160, UInt256};
+use neo_protocol::Hardfork;
 use neo_protocol::signer::Signer;
 use neo_storage::persistence::PersistenceDataCache;
 use neo_vm::NotifyEventArgs;
@@ -59,6 +60,18 @@ pub trait NativeStateReader: Send + Sync {
         snapshot: &PersistenceDataCache,
         id: u64,
     ) -> CoreResult<Option<Vec<Signer>>>;
+    /// Reads every on-chain Policy hardfork activation height.
+    ///
+    /// The engine uses this to mirror C# `PolicyContract.TryGetActivationHeight`
+    /// without depending on the native contract crate. Implementations without
+    /// Policy storage return an empty list, which leaves the engine on
+    /// configuration-only hardfork heights (the pre-Huyao behaviour).
+    fn policy_hardfork_heights(
+        &self,
+        _snapshot: &PersistenceDataCache,
+    ) -> CoreResult<Vec<(Hardfork, u32)>> {
+        Ok(Vec::new())
+    }
 }
 
 /// Ledger-owned verifying-hash resolution, separate from native state reads.
@@ -425,6 +438,61 @@ mod tests {
                 .is_empty()
         );
         assert!(engine.get_state::<LedgerTransactionStates>().is_none());
+    }
+
+    /// C# `ApplicationEngine.Create` picks the jump table from the configured
+    /// Huyao height: below Huyao the pre-PR-575 `ROLL` pops the single zero
+    /// off a one-item stack, from Huyao the in-place `Roll` faults on the
+    /// same script. `ProtocolSettings::default()` normalizes every
+    /// config-managed hardfork to height 0, so the pre-Huyao engine pushes
+    /// Huyao beyond the executed height instead.
+    #[test]
+    fn jump_table_selection_follows_the_configured_huyao_height() {
+        let script = vec![
+            neo_vm::OpCode::PUSH0.byte(),
+            neo_vm::OpCode::ROLL.byte(),
+            neo_vm::OpCode::RET.byte(),
+        ];
+
+        let mut settings = ProtocolSettings::default();
+        settings
+            .hardforks
+            .insert(neo_protocol::Hardfork::HfHuyao, u32::MAX);
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
+        let (reader, resolver) = ports(&snapshot);
+        let mut engine = ApplicationEngine::new_with_shared_block(
+            TriggerType::Application,
+            None,
+            Arc::clone(&snapshot),
+            None,
+            settings,
+            TEST_MODE_GAS,
+            None,
+            services(NativeRegistry::empty(), reader, resolver),
+        )
+        .expect("engine below Huyao");
+        engine
+            .load_script(script.clone(), neo_primitives::CallFlags::ALL, None)
+            .expect("load script");
+        assert_eq!(engine.execute_allow_fault(), neo_vm::VmState::HALT);
+
+        let snapshot = Arc::new(PersistenceDataCache::new(false));
+        let (reader, resolver) = ports(&snapshot);
+        let mut engine = ApplicationEngine::new_with_shared_block(
+            TriggerType::Application,
+            None,
+            Arc::clone(&snapshot),
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            None,
+            services(NativeRegistry::empty(), reader, resolver),
+        )
+        .expect("engine with Huyao active");
+        engine
+            .load_script(script, neo_primitives::CallFlags::ALL, None)
+            .expect("load script");
+        assert_eq!(engine.execute_allow_fault(), neo_vm::VmState::FAULT);
     }
 
     #[test]

@@ -257,6 +257,11 @@ impl RemoteNode {
             MAX_HASHES_COUNT as u32
         };
         if block_idx > current_height.saturating_add(max_ahead) {
+            // C# v3.11.2 `OnInventoryReceived`: out-of-window blocks are not
+            // forwarded, but the task manager was already notified above so a
+            // matching task can still complete instead of stalling until the
+            // timeout.
+            self.notify_inventory_completed(hash, None, Some(block_idx), ctx);
             return Ok(());
         }
 

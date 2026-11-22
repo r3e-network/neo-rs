@@ -539,26 +539,42 @@ fn normalize_endpoint(endpoint: SocketAddr) -> SocketAddr {
     }
 }
 
+// Only the UPnP-gated peer configuration consumes this predicate directly;
+// `is_intranet_address` unmaps IPv4-mapped addresses internally.
 #[cfg(feature = "upnp")]
 fn is_ipv4_mapped(addr: &IpAddr) -> bool {
     matches!(addr, IpAddr::V6(v6) if v6.to_ipv4().is_some())
 }
 
-#[cfg(feature = "upnp")]
-fn is_intranet_address(addr: &IpAddr) -> bool {
+/// C# v3.11.2 `Peer.IsIntranetAddress` (minus the caller-side local-address
+/// set): the loopback block, the unspecified address, IPv4-mapped intranet
+/// ranges, IPv6 link/site-local and fc00::/7 unique-local, plus the private
+/// and reserved IPv4 ranges below. Peers learned through `Addr` must not
+/// direct outbound connections into our network.
+pub(crate) fn is_intranet_address(addr: &IpAddr) -> bool {
+    // `UnMap`: IPv4-mapped IPv6 addresses are judged as IPv4.
+    let addr = match addr {
+        IpAddr::V6(v6) if let Some(v4) = v6.to_ipv4() => IpAddr::V4(v4),
+        _ => *addr,
+    };
     match addr {
-        IpAddr::V4(v4) => {
-            let octets = v4.octets();
-            let value = u32::from_be_bytes(octets);
-            (value & 0xff00_0000) == 0x0a00_0000
-                || (value & 0xff00_0000) == 0x7f00_0000
-                || (value & 0xfff0_0000) == 0xac10_0000
-                || (value & 0xffff_0000) == 0xc0a8_0000
-                || (value & 0xffff_0000) == 0xa9fe_0000
+        IpAddr::V6(v6) => {
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_unicast_link_local()
+                || (v6.segments()[0] & 0xffc0) == 0xfec0 // fec0::/10 site-local
+                || (v6.segments()[0] & 0xfe00) == 0xfc00 // fc00::/7 unique-local
         }
-        IpAddr::V6(v6) => v6
-            .to_ipv4()
-            .is_some_and(|v4| is_intranet_address(&IpAddr::V4(v4))),
+        IpAddr::V4(v4) => {
+            let value = u32::from_be_bytes(v4.octets());
+            (value & 0xff00_0000) == 0x0000_0000 // 0.0.0.0/8
+                || (value & 0xff00_0000) == 0x0a00_0000 // 10/8
+                || (value & 0xffc0_0000) == 0x6440_0000 // 100.64/10 CGNAT
+                || (value & 0xff00_0000) == 0x7f00_0000 // 127/8
+                || (value & 0xffff_0000) == 0xa9fe_0000 // 169.254/16 link-local
+                || (value & 0xfff0_0000) == 0xac10_0000 // 172.16/12
+                || (value & 0xffff_0000) == 0xc0a8_0000 // 192.168/16
+        }
     }
 }
 

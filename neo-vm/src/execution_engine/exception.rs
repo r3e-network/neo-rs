@@ -131,7 +131,10 @@ impl ExecutionEngine {
 
         if self.uncaught_exception.is_some() {
             let exception = self.uncaught_exception.take();
-            self.execute_throw(exception)?;
+            // v3.11.2 EndFinally: ExecuteThrow(engine, engine.UncaughtException,
+            // out int refsDelta); runStats.CollectRefDelta(refsDelta);
+            let refs_delta = self.execute_throw_counted(exception)?;
+            self.collect_ref_delta(refs_delta);
         } else {
             let end_position =
                 usize::try_from(end_pointer).map_err(|_| VmError::InvalidJump(end_pointer))?;
@@ -147,6 +150,22 @@ impl ExecutionEngine {
 
     /// Executes a throw operation
     pub fn execute_throw(&mut self, ex: Option<StackItem>) -> VmResult<()> {
+        self.execute_throw_counted(ex).map(|_| ())
+    }
+
+    /// Executes a throw operation, reporting the reference-count delta it applied.
+    ///
+    /// neo-vm v3.11.2 `JumpTable.ExecuteThrow(engine, ex, out int refsDelta)`
+    /// reports `before - after` over the contexts the unwind unloads plus the
+    /// exception it pushes into a catch block; the delta feeds
+    /// `RunStats.CollectRefDelta` for dynamic pricing.
+    pub fn execute_throw_counted(&mut self, ex: Option<StackItem>) -> VmResult<i64> {
+        let refs_before = self.reference_count();
+        self.execute_throw_inner(ex)?;
+        Ok(refs_before - self.reference_count())
+    }
+
+    fn execute_throw_inner(&mut self, ex: Option<StackItem>) -> VmResult<()> {
         use crate::ExceptionHandlingState;
 
         self.uncaught_exception = ex;

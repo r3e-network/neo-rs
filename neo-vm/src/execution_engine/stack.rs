@@ -32,6 +32,27 @@ impl ExecutionEngine {
         context.push(item)
     }
 
+    /// Removes the top item of the current stack without releasing its
+    /// reference (neo-vm v3.11.2 `PopNoRef`).
+    #[inline]
+    pub fn pop_no_ref(&mut self) -> VmResult<StackItem> {
+        let context = self
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+        context.pop_no_ref()
+    }
+
+    /// Pushes an item and adds exactly `count` to the reference counter
+    /// (neo-vm v3.11.2 `PushItemCounted`).
+    #[inline]
+    pub fn push_item_counted(&mut self, item: StackItem, count: i64) -> VmResult<()> {
+        let context = self
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+        context.push_item_counted(item, count);
+        Ok(())
+    }
+
     /// Adds gas consumed and checks if the limit has been exceeded.
     /// Returns `VmError::GasExhausted` if the gas limit is exceeded.
     ///

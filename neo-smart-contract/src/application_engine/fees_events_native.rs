@@ -41,28 +41,50 @@ impl ApplicationEngine {
             .ok_or_else(|| Error::invalid_operation("Fee multiplication overflow"))?;
         self.add_fee_pico(pico_gas)
     }
+    /// Adds datoshis that are payable even when the caller is whitelisted.
+    ///
+    /// Mirrors the whitelist-fee path in C# `LoadContract`:
+    /// `AddFemtoGas(fixedFee * OpcodePriceMultiplier, true, respectWhitelist: false)`.
+    pub(crate) fn add_fee_datoshi_exempt(&mut self, datoshi: i64) -> Result<()> {
+        let femto_gas = datoshi
+            .checked_mul(FEE_FACTOR)
+            .and_then(|pico_gas| pico_gas.checked_mul(OPCODE_PRICE_MULTIPLIER))
+            .ok_or_else(|| Error::invalid_operation("Fee multiplication overflow"))?;
+        self.add_femto_gas(femto_gas, false)
+    }
     /// Adds picoGAS to `FeeConsumed` / `GasConsumed`.
+    ///
+    /// C# `ApplicationEngine.AddFee(gas)` is `AddFemtoGas(gas * OpcodePriceMultiplier)`;
+    /// the counters are tracked in femtoGAS so the dynamic (post-`HF_Huyao`)
+    /// prices keep their sub-picoGAS resolution.
     fn add_fee_pico(&mut self, pico_gas: i64) -> Result<()> {
-        let whitelisted = if self.fee_whitelist_context != 0 {
-            self.fee_whitelist_flag
-        } else {
-            self.refresh_fee_whitelist()
-        };
-        if whitelisted {
-            return Ok(());
-        }
-        if pico_gas < 0 {
+        let femto_gas = pico_gas
+            .checked_mul(OPCODE_PRICE_MULTIPLIER)
+            .ok_or_else(|| Error::invalid_operation("Fee multiplication overflow"))?;
+        self.add_femto_gas(femto_gas, true)
+    }
+    /// Adds femtoGAS to `FeeConsumed` / `GasConsumed`.
+    ///
+    /// Matches neo v3.11.2 `ApplicationEngine.AddFemtoGas`: negative charges are
+    /// rejected, a whitelisted execution pays nothing (unless the caller opts
+    /// out, as the whitelist fixed fee does), and exceeding the fee amount is an
+    /// out-of-gas error.
+    pub(crate) fn add_femto_gas(&mut self, femto_gas: i64, respect_whitelist: bool) -> Result<()> {
+        if femto_gas < 0 {
             return Err(Error::invalid_operation(
                 "Negative gas fee is not allowed".to_string(),
             ));
         }
+        if respect_whitelist && self.whitelisted {
+            return Ok(());
+        }
         let total = self
             .fee_consumed
-            .checked_add(pico_gas)
+            .checked_add(femto_gas)
             .ok_or_else(|| Error::invalid_operation("Fee addition overflow"))?;
         self.fee_consumed = total;
         self.gas_consumed = total;
-        if self.fee_amount.saturating_sub(total) < 1_000_000 * FEE_FACTOR
+        if self.fee_amount.saturating_sub(total) < 1_000_000 * FEE_FACTOR * OPCODE_PRICE_MULTIPLIER
             && Self::should_trace_block(self.current_block_index())
         {
             let (ip, opcode) = self
@@ -80,22 +102,28 @@ impl ApplicationEngine {
                 })
                 .unzip();
             eprintln!(
-                "TRACE fee block={} ip={ip:?} opcode={opcode:?} added_pico={pico_gas} total_pico={total} remaining_pico={}",
+                "TRACE fee block={} ip={ip:?} opcode={opcode:?} added_femto={femto_gas} total_femto={total} remaining_femto={}",
                 self.current_block_index(),
                 self.fee_amount.saturating_sub(total),
             );
         }
         if self.fee_consumed > self.fee_amount {
-            let required = (self.fee_consumed.max(0) as u64).div_ceil(FEE_FACTOR as u64);
-            let available = (self.fee_amount.max(0) as u64) / (FEE_FACTOR as u64);
+            let scale = (FEE_FACTOR * OPCODE_PRICE_MULTIPLIER) as u64;
+            let required = (self.fee_consumed.max(0) as u64).div_ceil(scale);
+            let available = (self.fee_amount.max(0) as u64) / scale;
             return Err(Error::insufficient_gas(required, available));
         }
         Ok(())
     }
-    /// Drops the cached whitelist flag. The next fee charge reads it again.
+    /// Reads the current context's whitelist flag into `self.whitelisted`.
     ///
-    /// Call this when the current context changes, and after the flag itself is
-    /// assigned. The fixed whitelist fee is charged before that assignment.
+    /// Mirrors C# `_whitelisted = CurrentContext?.GetState<ExecutionContextState>()?.WhiteListed ?? false`,
+    /// which runs before every instruction. The per-context cache keeps that
+    /// capture free of state-map lookups on the instruction hot path.
+    pub(super) fn capture_whitelisted(&mut self) {
+        self.whitelisted = self.refresh_fee_whitelist();
+    }
+    /// Drops the cached whitelist flag. The next capture reads it again.
     pub(super) fn invalidate_fee_whitelist(&mut self) {
         self.fee_whitelist_context = 0;
     }
@@ -216,14 +244,14 @@ impl ApplicationEngine {
     }
     /// Checks if enough gas is available for an operation.
     pub fn check_gas(&self, required_gas: i64) -> Result<()> {
-        let required_pico = required_gas
-            .checked_mul(FEE_FACTOR)
+        let required_femto = required_gas
+            .checked_mul(FEE_FACTOR * OPCODE_PRICE_MULTIPLIER)
             .ok_or_else(|| Error::invalid_operation("Gas multiplication overflow"))?;
         let total_gas = self
             .gas_consumed
-            .checked_add(required_pico)
+            .checked_add(required_femto)
             .ok_or_else(|| Error::invalid_operation("Gas consumption overflow"))?;
-        if total_gas > self.gas_limit {
+        if total_gas > self.fee_amount {
             return Err(Error::invalid_operation("Out of gas"));
         }
         Ok(())
@@ -285,6 +313,28 @@ impl ApplicationEngine {
             );
         }
         Ok(fee)
+    }
+
+    /// Returns whether the named native method declares a nullable result.
+    ///
+    /// C# native methods can return nullable values (e.g. `BigInteger?`); the
+    /// ABI keeps the underlying type, so the null-ness has to travel with the
+    /// method metadata instead.
+    pub fn native_method_nullable(
+        &self,
+        contract_hash: &UInt160,
+        method: &str,
+        parameter_count: usize,
+    ) -> bool {
+        self.native_registry
+            .get(contract_hash)
+            .is_some_and(|native| {
+                native.methods().iter().any(|entry| {
+                    entry.name == method
+                        && entry.parameters.len() == parameter_count
+                        && entry.nullable
+                })
+            })
     }
 
     /// Calls a native contract method.
@@ -361,10 +411,11 @@ impl ApplicationEngine {
                 .whitelisted_native_fee(contract_hash, method, args.len())?
                 .is_some();
         if Self::should_trace_block(block_height)
-            && self.fee_amount.saturating_sub(self.fee_consumed) < 1_000_000 * FEE_FACTOR
+            && self.fee_amount.saturating_sub(self.fee_consumed)
+                < 1_000_000 * FEE_FACTOR * OPCODE_PRICE_MULTIPLIER
         {
             eprintln!(
-                "TRACE native block={block_height} contract={} hash={contract_hash} method={method} cpu_fee={} storage_fee={} consumed_pico={} remaining_pico={} whitelisted={is_whitelisted}",
+                "TRACE native block={block_height} contract={} hash={contract_hash} method={method} cpu_fee={} storage_fee={} consumed_femto={} remaining_femto={} whitelisted={is_whitelisted}",
                 native.name(),
                 method_meta.cpu_fee,
                 method_meta.storage_fee,
@@ -390,12 +441,25 @@ impl ApplicationEngine {
         if changes_fee_whitelist {
             self.invalidate_native_fee_cache();
         }
-        let result = native.invoke(self, method, args).map_err(|err| {
-            Error::native_contract(format!(
+        let result = match native.invoke(self, method, args) {
+            // C# v3.11.2: `UnknownHardforkException` propagates with its own
+            // message (`Blockchain.Persist` rethrows it), so the error is not
+            // wrapped in the dispatch text and the flag is engine-typed —
+            // contract `THROW` text can never trigger the halt. Other native
+            // failures keep the dispatch wrapper.
+            Err(err) if err.is_unknown_hardfork() => {
+                let Error::UnknownHardfork { hardfork_name } = &err else {
+                    unreachable!("is_unknown_hardfork");
+                };
+                self.mark_unknown_hardfork_fault(hardfork_name);
+                Err(err)
+            }
+            Err(err) => Err(Error::native_contract(format!(
                 "{}({contract_hash}) method `{method}` failed: {err}",
                 native.name()
-            ))
-        });
+            ))),
+            Ok(value) => Ok(value),
+        };
         if changes_fee_whitelist {
             self.invalidate_native_fee_cache();
         }
@@ -486,10 +550,10 @@ impl ApplicationEngine {
                 "Negative gas consumption".to_string(),
             ));
         }
-        let pico_gas = gas
-            .checked_mul(FEE_FACTOR)
+        let femto_gas = gas
+            .checked_mul(FEE_FACTOR * OPCODE_PRICE_MULTIPLIER)
             .ok_or_else(|| Error::invalid_operation("Gas multiplication overflow"))?;
-        let Some(total) = self.fee_consumed.checked_add(pico_gas) else {
+        let Some(total) = self.fee_consumed.checked_add(femto_gas) else {
             return Err(Error::invalid_operation(
                 "Gas addition overflow".to_string(),
             ));
@@ -508,7 +572,7 @@ impl ApplicationEngine {
     }
     /// Ensures gas usage stays within configured limits.
     fn update_vm_gas_counter(&mut self, _gas: i64) -> Result<()> {
-        if self.gas_consumed > self.gas_limit {
+        if self.gas_consumed > self.fee_amount {
             return Err(Error::invalid_operation(
                 "VM exceeded gas limit during execution".to_string(),
             ));

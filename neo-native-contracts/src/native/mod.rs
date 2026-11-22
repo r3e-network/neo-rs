@@ -56,6 +56,8 @@ pub mod security_fixes;
 mod stack_value_numeric;
 /// Standard library native contract.
 pub mod std_lib;
+/// Temporary storage native contract (`HF_Huyao`).
+pub mod temporary_storage;
 /// Token management (NFT) contract.
 ///
 /// Not a C# neo v3.10.1 native contract and NOT registered in
@@ -96,6 +98,7 @@ pub use security_fixes::{
     StateValidator,
 };
 pub use std_lib::StdLib;
+pub use temporary_storage::TemporaryStorage;
 /// Phase 9 (F17): the token-management contract and its state vocabulary only
 /// exist in `experimental` builds.
 #[cfg(feature = "experimental")]
@@ -231,6 +234,7 @@ mod tests {
             "OracleContract".to_string(),
             "Notary".to_string(),
             "Treasury".to_string(),
+            "TemporaryStorage".to_string(),
         ];
 
         assert_eq!(names, expected);

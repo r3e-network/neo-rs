@@ -2,9 +2,10 @@
 
 use super::{
     ContractManagement, CryptoLib, GasToken, LedgerContract, NativeContract, NeoToken, Notary,
-    OracleContract, PolicyContract, RoleManagement, StdLib, TreasuryContract,
+    OracleContract, PolicyContract, RoleManagement, StdLib, TemporaryStorage, TreasuryContract,
 };
 use neo_primitives::{UInt160, UInt256};
+use neo_protocol::Hardfork;
 use neo_protocol::payloads::{Block, Extensible, Header, Transaction};
 use neo_protocol::signer::Signer;
 use neo_smart_contract::application_engine::{
@@ -174,6 +175,13 @@ impl NativeStateReader for StandardNativeStateReader {
             .get_transaction_state(snapshot, &request.original_tx_id)?
             .map(|state| state.transaction().signers().to_vec()))
     }
+
+    fn policy_hardfork_heights(
+        &self,
+        snapshot: &PersistenceDataCache,
+    ) -> CoreResult<Vec<(Hardfork, u32)>> {
+        Ok(PolicyContract::all_hardfork_heights(snapshot))
+    }
 }
 
 /// Process-wide immutable native contracts, in C# `NativeContract.Contracts`
@@ -192,6 +200,7 @@ fn shared_stateless_native_contracts() -> &'static [Arc<dyn NativeContract>] {
             Arc::new(OracleContract::new()),
             Arc::new(Notary::new()),
             Arc::new(TreasuryContract::new()),
+            Arc::new(TemporaryStorage::new()),
         ]
     })
 }

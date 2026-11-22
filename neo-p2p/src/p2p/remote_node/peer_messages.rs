@@ -10,7 +10,7 @@ use crate::p2p::payloads::{
     network_address_with_time::NetworkAddressWithTime,
     ping_payload::PingPayload,
 };
-use crate::p2p::peer::PeerCommand;
+use crate::p2p::peer::{PeerCommand, is_intranet_address};
 use neo_actors::{ActorContext, ActorResult};
 use neo_ledger::BlockchainCommand;
 use std::collections::HashSet;
@@ -158,6 +158,11 @@ fn collect_reachable_endpoints(addresses: Vec<NetworkAddressWithTime>) -> Vec<So
     for address in addresses {
         if let Some(endpoint) = address.endpoint()
             && endpoint.port() > 0
+            // C# v3.11.2 `Peer.OnReceive` (Addr case): intranet endpoints must
+            // not be turned into outbound targets, so they are dropped here.
+            // (The C# filter additionally excludes the local node's own
+            // addresses, which are handled at connection time.)
+            && !is_intranet_address(&endpoint.ip())
             && seen.insert(endpoint)
         {
             endpoints.push(endpoint);
@@ -172,26 +177,81 @@ mod tests {
     use super::{collect_reachable_endpoints, normalize_request};
     use crate::p2p::payloads::network_address_with_time::NetworkAddressWithTime;
     use crate::p2p::payloads::node_capability::tcp_server;
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
     fn address(ip: [u8; 4], port: u16) -> NetworkAddressWithTime {
         NetworkAddressWithTime::new(0, IpAddr::V4(Ipv4Addr::from(ip)), vec![tcp_server(port)])
     }
 
+    fn address6(ip: Ipv6Addr, port: u16) -> NetworkAddressWithTime {
+        NetworkAddressWithTime::new(0, IpAddr::V6(ip), vec![tcp_server(port)])
+    }
+
     #[test]
     fn addr_endpoint_collection_drops_zero_port_and_deduplicates() {
         let endpoints = collect_reachable_endpoints(vec![
-            address([10, 0, 0, 1], 20333),
-            address([10, 0, 0, 2], 0),
-            address([10, 0, 0, 1], 20333),
-            address([10, 0, 0, 3], 20334),
+            address([51, 0, 0, 1], 20333),
+            address([51, 0, 0, 2], 0),
+            address([51, 0, 0, 1], 20333),
+            address([51, 0, 0, 3], 20334),
         ]);
 
         assert_eq!(
             endpoints,
             vec![
-                SocketAddr::from(([10, 0, 0, 1], 20333)),
-                SocketAddr::from(([10, 0, 0, 3], 20334)),
+                SocketAddr::from(([51, 0, 0, 1], 20333)),
+                SocketAddr::from(([51, 0, 0, 3], 20334)),
+            ]
+        );
+    }
+
+    #[test]
+    fn addr_endpoint_collection_drops_intranet_addresses() {
+        let endpoints = collect_reachable_endpoints(vec![
+            address([10, 0, 0, 1], 20333),     // 10/8
+            address([0, 0, 0, 0], 20333),      // 0.0.0.0/8
+            address([100, 64, 0, 1], 20333),   // 100.64/10 CGNAT
+            address([100, 128, 0, 1], 20333),  // outside CGNAT: kept
+            address([127, 0, 0, 1], 20333),    // 127/8 loopback
+            address([169, 254, 1, 1], 20333),  // 169.254/16 link-local
+            address([172, 15, 255, 1], 20333), // below 172.16/12: kept
+            address([172, 16, 0, 1], 20333),   // 172.16/12
+            address([172, 31, 255, 1], 20333), // 172.31/16: still 172.16/12
+            address([172, 32, 0, 1], 20333),   // above 172.16/12: kept
+            address([192, 168, 1, 1], 20333),  // 192.168/16
+            address([8, 8, 8, 8], 20333),      // public: kept
+        ]);
+
+        assert_eq!(
+            endpoints,
+            vec![
+                SocketAddr::from(([100, 128, 0, 1], 20333)),
+                SocketAddr::from(([172, 15, 255, 1], 20333)),
+                SocketAddr::from(([172, 32, 0, 1], 20333)),
+                SocketAddr::from(([8, 8, 8, 8], 20333)),
+            ]
+        );
+    }
+
+    #[test]
+    fn addr_endpoint_collection_applies_ipv6_intranet_rules() {
+        let endpoints = collect_reachable_endpoints(vec![
+            address6(Ipv6Addr::LOCALHOST, 20333),   // ::1
+            address6(Ipv6Addr::UNSPECIFIED, 20333), // ::
+            address6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1), 20333), // link-local
+            address6(Ipv6Addr::new(0xfec0, 0, 0, 0, 0, 0, 0, 1), 20333), // site-local
+            address6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1), 20333), // fc00::/7
+            address6(Ipv6Addr::new(0xfd12, 0, 0, 0, 0, 0, 0, 1), 20333), // fd00::/8
+            address6(Ipv6Addr::new(0xfe10, 0, 0, 0, 0, 0, 0, 1), 20333), // kept
+            address6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1), 20333), // kept
+            address6(Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0x0a00, 0x0804), 20333), // ::ffff:10.0.8.4
+        ]);
+
+        assert_eq!(
+            endpoints,
+            vec![
+                SocketAddr::from((Ipv6Addr::new(0xfe10, 0, 0, 0, 0, 0, 0, 1), 20333)),
+                SocketAddr::from((Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1), 20333)),
             ]
         );
     }

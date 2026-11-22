@@ -206,6 +206,14 @@ pub struct NativeMethod {
     #[serde(default)]
     pub deprecated_in: Option<Hardfork>,
 
+    /// Whether the method returns a nullable value.
+    ///
+    /// C# expresses this as a nullable return type (e.g. `BigInteger?`) while
+    /// the ABI keeps the underlying `Integer` type. When set, an empty native
+    /// result is pushed as a null stack item instead of being decoded as `0`.
+    #[serde(default)]
+    pub nullable: bool,
+
     /// Return type for the method (used for native manifest ABI).
     pub return_type: ContractParameterType,
 }
@@ -230,8 +238,15 @@ impl NativeMethod {
             parameter_names: Vec::new(),
             active_in: None,
             deprecated_in: None,
+            nullable: false,
             return_type,
         }
+    }
+
+    /// Marks the method as returning a nullable value (e.g. C# `BigInteger?`).
+    pub fn with_nullable(mut self, nullable: bool) -> Self {
+        self.nullable = nullable;
+        self
     }
 
     /// Marks the method as active starting from the given hardfork (inclusive).

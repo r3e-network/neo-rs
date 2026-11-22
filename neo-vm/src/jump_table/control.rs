@@ -331,27 +331,45 @@ pub fn abortmsg(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmR
 
 /// ASSERT - Assert condition
 pub fn assert(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    if !engine.pop()?.as_boolean()? {
+    let r = engine.reference_count();
+    let x = engine.pop()?.as_boolean()?;
+    if !x {
         return Err(VmError::AssertFailed);
     }
+    // v3.11.2: collect the pop's ref delta on the success path only
+    // (`runStats.CollectRefDelta(r - engine.ReferenceCounter.Count)`); the
+    // false path faults before collecting.
+    engine.collect_ref_delta(r - engine.reference_count());
     Ok(())
 }
 
 /// ASSERTMSG - Assert condition with message
 pub fn assertmsg(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    // v3.11.2 AssertMsg: r = Count; msgItem = Pop(); ...; on the success path
+    // collect the pops' ref delta and the message's span length.
+    let r = engine.reference_count();
     let msg_item = engine.pop()?;
     let msg_bytes = msg_item.into_bytes()?;
+    let msg_len = msg_bytes.len() as i64;
     let msg = String::from_utf8_lossy(&msg_bytes).into_owned();
     if !engine.pop()?.as_boolean()? {
         return Err(VmError::AssertFailedMsg(msg));
     }
+    engine.collect_ref_delta(r - engine.reference_count());
+    engine.collect_op_length(msg_len);
     Ok(())
 }
 
 /// THROW - Throw exception
 pub fn throw(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    // v3.11.2 Throw: r1 = Count; item = Pop(); r2 = Count;
+    // ExecuteThrow(engine, item, out refsDelta); CollectRefDelta(r1 - r2 + refsDelta)
+    let r1 = engine.reference_count();
     let ex = engine.pop()?;
-    engine.execute_throw(Some(ex))
+    let r2 = engine.reference_count();
+    let refs_delta = engine.execute_throw_counted(Some(ex))?;
+    engine.collect_ref_delta(r1 - r2 + refs_delta);
+    Ok(())
 }
 
 /// TRY - Begin try block

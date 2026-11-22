@@ -204,9 +204,20 @@ impl ApplicationEngine {
         event_name: String,
         state: Vec<StackItem>,
     ) -> Result<(), String> {
+        self.send_notification_counted(script_hash, event_name, state)
+            .map(|_| ())
+    }
+    /// Sends a notification and returns the number of items visited while
+    /// copying the arguments (C# v3.11.2 `SendNotification(..., out count)`).
+    pub fn send_notification_counted(
+        &mut self,
+        script_hash: UInt160,
+        event_name: String,
+        state: Vec<StackItem>,
+    ) -> Result<i64, String> {
         // Get optional container (can be None for OnPersist/PostPersist triggers)
         let container = self.script_container().cloned();
-        let copied = clone_notification_state(&state)?;
+        let (copied, count) = clone_notification_state_counted(&state)?;
         let notification = NotifyEventArgs::new_with_optional_container(
             container,
             script_hash,
@@ -214,7 +225,7 @@ impl ApplicationEngine {
             copied,
         );
         self.emit_notify_event(notification);
-        Ok(())
+        Ok(count)
     }
     /// Helper to get notifications
     pub fn get_notifications(&self, hash: Option<UInt160>) -> Result<Vec<StackItem>, String> {
@@ -310,18 +321,31 @@ fn detect_compound_cycle(
     visited.insert(key);
     Ok(())
 }
+/// Legacy 3-argument mirror of C# `SendNotification(hash, name, state)`; only
+/// the tests exercise the copy without needing the visit count.
+#[cfg(test)]
 fn clone_notification_state(state: &[StackItem]) -> Result<Vec<StackItem>, String> {
+    clone_notification_state_counted(state).map(|(copied, _)| copied)
+}
+/// C# v3.11.2 `StackItem.DeepCopy(asImmutable, out count)`: `count` is the
+/// number of visited items, including the root array and repeated references.
+fn clone_notification_state_counted(state: &[StackItem]) -> Result<(Vec<StackItem>, i64), String> {
     let mut seen = HashMap::new();
+    // The root array passed to `DeepCopy` is the first visited item.
+    let mut count = 1i64;
     let mut copied = Vec::with_capacity(state.len());
     for item in state {
-        copied.push(clone_stack_item_as_immutable(item, &mut seen)?);
+        copied.push(clone_stack_item_as_immutable(item, &mut seen, &mut count)?);
     }
-    Ok(copied)
+    Ok((copied, count))
 }
 fn clone_stack_item_as_immutable(
     item: &StackItem,
     seen: &mut HashMap<CompoundKey, StackItem>,
+    count: &mut i64,
 ) -> Result<StackItem, String> {
+    // C# counts every visited item, including repeated references.
+    *count += 1;
     match item {
         StackItem::Null => Ok(StackItem::Null),
         StackItem::Boolean(value) => Ok(StackItem::Boolean(*value)),
@@ -338,7 +362,7 @@ fn clone_stack_item_as_immutable(
             }
             let mut cloned_items = Vec::with_capacity(items.len());
             for element in items {
-                cloned_items.push(clone_stack_item_as_immutable(&element, seen)?);
+                cloned_items.push(clone_stack_item_as_immutable(&element, seen, count)?);
             }
             let cloned_item = StackItem::from_array(cloned_items);
             seen.insert(key, cloned_item.clone());
@@ -351,7 +375,7 @@ fn clone_stack_item_as_immutable(
             }
             let mut cloned_items = Vec::with_capacity(items.len());
             for element in items.iter() {
-                cloned_items.push(clone_stack_item_as_immutable(&element, seen)?);
+                cloned_items.push(clone_stack_item_as_immutable(&element, seen, count)?);
             }
             let cloned_item = StackItem::from_struct(cloned_items);
             seen.insert(key, cloned_item.clone());
@@ -364,8 +388,8 @@ fn clone_stack_item_as_immutable(
             }
             let mut cloned_entries = Vec::with_capacity(entries.len());
             for (entry_key, entry_value) in entries.iter() {
-                let cloned_key = clone_stack_item_as_immutable(&entry_key, seen)?;
-                let cloned_value = clone_stack_item_as_immutable(&entry_value, seen)?;
+                let cloned_key = clone_stack_item_as_immutable(&entry_key, seen, count)?;
+                let cloned_value = clone_stack_item_as_immutable(&entry_value, seen, count)?;
                 cloned_entries.push((cloned_key, cloned_value));
             }
             let cloned_item = StackItem::from_map(cloned_entries);

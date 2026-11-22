@@ -557,3 +557,173 @@ fn persist_completed_disconnects_mismatched_cached_block() {
             .is_empty()
     );
 }
+
+#[test]
+fn complete_inventory_clears_task_entries_from_all_sessions() {
+    let mut manager = TaskManager::new();
+    let hash = UInt256::from([11u8; 32]);
+
+    let mut actors = Vec::new();
+    for number in 0..2 {
+        let (mailbox, _rx) = mpsc::channel(8);
+        let actor = ActorRef::new(
+            ActorPath::root("test", format!("peer-completion-{number}")),
+            mailbox,
+            Weak::new(),
+        );
+        let path = insert_session(&mut manager, &actor);
+        let session = &mut manager.sessions.get_mut(&path).expect("session").session;
+        session.register_inv_task(hash);
+        session.register_index_task(7);
+        assert!(manager.increment_inv_task(hash));
+        assert!(manager.increment_index_task(7));
+        actors.push(actor);
+    }
+
+    // C# v3.11.2 OnTaskCompleted: completion fully releases the global slots
+    // and clears the entry from every session, not only the sender's.
+    manager.complete_inventory(&actors[0], hash, None, Some(7));
+
+    assert!(!manager.global_inv_tasks.is_tracked(&hash));
+    assert!(!manager.global_index_tasks.is_tracked(&7));
+    for entry in manager.sessions.values() {
+        assert!(!entry.session.inv_tasks.contains_key(&hash));
+        assert!(!entry.session.index_tasks.contains_key(&7));
+    }
+}
+
+#[test]
+fn timer_prefers_peers_with_fewer_timed_out_block_tasks() {
+    let mut manager = TaskManager::new();
+    manager.system = Some(TestContext::shared());
+    manager.last_seen_persisted_index = 8;
+    manager.last_persisted_at = std::time::Instant::now();
+
+    let (busy_mailbox, _busy_rx) = mpsc::channel(32);
+    let busy_actor = ActorRef::new(
+        ActorPath::root("test", "peer-many-timeouts"),
+        busy_mailbox,
+        Weak::new(),
+    );
+    let busy_path = insert_session(&mut manager, &busy_actor);
+    {
+        let session = &mut manager
+            .sessions
+            .get_mut(&busy_path)
+            .expect("session")
+            .session;
+        session.last_block_index = 12;
+        session.block_task_timeouts = 5;
+    }
+
+    let (fresh_mailbox, _fresh_rx) = mpsc::channel(32);
+    let fresh_actor = ActorRef::new(
+        ActorPath::root("test", "peer-fresh"),
+        fresh_mailbox,
+        Weak::new(),
+    );
+    let fresh_path = insert_session(&mut manager, &fresh_actor);
+    {
+        let session = &mut manager
+            .sessions
+            .get_mut(&fresh_path)
+            .expect("session")
+            .session;
+        session.last_block_index = 10;
+        session.block_task_timeouts = 0;
+    }
+
+    manager.prune_timeouts();
+
+    // The fresh peer is scheduled first and takes the frontier heights; the
+    // peer with timeouts starts after them.
+    let fresh = &manager.sessions.get(&fresh_path).expect("session").session;
+    let busy = &manager.sessions.get(&busy_path).expect("session").session;
+    assert!(
+        fresh.index_tasks.contains_key(&9),
+        "the peer with fewer timeouts must be scheduled first"
+    );
+    assert!(!busy.index_tasks.contains_key(&9));
+    assert!(
+        busy.index_tasks.contains_key(&11),
+        "the peer with more timeouts must start after the fresh peer"
+    );
+    assert!(!fresh.index_tasks.contains_key(&11));
+}
+
+#[tokio::test]
+async fn request_tasks_does_not_re_request_hashes_already_in_flight() {
+    let mut manager = TaskManager::new();
+    manager.system = Some(TestContext::shared());
+    let hash = UInt256::from([12u8; 32]);
+    let other = UInt256::from([13u8; 32]);
+
+    let (mailbox, mut rx) = mpsc::channel(8);
+    let actor = ActorRef::new(
+        ActorPath::root("test", "peer-available-in-flight"),
+        mailbox,
+        Weak::new(),
+    );
+    let path = insert_session(&mut manager, &actor);
+    {
+        let session = &mut manager.sessions.get_mut(&path).expect("session").session;
+        session.available_tasks.insert(hash);
+        session.available_tasks.insert(other);
+        session.register_inv_task(hash);
+    }
+    assert!(manager.increment_inv_task(hash));
+
+    manager.with_session_mut(&path, |entry, this| {
+        this.request_tasks_entry(entry);
+    });
+
+    let session = &manager.sessions.get(&path).expect("session").session;
+    assert_eq!(
+        manager.global_inv_tasks.count(&hash),
+        1,
+        "an in-flight hash must not be re-requested from its own session"
+    );
+    assert!(
+        rx.try_recv().is_ok(),
+        "the remaining available hash must still be requested"
+    );
+    assert!(rx.try_recv().is_err(), "only the new hash is requested");
+    assert!(session.inv_tasks.contains_key(&other));
+    assert!(session.available_tasks.is_empty());
+}
+
+#[tokio::test]
+async fn on_new_tasks_marks_available_only_when_not_in_flight() {
+    let mut manager = TaskManager::new();
+    manager.system = Some(TestContext::shared());
+    let hash = UInt256::from([14u8; 32]);
+
+    let (mailbox, mut rx) = mpsc::channel(8);
+    let actor = ActorRef::new(
+        ActorPath::root("test", "peer-new-tasks-in-flight"),
+        mailbox,
+        Weak::new(),
+    );
+    let path = insert_session(&mut manager, &actor);
+    {
+        let session = &mut manager.sessions.get_mut(&path).expect("session").session;
+        session.register_inv_task(hash);
+        session.mempool_sent = true;
+    }
+    // Another session already owns the hash globally.
+    assert!(manager.increment_inv_task(hash));
+
+    manager.on_new_tasks(&actor, InvPayload::new(InventoryType::Block, vec![hash]));
+
+    let session = &manager.sessions.get(&path).expect("session").session;
+    assert!(
+        !session.available_tasks.contains(&hash),
+        "a hash in flight on this session must not be marked available again"
+    );
+    assert_eq!(
+        manager.global_inv_tasks.count(&hash),
+        1,
+        "the pending session must not duplicate its own global registration"
+    );
+    assert!(rx.try_recv().is_err());
+}

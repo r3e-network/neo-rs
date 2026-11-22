@@ -1,5 +1,8 @@
 // Transaction wire encoding and structural decoding.
-use super::{HEADER_SIZE, MAX_TRANSACTION_ATTRIBUTES, Signer, Transaction, TransactionAttribute};
+use super::{
+    HEADER_SIZE, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE, Signer, Transaction,
+    TransactionAttribute,
+};
 use neo_io::serializable::helper::{
     deserialize_array_with, deserialize_exact_array, get_var_size_bytes,
     get_var_size_serializable_slice, serialize_array,
@@ -116,6 +119,13 @@ impl Serializable for Transaction {
         let mut tx = Self::deserialize_unsigned(reader)?;
         tx.witnesses = deserialize_exact_array(reader, tx.signers.len(), "Witness count mismatch")?;
         tx.invalidate_size();
+        // v3.11.2 `Transaction.Deserialize`: reject transactions that exceed
+        // the maximum size once the witnesses have been read.
+        if tx.size() > MAX_TRANSACTION_SIZE {
+            return Err(IoError::invalid_data(format!(
+                "Transaction size exceeds the maximum of {MAX_TRANSACTION_SIZE} bytes."
+            )));
+        }
         Ok(tx)
     }
 }

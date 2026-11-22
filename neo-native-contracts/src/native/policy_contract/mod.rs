@@ -184,6 +184,10 @@ impl PolicyContract {
     /// Maximum MaxTraceableBlocks committee can set.
     pub const MAX_MAX_TRACEABLE_BLOCKS: u32 = 2_102_400;
 
+    /// The maximum `TemporaryStorageMaxTTL` value that the committee can set.
+    /// It is set to be 365 days in milliseconds.
+    pub const MAX_TEMPORARY_STORAGE_MAX_TTL: u64 = 365 * 24 * 60 * 60 * 1_000;
+
     /// Required waiting time before recoverFund can execute (milliseconds).
     const REQUIRED_TIME_FOR_RECOVER_FUND_MS: u64 = 365 * 24 * 60 * 60 * 1_000;
 
@@ -198,8 +202,14 @@ impl PolicyContract {
     const PREFIX_MILLISECONDS_PER_BLOCK: u8 = 21;
     const PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT: u8 = 22;
     const PREFIX_MAX_TRACEABLE_BLOCKS: u8 = 23;
+    /// Storage prefix for the TemporaryStorage maximum TTL.
+    const PREFIX_TEMP_STORAGE_MAX_TTL: u8 = 24;
+    /// Storage prefix for committee-activated hardfork heights.
+    /// Key: raw case-sensitive hardfork name (e.g. `Iara`). Value: activation block height.
+    const PREFIX_HARDFORK: u8 = 25;
 
     const MILLISECONDS_PER_BLOCK_CHANGED_EVENT_NAME: &'static str = "MillisecondsPerBlockChanged";
+    const HARDFORK_ACTIVATION_SCHEDULED_EVENT_NAME: &'static str = "HardforkActivationScheduled";
 
     /// Creates a new Policy contract.
     ///
@@ -215,6 +225,7 @@ impl PolicyContract {
 // Include implementation files
 mod account;
 mod getters;
+mod hardfork_ops;
 mod helpers;
 mod metadata;
 mod native_impl;

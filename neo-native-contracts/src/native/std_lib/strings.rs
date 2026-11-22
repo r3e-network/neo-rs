@@ -1,5 +1,6 @@
 use super::StdLib;
 use crate::native::helpers::parse_bool_arg;
+use neo_protocol::Hardfork;
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::error::CoreError as Error;
 use neo_smart_contract::error::CoreResult as Result;
@@ -66,11 +67,15 @@ impl StdLib {
             .map_err(|e| Error::native_contract(format!("stringSplit failed: {e}")))
     }
 
-    /// Gets the length of a string in grapheme clusters (text elements).
-    /// This matches C#'s TextElementEnumerator behavior, correctly counting
-    /// complex Unicode characters like emojis as single elements.
-    /// For example: "🦆" = 1, "ã" = 1
-    pub(super) fn str_len(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+    /// Gets the length of a string.
+    ///
+    /// C# v3.11.2 `StrLen` returns the number of Unicode codepoints
+    /// (`str.EnumerateRunes().Count()`) since `HF_Huyao` — a value that no
+    /// longer depends on the Unicode tables or the platform — and the number
+    /// of grapheme clusters (C# `TextElementEnumerator`) before it. For
+    /// example: "🦆" = 1 on both paths, while decomposed "ã" (a + combining
+    /// tilde) is 1 grapheme but 2 codepoints.
+    pub(super) fn str_len(&self, engine: &ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.is_empty() {
             return Err(Error::native_contract(
                 "strLen requires string argument".to_string(),
@@ -82,8 +87,13 @@ impl StdLib {
 
         self.ensure_max_input_len(string_data.as_bytes(), "strLen")?;
 
-        // Count grapheme clusters (extended grapheme clusters) to match C# TextElementEnumerator
-        let length = string_data.graphemes(true).count() as i32;
+        // Since HF_Huyao count Unicode scalar values (C# runes); the grapheme
+        // count (extended clusters, matching C# TextElementEnumerator) before.
+        let length = if engine.is_hardfork_enabled(Hardfork::HfHuyao) {
+            string_data.chars().count() as i32
+        } else {
+            string_data.graphemes(true).count() as i32
+        };
         Ok(length.to_le_bytes().to_vec())
     }
 }

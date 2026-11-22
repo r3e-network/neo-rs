@@ -49,6 +49,10 @@ macro_rules! policy_method_table {
                 unsafe "removeWhitelistFeeContract", fee = Self::CPU_FEE, flags = [STATES, ALLOW_NOTIFY], params = [Hash160, String, Integer], returns = Void, active = HfFaun, names = ["contractHash", "method", "argCount"] => engine remove_whitelist_fee_contract;
                 safe "getWhitelistFeeContracts", fee = Self::CPU_FEE, flags = [READ_STATES], params = [], returns = InteropInterface, active = HfFaun => engine_only get_whitelist_fee_contracts;
                 unsafe "recoverFund", fee = Self::CPU_FEE, flags = [ALL], params = [Hash160, Hash160], returns = Boolean, active = HfFaun, names = ["account", "token"] => engine recover_fund;
+                safe "getHardforkActivationHeight", fee = Self::CPU_FEE, flags = [READ_STATES], params = [String], returns = Integer, active = HfHuyao, nullable = true, names = ["hardfork"] => engine get_hardfork_activation_height;
+                unsafe "activateHardfork", fee = Self::CPU_FEE, flags = [STATES, ALLOW_NOTIFY], params = [String, Integer], returns = Void, active = HfHuyao, names = ["hardfork", "activationDelay"] => engine activate_hardfork;
+                safe "getTemporaryStorageMaxTTL", fee = Self::CPU_FEE, flags = [READ_STATES], params = [], returns = Integer, active = HfHuyao => engine_only get_temporary_storage_max_ttl;
+                unsafe "setTemporaryStorageMaxTTL", fee = Self::CPU_FEE, flags = [STATES], params = [Integer], returns = Void, active = HfHuyao, names = ["value"] => engine set_temporary_storage_max_ttl;
             }
         }
     };
@@ -96,6 +100,13 @@ impl PolicyContract {
             events.push(event_descriptor!(
                 "RecoveredFund",
                 ["account" => Hash160]
+            ));
+        }
+
+        if settings.is_hardfork_enabled(Hardfork::HfHuyao, block_height) {
+            events.push(event_descriptor!(
+                "HardforkActivationScheduled",
+                ["hardfork" => String, "activationHeight" => Integer]
             ));
         }
 

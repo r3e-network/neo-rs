@@ -9,14 +9,22 @@ use neo_protocol::payloads::Transaction;
 use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_protocol::witness::Witness;
 use neo_smart_contract::application_engine::ApplicationEngine;
-use neo_smart_contract::helper::Helper;
+use neo_smart_contract::helper::{Helper, MultiSigContractParameters};
 use neo_storage::persistence::PersistenceDataCache;
 use neo_vm::validate_strict_script;
 use std::sync::Arc;
 
+/// The result of the state-independent standard-witness check (the C#
+/// `Transaction.VerifyStateIndependent` quick path).
+///
+/// The crypto verification lives here; since v3.11.2 the fee estimate is
+/// derived by the state-dependent caller from the captured contract shape via
+/// `Helper::signature_contract_cost` / `Helper::multi_signature_contract_cost`,
+/// which need the protocol settings and the verification index.
 pub enum StandardWitnessVerification {
     NonStandard,
-    Verified { unscaled_verification_fee: i64 },
+    Signature,
+    MultiSignature(MultiSigContractParameters),
 }
 
 pub fn verify_standard_witness(
@@ -43,17 +51,17 @@ pub fn verify_standard_witness(
         if !verified {
             return Err(VerifyResult::InvalidSignature);
         }
-        return Ok(StandardWitnessVerification::Verified {
-            unscaled_verification_fee: Helper::signature_contract_cost(),
-        });
+        return Ok(StandardWitnessVerification::Signature);
     }
-    let Some((m, public_keys)) = Helper::parse_multi_sig_contract(witness.verification_script())
+    let Some((parameters, public_keys)) =
+        Helper::parse_multi_sig_contract_full(witness.verification_script())
     else {
         return Ok(StandardWitnessVerification::NonStandard);
     };
     if witness.script_hash() != *hash {
         return Err(VerifyResult::Invalid);
     }
+    let m = parameters.m as usize;
     let Some(signatures) = Helper::parse_multi_sig_invocation(witness.invocation_script(), m)
     else {
         // R04: invocation formats outside the quick checker defer to full VM execution.
@@ -89,10 +97,7 @@ pub fn verify_standard_witness(
     if sig_index != m {
         return Err(VerifyResult::InvalidSignature);
     }
-    let n = public_keys.len() as i32;
-    Ok(StandardWitnessVerification::Verified {
-        unscaled_verification_fee: Helper::multi_signature_contract_cost(m as i32, n),
-    })
+    Ok(StandardWitnessVerification::MultiSignature(parameters))
 }
 
 pub fn verify_transaction_witness(
@@ -275,14 +280,13 @@ mod tests {
         );
 
         match verify_standard_witness(&hash, &witness, sign_data) {
-            Ok(StandardWitnessVerification::Verified {
-                unscaled_verification_fee,
-            }) => assert_eq!(
-                unscaled_verification_fee,
-                Helper::multi_signature_contract_cost(2, 3),
-                "the quick path must keep charging the 2-of-3 fee"
-            ),
-            Ok(StandardWitnessVerification::NonStandard) => {
+            Ok(StandardWitnessVerification::MultiSignature(parameters)) => {
+                assert_eq!(parameters.m, 2, "the quick path must capture m");
+                assert_eq!(parameters.n, 3, "the quick path must capture n");
+            }
+            Ok(
+                StandardWitnessVerification::NonStandard | StandardWitnessVerification::Signature,
+            ) => {
                 panic!("a canonical 2-of-3 witness must stay on the quick path")
             }
             Err(result) => panic!("valid 2-of-3 witness rejected: {result:?}"),
@@ -316,7 +320,7 @@ mod tests {
         // verifier, so signatures over it must succeed.
         assert!(matches!(
             verify_standard_witness(&hash, &witness_over(&Crypto::sha256(sign_data)), sign_data),
-            Ok(StandardWitnessVerification::Verified { .. })
+            Ok(StandardWitnessVerification::MultiSignature(_))
         ));
 
         // Re-hashing the digest would mean the verifier hashed twice.

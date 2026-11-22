@@ -27,54 +27,114 @@ use crate::contract_state::ContractState;
 use crate::error::{CoreError, CoreResult};
 use neo_crypto::ECPoint;
 use neo_primitives::UInt160;
+use neo_protocol::hardfork::Hardfork;
+use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_vm::OpCode;
 use neo_vm::ScriptBuilder;
 
 /// Helper functions for smart contracts (matches C# Helper)
 pub struct Helper;
 
+/// The parameters captured while parsing a multi-signature verification script
+/// (C# `Helper.MultiSigContractParameters`, v3.11.2). `m_opcode`/`n_opcode` are
+/// the raw push opcodes that encode the required and provided signature counts;
+/// the v3.11.2 fee functions price exactly the opcodes found in the script.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MultiSigContractParameters {
+    /// The number of required signatures (`m`).
+    pub m: i32,
+    /// The number of public keys in the contract (`n`).
+    pub n: i32,
+    /// The push opcode that encodes `m`.
+    pub m_opcode: u8,
+    /// The push opcode that encodes `n`.
+    pub n_opcode: u8,
+}
+
 impl Helper {
     /// The maximum GAS that can be consumed when verifying witnesses (in datoshi).
     pub const MAX_VERIFICATION_GAS: i64 = 150_000_000;
 
-    /// Calculates the verification cost for a single-signature contract (in datoshi).
-    pub fn signature_contract_cost() -> i64 {
-        let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1.byte());
-        let syscall_cost = ApplicationEngine::get_opcode_price(OpCode::SYSCALL.byte());
-        push_cost
-            .saturating_mul(2)
-            .saturating_add(syscall_cost)
-            .saturating_add(crate::application_engine::CHECK_SIG_PRICE)
+    /// Calculates the verification fee for a signature address multiplied by the
+    /// execution fee factor, in datoshi (C# `Helper.SignatureContractCost`).
+    ///
+    /// `exec_fee_factor` must carry the `FeeFactor` decimals (C#
+    /// `Policy.GetExecFeeFactorWithDecimals`) and `index` is the block the
+    /// verification is performed for.
+    pub fn signature_contract_cost(
+        settings: &ProtocolSettings,
+        index: u32,
+        exec_fee_factor: i64,
+    ) -> i64 {
+        let (prices, multiplier) = Self::get_opcode_prices(settings, index);
+        let fee = (prices[OpCode::PUSHDATA1.byte() as usize] * 2
+            + prices[OpCode::SYSCALL.byte() as usize])
+            * multiplier
+            + Self::get_check_sig_price(settings, index);
+        Self::apply_exec_fee_factor(exec_fee_factor, fee)
     }
 
-    /// Calculates the verification cost for a multi-signature contract (in datoshi).
-    pub fn multi_signature_contract_cost(m: i32, n: i32) -> i64 {
-        let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1.byte());
-        let m_plus_n = (m as i64).saturating_add(n as i64);
-        let mut fee = push_cost.saturating_mul(m_plus_n);
+    /// Calculates the verification fee for a multi-signature address multiplied
+    /// by the execution fee factor, in datoshi (C#
+    /// `Helper.MultiSignatureContractCost`).
+    pub fn multi_signature_contract_cost(
+        settings: &ProtocolSettings,
+        index: u32,
+        exec_fee_factor: i64,
+        parameters: &MultiSigContractParameters,
+    ) -> i64 {
+        let (prices, multiplier) = Self::get_opcode_prices(settings, index);
+        let m = i64::from(parameters.m);
+        let n = i64::from(parameters.n);
+        let mut fee = prices[OpCode::PUSHDATA1.byte() as usize] * (m + n)
+            + prices[parameters.m_opcode as usize]
+            + prices[parameters.n_opcode as usize]
+            + prices[OpCode::SYSCALL.byte() as usize];
+        fee *= multiplier;
+        // CheckMultisig charges the price of a single signature check per public key.
+        fee += Self::get_check_sig_price(settings, index) * n;
+        Self::apply_exec_fee_factor(exec_fee_factor, fee)
+    }
 
-        let mut builder = ScriptBuilder::new();
-        builder.emit_push_int(m as i64);
-        let m_opcode = builder
-            .to_array()
-            .first()
-            .copied()
-            .unwrap_or(OpCode::PUSH0.byte());
-        fee = fee.saturating_add(ApplicationEngine::get_opcode_price(m_opcode));
+    /// The opcode price table and its unit multiplier for fee computation at
+    /// `index` (C# `Helper.GetOpCodePrices`). `OpCodePriceTable` is denominated
+    /// in datoshi (1e-8 GAS) and scaled by `OpcodePriceMultiplier`; since
+    /// `HF_Huyao` the fees use `StaticCoefficients`, already denominated in
+    /// 1e-11 GAS.
+    fn get_opcode_prices(settings: &ProtocolSettings, index: u32) -> (&'static [i64; 256], i64) {
+        if settings.is_hardfork_enabled(Hardfork::HfHuyao, index) {
+            (
+                &crate::application_engine::op_code_prices_v1::STATIC_COEFFICIENTS,
+                1,
+            )
+        } else {
+            (
+                &ApplicationEngine::OPCODE_PRICE_TABLE,
+                crate::application_engine::OPCODE_PRICE_MULTIPLIER,
+            )
+        }
+    }
 
-        let mut builder_n = ScriptBuilder::new();
-        builder_n.emit_push_int(n as i64);
-        let n_opcode = builder_n
-            .to_array()
-            .first()
-            .copied()
-            .unwrap_or(OpCode::PUSH0.byte());
-        fee = fee.saturating_add(ApplicationEngine::get_opcode_price(n_opcode));
+    /// The price of one `System.Crypto.CheckSig` verification in 1e-11 GAS
+    /// units, selected by hardfork the same way as the syscall itself (C#
+    /// `ApplicationEngine.System_Crypto_CheckSig.GetPrice`).
+    fn get_check_sig_price(settings: &ProtocolSettings, index: u32) -> i64 {
+        if settings.is_hardfork_enabled(Hardfork::HfHuyao, index) {
+            crate::application_engine::crypto::CHECK_SIG_PRICE_SINCE_HUYAO
+        } else {
+            crate::application_engine::CHECK_SIG_PRICE
+                * crate::application_engine::OPCODE_PRICE_MULTIPLIER
+        }
+    }
 
-        fee = fee.saturating_add(ApplicationEngine::get_opcode_price(OpCode::SYSCALL.byte()));
-        let check_sig_cost = crate::application_engine::CHECK_SIG_PRICE.saturating_mul(n as i64);
-        fee = fee.saturating_add(check_sig_cost);
-        fee
+    /// Applies the execution fee factor (which carries the `FeeFactor` decimals)
+    /// to a cost denominated in 1e-11 GAS, rounding up the same way as
+    /// `ApplicationEngine.FeeConsumed` does (C# `Helper.ApplyExecFeeFactor`).
+    fn apply_exec_fee_factor(exec_fee_factor: i64, cost: i64) -> i64 {
+        let divisor = (crate::application_engine::FEE_FACTOR
+            * crate::application_engine::OPCODE_PRICE_MULTIPLIER) as i128;
+        let product = (exec_fee_factor as i128) * (cost as i128);
+        ((product + divisor - 1) / divisor) as i64
     }
 
     /// Checks if a script is a standard contract
@@ -216,6 +276,17 @@ impl Helper {
     /// decode as a secp256r1 point, and the tail must be `n`-push, `SYSCALL`, `CheckMultisig`.
     /// Decoding runs even when the caller only needs a boolean.
     pub fn parse_multi_sig_contract(script: &[u8]) -> Option<(usize, Vec<Vec<u8>>)> {
+        Self::parse_multi_sig_contract_full(script)
+            .map(|(parameters, public_keys)| (parameters.m as usize, public_keys))
+    }
+
+    /// Parses a multi-signature contract script, returning the captured
+    /// [`MultiSigContractParameters`] and the ordered public keys when the
+    /// script matches the canonical Neo multi-sig format (C#
+    /// `IsMultiSigContract(script, out MultiSigContractParameters)`, v3.11.2).
+    pub fn parse_multi_sig_contract_full(
+        script: &[u8],
+    ) -> Option<(MultiSigContractParameters, Vec<Vec<u8>>)> {
         use neo_vm::OpCode;
 
         let max_keys = Self::MAX_PUBLIC_KEYS_PER_MULTISIG;
@@ -228,6 +299,9 @@ impl Helper {
         if !(1..=max_keys).contains(&m) {
             return None;
         }
+        // C# captures the raw opcode before validating the push; for a valid
+        // script it is always one of the accepted push opcodes.
+        let m_opcode = script[0];
 
         let mut public_keys = Vec::new();
         let mut n = 0usize;
@@ -251,6 +325,8 @@ impl Helper {
             return None;
         }
 
+        // The opcode that encodes `n`, captured right after the key loop.
+        let n_opcode = script[offset];
         let (pushed_n, offset_after_n) = Self::read_multisig_push(script, offset)?;
         if pushed_n != n {
             return None;
@@ -267,7 +343,15 @@ impl Helper {
             return None;
         }
 
-        Some((m, public_keys))
+        Some((
+            MultiSigContractParameters {
+                m: m as i32,
+                n: n as i32,
+                m_opcode,
+                n_opcode,
+            },
+            public_keys,
+        ))
     }
 
     /// Reads the `m`/`n` push value of a multi-sig script at `offset`.
@@ -356,23 +440,147 @@ mod tests {
             .expect("valid hex")
     }
 
+    /// Settings without HF_Huyao, so the pre-Huyao pricing path is exercised at
+    /// every height. `default_settings` fills every config-managed hardfork at
+    /// genesis, including Huyao.
+    fn pre_huyao_settings() -> ProtocolSettings {
+        let mut settings = ProtocolSettings::default_settings();
+        settings.hardforks.remove(&Hardfork::HfHuyao);
+        settings
+    }
+
+    /// The execution fee factor with `FeeFactor` decimals for the raw policy
+    /// factor `raw` (C# `Policy.GetExecFeeFactorWithDecimals`). The Rust
+    /// policy getter returns the human-readable factor at every hardfork
+    /// height, so the decimal form is always `raw * FEE_FACTOR`.
+    fn exec_fee_factor_with_decimals(_settings: &ProtocolSettings, _index: u32, raw: u32) -> i64 {
+        i64::from(raw) * i64::from(crate::application_engine::FEE_FACTOR)
+    }
+
+    /// Builds parameters the way the C# fee formula derived the push opcodes
+    /// before v3.11.2 started capturing them from the script.
+    fn multi_sig_parameters(m: i32, n: i32) -> MultiSigContractParameters {
+        let mut builder = ScriptBuilder::new();
+        builder.emit_push_int(i64::from(m));
+        let m_opcode = builder.to_array()[0];
+        let mut builder = ScriptBuilder::new();
+        builder.emit_push_int(i64::from(n));
+        let n_opcode = builder.to_array()[0];
+        MultiSigContractParameters {
+            m,
+            n,
+            m_opcode,
+            n_opcode,
+        }
+    }
+
     #[test]
-    fn signature_contract_cost_is_positive() {
-        let cost = Helper::signature_contract_cost();
-        assert!(cost > 0);
+    fn signature_contract_cost_pre_huyao_matches_legacy_formula() {
+        let settings = pre_huyao_settings();
+        let exec_fee_factor = exec_fee_factor_with_decimals(&settings, 0, 30);
+        let cost = Helper::signature_contract_cost(&settings, 0, exec_fee_factor);
+        // The pre-Huyao formula must equal the legacy
+        // execFeeFactor * (PUSHDATA1 * 2 + SYSCALL + CheckSigPrice) exactly.
+        let legacy = (exec_fee_factor / i64::from(crate::application_engine::FEE_FACTOR))
+            * (ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1.byte()) * 2
+                + ApplicationEngine::get_opcode_price(OpCode::SYSCALL.byte())
+                + crate::application_engine::CHECK_SIG_PRICE);
+        assert_eq!(cost, legacy);
+        // 30 * (2 * PUSHDATA1 + SYSCALL + CheckSigPrice) = 30 * 10928 with the
+        // v3.10 opcode price table.
+        assert_eq!(cost, 983_520);
+    }
+
+    #[test]
+    fn signature_contract_cost_huyao_uses_static_coefficients() {
+        // `default_settings` enables every config-managed hardfork (Huyao and
+        // Faun included) at genesis.
+        let settings = ProtocolSettings::default_settings();
+        let exec_fee_factor = exec_fee_factor_with_decimals(&settings, 0, 30);
+        let cost = Helper::signature_contract_cost(&settings, 0, exec_fee_factor);
+        // Fee in 1e-11 GAS: two PUSHDATA1 coefficients, the SYSCALL coefficient
+        // (zero; the syscall itself is priced by the interop descriptor) and the
+        // Huyao CheckSig price, ceiling-divided into datoshi.
+        let statics = &crate::application_engine::op_code_prices_v1::STATIC_COEFFICIENTS;
+        let fee_1e11 = statics[OpCode::PUSHDATA1.byte() as usize] * 2
+            + statics[OpCode::SYSCALL.byte() as usize]
+            + crate::application_engine::crypto::CHECK_SIG_PRICE_SINCE_HUYAO;
+        let expected =
+            ((i128::from(exec_fee_factor) * i128::from(fee_1e11) + 9_999_999) / 10_000_000) as i64;
+        assert_eq!(cost, expected);
+        assert_eq!(cost, 69_911);
     }
 
     #[test]
     fn multi_signature_contract_cost_scales_with_m_and_n() {
-        let cost_2_of_3 = Helper::multi_signature_contract_cost(2, 3);
-        let cost_2_of_5 = Helper::multi_signature_contract_cost(2, 5);
-        let cost_3_of_5 = Helper::multi_signature_contract_cost(3, 5);
+        let settings = pre_huyao_settings();
+        let exec_fee_factor = exec_fee_factor_with_decimals(&settings, 0, 30);
+        let cost_2_of_3 = Helper::multi_signature_contract_cost(
+            &settings,
+            0,
+            exec_fee_factor,
+            &multi_sig_parameters(2, 3),
+        );
+        let cost_2_of_5 = Helper::multi_signature_contract_cost(
+            &settings,
+            0,
+            exec_fee_factor,
+            &multi_sig_parameters(2, 5),
+        );
+        let cost_3_of_5 = Helper::multi_signature_contract_cost(
+            &settings,
+            0,
+            exec_fee_factor,
+            &multi_sig_parameters(3, 5),
+        );
 
         assert!(cost_2_of_5 > cost_2_of_3, "More keys should cost more");
         assert!(
             cost_3_of_5 > cost_2_of_5,
             "More signatures should cost more"
         );
+        // The pre-Huyao formula must equal the legacy
+        // execFeeFactor * (PUSHDATA1 * (m + n) + MOpcode + NOpcode + SYSCALL
+        //                  + CheckSigPrice * n) exactly.
+        let parameters = multi_sig_parameters(2, 3);
+        let legacy = (exec_fee_factor / i64::from(crate::application_engine::FEE_FACTOR))
+            * (ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1.byte()) * 5
+                + ApplicationEngine::get_opcode_price(parameters.m_opcode)
+                + ApplicationEngine::get_opcode_price(parameters.n_opcode)
+                + ApplicationEngine::get_opcode_price(OpCode::SYSCALL.byte())
+                + crate::application_engine::CHECK_SIG_PRICE * 3);
+        assert_eq!(cost_2_of_3, legacy);
+    }
+
+    #[test]
+    fn multi_signature_contract_cost_huyao_prices_script_opcodes() {
+        let settings = ProtocolSettings::default_settings();
+        let exec_fee_factor = exec_fee_factor_with_decimals(&settings, 0, 30);
+        let parameters = multi_sig_parameters(2, 3);
+        let cost =
+            Helper::multi_signature_contract_cost(&settings, 0, exec_fee_factor, &parameters);
+        let statics = &crate::application_engine::op_code_prices_v1::STATIC_COEFFICIENTS;
+        let fee_1e11 = statics[OpCode::PUSHDATA1.byte() as usize] * 5
+            + statics[parameters.m_opcode as usize]
+            + statics[parameters.n_opcode as usize]
+            + statics[OpCode::SYSCALL.byte() as usize]
+            + crate::application_engine::crypto::CHECK_SIG_PRICE_SINCE_HUYAO * 3;
+        let expected =
+            ((i128::from(exec_fee_factor) * i128::from(fee_1e11) + 9_999_999) / 10_000_000) as i64;
+        assert_eq!(cost, expected);
+    }
+
+    #[test]
+    fn parse_multi_sig_contract_full_captures_parameters() {
+        let keys = vec![test_pubkey(), test_pubkey2(), test_pubkey3()];
+        let script = Helper::multi_sig_redeem_script(2, &keys);
+        let (parameters, parsed_keys) =
+            Helper::parse_multi_sig_contract_full(&script).expect("canonical script");
+        assert_eq!(parameters.m, 2);
+        assert_eq!(parameters.n, 3);
+        assert_eq!(parsed_keys.len(), 3);
+        assert_eq!(parameters.m_opcode, multi_sig_parameters(2, 3).m_opcode);
+        assert_eq!(parameters.n_opcode, multi_sig_parameters(2, 3).n_opcode);
     }
 
     #[test]

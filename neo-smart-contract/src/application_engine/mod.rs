@@ -71,6 +71,7 @@ pub mod crypto;
 pub mod helper;
 pub mod iterator;
 pub mod op_code_prices;
+pub mod op_code_prices_v1;
 pub mod runtime;
 pub mod storage;
 use crate::error::{CoreError as Error, Result};
@@ -193,11 +194,20 @@ pub const MAX_NOTIFICATION_COUNT: usize = 512;
 pub const CHECK_SIG_PRICE: i64 = 1 << 15;
 /// Scaling factor between raw internal fee counters and datoshi GAS amounts.
 pub const FEE_FACTOR: i64 = 10000;
+/// Scaling factor between picoGAS and the femtoGAS unit the fee counters use
+/// since neo v3.11.2 (C# `ApplicationEngine.OpcodePriceMultiplier`).
+///
+/// 1 femtoGAS = 1e-15 GAS, so one datoshi is `FEE_FACTOR * OPCODE_PRICE_MULTIPLIER`
+/// femtoGAS and one picoGAS is `OPCODE_PRICE_MULTIPLIER` femtoGAS.
+pub const OPCODE_PRICE_MULTIPLIER: i64 = 1000;
 pub(crate) type InteropHandler = fn(&mut ApplicationEngine, &mut ExecutionEngine) -> VmResult<()>;
 type StdResult<T> = std::result::Result<T, String>;
 #[derive(Clone, Copy)]
 struct HostInteropHandler {
     price: i64,
+    /// Fixed price in 1e-11 GAS units once `HF_Huyao` is active
+    /// (C# `InteropPriceAttribute.Coefficient`), if the service has one.
+    huyao_price: Option<i64>,
     required_call_flags: CallFlags,
     handler: InteropHandler,
 }
@@ -253,10 +263,23 @@ pub struct ApplicationEngine {
     fee_amount: i64,
     fee_consumed: i64,
     exec_fee_factor: u32,
+    /// Per-opcode dynamic price calculators used since `HF_Huyao`
+    /// (C# `ApplicationEngine.DynamicPriceTable`).
+    dynamic_price_table: &'static op_code_prices_v1::DynamicPriceTable,
+    /// `true` once `HF_Huyao` is active at the persisting index: instruction
+    /// prices are then charged after execution from the opcode's `RunStats`
+    /// (C# `_postExecuteInstruction`) instead of up front from the static
+    /// table (C# `_preExecuteInstruction`).
+    use_dynamic_pricing: bool,
     /// `ExecutionContext::context_id` whose whitelist flag is cached. Zero means
     /// the cache is empty. Context ids start at 1 and are never reused.
     fee_whitelist_context: u64,
     fee_whitelist_flag: bool,
+    /// Whether the instruction currently executing runs in a whitelisted
+    /// context. Captured before each instruction (C# `_whitelisted`), so a
+    /// charge made later in the same instruction observes the state the
+    /// instruction started with rather than one it may have just changed.
+    whitelisted: bool,
     storage_price: u32,
     call_flags: CallFlags,
     vm_engine: VmEngineHost,
@@ -270,6 +293,14 @@ pub struct ApplicationEngine {
     witness_hash_resolver: Arc<dyn WitnessHashResolver>,
     chain_queries: Option<Arc<dyn NativeChainQueries>>,
     policy_hash: UInt160,
+    /// On-chain Policy hardfork activation heights, indexed by
+    /// [`Hardfork::index`] and resolved at most once per engine.
+    ///
+    /// The table is only built when a hardfork check actually needs Policy
+    /// storage (i.e. from the block that enables `LastConfigManagedHardfork`
+    /// onwards, or for later Policy-only hardforks), so pre-Huyao execution
+    /// pays nothing for it.
+    policy_hardfork_heights: OnceLock<[Option<u32>; Hardfork::COUNT]>,
     native_contract_cache: Arc<Mutex<NativeContractsCache>>,
     /// Contract states are shared via `Arc` so the per-transaction engines in a
     /// block can clone the native-contract map without copying NEF scripts and
@@ -302,6 +333,11 @@ pub struct ApplicationEngine {
     random_times: u32,
     diagnostic: Option<Box<dyn Diagnostic>>,
     fault_exception: Option<String>,
+    /// Set only when the native dispatch itself raised the unknown-hardfork
+    /// error (C# v3.11.2 `UnknownHardforkException`). Contract `THROW` text
+    /// never reaches it, so a random contract cannot forge the node-halt
+    /// signal the ledger derives from this field.
+    unknown_hardfork_fault: Option<String>,
     states: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
     event_observer: Option<Arc<dyn EngineEventObserver>>,
     profiler: Option<Arc<dyn ApplicationEngineProfiler>>,

@@ -334,18 +334,22 @@ fn notary_on_persist_still_handles_notary_assisted_transactions() {
     let settings = ProtocolSettings::testnet();
     let height = u32::try_from(settings.committee_members_count()).expect("committee size");
 
-    let (result, _) = run_notary_on_persist(
+    let (result, mutated) = run_notary_on_persist(
         block_with(height, vec![notary_assisted_transaction()]),
         &settings,
     );
 
-    // The guard must not swallow notary work: with no designated P2P notary
-    // nodes the legacy body fails loudly, and that error is the observable
-    // proof that the pre-scan did not short-circuit the hook.
-    let error = result.expect_err("a notary block without designated nodes must fail");
+    // C# v3.11.2: `if (notaries is null || notaries.Length == 0) return;` —
+    // with no designated P2P notary nodes the hook reaches the designated
+    // lookup (past the pre-scan guard) and then skips the reward
+    // distribution silently instead of failing loudly.
     assert!(
-        error.to_string().contains("notary nodes"),
-        "unexpected error: {error}"
+        result.is_ok(),
+        "a notary block without designated nodes failed: {result:?}"
+    );
+    assert!(
+        !mutated,
+        "a notary block without designated nodes mutated storage"
     );
 }
 

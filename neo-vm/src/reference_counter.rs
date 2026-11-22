@@ -89,6 +89,28 @@ fn remove_compound_reference(item: &StackItem) -> Option<StackReferenceRelease> 
     }
 }
 
+/// Adds `count` to the `StackReferences` of a compound item without touching
+/// its sub items (C# `CompoundType.StackReferences++`).
+pub(crate) fn add_raw_stack_references(item: &StackItem, count: usize) {
+    match item {
+        StackItem::Array(array) => array.increment_stack_references(count),
+        StackItem::Struct(structure) => structure.increment_stack_references(count),
+        StackItem::Map(map) => map.increment_stack_references(count),
+        _ => {}
+    }
+}
+
+/// Removes `count` from the `StackReferences` of a compound item without
+/// touching its sub items (C# `CompoundType.StackReferences--`).
+pub(crate) fn remove_raw_stack_references(item: &StackItem, count: usize) {
+    match item {
+        StackItem::Array(array) => array.decrement_stack_references(count),
+        StackItem::Struct(structure) => structure.decrement_stack_references(count),
+        StackItem::Map(map) => map.decrement_stack_references(count),
+        _ => {}
+    }
+}
+
 /// Tracks references to VM stack items.
 #[derive(Clone, Debug)]
 pub struct ReferenceCounter {
@@ -124,15 +146,37 @@ impl ReferenceCounter {
             .fetch_add(count as isize, Ordering::Relaxed);
     }
 
+    /// Adds to the total reference count without touching any item.
+    ///
+    /// neo-vm v3.11.2 `ReferenceCounter.Inc`. Used together with
+    /// [`crate::evaluation_stack::EvaluationStack::push_item_counted`] when a
+    /// handler pushes a compound item whose references it already accounted for.
+    #[inline]
+    pub fn inc(&self, count: i64) {
+        self.references_count.fetch_add(
+            isize::try_from(count).unwrap_or(isize::MAX),
+            Ordering::Relaxed,
+        );
+    }
+
+    /// Subtracts from the total reference count without touching any item.
+    ///
+    /// neo-vm v3.11.2 `ReferenceCounter.Dec`.
+    #[inline]
+    pub fn dec(&self, count: i64) {
+        self.references_count.fetch_sub(
+            isize::try_from(count).unwrap_or(isize::MAX),
+            Ordering::Relaxed,
+        );
+    }
+
     #[inline]
     fn decrease(&self, count: usize) {
-        let previous = self
-            .references_count
+        // No underflow guard on purpose: neo-vm v3.11.2 makes counter-only
+        // adjustments (`Inc`/`Dec`, `PushItemCounted`) part of the accounting,
+        // and its `int` total may legitimately go negative.
+        self.references_count
             .fetch_sub(count as isize, Ordering::Relaxed);
-        debug_assert!(
-            previous >= count as isize,
-            "reference count underflow: {previous} - {count}"
-        );
     }
 
     /// Adds `count` stack references for the supplied item.
@@ -363,11 +407,12 @@ mod tests {
     }
 
     #[test]
-    #[cfg(debug_assertions)]
-    #[should_panic(expected = "reference count underflow")]
-    fn an_unbalanced_release_is_reported_in_debug_builds() {
+    fn an_unbalanced_release_can_drive_the_count_negative() {
+        // neo-vm v3.11.2: the total is an `int` and `Inc`/`Dec`/`PushItemCounted`
+        // may unbalance it, so a negative value is legal rather than a bug.
         let rc = ReferenceCounter::new();
         rc.remove_stack_reference(&StackItem::Null);
+        assert_eq!(rc.signed_count(), -1);
     }
 
     #[test]

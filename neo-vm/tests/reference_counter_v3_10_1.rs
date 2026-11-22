@@ -28,7 +28,7 @@
 use neo_vm::stack_item::{Array, Map, Struct};
 use neo_vm::{
     ExecutionEngine, ExecutionEngineLimits, Instruction, OpCode, ReferenceCounter, Script,
-    StackItem, VmError, VmOrderedDictionary, VmResult, VmState,
+    StackItem, VmOrderedDictionary, VmResult, VmState,
 };
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Write as _;
@@ -247,7 +247,7 @@ struct RCompound {
     /// Array and Struct: the items. Map: key, value, key, value, … in
     /// insertion order.
     items: Vec<RItem>,
-    stack_references: usize,
+    stack_references: isize,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -337,8 +337,8 @@ impl RefModel {
     fn add_stack_reference(&mut self, item: RItem, n: usize) {
         self.count += n;
         if let RItem::Compound(id) = item {
-            self.heap[id].stack_references += n;
-            if self.heap[id].stack_references == n {
+            self.heap[id].stack_references += n as isize;
+            if self.heap[id].stack_references == n as isize {
                 for sub in self.sub_items(id) {
                     self.add_stack_reference(sub, 1);
                 }
@@ -430,6 +430,29 @@ impl RefModel {
     /// `Pop<PrimitiveType>()`; integers are the only primitives the model has.
     fn pop_primitive(&mut self) -> Result<i64, String> {
         self.pop_integer()
+    }
+
+    /// `PopNoRef()`: pops without releasing the item's stack reference.
+    fn pop_no_ref(&mut self) -> Result<RItem, String> {
+        self.stack
+            .pop()
+            .ok_or_else(|| "stack underflow".to_string())
+    }
+
+    /// `PopNoRef<CompoundType>()`.
+    fn pop_no_ref_compound(&mut self) -> Result<usize, String> {
+        match self.pop_no_ref()? {
+            RItem::Compound(id) => Ok(id),
+            RItem::Null | RItem::Int(_) => Err("not a compound".into()),
+        }
+    }
+
+    /// `PopNoRef<PrimitiveType>()`.
+    fn pop_no_ref_primitive(&mut self) -> Result<i64, String> {
+        match self.pop_no_ref()? {
+            RItem::Int(value) => Ok(value),
+            RItem::Null | RItem::Compound(_) => Err("not an integer".into()),
+        }
     }
 
     fn pop_compound(&mut self) -> Result<usize, String> {
@@ -693,10 +716,17 @@ impl RefModel {
                 };
                 let id = self.alloc(kind, Vec::new());
                 for _ in 0..n {
-                    let item = self.pop()?;
+                    // v3.11.2: the items are popped without releasing their
+                    // references.
+                    let item = self.pop_no_ref()?;
                     self.heap[id].items.push(item);
                 }
-                self.push(RItem::Compound(id));
+                // `StackReferences++` plus `PushItemCounted(collection, 1)`: the
+                // collection joins the stack with a single counter entry and no
+                // sub-item cascade.
+                self.heap[id].stack_references = 1;
+                self.count += 1;
+                self.stack.push(RItem::Compound(id));
             }
             PACKMAP => {
                 let n = self.pop_integer()?;
@@ -705,28 +735,58 @@ impl RefModel {
                 }
                 let id = self.alloc(Kind::Map, Vec::new());
                 for _ in 0..n {
-                    let key = self.pop_primitive()?;
-                    let value = self.pop()?;
+                    // v3.11.2: the operands are popped without releasing their
+                    // references; a duplicate key releases the key and the value
+                    // it replaces.
+                    let key = self.pop_no_ref_primitive()?;
+                    let value = self.pop_no_ref()?;
                     match self.map_position(id, key) {
-                        Some(position) => self.heap[id].items[position + 1] = value,
+                        Some(position) => {
+                            self.remove_stack_reference(RItem::Int(key));
+                            let old = self.heap[id].items[position + 1];
+                            self.remove_stack_reference(old);
+                            self.heap[id].items[position + 1] = value;
+                        }
                         None => self.heap[id].items.extend([RItem::Int(key), value]),
                     }
                 }
-                self.push(RItem::Compound(id));
+                self.heap[id].stack_references = 1;
+                self.count += 1;
+                self.stack.push(RItem::Compound(id));
             }
             UNPACK => {
-                let id = self.pop_compound()?;
+                // v3.11.2: the compound is popped without releasing its
+                // reference; the popped slot is dropped without cascading into
+                // the sub items and the counter falls by one for the slot
+                // itself (`RemoveStackReference(StackItem.Null)`).
+                let id = self.pop_no_ref_compound()?;
+                self.heap[id].stack_references -= 1;
+                self.count -= 1;
+                let referenced = self.is_stack_referenced(id);
                 let items = self.heap[id].items.clone();
                 match self.heap[id].kind {
                     Kind::Map => {
                         for entry in items.chunks(2).rev() {
-                            self.push(entry[1]);
-                            self.push(entry[0]);
+                            if referenced {
+                                self.push(entry[1]);
+                                // `PushItemCounted(key, 1)`: the key joins the
+                                // stack with one counter entry but no stack
+                                // reference of its own.
+                                self.count += 1;
+                                self.stack.push(entry[0]);
+                            } else {
+                                self.stack.push(entry[1]);
+                                self.stack.push(entry[0]);
+                            }
                         }
                     }
                     Kind::Array | Kind::Struct => {
                         for item in items.iter().rev() {
-                            self.push(*item);
+                            if referenced {
+                                self.push(*item);
+                            } else {
+                                self.stack.push(*item);
+                            }
                         }
                     }
                 }
@@ -748,23 +808,58 @@ impl RefModel {
                 self.push(RItem::Compound(array));
             }
             VALUES => {
-                let id = self.pop_compound()?;
+                // v3.11.2: the collection is popped without releasing its
+                // reference; the popped slot is dropped without cascading into
+                // the sub items.
+                let id = self.pop_no_ref_compound()?;
+                self.heap[id].stack_references -= 1;
+                let referenced = self.is_stack_referenced(id);
                 let values: Vec<RItem> = match self.heap[id].kind {
-                    Kind::Map => self.heap[id]
-                        .items
-                        .iter()
-                        .skip(1)
-                        .step_by(2)
-                        .copied()
-                        .collect(),
+                    Kind::Map => {
+                        if !referenced {
+                            // `Dec(map.Count)`: one counter entry per key
+                            // leaves with the unreferenced map.
+                            self.count -= self.heap[id].items.len() / 2;
+                        }
+                        self.heap[id]
+                            .items
+                            .iter()
+                            .skip(1)
+                            .step_by(2)
+                            .copied()
+                            .collect()
+                    }
                     Kind::Array | Kind::Struct => self.heap[id].items.clone(),
                 };
                 let array = self.alloc(Kind::Array, Vec::new());
-                for value in values {
-                    let value = self.clone_if_struct(value)?;
-                    self.heap[array].items.push(value);
+                if referenced {
+                    // Every value (or its struct clone) gains a stack
+                    // reference of its own while the source stays referenced.
+                    for value in values {
+                        let value = self.clone_if_struct(value)?;
+                        self.heap[array].items.push(value);
+                        self.add_stack_reference(value, 1);
+                    }
+                } else {
+                    for value in values {
+                        if let RItem::Compound(value_id) = value {
+                            if self.heap[value_id].kind == Kind::Struct {
+                                let clone = self.clone_struct(value_id)?;
+                                self.remove_stack_reference(value);
+                                let clone = RItem::Compound(clone);
+                                self.add_stack_reference(clone, 1);
+                                self.heap[array].items.push(clone);
+                                continue;
+                            }
+                        }
+                        self.heap[array].items.push(value);
+                    }
                 }
-                self.push(RItem::Compound(array));
+                // `newArray.StackReferences++` plus `PushItemCounted(newArray,
+                // 0)`: the result joins the stack without a counter entry of
+                // its own.
+                self.heap[array].stack_references = 1;
+                self.stack.push(RItem::Compound(array));
             }
             REVERSEITEMS => {
                 let id = self.pop_array()?;
@@ -795,8 +890,19 @@ impl RefModel {
                 }
             }
             SETITEM => {
-                let value = self.pop()?;
-                let value = self.clone_if_struct(value)?;
+                // v3.11.2: the value is popped without releasing its
+                // reference; for a struct that reference moves onto the clone.
+                let value = self.pop_no_ref()?;
+                let value = match value {
+                    RItem::Compound(value_id) if self.heap[value_id].kind == Kind::Struct => {
+                        self.remove_stack_reference(value);
+                        let clone = self.clone_struct(value_id)?;
+                        let clone = RItem::Compound(clone);
+                        self.add_stack_reference(clone, 1);
+                        clone
+                    }
+                    other => other,
+                };
                 let key = self.pop_primitive()?;
                 let id = self.pop_compound()?;
                 match self.heap[id].kind {
@@ -804,13 +910,14 @@ impl RefModel {
                         let existing = self.map_position(id, key);
                         if self.is_stack_referenced(id) {
                             match existing {
-                                None => self.add_stack_reference(RItem::Int(key), 1),
                                 Some(position) => {
                                     let old = self.heap[id].items[position + 1];
                                     self.remove_stack_reference(old);
                                 }
+                                None => self.add_stack_reference(RItem::Int(key), 1),
                             }
-                            self.add_stack_reference(value, 1);
+                        } else {
+                            self.remove_stack_reference(value);
                         }
                         match existing {
                             None => self.heap[id].items.extend([RItem::Int(key), value]),
@@ -818,15 +925,22 @@ impl RefModel {
                         }
                     }
                     Kind::Array | Kind::Struct => {
-                        let index = self.array_index(id, key)?;
+                        let index = match self.array_index(id, key) {
+                            Ok(index) => index,
+                            Err(message) => {
+                                // v3.11.2 releases the value it is about to
+                                // discard before the throw unwinds.
+                                self.remove_stack_reference(value);
+                                return Err(message);
+                            }
+                        };
                         if self.is_stack_referenced(id) {
                             let old = self.heap[id].items[index];
                             self.remove_stack_reference(old);
+                        } else {
+                            self.remove_stack_reference(value);
                         }
                         self.heap[id].items[index] = value;
-                        if self.is_stack_referenced(id) {
-                            self.add_stack_reference(value, 1);
-                        }
                     }
                 }
             }
@@ -893,7 +1007,7 @@ enum Shape<I> {
     Compound {
         kind: char,
         identity: (u8, usize),
-        stack_references: usize,
+        stack_references: isize,
         children: Vec<I>,
     },
 }
@@ -1629,14 +1743,18 @@ fn run_to_end(script: Vec<u8>, prepare: impl FnOnce(&mut ExecutionEngine)) -> Fi
 }
 
 /// Stands in for an instruction that has pushed a value before it raises a
-/// catchable engine exception. No instruction of Neo.VM itself does that: they
-/// pop at least two operands before they can raise, and the exception that is
-/// pushed for the handler never brings the count above where it started.
+/// script-catchable exception through `ExecuteThrow`, the way the v3.11.2
+/// PICKITEM/SETITEM/THROW handlers do. No instruction of Neo.VM itself pushes
+/// more than one value before raising, so the exception that lands in the
+/// catch block never brings the count above where it started.
 fn push_then_raise(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_int(7))?;
-    Err(VmError::CatchableException {
-        message: "raised by the test handler".to_string(),
-    })
+    // The unwind's reference delta feeds the pricing stats, which this test
+    // does not look at.
+    engine.execute_throw_counted(Some(StackItem::from_byte_string(
+        b"raised by the test handler".to_vec(),
+    )))?;
+    Ok(())
 }
 
 /// `PUSH1×pushes TRY { NOP } CATCH { DROP } RET`.

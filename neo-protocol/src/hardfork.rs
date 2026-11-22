@@ -39,6 +39,9 @@ pub(crate) fn hardfork_height(
         Hardfork::HfFaun => heights.hf_faun,
         Hardfork::HfGorgon => heights.hf_gorgon,
         Hardfork::HfHuyao => heights.hf_huyao,
+        // Post-Huyao hardforks are Policy-activated on chain and must not be
+        // back-filled from configuration (C# `LastConfigManagedHardfork`).
+        Hardfork::HfIara | Hardfork::HfJackalope => None,
     }
 }
 

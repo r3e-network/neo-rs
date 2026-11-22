@@ -69,6 +69,7 @@ use crate::interop_service::{InteropHost, InteropService};
 use crate::jump_table::JumpTable;
 use crate::memory::{StackAllocator, StackAllocatorLimits, StackAllocatorStats};
 use crate::reference_counter::ReferenceCounter;
+use crate::run_stats::RunStats;
 use crate::script::Script;
 use crate::stack_item::StackItem;
 use neo_primitives::CallFlags;
@@ -174,12 +175,17 @@ impl HostPtr {
     }
 
     /// Calls [`InteropHost::post_execute_instruction`] on the wrapped host.
+    ///
+    /// `instruction` is `None` for the implicit `RET` that neo-vm substitutes
+    /// once the instruction pointer reaches the end of the script; the host then
+    /// charges nothing for it (neo-vm v3.11.2 `PostExecuteInstruction`).
     pub(crate) fn post_execute_instruction(
         &self,
         engine: &mut ExecutionEngine,
-        instruction: &Instruction,
+        instruction: Option<&Instruction>,
+        run_stats: &RunStats,
     ) -> VmResult<()> {
-        unsafe { (*self.0).post_execute_instruction(engine, instruction) }
+        unsafe { (*self.0).post_execute_instruction(engine, instruction, run_stats) }
     }
 
     /// Calls [`InteropHost::invoke_syscall`] on the wrapped host.
@@ -216,6 +222,14 @@ pub struct ExecutionEngine {
 
     /// Used for reference counting of objects in the VM
     pub(crate) reference_counter: ReferenceCounter,
+
+    /// Statistics of the instruction currently being executed.
+    ///
+    /// Reset before every dispatch and filled in by the jump table handler, so
+    /// the post-instruction hook can price the opcode from it (neo-vm v3.11.2
+    /// `RunStats`). It is an engine field instead of a handler parameter so the
+    /// `InstructionHandler` signature stays `Fn(&mut ExecutionEngine, &Instruction)`.
+    pub(crate) run_stats: RunStats,
 
     /// Optional interop service used for handling syscalls
     pub(crate) interop_service: Option<InteropService>,

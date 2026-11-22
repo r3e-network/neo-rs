@@ -18,7 +18,11 @@ pub(crate) struct CompoundInner {
     /// The items in the compound value.
     pub(crate) items: Vec<StackItem>,
     /// Number of stack references held on this value (C# `CompoundType.StackReferences`).
-    pub(crate) stack_references: usize,
+    ///
+    /// Signed like the C# `int`: the dynamically priced handlers decrement it
+    /// directly (UNPACK, VALUES), and a negative value still reads as
+    /// stack-referenced.
+    pub(crate) stack_references: isize,
     /// Unique identifier to mimic reference equality semantics.
     pub(crate) id: usize,
     /// Indicates whether the value is read-only.
@@ -133,8 +137,24 @@ impl CompoundInner {
     /// Adds `count` stack references. Returns the sub items when this call made
     /// the value stack referenced.
     pub(crate) fn add_stack_references(&mut self, count: usize) -> Option<SubItems> {
-        self.stack_references += count;
-        (self.stack_references == count).then(|| SubItems::collect(&self.items))
+        self.stack_references += count as isize;
+        (self.stack_references == count as isize).then(|| SubItems::collect(&self.items))
+    }
+
+    /// Adds `count` stack references without touching any sub item.
+    ///
+    /// C# `CompoundType.StackReferences++` as used by the dynamically priced
+    /// handlers: the handler accounts for the item and its sub items itself via
+    /// `PushItemCounted`, so this must not propagate.
+    pub(crate) fn inc_stack_references(&mut self, count: usize) {
+        self.stack_references += count as isize;
+    }
+
+    /// Removes `count` stack references without touching any sub item.
+    ///
+    /// C# `CompoundType.StackReferences--` as used by UNPACK and VALUES.
+    pub(crate) fn dec_stack_references(&mut self, count: usize) {
+        self.stack_references -= count as isize;
     }
 
     /// Removes one stack reference, if the value is stack referenced.
@@ -157,7 +177,7 @@ impl CompoundInner {
 
     /// One-lock snapshot of the fields the `Debug` renderer prints, as
     /// `(items, id, stack_references, is_read_only)`.
-    pub(crate) fn debug_snapshot(&self) -> (Vec<StackItem>, usize, usize, bool) {
+    pub(crate) fn debug_snapshot(&self) -> (Vec<StackItem>, usize, isize, bool) {
         (
             self.items.clone(),
             self.id,

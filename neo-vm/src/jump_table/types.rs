@@ -8,6 +8,7 @@ use crate::error::VmError;
 use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
 use crate::jump_table::{JumpTable, register_jump_handlers};
+use crate::run_stats::StackItemType as RunStatsItemType;
 use crate::stack_item::{Array, StackItem, Struct};
 use crate::{OpCode, StackValue};
 
@@ -23,10 +24,11 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 
 /// Implements the CONVERT operation.
 fn convert(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    // v3.11.2 Convert: r1 = Count; x = Pop(); fromType; toType; r2 = Count;
+    // Push(x.ConvertTo(toType)); then collect the combined pop+push ref delta,
+    // the converted type, and its length. A failing conversion faults after the
+    // pop and before any collection.
+    let r1 = engine.reference_count();
 
     // Get the type from the instruction
     let type_byte = instruction
@@ -38,25 +40,21 @@ fn convert(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
     // Convert the type byte to a StackItemType
     let item_type = StackItemType::from_byte(type_byte)
         .ok_or_else(|| VmError::invalid_instruction_msg(format!("Invalid type: {type_byte}")))?;
-    if item_type == StackItemType::Any {
-        return Err(VmError::invalid_instruction_msg(format!(
-            "Invalid type: {type_byte}"
-        )));
-    }
 
-    // Null remains Null for every target type in the reference VM. A same-type
-    // conversion likewise already has the required item on top of the stack.
-    let item = {
-        let mut stack = context.evaluation_stack_mut();
-        let item = stack.peek(0)?;
-        if matches!(item, StackItem::Null) || item.stack_item_type() == item_type {
-            return Ok(());
-        }
-        stack.pop()?
-    };
+    // Pop the item on the stack
+    let item = engine.pop()?;
+    let r2 = engine.reference_count();
+    let from_type = item.stack_item_type();
 
-    // Convert the item to the specified type
-    let result = {
+    // Null remains Null for every target type in the reference VM, and `Any`
+    // and same-type conversions are identities (ConvertTo returns the item
+    // itself), so the popped item is pushed back unchanged.
+    let result = if matches!(item, StackItem::Null)
+        || item_type == StackItemType::Any
+        || from_type == item_type
+    {
+        item
+    } else {
         match (item, item_type) {
             // Keep primitive conversion rules centralized on StackItem; its
             // byte-target path delegates the exact safe subset to neo-vm-rs.
@@ -86,17 +84,47 @@ fn convert(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
         }
     };
 
-    context.push(result)?;
+    // v3.11.2 records the type and length only for the compound and byte-memory
+    // cross-conversions, measured on the original item (the converted item
+    // carries the same count/size).
+    let (converted_type, length) = if (from_type == StackItemType::Array
+        && item_type == StackItemType::Struct)
+        || (from_type == StackItemType::Struct && item_type == StackItemType::Array)
+    {
+        let count = match &result {
+            StackItem::Array(items) => items.len() as i64,
+            StackItem::Struct(items) => items.len() as i64,
+            _ => 0,
+        };
+        (RunStatsItemType::Array, count)
+    } else if (from_type == StackItemType::ByteString && item_type == StackItemType::Buffer)
+        || (from_type == StackItemType::Buffer && item_type == StackItemType::ByteString)
+    {
+        let size = match &result {
+            StackItem::ByteString(bytes) => bytes.len() as i64,
+            StackItem::Buffer(buffer) => buffer.len() as i64,
+            _ => 0,
+        };
+        (RunStatsItemType::ByteString, size)
+    } else {
+        (RunStatsItemType::Any, 0)
+    };
 
+    engine.push(result)?;
+    engine.collect_ref_delta((r1 - r2) + (engine.reference_count() - r2));
+    engine.collect_type(converted_type);
+    engine.collect_op_length(length);
     Ok(())
 }
 
 /// Implements the ISTYPE operation.
 fn is_type(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    // v3.11.2 IsType pops first, validates the operand type after the pop, and
+    // collects the pop's ref delta on the success path.
+    let r = engine.reference_count();
+
+    // Pop the item on the stack
+    let item = engine.pop()?;
 
     // Get the type from the instruction
     let type_byte = instruction
@@ -114,14 +142,11 @@ fn is_type(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
         )));
     }
 
-    // Pop the item on the stack
-    let item = context.pop()?;
-
     let probe = stack_item_type_probe_value(item.stack_item_type());
     let result = crate::semantics::conversion::is_type(&probe, item_type.to_byte());
 
-    context.push(StackItem::from_bool(result))?;
-
+    engine.push(StackItem::from_bool(result))?;
+    engine.collect_ref_delta(r - engine.reference_count());
     Ok(())
 }
 
@@ -142,13 +167,11 @@ fn stack_item_type_probe_value(item_type: StackItemType) -> StackValue {
 
 /// Implements the ISNULL operation.
 fn is_null(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    // v3.11.2 IsNull collects the pop's ref delta on the success path.
+    let r = engine.reference_count();
 
     // Pop the item on the stack
-    let item = context.pop()?;
+    let item = engine.pop()?;
 
     let stack_value = match item {
         StackItem::Null => StackValue::Null,
@@ -156,8 +179,8 @@ fn is_null(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
     };
     let result = crate::semantics::comparison::is_null(&stack_value);
 
-    context.push(StackItem::from_bool(result))?;
-
+    engine.push(StackItem::from_bool(result))?;
+    engine.collect_ref_delta(r - engine.reference_count());
     Ok(())
 }
 

@@ -105,6 +105,48 @@ impl EvaluationStack {
         self.remove_internal(0)
     }
 
+    /// Removes and returns the item at the top of the stack without releasing
+    /// its stack reference.
+    ///
+    /// neo-vm v3.11.2 `EvaluationStack.PopNoRef`. The caller becomes
+    /// responsible for the reference the removed item held.
+    #[inline(always)]
+    pub fn pop_no_ref(&mut self) -> VmResult<StackItem> {
+        self.remove_no_ref(0)
+    }
+
+    /// Pushes an item and adds exactly `count` to the reference counter.
+    ///
+    /// neo-vm v3.11.2 `EvaluationStack.PushItemCounted`: the item's own
+    /// `StackReferences` is *not* adjusted, so the caller must already have
+    /// accounted for it.
+    #[inline(always)]
+    pub fn push_item_counted(&mut self, item: StackItem, count: i64) {
+        self.stack.push(item);
+        self.reference_counter.inc(count);
+    }
+
+    /// Moves the item `index` places below the top to the top of the stack.
+    ///
+    /// neo-vm v3.11.2 `EvaluationStack.Roll`. Nothing is popped or pushed, so
+    /// no reference is released or added.
+    #[inline(always)]
+    pub fn roll(&mut self, index: usize) -> VmResult<()> {
+        if index >= self.stack.len() {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Out of stack bounds: {index}/{}",
+                self.stack.len()
+            )));
+        }
+        if index == 0 {
+            return Ok(());
+        }
+        let position = self.stack.len() - 1 - index;
+        let item = self.stack.remove(position);
+        self.stack.push(item);
+        Ok(())
+    }
+
     /// Returns the item at the specified index counting from the top of the
     /// stack (0-based) without removing it.
     #[inline(always)]
@@ -257,10 +299,19 @@ impl EvaluationStack {
 
     #[inline(always)]
     fn remove_internal(&mut self, index_from_top: usize) -> VmResult<StackItem> {
-        let idx = self.resolve_top_index(index_from_top)?;
-        let item = self.stack.remove(idx);
+        let item = self.remove_no_ref(index_from_top)?;
         self.reference_counter.remove_stack_reference(&item);
         Ok(item)
+    }
+
+    /// Removes the item at `index_from_top` without touching the reference
+    /// counter.
+    ///
+    /// neo-vm v3.11.2 `EvaluationStack.RemoveNoRef`.
+    #[inline(always)]
+    fn remove_no_ref(&mut self, index_from_top: usize) -> VmResult<StackItem> {
+        let idx = self.resolve_top_index(index_from_top)?;
+        Ok(self.stack.remove(idx))
     }
 }
 

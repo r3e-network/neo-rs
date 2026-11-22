@@ -1,389 +1,15 @@
 use super::*;
 use crate::error::CoreResult;
 
-/// Registration surface shared by an application engine and the immutable
-/// default-registry builder. Keeping hardfork selection explicit prevents a
-/// Faun-only descriptor from leaking into pre-Faun engines.
-pub(crate) trait InteropRegistration {
-    fn register_host_service(
-        &mut self,
-        name: &str,
-        price: i64,
-        call_flags: CallFlags,
-        handler: InteropHandler,
-    ) -> VmResult<()>;
+mod constructors;
+mod registration;
 
-    fn is_hardfork_enabled(&self, hardfork: Hardfork) -> bool;
-}
+pub(crate) use registration::InteropRegistration;
 
-struct DefaultInterops {
-    service: InteropService,
-    handlers: Arc<HashMap<u32, HostInteropHandler>>,
-}
-
-struct DefaultInteropBuilder {
-    service: InteropService,
-    handlers: HashMap<u32, HostInteropHandler>,
-    faun_enabled: bool,
-}
-
-impl InteropRegistration for DefaultInteropBuilder {
-    fn register_host_service(
-        &mut self,
-        name: &str,
-        price: i64,
-        call_flags: CallFlags,
-        handler: InteropHandler,
-    ) -> VmResult<()> {
-        let hash = self
-            .service
-            .register_host_descriptor(name, price, call_flags)?;
-        self.handlers.insert(
-            hash,
-            HostInteropHandler {
-                price,
-                required_call_flags: call_flags,
-                handler,
-            },
-        );
-        Ok(())
-    }
-
-    fn is_hardfork_enabled(&self, hardfork: Hardfork) -> bool {
-        hardfork == Hardfork::HfFaun && self.faun_enabled
-    }
-}
-
-impl InteropRegistration for ApplicationEngine {
-    fn register_host_service(
-        &mut self,
-        name: &str,
-        price: i64,
-        call_flags: CallFlags,
-        handler: InteropHandler,
-    ) -> VmResult<()> {
-        ApplicationEngine::register_host_service(self, name, price, call_flags, handler)
-    }
-
-    fn is_hardfork_enabled(&self, hardfork: Hardfork) -> bool {
-        ApplicationEngine::is_hardfork_enabled(self, hardfork)
-    }
-}
-
-static DEFAULT_INTEROPS: [OnceLock<Result<Arc<DefaultInterops>>>; 2] =
-    [OnceLock::new(), OnceLock::new()];
-
-fn default_interops(faun_enabled: bool) -> Result<Arc<DefaultInterops>> {
-    DEFAULT_INTEROPS[usize::from(faun_enabled)]
-        .get_or_init(|| build_default_interops(faun_enabled))
-        .clone()
-}
-
-fn build_default_interops(faun_enabled: bool) -> Result<Arc<DefaultInterops>> {
-    let mut builder = DefaultInteropBuilder {
-        service: InteropService::new(),
-        handlers: HashMap::new(),
-        faun_enabled,
-    };
-    register_default_interops(&mut builder)?;
-    Ok(Arc::new(DefaultInterops {
-        service: builder.service,
-        handlers: Arc::new(builder.handlers),
-    }))
-}
-
-fn register_default_interops(registry: &mut dyn InteropRegistration) -> Result<()> {
-    register_contract_interops(registry)
-        .map_err(|err| ApplicationEngine::map_vm_error("System.Contract", err))?;
-    register_runtime_interops(registry)
-        .map_err(|err| ApplicationEngine::map_vm_error("System.Runtime", err))?;
-    register_storage_interops(registry)
-        .map_err(|err| ApplicationEngine::map_vm_error("System.Storage", err))?;
-    register_iterator_interops(registry)
-        .map_err(|err| ApplicationEngine::map_vm_error("System.Iterator", err))?;
-    register_crypto_interops(registry)
-        .map_err(|err| ApplicationEngine::map_vm_error("System.Crypto", err))?;
-    Ok(())
-}
+#[cfg(test)]
+mod default_interop_tests;
 
 impl ApplicationEngine {
-    /// Creates a new application engine for the given trigger and script container.
-    pub fn new(
-        trigger: TriggerType,
-        script_container: Option<Arc<dyn Verifiable>>,
-        snapshot_cache: Arc<PersistenceDataCache>,
-        persisting_block: Option<Block>,
-        protocol_settings: ProtocolSettings,
-        gas_limit: i64,
-        diagnostic: Option<Box<dyn Diagnostic>>,
-        native_services: EngineNativeServices,
-    ) -> CoreResult<Self> {
-        Self::new_with_shared_block(
-            trigger,
-            script_container,
-            snapshot_cache,
-            persisting_block.map(Arc::new),
-            protocol_settings,
-            gas_limit,
-            diagnostic,
-            native_services,
-        )
-    }
-    /// Creates a new application engine, sharing the persisting block as an `Arc`.
-    pub fn new_with_shared_block(
-        trigger: TriggerType,
-        script_container: Option<Arc<dyn Verifiable>>,
-        snapshot_cache: Arc<PersistenceDataCache>,
-        persisting_block: Option<Arc<Block>>,
-        protocol_settings: ProtocolSettings,
-        gas_limit: i64,
-        diagnostic: Option<Box<dyn Diagnostic>>,
-        native_services: EngineNativeServices,
-    ) -> CoreResult<Self> {
-        let nonce_data =
-            Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
-        let original_snapshot_cache = Arc::clone(&snapshot_cache);
-        let engine = ExecutionEngine::new(Some(JumpTable::default()));
-        let mut app = Self {
-            trigger,
-            script_container,
-            persisting_block,
-            protocol_settings,
-            gas_limit,
-            gas_consumed: 0,
-            fee_amount: gas_limit.saturating_mul(FEE_FACTOR),
-            fee_consumed: 0,
-            exec_fee_factor: native_services.default_exec_fee_factor * (FEE_FACTOR as u32),
-            fee_whitelist_context: 0,
-            fee_whitelist_flag: false,
-            storage_price: native_services.default_storage_price,
-            call_flags: CallFlags::ALL,
-            vm_engine: VmEngineHost::new(engine),
-            interop_handlers: Arc::new(HashMap::new()),
-            snapshot_cache,
-            original_snapshot_cache,
-            notifications: Vec::new(),
-            logs: Vec::new(),
-            native_registry: native_services.registry,
-            native_state_reader: native_services.state_reader,
-            witness_hash_resolver: native_services.witness_hash_resolver,
-            chain_queries: None,
-            policy_hash: native_services.policy_hash,
-            native_contract_cache: Arc::new(Mutex::new(NativeContractsCache::default())),
-            contracts: HashMap::new(),
-            contract_query_results: HashMap::new(),
-            native_fee_whitelist: HashMap::new(),
-            native_fee_cache_dirty: false,
-            parsed_contract_scripts: HashMap::new(),
-            storage_iterators: HashMap::new(),
-            next_iterator_id: 1,
-            current_script_hash: None,
-            calling_script_hash: None,
-            native_calling_override: None,
-            entry_script_hash: None,
-            invocation_counter: HashMap::new(),
-            pending_native_calls: Vec::new(),
-            nonce_data,
-            random_times: 0,
-            diagnostic,
-            fault_exception: None,
-            states: HashMap::new(),
-            event_observer: None,
-            profiler: None,
-            rw_set_tracker: Mutex::new(None),
-            rw_set_tracking: AtomicBool::new(false),
-        };
-        app.select_hardfork_vm_semantics();
-
-        // No `attach_host` here: the engine is returned by value, so a pointer
-        // taken now would dangle the moment the caller receives it. The host
-        // pointer is attached at the entry points that actually execute the VM.
-        app.register_native_contracts();
-        app.refresh_policy_settings();
-        app.install_default_interops()?;
-        // Ignore any fees incurred during engine initialization (native contract setup, policy reads).
-        app.fee_consumed = 0;
-        app.gas_consumed = 0;
-        if let Some(mut diagnostic) = app.diagnostic.take() {
-            diagnostic.initialized(&mut app);
-            app.diagnostic = Some(diagnostic);
-        }
-        Ok(app)
-    }
-    /// Creates a new application engine with preloaded contract states and a
-    /// shared native-contract cache (used by hosts/tests that seed state).
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_with_preloaded_native(
-        trigger: TriggerType,
-        script_container: Option<Arc<dyn Verifiable>>,
-        snapshot_cache: Arc<PersistenceDataCache>,
-        persisting_block: Option<Arc<Block>>,
-        protocol_settings: ProtocolSettings,
-        gas_limit: i64,
-        contracts: HashMap<UInt160, ContractState>,
-        native_contract_cache: Arc<Mutex<NativeContractsCache>>,
-        diagnostic: Option<Box<dyn Diagnostic>>,
-        native_services: EngineNativeServices,
-    ) -> CoreResult<Self> {
-        let contracts = contracts
-            .into_iter()
-            .map(|(hash, state)| (hash, Arc::new(state)))
-            .collect();
-        Self::new_with_preloaded_native_shared(
-            trigger,
-            script_container,
-            snapshot_cache,
-            persisting_block,
-            protocol_settings,
-            gas_limit,
-            contracts,
-            native_contract_cache,
-            diagnostic,
-            native_services,
-        )
-    }
-
-    /// Shared-contract-state variant used by the block persistence pipeline.
-    ///
-    /// Cloning the map only bumps `Arc` references; the NEF scripts and
-    /// manifests are not copied per transaction.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_with_preloaded_native_shared(
-        trigger: TriggerType,
-        script_container: Option<Arc<dyn Verifiable>>,
-        snapshot_cache: Arc<PersistenceDataCache>,
-        persisting_block: Option<Arc<Block>>,
-        protocol_settings: ProtocolSettings,
-        gas_limit: i64,
-        contracts: HashMap<UInt160, Arc<ContractState>>,
-        native_contract_cache: Arc<Mutex<NativeContractsCache>>,
-        diagnostic: Option<Box<dyn Diagnostic>>,
-        native_services: EngineNativeServices,
-    ) -> CoreResult<Self> {
-        let nonce_data =
-            Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
-        let original_snapshot_cache = Arc::clone(&snapshot_cache);
-        let engine = ExecutionEngine::new(Some(JumpTable::default()));
-        let mut app = Self {
-            trigger,
-            script_container,
-            persisting_block,
-            protocol_settings,
-            gas_limit,
-            gas_consumed: 0,
-            fee_amount: gas_limit.saturating_mul(FEE_FACTOR),
-            fee_consumed: 0,
-            exec_fee_factor: native_services.default_exec_fee_factor * (FEE_FACTOR as u32),
-            fee_whitelist_context: 0,
-            fee_whitelist_flag: false,
-            storage_price: native_services.default_storage_price,
-            call_flags: CallFlags::ALL,
-            vm_engine: VmEngineHost::new(engine),
-            interop_handlers: Arc::new(HashMap::new()),
-            snapshot_cache,
-            original_snapshot_cache,
-            notifications: Vec::new(),
-            logs: Vec::new(),
-            native_registry: native_services.registry,
-            native_state_reader: native_services.state_reader,
-            witness_hash_resolver: native_services.witness_hash_resolver,
-            chain_queries: None,
-            policy_hash: native_services.policy_hash,
-            native_contract_cache,
-            contracts,
-            contract_query_results: HashMap::new(),
-            native_fee_whitelist: HashMap::new(),
-            native_fee_cache_dirty: false,
-            parsed_contract_scripts: HashMap::new(),
-            storage_iterators: HashMap::new(),
-            next_iterator_id: 1,
-            current_script_hash: None,
-            calling_script_hash: None,
-            native_calling_override: None,
-            entry_script_hash: None,
-            invocation_counter: HashMap::new(),
-            pending_native_calls: Vec::new(),
-            nonce_data,
-            random_times: 0,
-            diagnostic,
-            fault_exception: None,
-            states: HashMap::new(),
-            event_observer: None,
-            profiler: None,
-            rw_set_tracker: Mutex::new(None),
-            rw_set_tracking: AtomicBool::new(false),
-        };
-        // A05/R06: persist path must apply hardfork-dependent VM semantics
-        // (e.g. Gorgon zero-shift typing), matching `new` / `new_with_shared_block`.
-        app.select_hardfork_vm_semantics();
-
-        // See the note in `new_with_shared_block`: attaching here would leave a
-        // dangling pointer behind, because the engine moves when it is returned.
-        app.refresh_policy_settings();
-        app.install_default_interops()?;
-        // Ignore any fees incurred during engine initialization.
-        app.fee_consumed = 0;
-        app.gas_consumed = 0;
-        if let Some(mut diagnostic) = app.diagnostic.take() {
-            diagnostic.initialized(&mut app);
-            app.diagnostic = Some(diagnostic);
-        }
-        Ok(app)
-    }
-    /// Points the VM's interop host at this engine, so syscalls dispatch back
-    /// into it.
-    ///
-    /// This stores a self-reference, and a raw pointer does not follow the
-    /// struct when it moves -- returning an engine by value invalidates it. The
-    /// pointer is therefore attached inside every VM entry point
-    /// (`execute_allow_fault`, `execute_until_invocation_stack_depth`,
-    /// `load_script_with_state`) and nowhere else, and the constructors leave it
-    /// unset so that no stale pointer is ever reachable.
-    pub(super) fn attach_host(&mut self) {
-        let host: &mut dyn InteropHost = self;
-        let host_ptr = host as *mut dyn InteropHost;
-        // SAFETY: `host_ptr` is derived from `&mut self`, so it is valid as long
-        // as this engine stays at its current address, and `&mut self` keeps the
-        // engine exclusively borrowed until execution returns. Every path that
-        // dereferences the pointer runs inside a VM entry point, which calls this
-        // method first; nothing may dereference it between a move and the next
-        // attach.
-        unsafe { self.vm_engine.engine_mut().set_interop_host(host_ptr) };
-    }
-    fn install_default_interops(&mut self) -> Result<()> {
-        let shared = default_interops(self.is_hardfork_enabled(Hardfork::HfFaun))?;
-        self.vm_engine
-            .engine_mut()
-            .set_interop_service(shared.service.clone());
-        self.interop_handlers = Arc::clone(&shared.handlers);
-        Ok(())
-    }
-    fn map_vm_error(context: &str, error: VmError) -> Error {
-        Error::invalid_operation(format!("{context} interop failed: {error}"))
-    }
-    pub(crate) fn register_host_service(
-        &mut self,
-        name: &str,
-        price: i64,
-        call_flags: CallFlags,
-        handler: InteropHandler,
-    ) -> VmResult<()> {
-        let interop_service = self
-            .vm_engine
-            .engine_mut()
-            .interop_service_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("Interop service not configured"))?;
-        let hash = interop_service.register_host_descriptor(name, price, call_flags)?;
-        Arc::make_mut(&mut self.interop_handlers).insert(
-            hash,
-            HostInteropHandler {
-                price,
-                required_call_flags: call_flags,
-                handler,
-            },
-        );
-        Ok(())
-    }
     /// Returns the current VM execution state.
     pub fn state(&self) -> VMState {
         self.vm_engine.engine().state()
@@ -399,6 +25,22 @@ impl ApplicationEngine {
     /// Clears the fault exception message.
     pub fn clear_fault_exception(&mut self) {
         self.fault_exception = None;
+    }
+    /// Records the unknown-hardfork fault raised by the native dispatch path
+    /// (`Policy.activateHardfork` with an unrecognized name; C# v3.11.2
+    /// `UnknownHardforkException`). Only the engine-hosted native dispatch
+    /// calls this — never contract `THROW` text — mirroring the C#
+    /// type-based `UnknownHardforkException.IsInstance` check that
+    /// `Blockchain.Persist` rethrows to halt an outdated node.
+    pub fn mark_unknown_hardfork_fault(&mut self, hardfork_name: &str) {
+        self.unknown_hardfork_fault = Some(hardfork_name.to_string());
+    }
+    /// Returns the unknown-hardfork name recorded by the native dispatch path,
+    /// if any. The ledger turns it into a fatal persistence error (the C#
+    /// `Blockchain.Persist` rethrow).
+    #[must_use]
+    pub fn fault_unknown_hardfork_name(&self) -> Option<&str> {
+        self.unknown_hardfork_fault.as_deref()
     }
     /// Stores a typed state value in the engine's state map.
     pub fn set_state<T: Any + Send + Sync>(&mut self, value: T) {
@@ -513,14 +155,38 @@ impl ApplicationEngine {
     /// a single shift semantic regardless of the active hardfork (report R06).
     fn select_hardfork_vm_semantics(&mut self) {
         let mut limits = neo_vm::ExecutionEngineLimits::DEFAULT;
-        let gorgon_enabled = self
-            .protocol_settings
-            .hardforks
-            .get(&neo_protocol::Hardfork::HfGorgon)
-            .is_some_and(|activation| self.current_block_index() >= *activation);
+        let gorgon_enabled = self.is_hardfork_enabled(Hardfork::HfGorgon);
         limits.zero_shift_converts_to_integer = gorgon_enabled;
         limits.pre_gorgon_collection_semantics = !gorgon_enabled;
         self.vm_engine.engine_mut().set_limits(limits);
+        // C# `ApplicationEngine.Create`: Huyao runs the default jump table;
+        // earlier heights restore the pre-neo-vm-PR-606 SETITEM and the
+        // pre-PR-575 ROLL behaviours. Like the pricing mode below, the switch
+        // follows the configured Huyao height rather than Policy state.
+        let jump_table = if self
+            .protocol_settings
+            .is_hardfork_enabled(Hardfork::HfHuyao, self.persisting_index())
+        {
+            JumpTable::default()
+        } else {
+            JumpTable::not_huyao()
+        };
+        self.vm_engine.engine_mut().set_jump_table(jump_table);
+        self.select_pricing_mode();
+    }
+    /// Selects how instruction prices are charged, mirroring the C#
+    /// `ApplicationEngine` constructor: before `HF_Huyao` every instruction is
+    /// charged from the static price table *before* it runs, from `HF_Huyao` it is
+    /// charged from the opcode's [`RunStats`](neo_vm::run_stats::RunStats)
+    /// *after* it runs.
+    ///
+    /// The C# constructor reads `ProtocolSettings` directly here (rather than
+    /// the on-chain Policy state), so the switch follows the configured Huyao
+    /// height.
+    fn select_pricing_mode(&mut self) {
+        self.use_dynamic_pricing = self
+            .protocol_settings
+            .is_hardfork_enabled(Hardfork::HfHuyao, self.persisting_index());
     }
     /// Returns the timestamp of the block currently being persisted.
     pub fn current_block_timestamp(&self) -> Result<u64, String> {
@@ -541,8 +207,67 @@ impl ApplicationEngine {
     }
     /// Checks if a hardfork is enabled at the current block height.
     pub fn is_hardfork_enabled(&self, hardfork: Hardfork) -> bool {
-        self.protocol_settings
-            .is_hardfork_enabled(hardfork, self.current_block_index())
+        self.is_hardfork_enabled_at(hardfork, self.persisting_index())
+    }
+    /// Returns the index of the block this engine executes against.
+    ///
+    /// Mirrors C# `ApplicationEngine.GetPersistingIndex()`: the block being
+    /// persisted when there is one, otherwise the block after the snapshot's
+    /// latest persisted one (`Ledger.CurrentIndex` already reports a persisted
+    /// block, so the *persisting* index is one higher).
+    pub fn persisting_index(&self) -> u32 {
+        if let Some(block) = self.persisting_block.as_ref() {
+            return block.header.index();
+        }
+        self.native_state_reader
+            .current_index(self.snapshot_cache.as_ref())
+            .unwrap_or(0)
+            .saturating_add(1)
+    }
+    /// Returns the VM reference counter's current signed count.
+    ///
+    /// Used by Huyao handler fees that price the references created across a
+    /// push (C# v3.11.2 `ReferenceCounter.Count`).
+    pub(crate) fn vm_reference_count(&self) -> i64 {
+        self.vm_engine.engine().reference_counter().signed_count() as i64
+    }
+    /// Checks if a hardfork is enabled at an explicit block height.
+    ///
+    /// Mirrors C# `PolicyContract.IsHardforkEnabled(settings, snapshot, hf, index)`:
+    /// hardforks up to `ProtocolSettings.LastConfigManagedHardfork` are read from
+    /// `ProtocolSettings` until that hardfork itself is enabled on chain, after
+    /// which they come from Policy storage; later hardforks are only ever
+    /// activated on chain through `Policy.activateHardfork`.
+    pub fn is_hardfork_enabled_at(&self, hardfork: Hardfork, index: u32) -> bool {
+        let from_policy = !hardfork.is_config_managed()
+            || (index > 0
+                && self
+                    .protocol_settings
+                    .is_hardfork_enabled(Hardfork::LAST_CONFIG_MANAGED, index - 1));
+        if !from_policy {
+            return self.protocol_settings.is_hardfork_enabled(hardfork, index);
+        }
+        self.policy_hardfork_height(hardfork)
+            .is_some_and(|height| index >= height)
+    }
+    /// Returns the on-chain Policy activation height of a hardfork.
+    ///
+    /// The whole prefix-25 table is read at most once per engine, so repeated
+    /// hardfork checks on the instruction hot path cost one array index.
+    fn policy_hardfork_height(&self, hardfork: Hardfork) -> Option<u32> {
+        let heights = self.policy_hardfork_heights.get_or_init(|| {
+            let mut heights = [None; Hardfork::COUNT];
+            if let Ok(entries) = self
+                .native_state_reader
+                .policy_hardfork_heights(self.snapshot_cache.as_ref())
+            {
+                for (hardfork, height) in entries {
+                    heights[usize::from(hardfork.index())] = Some(height);
+                }
+            }
+            heights
+        });
+        heights[usize::from(hardfork.index())]
     }
     /// Returns the trigger type for this execution.
     pub fn trigger_type(&self) -> TriggerType {
@@ -552,17 +277,20 @@ impl ApplicationEngine {
     pub fn trigger(&self) -> TriggerType {
         self.trigger
     }
-    /// Returns the total GAS consumed during execution.
+    /// Returns the total GAS consumed during execution, in datoshi.
     pub fn gas_consumed(&self) -> i64 {
         self.gas_consumed
-            .saturating_add(FEE_FACTOR - 1)
-            .saturating_div(FEE_FACTOR)
+            .saturating_add(FEE_FACTOR * OPCODE_PRICE_MULTIPLIER - 1)
+            .saturating_div(FEE_FACTOR * OPCODE_PRICE_MULTIPLIER)
     }
-    /// Returns the total fee consumed during execution.
+    /// Returns the total fee consumed during execution, in datoshi.
+    ///
+    /// Matches C# `ApplicationEngine.FeeConsumed`, which divides the femtoGAS
+    /// counter by `FeeFactor * OpcodePriceMultiplier` and rounds up.
     pub fn fee_consumed(&self) -> i64 {
         self.fee_consumed
-            .saturating_add(FEE_FACTOR - 1)
-            .saturating_div(FEE_FACTOR)
+            .saturating_add(FEE_FACTOR * OPCODE_PRICE_MULTIPLIER - 1)
+            .saturating_div(FEE_FACTOR * OPCODE_PRICE_MULTIPLIER)
     }
     /// Returns the raw execution fee factor (scaled into picoGAS units)
     /// cached from the Policy contract.
@@ -776,166 +504,5 @@ impl ApplicationEngine {
     /// Returns true if there are any pending storage changes.
     pub fn has_pending_storage_changes(&self) -> bool {
         self.snapshot_cache.has_pending_changes()
-    }
-}
-
-#[cfg(test)]
-mod default_interop_tests {
-    use super::*;
-
-    #[test]
-    fn faun_and_pre_faun_default_registries_are_isolated() {
-        let pre_faun = default_interops(false).expect("pre-Faun registry");
-        let faun = default_interops(true).expect("Faun registry");
-        let common = b"System.Storage.Get";
-        assert_eq!(
-            pre_faun.service.get_price(common),
-            faun.service.get_price(common)
-        );
-
-        for name in [
-            &b"System.Storage.Local.Get"[..],
-            &b"System.Storage.Local.Put"[..],
-            &b"System.Storage.Local.Delete"[..],
-            &b"System.Storage.Local.Find"[..],
-        ] {
-            assert!(pre_faun.service.get_method(name).is_none());
-            assert!(faun.service.get_method(name).is_some());
-        }
-        assert_eq!(pre_faun.service.len() + 4, faun.service.len());
-    }
-
-    /// The application engine is the single owner of Neo host-service metadata.
-    /// These tests pin that ownership: names, base prices and required call
-    /// flags are asserted on the registered descriptors themselves, so a second
-    /// copy elsewhere (the VM used to ship one) cannot silently disagree again.
-    fn descriptor<'a>(
-        service: &'a neo_vm::InteropService,
-        name: &str,
-        faun: bool,
-    ) -> &'a neo_vm::interop_service::VmInteropDescriptor {
-        service
-            .get_method(name.as_bytes())
-            .unwrap_or_else(|| panic!("{name} must be registered (faun={faun})"))
-    }
-
-    /// Storage permission bits are per operation, not per namespace.
-    ///
-    /// Reads (`Get`, `Find`, and the context helpers) require exactly
-    /// `READ_STATES`; writes (`Put`, `Delete`) require exactly `WRITE_STATES`.
-    /// Requiring both everywhere (the removed VM fast table did exactly that)
-    /// rejects legitimate read-only calls that hold only `READ_STATES`.
-    #[test]
-    fn storage_syscalls_require_per_operation_flags() {
-        const STORAGE_FLAGS: &[(&str, CallFlags)] = &[
-            ("System.Storage.GetContext", CallFlags::READ_STATES),
-            ("System.Storage.GetReadOnlyContext", CallFlags::READ_STATES),
-            ("System.Storage.AsReadOnly", CallFlags::READ_STATES),
-            ("System.Storage.Get", CallFlags::READ_STATES),
-            ("System.Storage.Find", CallFlags::READ_STATES),
-            ("System.Storage.Put", CallFlags::WRITE_STATES),
-            ("System.Storage.Delete", CallFlags::WRITE_STATES),
-        ];
-
-        const STORAGE_LOCAL_FLAGS: &[(&str, CallFlags)] = &[
-            ("System.Storage.Local.Get", CallFlags::READ_STATES),
-            ("System.Storage.Local.Find", CallFlags::READ_STATES),
-            ("System.Storage.Local.Put", CallFlags::WRITE_STATES),
-            ("System.Storage.Local.Delete", CallFlags::WRITE_STATES),
-        ];
-
-        for faun in [false, true] {
-            let registry = default_interops(faun).expect("default registry");
-            let service = &registry.service;
-
-            for (name, expected) in STORAGE_FLAGS {
-                let descriptor = descriptor(service, name, faun);
-                assert_eq!(
-                    descriptor.required_call_flags, *expected,
-                    "{name} must require exactly {expected:?} (faun={faun})"
-                );
-            }
-
-            // Faun-only `System.Storage.Local.*` mirrors the same split.
-            for (name, expected) in STORAGE_LOCAL_FLAGS {
-                if !faun {
-                    assert!(service.get_method(name.as_bytes()).is_none());
-                    continue;
-                }
-                let descriptor = descriptor(service, name, true);
-                assert_eq!(
-                    descriptor.required_call_flags, *expected,
-                    "{name} must require exactly {expected:?}"
-                );
-            }
-        }
-    }
-
-    /// Differential tie to the Coq refinement model
-    /// (`formal/coqlib/gas_price_refinement.v`): the base price registered for
-    /// every host service must equal the model's tier value.
-    #[test]
-    fn registered_gas_prices_match_coq_refinement_model() {
-        const PRICES: &[(&str, i64)] = &[
-            // System.Contract
-            ("System.Contract.Call", 1 << 15),
-            ("System.Contract.GetCallFlags", 1 << 10),
-            ("System.Contract.CreateStandardAccount", 0),
-            ("System.Contract.CreateMultisigAccount", 0),
-            ("System.Contract.CallNative", 0),
-            ("System.Contract.NativeOnPersist", 0),
-            ("System.Contract.NativePostPersist", 0),
-            // System.Runtime
-            ("System.Runtime.Platform", 1 << 3),
-            ("System.Runtime.GetTrigger", 1 << 3),
-            ("System.Runtime.GetNetwork", 1 << 3),
-            ("System.Runtime.GetAddressVersion", 1 << 3),
-            ("System.Runtime.GetTime", 1 << 3),
-            ("System.Runtime.GetScriptContainer", 1 << 3),
-            ("System.Runtime.LoadScript", 1 << 15),
-            ("System.Runtime.GetExecutingScriptHash", 1 << 4),
-            ("System.Runtime.GetCallingScriptHash", 1 << 4),
-            ("System.Runtime.GetEntryScriptHash", 1 << 4),
-            ("System.Runtime.CheckWitness", 1 << 10),
-            ("System.Runtime.GetInvocationCounter", 1 << 4),
-            ("System.Runtime.GetRandom", 0),
-            ("System.Runtime.GasLeft", 1 << 4),
-            ("System.Runtime.Log", 1 << 15),
-            ("System.Runtime.Notify", 1 << 15),
-            ("System.Runtime.GetNotifications", 1 << 12),
-            ("System.Runtime.BurnGas", 1 << 4),
-            ("System.Runtime.CurrentSigners", 1 << 4),
-            // System.Storage
-            ("System.Storage.GetContext", 1 << 4),
-            ("System.Storage.GetReadOnlyContext", 1 << 4),
-            ("System.Storage.AsReadOnly", 1 << 4),
-            ("System.Storage.Get", 1 << 15),
-            ("System.Storage.Put", 1 << 15),
-            ("System.Storage.Delete", 1 << 15),
-            ("System.Storage.Find", 1 << 15),
-            ("System.Storage.Local.Get", 1 << 15),
-            ("System.Storage.Local.Put", 1 << 15),
-            ("System.Storage.Local.Delete", 1 << 15),
-            ("System.Storage.Local.Find", 1 << 15),
-            // System.Crypto
-            ("System.Crypto.CheckSig", 1 << 15),
-            ("System.Crypto.CheckMultisig", 0),
-            // System.Iterator
-            ("System.Iterator.Next", 1 << 15),
-            ("System.Iterator.Value", 1 << 4),
-        ];
-
-        let registry = default_interops(true).expect("Faun registry");
-        let service = &registry.service;
-
-        for (name, expected) in PRICES {
-            let descriptor = descriptor(service, name, true);
-            assert_eq!(descriptor.price, *expected, "gas price for {name}");
-        }
-        assert_eq!(
-            service.len(),
-            PRICES.len(),
-            "the registered syscall surface must match the authoritative table"
-        );
     }
 }

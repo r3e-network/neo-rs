@@ -23,7 +23,7 @@
     partial or failed replay is reported instead of being silently ignored.
 
 .PARAMETER ReplayPid
-    PID of the neo-node replay to monitor (default 45700).
+    PID of the neo-node replay to monitor (default 46264, the v0.21.0 rebuild).
 
 .PARAMETER SkipWait
     Do not poll; assume the replay has finished (report regeneration).
@@ -37,14 +37,14 @@
 #>
 [CmdletBinding()]
 param(
-    [int]$ReplayPid = 45700,
+    [int]$ReplayPid = 46264,
     [int]$PollSeconds = 30,
     [double]$MaxWaitHours = 12,
     [switch]$SkipWait,
     [switch]$SkipSweep,
     [switch]$AllowIncomplete,
 
-    [string]$ReplayLog    = 'd:\Git\neo-rs\logs\mainnet-ab-optimized.stderr.log',
+    [string]$ReplayLog    = 'd:\Git\neo-rs\logs\mainnet-ab-v21.stderr.log',
     [string]$ControlLog   = 'd:\Git\neo-rs\logs\mainnet-replay-fresh.log',
     [string]$DbPath       = 'd:\Git\neo-rs\data\mainnet-ab-optimized',
     [string]$Reference    = 'd:\Git\neo-rs\data\reference_stateroots.jsonl',

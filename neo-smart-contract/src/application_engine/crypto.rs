@@ -7,6 +7,9 @@ use neo_crypto::{CryptoError, Secp256r1Crypto};
 /// `CHECK_SIG_PRICE` itself is defined once on the engine module (`super`) so the
 /// value stays a single consensus authority; this leaf only adds the multisig base.
 pub const CHECK_MULTISIG_PRICE: i64 = 0;
+/// The price of a single signature verification since `HF_Huyao`, in 1e-11 GAS
+/// (C# `ApplicationEngine.Crypto.CheckSigPriceSinceHuyao`).
+pub const CHECK_SIG_PRICE_SINCE_HUYAO: i64 = 2_326_967;
 impl ApplicationEngine {
     /// Verifies a signature using secp256r1 (NIST P-256)
     pub fn crypto_check_sig(&mut self) -> Result<bool, String> {
@@ -28,9 +31,19 @@ impl ApplicationEngine {
         if n == 0 || n > 1024 {
             return Err("Invalid public key count".to_string());
         }
-        // Matches C# ApplicationEngine.CheckMultisig: AddFee(CheckSigPrice * n * ExecFeeFactor)
-        self.add_cpu_fee(CHECK_SIG_PRICE.saturating_mul(n as i64))
-            .map_err(|e| e.to_string())?;
+        // C# v3.11.2: per-signature Huyao price (1e-11 GAS); the legacy charge
+        // applies before HF_Huyao.
+        if self.is_hardfork_enabled(Hardfork::HfHuyao) {
+            let femto = CHECK_SIG_PRICE_SINCE_HUYAO
+                .checked_mul(n as i64)
+                .and_then(|price| price.checked_mul(i64::from(self.exec_fee_factor)))
+                .ok_or_else(|| "CheckMultisig fee overflow".to_string())?;
+            self.add_femto_gas(femto, true).map_err(|e| e.to_string())?;
+        } else {
+            // Matches C# ApplicationEngine.CheckMultisig: AddFee(CheckSigPrice * n * ExecFeeFactor)
+            self.add_cpu_fee(CHECK_SIG_PRICE.saturating_mul(n as i64))
+                .map_err(|e| e.to_string())?;
+        }
         // Pop signatures second
         let signatures = self.pop_sig_elements()?;
         let m = signatures.len();
@@ -182,9 +195,10 @@ fn crypto_check_multisig_handler(
 pub(crate) fn register_crypto_interops(
     engine: &mut dyn super::state::InteropRegistration,
 ) -> VmResult<()> {
-    engine.register_host_service(
+    engine.register_host_service_huyao(
         "System.Crypto.CheckSig",
         CHECK_SIG_PRICE,
+        CHECK_SIG_PRICE_SINCE_HUYAO,
         CallFlags::NONE,
         crypto_check_sig_handler,
     )?;

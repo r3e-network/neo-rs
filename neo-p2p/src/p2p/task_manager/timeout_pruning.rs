@@ -28,10 +28,15 @@ impl TaskManager {
 
                 let expired_indexes = entry.session.prune_timed_out_index_tasks(timeout);
                 let had_expired_indexes = !expired_indexes.is_empty();
+                let expired_index_count = expired_indexes.len();
                 for index in expired_indexes {
                     this.decrement_index_task(index);
                 }
                 if had_expired_indexes {
+                    // C# v3.11.2 OnTimer counts every timed-out block task
+                    // (`BlockTaskTimeouts++`) so healthy peers are preferred on
+                    // the next request round.
+                    entry.session.note_block_task_timeouts(expired_index_count);
                     // Do not let a peer whose batch just expired immediately
                     // reclaim the whole window before healthy peers can take it.
                     request_cooldown.push(path.clone());
@@ -77,7 +82,20 @@ impl TaskManager {
             );
             self.last_persisted_at = std::time::Instant::now();
         }
-        for path in session_paths {
+        // C# v3.11.2 OnTimer: prefer peers with fewer timed-out block requests.
+        let mut ordered = session_paths
+            .into_iter()
+            .map(|path| {
+                let timeouts = self
+                    .sessions
+                    .get(&path)
+                    .map(|entry| entry.session.block_task_timeouts)
+                    .unwrap_or(0);
+                (path, timeouts)
+            })
+            .collect::<Vec<_>>();
+        ordered.sort_by_key(|(_, timeouts)| *timeouts);
+        for (path, _) in ordered {
             if !request_cooldown.contains(&path) {
                 self.request_tasks_for_path(&path);
             }

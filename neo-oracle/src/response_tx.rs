@@ -143,10 +143,21 @@ pub fn create_response_tx(
     }
     tx.set_network_fee(outcome.fee_consumed);
 
-    let exec_fee_factor = i64::from(snapshot.exec_fee_factor());
-    let multi_sig_cost = Helper::multi_signature_contract_cost(m as i32, n as i32);
-    let comp2 = exec_fee_factor * multi_sig_cost;
-    tx.set_network_fee(tx.network_fee().saturating_add(comp2));
+    // v3.11.2 `OracleService.CreateResponseTx`: parse the multi-sig
+    // parameters from the redemption script and price the contract with the
+    // shape-aware cost helper at the verification index (current index + 1,
+    // i.e. the snapshot ledger height).
+    let (parameters, _) = Helper::parse_multi_sig_contract_full(&oracle_sign_contract.script)
+        .ok_or_else(|| {
+            OracleServiceError::BuildFailed("invalid oracle multisig script".to_string())
+        })?;
+    let multi_sig_cost = Helper::multi_signature_contract_cost(
+        snapshot.protocol_settings(),
+        snapshot.ledger_height(),
+        snapshot.exec_fee_factor_with_decimals(),
+        &parameters,
+    );
+    tx.set_network_fee(tx.network_fee().saturating_add(multi_sig_cost));
 
     let size_inv = 66 * m;
     let oracle_witness_size = Witness::empty().size();

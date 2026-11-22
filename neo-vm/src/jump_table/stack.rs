@@ -93,20 +93,17 @@ fn over(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
 }
 
 /// Implements the ROT operation.
+#[inline]
 fn rot(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // ROT: [... a b c] → [... b c a]
-    // Remove item at index 2 from top (a) and push to top.
-    // 2 RC ops instead of 6.
-    let context = engine
+    // v3.11.2: `EvaluationStack.Roll(2)` brings the third item to the top
+    // without popping and pushing.
+    engine
         .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    if context.evaluation_stack().len() < 3 {
-        return Err(VmError::stack_underflow_msg(0, 0));
-    }
-
-    let item = context.evaluation_stack_mut().remove(2)?;
-    context.push(item)
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+        .evaluation_stack_mut()
+        .roll(2)?;
+    engine.collect_op_length(2);
+    Ok(())
 }
 
 /// Implements the DEPTH operation.
@@ -128,57 +125,75 @@ fn depth(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
 /// Implements the DROP operation.
 #[inline]
 fn drop(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context and pop the top item
+    // v3.11.2 Drop collects the reference delta of the pop.
+    let r = engine.reference_count();
     engine.pop()?;
+    engine.collect_ref_delta(r - engine.reference_count());
     Ok(())
 }
 
 /// Implements the NIP operation.
 fn nip(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // NIP: remove the second-to-top item. 1 RC op instead of 3.
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    // v3.11.2 Nip collects the reference delta of the removal.
+    let r = engine.reference_count();
+    {
+        let context = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    if context.evaluation_stack().len() < 2 {
-        return Err(VmError::stack_underflow_msg(0, 0));
+        if context.evaluation_stack().len() < 2 {
+            return Err(VmError::stack_underflow_msg(0, 0));
+        }
+
+        context.evaluation_stack_mut().remove(1)?;
     }
-
-    context.evaluation_stack_mut().remove(1)?;
+    engine.collect_ref_delta(r - engine.reference_count());
     Ok(())
 }
 
 /// Implements the XDROP operation.
 fn xdrop(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // XDROP: remove the item at index n from top. 2 RC ops instead of 2n+1.
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    // v3.11.2 XDrop collects the reference delta and the index it removed at.
+    let r = engine.reference_count();
+    let n = {
+        let context = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    let n = context
-        .pop()?
-        .into_int()?
-        .to_usize()
-        .ok_or_else(|| VmError::invalid_operation_msg("Invalid index"))?;
+        let n = context
+            .pop()?
+            .into_int()?
+            .to_usize()
+            .ok_or_else(|| VmError::invalid_operation_msg("Invalid index"))?;
 
-    if context.evaluation_stack().len() <= n {
-        return Err(VmError::stack_underflow_msg(0, 0));
-    }
+        if context.evaluation_stack().len() <= n {
+            return Err(VmError::stack_underflow_msg(0, 0));
+        }
 
-    context.evaluation_stack_mut().remove(n)?;
+        context.evaluation_stack_mut().remove(n)?;
+        n
+    };
+    engine.collect_ref_delta(r - engine.reference_count());
+    engine.collect_op_length(n as i64);
     Ok(())
 }
 
 /// Implements the CLEAR operation.
 fn clear(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Clear the stack
-    context.evaluation_stack_mut().clear();
-
+    // Clear the stack, collecting the released references and the old depth
+    // the way v3.11.2 Clear does.
+    let r = engine.reference_count();
+    let length = {
+        let context = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+        let length = context.evaluation_stack().len() as i64;
+        context.evaluation_stack_mut().clear();
+        length
+    };
+    engine.collect_ref_delta(r - engine.reference_count());
+    engine.collect_op_length(length);
     Ok(())
 }
 
@@ -211,8 +226,8 @@ fn pick(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
 
 /// Implements the ROLL operation.
 fn roll(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // ROLL: remove the item at index n from top and push it to the top.
-    // 3 RC ops instead of 2n+2.
+    // v3.11.2: `EvaluationStack.Roll(n)` moves the item in place without
+    // popping and pushing; out-of-bounds faults come from Roll itself.
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -220,8 +235,9 @@ fn roll(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
     let n = context.pop()?.into_int()?;
 
     if n.sign() == Sign::Minus {
+        let len = context.evaluation_stack().len();
         return Err(VmError::invalid_operation_msg(format!(
-            "The negative value {n} is invalid for OpCode.ROLL"
+            "Out of stack bounds: {n}/{len}"
         )));
     }
 
@@ -229,16 +245,36 @@ fn roll(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid index"))?;
 
-    if n == 0 {
+    context.evaluation_stack_mut().roll(n)?;
+    engine.collect_op_length(n as i64);
+    Ok(())
+}
+
+/// Implements the ROLL operation before neo-vm PR #575, the jump table every
+/// height below `HF_Huyao` runs (C# `Roll_Before575`).
+///
+/// The pre-575 `Roll` popped `n` items first, so popping the single zero off
+/// a one-item stack succeeded; the in-place v3.11.2 `Roll` faults on the same
+/// input because the stack is empty once the index is popped. The old silent
+/// behaviour is kept for that special case and everything else delegates to
+/// the current implementation, which still collects the `RunStats` length.
+pub(crate) fn roll_before_575(
+    engine: &mut ExecutionEngine,
+    instruction: &Instruction,
+) -> VmResult<()> {
+    let is_single_zero = {
+        let context = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+        let is_single_zero = context.evaluation_stack().len() == 1
+            && context.peek(0)?.as_integer()?.sign() == Sign::NoSign;
+        is_single_zero
+    };
+    if is_single_zero {
+        engine.pop()?;
         return Ok(());
     }
-
-    if context.evaluation_stack().len() <= n {
-        return Err(VmError::stack_underflow_msg(0, 0));
-    }
-
-    let item = context.evaluation_stack_mut().remove(n)?;
-    context.push(item)
+    roll(engine, instruction)
 }
 
 /// Implements the REVERSE3 operation.
@@ -249,6 +285,7 @@ fn reverse3(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     context.evaluation_stack_mut().reverse(3)?;
+    engine.collect_op_length(3);
 
     Ok(())
 }
@@ -261,6 +298,7 @@ fn reverse4(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     context.evaluation_stack_mut().reverse(4)?;
+    engine.collect_op_length(4);
 
     Ok(())
 }
@@ -286,6 +324,7 @@ fn reversen(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
 
     context.evaluation_stack_mut().reverse(n)?;
+    engine.collect_op_length(n as i64);
 
     Ok(())
 }

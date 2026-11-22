@@ -192,8 +192,27 @@ impl NeoToken {
 
         if !gas_distributions.is_empty() {
             let gas_token = GasToken::new();
+            // v3.11.2: payment callbacks may block or destroy an account after its
+            // reward was calculated. From Huyao the accrued GAS of a blocked
+            // account is minted to the Treasury instead.
+            let huyao = engine.is_hardfork_enabled(Hardfork::HfHuyao);
+            let policy = if huyao {
+                Some(crate::native::PolicyContract::new())
+            } else {
+                None
+            };
             for (account, datoshi) in gas_distributions {
-                gas_token.mint(engine, &account, &datoshi, true)?;
+                let recipient = match policy.as_ref() {
+                    Some(policy)
+                        if policy
+                            .is_blocked_snapshot(engine.snapshot_cache().as_ref(), &account)
+                            .unwrap_or(false) =>
+                    {
+                        crate::native::TreasuryContract::new().hash()
+                    }
+                    _ => account,
+                };
+                gas_token.mint(engine, &recipient, &datoshi, true)?;
             }
         }
 

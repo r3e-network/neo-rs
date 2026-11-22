@@ -541,10 +541,11 @@ fn string_split_with_empty_entries() {
 #[test]
 fn str_len_basic() {
     let stdlib = create_stdlib();
+    let engine = make_engine();
 
     // ASCII string
     let string = "hello".as_bytes().to_vec();
-    let result = stdlib.str_len(&[string]).unwrap();
+    let result = stdlib.str_len(&engine, &[string]).unwrap();
     assert_eq!(
         i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
         5
@@ -552,7 +553,7 @@ fn str_len_basic() {
 
     // Empty string
     let string = "".as_bytes().to_vec();
-    let result = stdlib.str_len(&[string]).unwrap();
+    let result = stdlib.str_len(&engine, &[string]).unwrap();
     assert_eq!(
         i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
         0
@@ -562,10 +563,11 @@ fn str_len_basic() {
 #[test]
 fn str_len_unicode() {
     let stdlib = create_stdlib();
+    let engine = make_engine();
 
     // Emoji (should count as 1 grapheme cluster)
     let string = "🦆".as_bytes().to_vec();
-    let result = stdlib.str_len(&[string]).unwrap();
+    let result = stdlib.str_len(&engine, &[string]).unwrap();
     assert_eq!(
         i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
         1
@@ -573,7 +575,7 @@ fn str_len_unicode() {
 
     // Combining character (should count as 1 grapheme cluster)
     let string = "ã".as_bytes().to_vec(); // a + combining tilde
-    let result = stdlib.str_len(&[string]).unwrap();
+    let result = stdlib.str_len(&engine, &[string]).unwrap();
     assert_eq!(
         i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
         1
@@ -581,7 +583,7 @@ fn str_len_unicode() {
 
     // Mixed ASCII and emoji
     let string = "hello🦆world".as_bytes().to_vec();
-    let result = stdlib.str_len(&[string]).unwrap();
+    let result = stdlib.str_len(&engine, &[string]).unwrap();
     assert_eq!(
         i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
         11
@@ -589,11 +591,48 @@ fn str_len_unicode() {
 
     // Multiple emojis
     let string = "🦆🦆🦆".as_bytes().to_vec();
-    let result = stdlib.str_len(&[string]).unwrap();
+    let result = stdlib.str_len(&engine, &[string]).unwrap();
     assert_eq!(
         i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
         3
     );
+}
+
+#[test]
+fn str_len_huyao_counts_codepoints() {
+    let stdlib = create_stdlib();
+    let mut settings = ProtocolSettings::default();
+    // Huyao at height 1: the engine's persisting index over an empty
+    // snapshot is 1, so the hardfork resolves through ProtocolSettings
+    // without consulting the (empty) on-chain Policy table.
+    settings.hardforks.insert(Hardfork::HfHuyao, 1);
+    let engine = ApplicationEngine::new(
+        TriggerType::Application,
+        None,
+        Arc::new(PersistenceDataCache::new(false)),
+        None,
+        settings,
+        400_000_000,
+        None,
+        crate::native::composition::default_native_services(),
+    )
+    .expect("huyao engine");
+
+    let read = |input: &str| {
+        let result = stdlib
+            .str_len(&engine, &[input.as_bytes().to_vec()])
+            .unwrap();
+        i32::from_le_bytes([result[0], result[1], result[2], result[3]])
+    };
+
+    // C# v3.11.2 `StrLen` since HF_Huyao: `str.EnumerateRunes().Count()`.
+    assert_eq!(read("hello"), 5);
+    // The flag is two regional-indicator codepoints, not one grapheme.
+    assert_eq!(read("\u{1F1FA}\u{1F1F8}"), 2);
+    // The decomposed character is two codepoints, not one grapheme.
+    assert_eq!(read("a\u{0303}"), 2);
+    // The emoji is a single codepoint on both paths.
+    assert_eq!(read("\u{1F986}"), 1);
 }
 
 #[test]

@@ -35,7 +35,7 @@ impl Array {
 
     /// Returns the number of stack references held on this array.
     #[must_use]
-    pub fn stack_references(&self) -> usize {
+    pub fn stack_references(&self) -> isize {
         self.inner.lock().stack_references
     }
 
@@ -49,6 +49,18 @@ impl Array {
     /// made the array stack referenced.
     pub(crate) fn add_stack_references(&self, count: usize) -> Option<SubItems> {
         self.inner.lock().add_stack_references(count)
+    }
+
+    /// Adds `count` stack references without touching any sub item
+    /// (C# `CompoundType.StackReferences++`).
+    pub(crate) fn increment_stack_references(&self, count: usize) {
+        self.inner.lock().inc_stack_references(count);
+    }
+
+    /// Removes `count` stack references without touching any sub item
+    /// (C# `CompoundType.StackReferences--`).
+    pub(crate) fn decrement_stack_references(&self, count: usize) {
+        self.inner.lock().dec_stack_references(count);
     }
 
     /// Removes one stack reference, if the array is stack referenced.
@@ -193,7 +205,7 @@ impl Array {
 
     /// One-lock snapshot of the fields the `Debug` renderer prints, as
     /// `(items, id, stack_references, is_read_only)`.
-    pub(crate) fn debug_snapshot(&self) -> (Vec<StackItem>, usize, usize, bool) {
+    pub(crate) fn debug_snapshot(&self) -> (Vec<StackItem>, usize, isize, bool) {
         self.inner.lock().debug_snapshot()
     }
 }

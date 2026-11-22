@@ -13,11 +13,16 @@
 use super::*;
 use crate::error::CoreResult;
 use neo_vm::jump_table::control;
+use neo_vm::run_stats::RunStats;
 
 const SYSTEM_CONTRACT_CALL_PRICE: i64 = 1 << 15;
 /// Instructions the canonical engine executes for a native ABI method entry:
 /// `PUSH0`, `System.Contract.CallNative`, `RET`. See `build_native_contract_state`.
 const NATIVE_METHOD_ENTRY_INSTRUCTIONS: u64 = 3;
+/// The NEP-17 template packs exactly four arguments (`from`, `to`, `amount`,
+/// `data`); the parser rejects every other item count, so the canonical `PACK`
+/// price can be reproduced from this constant.
+const TEMPLATE_PACKED_ITEMS: i32 = 4;
 
 impl ApplicationEngine {
     /// Returns whether direct native dispatch is applicable without changing
@@ -153,21 +158,68 @@ impl ApplicationEngine {
         state
     }
 
+    /// Charges one instruction exactly like the canonical hooks do.
+    ///
+    /// Before `HF_Huyao` the v3.10 opcode table applies up front
+    /// (`pre_execute_instruction`); since `HF_Huyao` the `OpcodeV1` coefficient
+    /// is charged from the `RunStats` the interpreter would have collected
+    /// (`post_execute_instruction`, which neo-vm runs even when the
+    /// instruction faulted). `stats` must therefore carry the values the
+    /// canonical handler records — only `PACK` and `ASSERT` need non-default
+    /// stats in the transfer template.
+    fn charge_direct_instruction(&mut self, opcode: OpCode, stats: &RunStats) -> VmResult<()> {
+        self.capture_whitelisted();
+        if self.use_dynamic_pricing {
+            let price = self.opcode_v1(i64::from(self.exec_fee_factor), opcode.byte(), stats);
+            self.add_femto_gas(price, true)
+                .map_err(map_core_error_to_vm_error)
+        } else {
+            let price = Self::get_opcode_price(opcode.byte());
+            if price > 0 {
+                self.add_cpu_fee(price).map_err(map_core_error_to_vm_error)
+            } else {
+                Ok(())
+            }
+        }
+    }
+
     fn execute_direct_nep17_transfer_inner(&mut self, params: &TransferParams) -> VmResult<()> {
         for instruction in &params.entry_instructions {
             self.set_direct_instruction_pointer(instruction.offset)?;
             self.charge_direct_instructions(1)?;
-            self.add_cpu_fee(Self::get_opcode_price(instruction.opcode.byte()))
-                .map_err(map_core_error_to_vm_error)?;
             match instruction.opcode {
-                OpCode::SYSCALL => self.direct_native_contract_call(params)?,
+                OpCode::SYSCALL => {
+                    self.charge_direct_instruction(OpCode::SYSCALL, &RunStats::new())?;
+                    self.direct_native_contract_call(params)?
+                }
                 OpCode::ASSERT => {
+                    // The canonical ASSERT records the pop's reference delta on
+                    // the success path only, and the post hook still charges
+                    // the instruction when the assert faults (neo-vm runs it
+                    // in a `finally`), so the charge precedes the fault here.
+                    let before = self.vm_engine.engine().reference_counter().signed_count() as i64;
                     let assertion = self.vm_engine.engine_mut().pop()?;
-                    if !assertion.as_boolean()? {
+                    let succeeded = assertion.as_boolean()?;
+                    let mut stats = RunStats::new();
+                    if succeeded {
+                        stats.collect_ref_delta(
+                            (before
+                                - self.vm_engine.engine().reference_counter().signed_count() as i64)
+                                as i32,
+                        );
+                    }
+                    self.charge_direct_instruction(OpCode::ASSERT, &stats)?;
+                    if !succeeded {
                         return Err(VmError::AssertFailed);
                     }
                 }
-                _ => {}
+                opcode => {
+                    let mut stats = RunStats::new();
+                    if opcode == OpCode::PACK {
+                        stats.collect_op_length(TEMPLATE_PACKED_ITEMS);
+                    }
+                    self.charge_direct_instruction(opcode, &stats)?;
+                }
             }
         }
         self.set_direct_instruction_pointer(params.entry_end_offset)?;
@@ -177,8 +229,19 @@ impl ApplicationEngine {
     }
 
     fn direct_native_contract_call(&mut self, params: &TransferParams) -> VmResult<()> {
-        self.add_cpu_fee(SYSTEM_CONTRACT_CALL_PRICE)
-            .map_err(map_core_error_to_vm_error)?;
+        // C# `System.Contract.Call` price: the `InteropPriceAttribute`
+        // coefficient since `HF_Huyao`, the static descriptor price before it
+        // (mirrors `invoke_syscall`).
+        if self.is_hardfork_enabled(Hardfork::HfHuyao) {
+            let femto_gas = op_code_prices_v1::CONTRACT_CALL_PRICE
+                .checked_mul(i64::from(self.exec_fee_factor))
+                .ok_or_else(|| VmError::invalid_operation_msg("Syscall price overflow"))?;
+            self.add_femto_gas(femto_gas, true)
+                .map_err(map_core_error_to_vm_error)?;
+        } else {
+            self.add_cpu_fee(SYSTEM_CONTRACT_CALL_PRICE)
+                .map_err(map_core_error_to_vm_error)?;
+        }
         let contract_hash = UInt160::from_bytes(&params.contract_hash)
             .map_err(|error| contract_call_vm_error(error.to_string()))?;
         let args = vec![
@@ -200,21 +263,18 @@ impl ApplicationEngine {
             .ok_or_else(|| VmError::invalid_operation_msg("No native execution context"))?
             .instruction_pointer();
         self.charge_direct_instructions(1)?;
-        self.add_cpu_fee(Self::get_opcode_price(OpCode::PUSH0.byte()))
-            .map_err(map_core_error_to_vm_error)?;
+        self.charge_direct_instruction(OpCode::PUSH0, &RunStats::new())?;
         self.vm_engine.engine_mut().push(StackItem::from_int(0))?;
         self.set_direct_instruction_pointer(native_offset + 1)?;
         self.charge_direct_instructions(1)?;
-        self.add_cpu_fee(Self::get_opcode_price(OpCode::SYSCALL.byte()))
-            .map_err(map_core_error_to_vm_error)?;
+        self.charge_direct_instruction(OpCode::SYSCALL, &RunStats::new())?;
         self.attach_host();
         self.vm_engine
             .engine_mut()
             .on_syscall(neo_vm::interop_hash("System.Contract.CallNative"))?;
         self.set_direct_instruction_pointer(native_offset + 6)?;
         self.charge_direct_instructions(1)?;
-        self.add_cpu_fee(Self::get_opcode_price(OpCode::RET.byte()))
-            .map_err(map_core_error_to_vm_error)?;
+        self.charge_direct_instruction(OpCode::RET, &RunStats::new())?;
         control::ret(self.vm_engine.engine_mut(), &Instruction::ret())
     }
 

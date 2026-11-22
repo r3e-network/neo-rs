@@ -4,7 +4,7 @@
 
 use super::{
     CallFlags, DEFAULT_GAS_LIMIT, EvaluationStack, ExecutionContext, ExecutionEngine,
-    ExecutionEngineLimits, InteropService, JumpTable, ReferenceCounter, StackAllocator,
+    ExecutionEngineLimits, InteropService, JumpTable, ReferenceCounter, RunStats, StackAllocator,
     StackAllocatorLimits, StackAllocatorStats, StackItem, VMState, VmError,
 };
 
@@ -41,6 +41,7 @@ impl ExecutionEngine {
             result_stack,
             stack_allocator: StackAllocator::default(),
             reference_counter,
+            run_stats: RunStats::default(),
             uncaught_exception: None,
             unhandled_vm_exception: false,
             instructions_executed: 0,
@@ -113,6 +114,51 @@ impl ExecutionEngine {
     #[must_use]
     pub const fn reference_counter(&self) -> &ReferenceCounter {
         &self.reference_counter
+    }
+
+    /// Returns the statistics collected for the instruction that just ran.
+    #[inline]
+    #[must_use]
+    pub const fn run_stats(&self) -> &RunStats {
+        &self.run_stats
+    }
+
+    /// Returns the reference counter total as a signed number.
+    ///
+    /// neo-vm v3.11.2 `ReferenceCounter.Count` is an `int` that can go
+    /// negative; the dynamic price accounting compares snapshots of it, so the
+    /// signed value is the one to use.
+    #[inline]
+    pub(crate) fn reference_count(&self) -> i64 {
+        self.reference_counter.signed_count() as i64
+    }
+
+    /// Records the reference-count delta, `before - after`, for the current
+    /// instruction (`RunStats.CollectRefDelta`).
+    #[inline]
+    pub(crate) fn collect_ref_delta(&mut self, refs_delta: i64) {
+        self.run_stats.collect_ref_delta(refs_delta as i32);
+    }
+
+    /// Records the operand length for the current instruction
+    /// (`RunStats.CollectOpLength`).
+    #[inline]
+    pub(crate) fn collect_op_length(&mut self, length: i64) {
+        self.run_stats.collect_op_length(length as i32);
+    }
+
+    /// Records the operand type for the current instruction
+    /// (`RunStats.CollectType`).
+    #[inline]
+    pub(crate) fn collect_type(&mut self, item_type: crate::run_stats::StackItemType) {
+        self.run_stats.collect_type(item_type);
+    }
+
+    /// Records the number of cloned items for the current instruction
+    /// (`RunStats.CollectClonedItems`).
+    #[inline]
+    pub(crate) fn collect_cloned_items(&mut self, cloned_items: i64) {
+        self.run_stats.collect_cloned_items(cloned_items as i32);
     }
 
     /// Returns the execution limits configured for this engine.

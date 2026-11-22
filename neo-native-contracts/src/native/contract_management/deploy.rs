@@ -78,7 +78,9 @@ impl ContractManagement {
         let manifest: ContractManifest = serde_json::from_str(&manifest_json)
             .map_err(|e| Error::deserialization(format!("Invalid manifest: {e}")))?;
 
-        Self::validate_manifest(&manifest)?;
+        // C# parses deploy manifests with `LegacyContractPermissionDescriptorComparer`
+        // until `HF_Huyao`, so the duplicate rule below is height dependent.
+        Self::validate_manifest(&manifest, !engine.is_hardfork_enabled(Hardfork::HfHuyao))?;
 
         // Require transaction sender (matches C# behaviour)
         let sender = engine

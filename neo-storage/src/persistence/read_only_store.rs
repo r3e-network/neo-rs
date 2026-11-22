@@ -76,6 +76,25 @@ where
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (TKey, TValue)> + '_>;
 
+    /// Finds the entries starting with the specified prefix, skipping the
+    /// first `skip` entries in seek order.
+    ///
+    /// Mirrors C# v3.11.2 `IReadOnlyStore.Find(keyPrefix, direction, skip)`.
+    /// A `skip` beyond the matching range yields an empty iterator; `usize`
+    /// enforces the non-negative argument validated by the C# version.
+    fn find_with_skip<'a>(
+        &'a self,
+        key_prefix: Option<&TKey>,
+        direction: SeekDirection,
+        skip: usize,
+    ) -> Box<dyn Iterator<Item = (TKey, TValue)> + 'a>
+    where
+        TKey: 'a,
+        TValue: 'a,
+    {
+        Box::new(self.find(key_prefix, direction).skip(skip))
+    }
+
     /// Gets the entry with the specified key, returning `None` if absent.
     fn get(&self, key: &TKey) -> Option<TValue> {
         self.try_get(key)

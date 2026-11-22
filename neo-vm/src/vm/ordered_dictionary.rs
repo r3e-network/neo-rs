@@ -74,6 +74,16 @@ where
         }
     }
 
+    /// Returns the insertion index of `key`, if present.
+    pub fn index_of(&self, key: &K) -> Option<usize> {
+        self.entries.iter().position(|(k, _)| k == key)
+    }
+
+    /// Removes and returns the entry at `index`.
+    pub fn remove_at(&mut self, index: usize) -> Option<(K, V)> {
+        (index < self.entries.len()).then(|| self.entries.remove(index))
+    }
+
     /// Clears the dictionary, removing every entry.
     pub fn clear(&mut self) {
         self.entries.clear();

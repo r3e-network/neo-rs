@@ -69,79 +69,91 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 // ============================================================================
 
 fn init_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let ctx = require_context(engine)?;
+    let local_count;
+    let argument_count;
+    {
+        let ctx = require_context(engine)?;
 
-    if ctx.local_variables().is_some() || ctx.arguments().is_some() {
-        return Err(VmError::invalid_operation_msg(
-            "INITSLOT cannot be executed twice",
-        ));
+        if ctx.local_variables().is_some() || ctx.arguments().is_some() {
+            return Err(VmError::invalid_operation_msg(
+                "INITSLOT cannot be executed twice",
+            ));
+        }
+
+        let operand = instruction.operand();
+        local_count = *operand
+            .first()
+            .ok_or_else(|| VmError::invalid_instruction_msg("Missing local count"))?
+            as usize;
+        argument_count = *operand
+            .get(1)
+            .ok_or_else(|| VmError::invalid_instruction_msg("Missing argument count"))?
+            as usize;
+
+        if local_count == 0 && argument_count == 0 {
+            return Err(VmError::invalid_operation_msg(
+                "The operand is invalid for OpCode.INITSLOT",
+            ));
+        }
+
+        if local_count > 0 {
+            let rc = ctx.evaluation_stack().reference_counter().clone();
+            ctx.set_local_variables(Some(crate::slot::Slot::new(local_count, rc)));
+        }
+
+        if argument_count > 0 {
+            let mut arg_items = Vec::with_capacity(argument_count);
+            // C# Neo.VM v3.11.2 InitSlot creates the argument slot with the new
+            // `Slot(EvaluationStack, n, counter)` constructor: items are popped
+            // with `PopNoRef`, so their stack references are kept (items[0] is
+            // the topmost popped element) and the counter is not adjusted.
+            let rc = {
+                let mut stack = ctx.evaluation_stack_mut();
+                for _ in 0..argument_count {
+                    arg_items.push(stack.pop_no_ref()?);
+                }
+                stack.reference_counter().clone()
+            };
+            ctx.set_arguments(Some(crate::slot::Slot::from_popped_items(arg_items, rc)));
+        }
     }
-
-    let operand = instruction.operand();
-    let local_count = *operand
-        .first()
-        .ok_or_else(|| VmError::invalid_instruction_msg("Missing local count"))?
-        as usize;
-    let argument_count = *operand
-        .get(1)
-        .ok_or_else(|| VmError::invalid_instruction_msg("Missing argument count"))?
-        as usize;
-
-    if local_count == 0 && argument_count == 0 {
-        return Err(VmError::invalid_operation_msg(
-            "The operand is invalid for OpCode.INITSLOT",
-        ));
-    }
-
-    if local_count > 0 {
-        let rc = ctx.evaluation_stack().reference_counter().clone();
-        ctx.set_local_variables(Some(crate::slot::Slot::new(local_count, rc)));
-    }
-
-    if argument_count > 0 {
-        let mut arg_items = Vec::with_capacity(argument_count);
-        // C# Neo.VM JumpTable.InitSlot consumes arguments from the evaluation stack in order:
-        // `for (int i = 0; i < count; i++) items[i] = EvaluationStack.Pop();`
-        // Thus items[0] is the topmost popped element (first popped from stack top).
-        // Keep argument pops and the final reference-counter lookup under one stack lock.
-        let rc = {
-            let mut stack = ctx.evaluation_stack_mut();
-            for _ in 0..argument_count {
-                arg_items.push(stack.pop()?);
-            }
-            stack.reference_counter().clone()
-        };
-        ctx.set_arguments(Some(crate::slot::Slot::with_items(arg_items, rc)));
-    }
-
+    // C# v3.11.2 InitSlot collects the locals count as a reference delta and
+    // the arguments count as the operation length, unconditionally after both
+    // slot creations (an aborted init propagates before reaching them).
+    engine.collect_ref_delta(local_count as i64);
+    engine.collect_op_length(argument_count as i64);
     Ok(())
 }
 
 fn init_static_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let ctx = require_context(engine)?;
+    let static_count;
+    {
+        let ctx = require_context(engine)?;
 
-    let static_count = *instruction
-        .operand()
-        .first()
-        .ok_or_else(|| VmError::invalid_instruction_msg("Missing static count"))?
-        as usize;
+        static_count = *instruction
+            .operand()
+            .first()
+            .ok_or_else(|| VmError::invalid_instruction_msg("Missing static count"))?
+            as usize;
 
-    if ctx.has_static_fields() {
-        return Err(VmError::invalid_operation_msg(
-            "INITSSLOT cannot be executed twice",
-        ));
+        if ctx.has_static_fields() {
+            return Err(VmError::invalid_operation_msg(
+                "INITSSLOT cannot be executed twice",
+            ));
+        }
+
+        // C# throws InvalidOperationException when static_count == 0; mirror that behavior.
+        if static_count == 0 {
+            return Err(VmError::invalid_operation_msg(
+                "The operand is invalid for OpCode.INITSSLOT",
+            ));
+        }
+
+        let rc = ctx.evaluation_stack().reference_counter().clone();
+        ctx.set_static_fields(Some(crate::slot::Slot::new(static_count, rc)));
     }
-
-    // C# throws InvalidOperationException when static_count == 0; mirror that behavior.
-    if static_count == 0 {
-        return Err(VmError::invalid_operation_msg(
-            "The operand is invalid for OpCode.INITSSLOT",
-        ));
-    }
-
-    let rc = ctx.evaluation_stack().reference_counter().clone();
-    ctx.set_static_fields(Some(crate::slot::Slot::new(static_count, rc)));
-
+    // C# v3.11.2 InitSSlot collects the static field count as a reference delta.
+    engine.collect_ref_delta(static_count as i64);
     Ok(())
 }
 
@@ -158,9 +170,15 @@ fn load_static_field_n(engine: &mut ExecutionEngine, index: usize) -> VmResult<(
 
 #[inline]
 fn store_static_field_n(engine: &mut ExecutionEngine, index: usize) -> VmResult<()> {
-    let ctx = require_context(engine)?;
-    let value = ctx.pop()?;
-    ctx.store_static_field(index, value)
+    // C# v3.11.2 ExecuteStoreToSlot: capture the counter before the store and
+    // collect the reference delta afterwards (nothing is collected on failure).
+    let r = engine.reference_count();
+    {
+        let ctx = require_context(engine)?;
+        ctx.store_static_field_from_stack(index)?;
+    }
+    engine.collect_ref_delta(r - engine.reference_count());
+    Ok(())
 }
 
 fn load_static_field(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
@@ -192,9 +210,15 @@ fn load_local_n(engine: &mut ExecutionEngine, index: usize) -> VmResult<()> {
 
 #[inline]
 fn store_local_n(engine: &mut ExecutionEngine, index: usize) -> VmResult<()> {
-    let ctx = require_context(engine)?;
-    let value = ctx.pop()?;
-    ctx.store_local(index, value)
+    // C# v3.11.2 ExecuteStoreToSlot: capture the counter before the store and
+    // collect the reference delta afterwards (nothing is collected on failure).
+    let r = engine.reference_count();
+    {
+        let ctx = require_context(engine)?;
+        ctx.store_local_from_stack(index)?;
+    }
+    engine.collect_ref_delta(r - engine.reference_count());
+    Ok(())
 }
 
 fn load_local(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
@@ -226,9 +250,15 @@ fn load_argument_n(engine: &mut ExecutionEngine, index: usize) -> VmResult<()> {
 
 #[inline]
 fn store_argument_n(engine: &mut ExecutionEngine, index: usize) -> VmResult<()> {
-    let ctx = require_context(engine)?;
-    let value = ctx.pop()?;
-    ctx.store_argument(index, value)
+    // C# v3.11.2 ExecuteStoreToSlot: capture the counter before the store and
+    // collect the reference delta afterwards (nothing is collected on failure).
+    let r = engine.reference_count();
+    {
+        let ctx = require_context(engine)?;
+        ctx.store_argument_from_stack(index)?;
+    }
+    engine.collect_ref_delta(r - engine.reference_count());
+    Ok(())
 }
 
 fn load_argument(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
@@ -329,6 +359,9 @@ mod init_slot_lock_tests {
         assert_eq!(locals.len(), 2);
         assert!(locals.iter().all(|item| *item == StackItem::Null));
         assert_eq!(ctx.evaluation_stack().len(), 0);
-        assert_eq!(engine.reference_counter().count(), 2);
+        // v3.11.2 pops arguments with `PopNoRef`: on the fault path the two
+        // popped items keep their references (+2) and the locals slot holds its
+        // two Nulls (+2).
+        assert_eq!(engine.reference_counter().count(), 4);
     }
 }

@@ -42,7 +42,7 @@ impl Struct {
 
     /// Returns the number of stack references held on this struct.
     #[must_use]
-    pub fn stack_references(&self) -> usize {
+    pub fn stack_references(&self) -> isize {
         self.inner.lock().stack_references
     }
 
@@ -56,6 +56,18 @@ impl Struct {
     /// made the struct stack referenced.
     pub(crate) fn add_stack_references(&self, count: usize) -> Option<SubItems> {
         self.inner.lock().add_stack_references(count)
+    }
+
+    /// Adds `count` stack references without touching any sub item
+    /// (C# `CompoundType.StackReferences++`).
+    pub(crate) fn increment_stack_references(&self, count: usize) {
+        self.inner.lock().inc_stack_references(count);
+    }
+
+    /// Removes `count` stack references without touching any sub item
+    /// (C# `CompoundType.StackReferences--`).
+    pub(crate) fn decrement_stack_references(&self, count: usize) {
+        self.inner.lock().dec_stack_references(count);
     }
 
     /// Removes one stack reference, if the struct is stack referenced.
@@ -181,9 +193,23 @@ impl Struct {
     /// the budget is spent per sub item, so the walk is bounded by
     /// `max_stack_size` instead of the native stack.
     pub fn clone_with_limits(&self, limits: &crate::ExecutionEngineLimits) -> VmResult<Self> {
-        let mut remaining = i64::from(limits.max_stack_size) - 1;
+        Ok(self.clone_with_limits_counted(limits)?.0)
+    }
+
+    /// Clones the struct like [`clone_with_limits`](Self::clone_with_limits),
+    /// also reporting how many clone-budget units were spent.
+    ///
+    /// neo-vm v3.11.2 `Struct.Clone(limits, out nClonedItems)`. The dynamic
+    /// price of SETITEM/APPEND/VALUES charges those units.
+    pub fn clone_with_limits_counted(
+        &self,
+        limits: &crate::ExecutionEngineLimits,
+    ) -> VmResult<(Self, i64)> {
+        let budget = i64::from(limits.max_stack_size);
+        let mut remaining = budget - 1;
         let mut visited = HashSet::new();
-        self.clone_with_remaining(&mut remaining, &mut visited)
+        let cloned = self.clone_with_remaining(&mut remaining, &mut visited)?;
+        Ok((cloned, budget - remaining))
     }
 
     /// The traversal of [`clone_with_limits`](Self::clone_with_limits) on an
@@ -263,7 +289,7 @@ impl Struct {
     }
 
     /// One-lock snapshot of the fields the `Debug` renderer prints.
-    pub(crate) fn debug_snapshot(&self) -> (Vec<StackItem>, usize, usize, bool) {
+    pub(crate) fn debug_snapshot(&self) -> (Vec<StackItem>, usize, isize, bool) {
         self.inner.lock().debug_snapshot()
     }
 

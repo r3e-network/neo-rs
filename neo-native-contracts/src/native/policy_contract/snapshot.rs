@@ -74,6 +74,28 @@ impl PolicyContract {
         }
     }
 
+    /// Reads ExecFeeFactor with the full decimals applied
+    /// (C# `Policy.GetExecFeeFactorWithDecimals`, v3.11.2).
+    ///
+    /// Rust stores the policy factor pre-multiplied by `FEE_FACTOR` once Faun
+    /// is active, so the raw getter always returns the human-readable value;
+    /// multiplying by `FEE_FACTOR` restores the engine decimal form at every
+    /// hardfork height.
+    pub fn get_exec_fee_factor_with_decimals_snapshot<S>(
+        &self,
+        snapshot: &S,
+        settings: &ProtocolSettings,
+        block_height: u32,
+    ) -> Result<i64>
+    where
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
+    {
+        Ok(
+            self.get_exec_fee_factor_snapshot(snapshot, settings, block_height)? as i64
+                * neo_smart_contract::application_engine::FEE_FACTOR as i64,
+        )
+    }
+
     /// Reads the attribute fee for the given attribute type from the snapshot.
     pub fn get_attribute_fee_snapshot<S>(
         &self,

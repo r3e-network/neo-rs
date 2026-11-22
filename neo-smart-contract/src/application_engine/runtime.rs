@@ -51,6 +51,15 @@ impl ApplicationEngine {
         if call_flags.bits() & !CallFlags::ALL.bits() != 0 {
             return Err(format!("Invalid call flags: {call_flags:?}"));
         }
+        // C# v3.11.2: Huyao prices LoadScript per script byte on top of the
+        // syscall's `[InteropPrice]` base.
+        if self.is_hardfork_enabled(Hardfork::HfHuyao) {
+            let femto = op_code_prices_v1::LOAD_SCRIPT_PRICE_PER_BYTE
+                .checked_mul(script.len() as i64)
+                .and_then(|value| value.checked_mul(i64::from(self.exec_fee_factor)))
+                .ok_or_else(|| "LoadScript fee overflow".to_string())?;
+            self.add_femto_gas(femto, true).map_err(|e| e.to_string())?;
+        }
         let calling_context = self
             .current_context()
             .cloned()
@@ -97,22 +106,33 @@ impl ApplicationEngine {
     pub fn runtime_check_witness(&mut self) -> Result<(), String> {
         let hash_or_pubkey = self.pop_bytes()?;
         // Check if it's a hash (20 bytes) or public key (33 bytes)
-        let result = match hash_or_pubkey.len() {
+        let (result, rules_count) = match hash_or_pubkey.len() {
             20 => {
                 let hash = UInt160::from_bytes(&hash_or_pubkey).map_err(|e| e.to_string())?;
-                self.check_witness_hash(&hash).map_err(|e| e.to_string())?
+                self.check_witness_internal_counted(&hash)
+                    .map_err(|e| e.to_string())?
             }
             33 => {
                 // Convert public key to hash (validates the curve point).
                 let hash = self
                     .pubkey_to_hash(&hash_or_pubkey)
                     .map_err(|e| e.clone())?;
-                self.check_witness_hash(&hash).map_err(|e| e.to_string())?
+                self.check_witness_internal_counted(&hash)
+                    .map_err(|e| e.to_string())?
             }
             _ => {
                 return Err("Invalid hashOrPubkey length".to_string());
             }
         };
+        // C# v3.11.2: Huyao prices each evaluated witness rule on top of the
+        // syscall's `[InteropPrice]` base.
+        if self.is_hardfork_enabled(Hardfork::HfHuyao) && rules_count > 0 {
+            let femto = op_code_prices_v1::CHECK_WITNESS_PRICE_PER_RULE
+                .checked_mul(rules_count)
+                .and_then(|value| value.checked_mul(i64::from(self.exec_fee_factor)))
+                .ok_or_else(|| "CheckWitness fee overflow".to_string())?;
+            self.add_femto_gas(femto, true).map_err(|e| e.to_string())?;
+        }
         self.push_boolean(result)
     }
     /// Gets invocation counter
@@ -137,8 +157,12 @@ impl ApplicationEngine {
         // C# v3.9.1 ApplicationEngine.Runtime.cs:315-324:
         // HF_Aspidochelone enabled → price 1<<13 (new per-call counter, more work)
         // HF_Aspidochelone disabled → price 1<<4 (legacy single-shot path)
-        let price: i64 = if aspid_enabled { 1 << 13 } else { 1 << 4 };
-        self.add_cpu_fee(price).map_err(|e| e.to_string())?;
+        // C# v3.11.2: this in-handler fee is skipped under HF_Huyao, which
+        // prices the call through its `[InteropPrice]` base instead.
+        if !self.is_hardfork_enabled(Hardfork::HfHuyao) {
+            let price: i64 = if aspid_enabled { 1 << 13 } else { 1 << 4 };
+            self.add_cpu_fee(price).map_err(|e| e.to_string())?;
+        }
         let bigint = BigInt::from_bytes_le(Sign::Plus, &buffer);
         self.push(StackItem::from_int(bigint))
             .map_err(|e| e.clone())
@@ -250,7 +274,17 @@ impl ApplicationEngine {
         self.reserve_notification_slot()?;
         // Basilisk: notification state normalizes Buffer to ByteString (C# parity).
         let state = coerce_notify_state_basilisk(state);
-        self.send_notification(script_hash, event_name, state)
+        let count = self.send_notification_counted(script_hash, event_name, state)?;
+        // C# v3.11.2: Huyao prices every item visited while copying the
+        // arguments, on top of the syscall's `[InteropPrice]` base.
+        if self.is_hardfork_enabled(Hardfork::HfHuyao) {
+            let femto = op_code_prices_v1::NOTIFY_PRICE_PER_ITEM
+                .checked_mul(count)
+                .and_then(|value| value.checked_mul(i64::from(self.exec_fee_factor)))
+                .ok_or_else(|| "Notify fee overflow".to_string())?;
+            self.add_femto_gas(femto, true).map_err(|e| e.to_string())?;
+        }
+        Ok(())
     }
     /// Gets notifications
     pub fn runtime_get_notifications(&mut self) -> Result<(), String> {
@@ -266,6 +300,15 @@ impl ApplicationEngine {
         };
         // Get notifications for the specified contract (or all if None)
         let notifications = self.get_notifications(hash)?;
+        // C# v3.11.2: Huyao prices each returned notification, on top of the
+        // syscall's `[InteropPrice]` base.
+        if self.is_hardfork_enabled(Hardfork::HfHuyao) && !notifications.is_empty() {
+            let femto = op_code_prices_v1::GET_NOTIFICATIONS_PRICE_PER_NOTIFICATION
+                .checked_mul(notifications.len() as i64)
+                .and_then(|value| value.checked_mul(i64::from(self.exec_fee_factor)))
+                .ok_or_else(|| "GetNotifications fee overflow".to_string())?;
+            self.add_femto_gas(femto, true).map_err(|e| e.to_string())?;
+        }
         self.push_array(notifications)
     }
     /// Burns gas
@@ -286,12 +329,27 @@ impl ApplicationEngine {
         let Some(tx) = container.as_ref().as_any().downcast_ref::<Transaction>() else {
             return self.push_null();
         };
+        // C# v3.11.2 `RuntimeCurrentSigners`: the reference count is captured
+        // before the signers are converted and pushed, and Huyao prices every
+        // reference created in between.
+        let refs_before = self.vm_reference_count();
         let items = tx
             .signers()
             .iter()
             .map(|s| signer_to_stack_item(s).map_err(|e| e.to_string()))
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        self.push_array(items)
+        self.push_array(items)?;
+        if self.is_hardfork_enabled(Hardfork::HfHuyao) {
+            let refs_delta = self.vm_reference_count() - refs_before;
+            if refs_delta > 0 {
+                let femto = op_code_prices_v1::CURRENT_SIGNERS_PRICE_PER_REF
+                    .checked_mul(refs_delta)
+                    .and_then(|value| value.checked_mul(i64::from(self.exec_fee_factor)))
+                    .ok_or_else(|| "CurrentSigners fee overflow".to_string())?;
+                self.add_femto_gas(femto, true).map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
     }
 }
 fn map_runtime_result(service: &str, result: Result<(), String>) -> VmResult<()> {
@@ -468,9 +526,10 @@ fn runtime_current_signers_handler(
 pub(crate) fn register_runtime_interops(
     engine: &mut dyn super::state::InteropRegistration,
 ) -> VmResult<()> {
-    engine.register_host_service(
+    engine.register_host_service_huyao(
         "System.Runtime.Platform",
         1 << 3,
+        op_code_prices_v1::GET_PLATFORM_PRICE,
         CallFlags::NONE,
         runtime_platform_handler,
     )?;
@@ -480,33 +539,38 @@ pub(crate) fn register_runtime_interops(
         CallFlags::NONE,
         runtime_get_trigger_handler,
     )?;
-    engine.register_host_service(
+    engine.register_host_service_huyao(
         "System.Runtime.GetNetwork",
         1 << 3,
+        op_code_prices_v1::GET_NETWORK_PRICE,
         CallFlags::NONE,
         runtime_get_network_handler,
     )?;
-    engine.register_host_service(
+    engine.register_host_service_huyao(
         "System.Runtime.GetAddressVersion",
         1 << 3,
+        op_code_prices_v1::GET_PLATFORM_PRICE,
         CallFlags::NONE,
         runtime_get_address_version_handler,
     )?;
-    engine.register_host_service(
+    engine.register_host_service_huyao(
         "System.Runtime.GetTime",
         1 << 3,
+        op_code_prices_v1::GET_TIME_PRICE,
         CallFlags::NONE,
         runtime_get_time_handler,
     )?;
-    engine.register_host_service(
+    engine.register_host_service_huyao(
         "System.Runtime.GetScriptContainer",
         1 << 3,
+        op_code_prices_v1::GET_SCRIPT_CONTAINER_PRICE,
         CallFlags::NONE,
         runtime_get_script_container_handler,
     )?;
-    engine.register_host_service(
+    engine.register_host_service_huyao(
         "System.Runtime.LoadScript",
         1 << 15,
+        op_code_prices_v1::LOAD_SCRIPT_BASE_PRICE,
         CallFlags::ALLOW_CALL,
         runtime_load_script_handler,
     )?;
@@ -528,21 +592,24 @@ pub(crate) fn register_runtime_interops(
         CallFlags::NONE,
         runtime_get_entry_script_hash_handler,
     )?;
-    engine.register_host_service(
+    engine.register_host_service_huyao(
         "System.Runtime.CheckWitness",
         1 << 10,
+        op_code_prices_v1::CHECK_WITNESS_BASE_PRICE,
         CallFlags::NONE,
         runtime_check_witness_handler,
     )?;
-    engine.register_host_service(
+    engine.register_host_service_huyao(
         "System.Runtime.GetInvocationCounter",
         1 << 4,
+        op_code_prices_v1::GET_INVOCATION_COUNTER_PRICE,
         CallFlags::NONE,
         runtime_get_invocation_counter_handler,
     )?;
-    engine.register_host_service(
+    engine.register_host_service_huyao(
         "System.Runtime.GetRandom",
         0,
+        op_code_prices_v1::GET_RANDOM_PRICE,
         CallFlags::NONE,
         runtime_get_random_handler,
     )?;
@@ -552,33 +619,38 @@ pub(crate) fn register_runtime_interops(
         CallFlags::NONE,
         runtime_gas_left_handler,
     )?;
-    engine.register_host_service(
+    engine.register_host_service_huyao(
         "System.Runtime.Log",
         1 << 15,
+        op_code_prices_v1::RUNTIME_LOG_PRICE,
         CallFlags::ALLOW_NOTIFY,
         runtime_log_handler,
     )?;
-    engine.register_host_service(
+    engine.register_host_service_huyao(
         "System.Runtime.Notify",
         1 << 15,
+        op_code_prices_v1::NOTIFY_BASE_PRICE,
         CallFlags::ALLOW_NOTIFY,
         runtime_notify_handler,
     )?;
-    engine.register_host_service(
+    engine.register_host_service_huyao(
         "System.Runtime.GetNotifications",
         1 << 12,
+        op_code_prices_v1::GET_NOTIFICATIONS_BASE_PRICE,
         CallFlags::NONE,
         runtime_get_notifications_handler,
     )?;
-    engine.register_host_service(
+    engine.register_host_service_huyao(
         "System.Runtime.BurnGas",
         1 << 4,
+        op_code_prices_v1::BURN_GAS_PRICE,
         CallFlags::NONE,
         runtime_burn_gas_handler,
     )?;
-    engine.register_host_service(
+    engine.register_host_service_huyao(
         "System.Runtime.CurrentSigners",
         1 << 4,
+        op_code_prices_v1::CURRENT_SIGNERS_BASE_PRICE,
         CallFlags::NONE,
         runtime_current_signers_handler,
     )?;

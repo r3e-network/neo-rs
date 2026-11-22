@@ -388,6 +388,14 @@ fn replay_serially(
             committed.merge_committed(&execution.rw_set);
         }
         VmState::FAULT => {
+            // Same C# v3.11.2 `Blockchain.Persist` rethrow semantics as the
+            // serial loop: an unknown hardfork halts the node.
+            if let Some(hardfork_name) = port.fault_unknown_hardfork_name() {
+                return Err(LedgerError::UnknownHardforkFault {
+                    transaction_hash: *tx_hash,
+                    hardfork_name,
+                });
+            }
             overlay.reset();
             stage_fault(
                 &mut outcome.faults,

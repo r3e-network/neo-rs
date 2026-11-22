@@ -139,10 +139,11 @@ impl NativeContract for Notary {
             return Ok(());
         };
 
+        // C# v3.11.2: `if (notaries is null || notaries.Length == 0) return;`
+        // — an empty designated-notary list no longer faults OnPersist; the
+        // reward distribution step is skipped silently instead.
         if notaries.is_empty() {
-            return Err(Error::native_contract(
-                "No notary nodes designated".to_string(),
-            ));
+            return Ok(());
         }
 
         let policy = PolicyContract::new();

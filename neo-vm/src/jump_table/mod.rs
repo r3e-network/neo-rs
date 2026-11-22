@@ -104,6 +104,9 @@ use std::sync::OnceLock;
 /// The default jump table.
 static DEFAULT: OnceLock<JumpTable> = OnceLock::new();
 
+/// The jump table used below the `HF_Huyao` hardfork.
+static NOT_HUYAO: OnceLock<JumpTable> = OnceLock::new();
+
 impl JumpTable {
     /// Creates a new jump table.
     #[must_use]
@@ -123,6 +126,26 @@ impl JumpTable {
     pub fn default() -> Self {
         // Use OnceLock for safe one-time initialization
         DEFAULT.get_or_init(Self::new).clone()
+    }
+
+    /// Gets the jump table used below the `HF_Huyao` hardfork (C#
+    /// `NotHuyaoJumpTable`): the default table with the pre-neo-vm-PR-606
+    /// `SETITEM` and pre-PR-575 `ROLL` behaviours restored.
+    #[must_use]
+    pub fn not_huyao() -> Self {
+        NOT_HUYAO.get_or_init(Self::compose_not_huyao).clone()
+    }
+
+    /// Builds the pre-`HF_Huyao` jump table (C# `ComposeNotHuyaoJumpTable`).
+    fn compose_not_huyao() -> Self {
+        let mut table = Self::new();
+
+        // Before https://github.com/neo-project/neo-vm/pull/606
+        table.register(OpCode::SETITEM, compound::set_item_before_606);
+        // Before https://github.com/neo-project/neo-vm/pull/575
+        table.register(OpCode::ROLL, stack::roll_before_575);
+
+        table
     }
 
     /// Registers a handler for an opcode.

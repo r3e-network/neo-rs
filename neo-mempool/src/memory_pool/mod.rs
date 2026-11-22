@@ -26,7 +26,7 @@ use neo_native_contracts::{LedgerContract, PolicyContract};
 use neo_primitives::{TransactionRemovalReason, UInt160, UInt256, VerifyResult};
 use neo_protocol::hardfork::Hardfork;
 use neo_protocol::payloads::transaction_attribute::TransactionAttribute;
-use neo_protocol::payloads::{Transaction, conflicts::Conflicts};
+use neo_protocol::payloads::{Signer, Transaction, conflicts::Conflicts};
 use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_storage::persistence::PersistenceDataCache;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -45,6 +45,13 @@ pub use quarantine::{
 
 fn unwrap_or_clone_arc<T: Clone>(arc: Arc<T>) -> T {
     Arc::try_unwrap(arc).unwrap_or_else(|arc| (*arc).clone())
+}
+
+/// C# v3.11.2 `MemoryPool.HasCommonSigner`: true when the two signer lists
+/// share at least one account.
+fn has_common_signer(left: &[Signer], right: &[Signer]) -> bool {
+    left.iter()
+        .any(|signer| right.iter().any(|other| other.account == signer.account))
 }
 
 /// namespace Neo.Ledger -> public class MemoryPool : IReadOnlyCollection<`Transaction`>
@@ -182,11 +189,6 @@ impl MemoryPool {
         if tx.sender().is_none() {
             return Ok(to_remove);
         }
-        // PENDING-89: TransactionVerificationContext::payer must be pub.
-        // Task 86 approved typed authority for public payer resolution.
-        let payer =
-            TransactionVerificationContext::payer(tx).expect("sender exists implies payer exists");
-        let author = payer.1.unwrap_or(payer.0);
 
         let mut push_unique = |item: &PoolItem| {
             let item_hash = item.transaction.hash();
@@ -201,12 +203,10 @@ impl MemoryPool {
         if let Some(conflicting_hashes) = self.conflicts.get(&tx.hash()) {
             for hash in conflicting_hashes {
                 if let Some(conflict_item) = self.verified.get(hash) {
-                    if conflict_item
-                        .transaction
-                        .signers()
-                        .iter()
-                        .any(|signer| signer.account == author)
-                    {
+                    // C# v3.11.2 `CheckConflicts` step 1 matches any common
+                    // signer (`HasCommonSigner(tx.Signers, unsortedTx.Tx.Signers)`)
+                    // instead of the resolved payer of `tx`.
+                    if has_common_signer(tx.signers(), conflict_item.transaction.signers()) {
                         total_conflict_fee += conflict_item.transaction.network_fee();
                     }
                     push_unique(conflict_item);
@@ -444,10 +444,15 @@ impl MemoryPool {
         }
 
         let mut conflicting_items = Vec::new();
-        if !self.verified.is_empty() && (!conflicts.is_empty() || !persisted.is_empty()) {
+        if !conflicts.is_empty() || !persisted.is_empty() {
+            // C# v3.11.2: the stale scan runs over
+            // `_sortedTransactions.Concat(_unverifiedSortedTransactions)`, so
+            // unverified transactions conflicting with the persisted block are
+            // evicted too, not just verified ones.
             let stale: Vec<UInt256> = self
                 .verified
                 .by_priority_ascending()
+                .chain(self.unverified.by_priority_ascending())
                 .filter_map(|item| {
                     let item_hash = item.transaction.hash();
                     let matches_conflict = conflicts.get(&item_hash).is_some_and(|signers| {

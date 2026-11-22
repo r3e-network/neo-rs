@@ -24,33 +24,38 @@ fn native_call_trace_enabled() -> bool {
 pub(crate) fn register_contract_interops(
     engine: &mut dyn super::state::InteropRegistration,
 ) -> VmResult<()> {
-    engine.register_host_service(
+    engine.register_host_service_huyao(
         "System.Contract.Call",
         SYSTEM_CONTRACT_CALL_PRICE,
+        op_code_prices_v1::CONTRACT_CALL_PRICE,
         CallFlags::READ_STATES | CallFlags::ALLOW_CALL,
         contract_call_handler,
     )?;
-    engine.register_host_service(
+    engine.register_host_service_huyao(
         "System.Contract.GetCallFlags",
         1 << 10,
+        op_code_prices_v1::GET_CALL_FLAGS_PRICE,
         CallFlags::NONE,
         contract_get_call_flags_handler,
     )?;
-    engine.register_host_service(
+    engine.register_host_service_huyao(
         "System.Contract.CreateStandardAccount",
         0,
+        op_code_prices_v1::CREATE_STANDARD_ACCOUNT_PRICE,
         CallFlags::NONE,
         contract_create_standard_account_handler,
     )?;
-    engine.register_host_service(
+    engine.register_host_service_huyao(
         "System.Contract.CreateMultisigAccount",
         0,
+        op_code_prices_v1::CREATE_MULTISIG_ACCOUNT_BASE_PRICE,
         CallFlags::NONE,
         contract_create_multisig_account_handler,
     )?;
-    engine.register_host_service(
+    engine.register_host_service_huyao(
         "System.Contract.CallNative",
         0,
+        op_code_prices_v1::CALL_NATIVE_PRICE,
         CallFlags::NONE,
         contract_call_native_handler,
     )?;
@@ -163,7 +168,9 @@ fn contract_create_multisig_account_handler(
         error: e,
     })?;
     let result = (|| {
-        if m < 0 || m > i32::MAX as i64 {
+        // C# v3.11.2: a negative `m` reaches `CreateMultisigAccount` and fails
+        // its combined parameter validation.
+        if m > i32::MAX as i64 {
             return Err("Invalid multisig threshold".to_string());
         }
         let account = app
@@ -278,7 +285,8 @@ fn contract_call_native_handler(
             state.parameter_types.clear();
         }
         if let Some(ret_type) = return_type {
-            push_native_result(engine, ret_type, result_bytes)?;
+            let nullable = app.native_method_nullable(&script_hash, &method_name, arg_count);
+            push_native_result(engine, ret_type, result_bytes, nullable)?;
         }
         // Load any queued calls requested by the native method (e.g. NEP-17 callbacks).
         app.process_pending_native_calls()
@@ -291,8 +299,9 @@ fn push_native_result(
     engine: &mut ExecutionEngine,
     return_type: ContractParameterType,
     result: Vec<u8>,
+    nullable: bool,
 ) -> Result<(), String> {
-    let Some(item) = decode_native_result(return_type, result, engine.limits())? else {
+    let Some(item) = decode_native_result(return_type, result, engine.limits(), nullable)? else {
         return Ok(());
     };
     engine.push(item).map_err(|e| e.to_string())
@@ -301,6 +310,7 @@ fn decode_native_result(
     return_type: ContractParameterType,
     result: Vec<u8>,
     limits: &ExecutionEngineLimits,
+    nullable: bool,
 ) -> Result<Option<StackItem>, String> {
     match return_type {
         ContractParameterType::Void => Ok(None),
@@ -309,8 +319,19 @@ fn decode_native_result(
             Ok(Some(StackItem::from_bool(value)))
         }
         ContractParameterType::Integer => {
+            if nullable && result.is_empty() {
+                // C# `BigInteger?` returning null pushes `StackItem.Null`.
+                return Ok(Some(StackItem::null()));
+            }
             let big = BigInt::from_signed_bytes_le(&result);
             Ok(Some(StackItem::from_int(big)))
+        }
+        ContractParameterType::ByteArray => {
+            if nullable && result.is_empty() {
+                // C# `byte[]?` returning null pushes `StackItem.Null`.
+                return Ok(Some(StackItem::null()));
+            }
+            Ok(Some(StackItem::from_byte_string(result)))
         }
         ContractParameterType::String => {
             let string_bytes = String::from_utf8(result.clone())
@@ -408,6 +429,7 @@ mod tests {
             ContractParameterType::Array,
             Vec::new(),
             &ExecutionEngineLimits::default(),
+            true,
         )
         .expect("decode")
         .expect("stack item");
@@ -419,6 +441,7 @@ mod tests {
             ContractParameterType::Any,
             Vec::new(),
             &ExecutionEngineLimits::default(),
+            true,
         )
         .expect("decode")
         .expect("stack item");
@@ -430,6 +453,7 @@ mod tests {
             ContractParameterType::Any,
             vec![0xff],
             &ExecutionEngineLimits::default(),
+            true,
         )
         .expect("decode")
         .expect("stack item");
@@ -444,6 +468,7 @@ mod tests {
             ContractParameterType::Any,
             encoded,
             &ExecutionEngineLimits::default(),
+            true,
         )
         .expect("decode")
         .expect("stack item");
@@ -458,6 +483,7 @@ mod tests {
             ContractParameterType::Array,
             encoded,
             &ExecutionEngineLimits::default(),
+            true,
         )
         .expect("decode")
         .expect("stack item");

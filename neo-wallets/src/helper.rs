@@ -29,7 +29,7 @@ use neo_protocol::get_sign_data_vec;
 use neo_protocol::payloads::{Transaction, TransactionAttribute};
 use neo_protocol::signer::Signer;
 use neo_protocol::transaction::HEADER_SIZE;
-use neo_smart_contract::application_engine::ApplicationEngine;
+use neo_smart_contract::application_engine::{ApplicationEngine, FEE_FACTOR};
 use neo_smart_contract::helper::Helper as ContractHelper;
 use neo_storage::persistence::PersistenceDataCache;
 use neo_vm::{OpCode, ScriptBuilder, VmState};
@@ -511,14 +511,15 @@ fn calculate_network_fee_impl(
     let hashes = tx.signer_accounts();
 
     let ledger = LedgerContract::new();
-    let height = ledger
-        .current_index(snapshot)
-        .unwrap_or(0)
-        .saturating_add(1);
+    // v3.11.2 `Wallets.Helper.CalculateNetworkFee`: the factor is read at the
+    // current index with full decimals, while the shape-aware cost helpers are
+    // gated at the verification index (current index + 1).
+    let current_index = ledger.current_index(snapshot).unwrap_or(0);
+    let verification_index = current_index.saturating_add(1);
     let policy = PolicyContract::new();
     let exec_fee_factor = policy
-        .get_exec_fee_factor_snapshot(snapshot, settings, height)
-        .unwrap_or(PolicyContract::DEFAULT_EXEC_FEE_FACTOR) as i64;
+        .get_exec_fee_factor_with_decimals_snapshot(snapshot, settings, current_index)
+        .unwrap_or((PolicyContract::DEFAULT_EXEC_FEE_FACTOR * FEE_FACTOR as u32) as i64);
     let fee_per_byte = policy
         .get_fee_per_byte_snapshot(snapshot)
         .unwrap_or(PolicyContract::DEFAULT_FEE_PER_BYTE as i64);
@@ -667,19 +668,27 @@ fn calculate_network_fee_impl(
                     + SIGNATURE_INVOCATION_SCRIPT_LENGTH
                     + get_var_size_bytes(&witness_script)) as i64,
             );
-            let sig_cost =
-                exec_fee_factor.saturating_mul(ContractHelper::signature_contract_cost());
+            let sig_cost = ContractHelper::signature_contract_cost(
+                settings,
+                verification_index,
+                exec_fee_factor,
+            );
             network_fee = network_fee.saturating_add(sig_cost);
-        } else if let Some((m, keys)) = ContractHelper::parse_multi_sig_contract(&witness_script) {
-            let n = keys.len();
-            let invocation_len = SIGNATURE_INVOCATION_SCRIPT_LENGTH.saturating_mul(m);
+        } else if let Some((parameters, _keys)) =
+            ContractHelper::parse_multi_sig_contract_full(&witness_script)
+        {
+            let invocation_len =
+                SIGNATURE_INVOCATION_SCRIPT_LENGTH.saturating_mul(parameters.m as usize);
             size = size.saturating_add(
                 (get_var_size(invocation_len as u64)
                     + invocation_len
                     + get_var_size_bytes(&witness_script)) as i64,
             );
-            let multisig_cost = exec_fee_factor.saturating_mul(
-                ContractHelper::multi_signature_contract_cost(m as i32, n as i32),
+            let multisig_cost = ContractHelper::multi_signature_contract_cost(
+                settings,
+                verification_index,
+                exec_fee_factor,
+                &parameters,
             );
             network_fee = network_fee.saturating_add(multisig_cost);
         } else {

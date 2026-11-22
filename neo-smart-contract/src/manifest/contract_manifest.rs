@@ -179,6 +179,32 @@ impl ContractManifest {
 
     /// Validates the manifest.
     pub fn validate(&self) -> Result<()> {
+        self.validate_impl(false)
+    }
+
+    /// Validates the manifest with the permission-descriptor equality used
+    /// before `HF_Huyao`.
+    ///
+    /// C# v3.11.2 parses deploy/update manifests with
+    /// `LegacyContractPermissionDescriptorComparer` until `HF_Huyao` is
+    /// active: any two descriptors that agree on wildcard-ness compare equal,
+    /// so at most one wildcard and one concrete (hash or group) permission or
+    /// trust entry is accepted. From `HF_Huyao` the descriptors are compared
+    /// by value instead. The deploy rule is consensus-visible: a manifest one
+    /// node accepts and the other rejects changes the resulting state.
+    pub fn validate_with_legacy_permission_descriptors(&self) -> Result<()> {
+        self.validate_impl(true)
+    }
+
+    fn validate_impl(&self, legacy_permission_descriptors: bool) -> Result<()> {
+        let descriptor_duplicates =
+            |a: &ContractPermissionDescriptor, b: &ContractPermissionDescriptor| {
+                if legacy_permission_descriptors {
+                    a.is_wildcard() == b.is_wildcard()
+                } else {
+                    a == b
+                }
+            };
         // Validate name
         if self.name.is_empty() {
             return Err(Error::invalid_data("Contract name cannot be empty"));
@@ -226,7 +252,7 @@ impl ContractManifest {
             permission.validate()?;
             if permission_contracts
                 .iter()
-                .any(|contract| contract == &permission.contract)
+                .any(|contract| descriptor_duplicates(contract, &permission.contract))
             {
                 return Err(Error::invalid_data(
                     "Duplicate permission contract in manifest",
@@ -238,7 +264,10 @@ impl ContractManifest {
         if let WildCardContainer::List(trusts) = &self.trusts {
             let mut seen_trusts = Vec::new();
             for trust in trusts {
-                if seen_trusts.iter().any(|existing| existing == trust) {
+                if seen_trusts
+                    .iter()
+                    .any(|existing| descriptor_duplicates(existing, trust))
+                {
                     return Err(Error::invalid_data("Duplicate trust entry in manifest"));
                 }
                 seen_trusts.push(trust.clone());

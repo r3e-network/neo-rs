@@ -58,9 +58,19 @@ impl ContractManagement {
         Ok(())
     }
 
-    /// Validates contract manifest
-    pub(super) fn validate_manifest(manifest: &ContractManifest) -> Result<()> {
-        manifest.validate()
+    /// Validates contract manifest.
+    ///
+    /// `legacy_permission_descriptors` selects the duplicate rule used before
+    /// `HF_Huyao`, matching C# `LegacyContractPermissionDescriptorComparer`.
+    pub(super) fn validate_manifest(
+        manifest: &ContractManifest,
+        legacy_permission_descriptors: bool,
+    ) -> Result<()> {
+        if legacy_permission_descriptors {
+            manifest.validate_with_legacy_permission_descriptors()
+        } else {
+            manifest.validate()
+        }
     }
 
     pub(super) fn validate_manifest_groups(

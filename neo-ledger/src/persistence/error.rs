@@ -96,4 +96,45 @@ pub enum LedgerError {
         /// Validation failure message.
         message: String,
     },
+    /// A transaction faulted by raising `Policy.activateHardfork` with an
+    /// unknown hardfork name (C# v3.11.2 `UnknownHardforkException`).
+    ///
+    /// C# rethrows the exception out of `Blockchain.Persist`, halting the node;
+    /// this variant aborts persistence with the same fatal effect before any
+    /// commit side effect. The fault is typed on the engine side, so contract
+    /// `THROW` text can never trigger it.
+    #[error(
+        "transaction {transaction_hash} faulted with unknown hardfork {hardfork_name}; update node software to the latest version to continue following the chain"
+    )]
+    UnknownHardforkFault {
+        /// Hash of the faulted transaction.
+        transaction_hash: UInt256,
+        /// The unrecognized hardfork name passed to `activateHardfork`.
+        hardfork_name: String,
+    },
+}
+
+impl LedgerError {
+    /// Returns whether this error is the C# v3.11.2 unknown-hardfork halt.
+    #[must_use]
+    pub const fn is_unknown_hardfork_fault(&self) -> bool {
+        matches!(self, Self::UnknownHardforkFault { .. })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_hardfork_fault_display_and_predicate() {
+        let error = LedgerError::UnknownHardforkFault {
+            transaction_hash: UInt256::from_bytes(&[7u8; 32]).expect("hash"),
+            hardfork_name: "HF_Basilisk".to_string(),
+        };
+        assert!(error.is_unknown_hardfork_fault());
+        assert!(error
+            .to_string()
+            .contains("faulted with unknown hardfork HF_Basilisk; update node software to the latest version to continue following the chain"));
+    }
 }
